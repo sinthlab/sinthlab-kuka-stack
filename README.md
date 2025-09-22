@@ -47,6 +47,8 @@ ros2 launch lbr_bringup rviz.launch.py \
     rviz_cfg_pkg:=lbr_bringup \
     rviz_cfg:=config/mock.rviz
 ```
+**Troubleshoot**: 
+- if your rviz windows launhes but is not displaying anything, It might be because the graphics library might be trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the second step again.
 
 ## Acknowledgement
 Please note that this work has been built on top if Huber et al [^1] and hence all the original work credit goes to that team.
