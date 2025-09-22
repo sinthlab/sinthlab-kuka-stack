@@ -7,7 +7,7 @@
 
 ## Setting up the Stack
 - Install ROS 2 development tools
-  `sudo apt install ros-dev-tools`
+  ```sudo apt install ros-dev-tools```
   
 - Create a workspace, clone, and install dependencies
   ```
@@ -17,9 +17,9 @@
   rosdep install --from-paths src -i -r -y
   ```
 - Build
-  `colcon build --symlink-install`
+  ```colcon build --symlink-install```
   
 ## Acknowledgement
-Pleae note that this work has been built on top if Huber et al [^1] and hence all the original work credit goes to that team.
+Please note that this work has been built on top if Huber et al [^1] and hence all the original work credit goes to that team.
 
-[^1] LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software [doi](https://doi.org/10.21105/joss.06138)
+[^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software [doi](https://doi.org/10.21105/joss.06138)
