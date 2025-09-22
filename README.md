@@ -6,11 +6,18 @@
   - Based on the PIN diagram as elaborated in pg-53 of Spez_KUKA_Sunrise_Cabinet_en.pdf (section 6.6.2), we jump pins 1/2, 10/11 (external E-Stop), 3/4, 12/13 (Operator Safety) and 5/6, 14/15 (Safety stop 1).
 
 ## Setting up the Stack
-*Note*: These steps are meant for Ubuntu 22.04. Please use either native Ubuntu or if using windows, you can use wsl but make sure you install Ubuntu version 22.04 on wsl. Note the terminal mentioned below refers to Ubuntu terminal (not Powershell or anything else). 
-The steps are NOT valid for any other OS (like MAC).
-
-- Install ROS 2 development tools
+*Note*: These steps are meant to be run on Ubuntu 22.04. If using Windows box, please setup Ubuntu 22.04 in your wsl (Note the version is improtant. please do not install anything default), and make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
+- Install ROS 2 development tools. Refer this [link]( https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html#setup-sources) to understand details of steps.
+  
   ```
+  sudo apt install software-properties-common
+  sudo add-apt-repository universe
+  sudo apt update && sudo apt install curl -y
+  export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
+  curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+  sudo dpkg -i /tmp/ros2-apt-source.deb
+  sudo apt update
+  sudo apt upgrade
   sudo apt install ros-dev-tools
   ```
   
