@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>kuka_bringup</name>
+  <version>1.0.0</version>
+  <description>Custom bringup launch files for KUKA iiwa7 with apple.</description>
+  <maintainer email="nmodi5@alumni.jh.edu">Navin Modi</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>lbr_bringup</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

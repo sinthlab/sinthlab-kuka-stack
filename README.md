@@ -6,7 +6,7 @@
   - Based on the PIN diagram as elaborated in pg-53 of Spez_KUKA_Sunrise_Cabinet_en.pdf (section 6.6.2), we jump pins 1/2, 10/11 (external E-Stop), 3/4, 12/13 (Operator Safety) and 5/6, 14/15 (Safety stop 1).
 
 ## Setting up the Stack
-*Note*: These steps are meant to be run on Ubuntu 22.04. If using Windows box, please setup Ubuntu 22.04 in your wsl (Note the version is improtant. please do not install anything default), and make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
+*Note*: These steps are meant to be run on Ubuntu 22.04. If using Windows box, please setup Ubuntu 22.04 in your wsl (Note the version is important. please do not install anything default), and make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
 - Install ROS 2 development tools. Refer this [link]( https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html#setup-sources) to understand details of steps.
   
   ```
@@ -37,7 +37,7 @@
 - In terminal 1, launch a mock setup via
 ```
 source install/setup.bash
-ros2 launch lbr_bringup mock.launch.py model:=iiwa7
+ros2 launch kuka_bringup iiwa7_mock_apple.launch.py
 ```
 
 - In terminal 2, visualize setup via

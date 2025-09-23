@@ -34,7 +34,7 @@
         initial_joint_positions_path="$(arg initial_joint_positions_path)" />
     
     <!-- including an apple model at end of arm -->
-    <xacro:include filename="$(find lbr_description)/urdf/models/apple.xacro"/>
+    <xacro:include filename="$(find sinthlab_lbr_description)/urdf/models/apple.xacro"/>
     <joint name="apple_fixed_joint" type="fixed">
         <parent link="$(arg robot_name)_link_ee"/>
         <child link="apple_link"/>
