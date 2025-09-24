@@ -6,6 +6,14 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(rclpy REQUIRED)
+
+# Install Python scripts (nodes)
+install(
+  PROGRAMS
+    scripts/apple_puller.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # Install launch files
 install(

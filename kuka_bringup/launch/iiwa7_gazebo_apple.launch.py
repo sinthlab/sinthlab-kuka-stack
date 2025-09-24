@@ -54,6 +54,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(GazeboMixin.node_clock_bridge())
     ld.add_action(GazeboMixin.node_create())
 
+
     # Controllers spawned into Gazebo's controller manager
     joint_state_broadcaster = LBRROS2ControlMixin.node_controller_spawner(
         controller="joint_state_broadcaster"
@@ -64,5 +65,6 @@ def generate_launch_description() -> LaunchDescription:
             controller=LaunchConfiguration("ctrl")
         )
     )
+
 
     return ld

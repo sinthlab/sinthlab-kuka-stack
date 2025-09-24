@@ -47,10 +47,33 @@ ros2 launch lbr_bringup rviz.launch.py \
     rviz_cfg_pkg:=lbr_bringup \
     rviz_cfg:=config/mock.rviz
 ```
+
+## Running Physics Simulation via Gazebo
+```
+source install/setup.bash
+ros2 launch kuka_bringup iiwa7_gazebo_apple.launch.py
+```
+## Running applications on the Hardware
+
+
 **Troubleshoot**: 
-- if your rviz windows launhes but is not displaying anything, It might be because the graphics library might be trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the second step again.
+- if your rviz window launches but is not displaying anything or gazebo window is crashing immediately, It might be because the graphics library trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the commands to launch rviz/gazebo again.
+
+## Development Environment
+- The development strategy for this is to follow an Underlay-overlay structure. We are reusing the lbr_fri_ros2_stack (https://github.com/lbr-stack/lbr_fri_ros2_stack)[^1] and that in turn has ROS2 as underlay; So overall our codebase has classes and functions imported from the lbr_fri_ros2_stack repo.
+- As mentioned in the steps, we install basic ros2 development tools and sinthlab_lbr_stack.repos file has the link to all the repos dependencies that we install.
+- Once you setup the stack, within the src of the folder (which is ~/lbr-stack/src by default), you will see 4 different repos. We own and manage the sinthlab-kuka-stack; And hence we should only make changes in this folder
+- Note that the git repo for sinthlab-kuka-stack is [here](https://github.com/sinthlab/sinthlab-kuka-stack).
+  - This also means, if you want to add / make any changes to the repo, you need to create your own branch first and then a pull request on the github with your changes so that all of changes can be tracked and approved.
+- If you are intending to use copilot (or any other AI assisted coding editor), I would strongly suggest to open the codebase from the root (which is ~/lbr-stack by default), as then the agent can use the whole codebase with dependencies for indexing and suggestions.
+
+Maintainer (Navin Modi) Disclosure: For my development, I have used VSCode and Github Copilot with GPT-5 model for assisted development.
+
+### Steps for testing
+- Everytime you make changes, you need to rebuild the workspace from root (which is ~/lbr-stack by default) by running `rm -rf build/ install/ log/; colcon build --symlink-install`
+- Now source the setup changes again `source install/setup.bash` and then launch whatever changes you want to test.
 
 ## Acknowledgement
-Please note that this work has been built on top if Huber et al [^1] and hence all the original work credit goes to that team.
+Please note that this work has been built on top of Huber et al [^1] and hence all the original work credit for lbr_fri_ros2_Stack goes to that team.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software [doi](https://doi.org/10.21105/joss.06138)
