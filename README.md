@@ -5,8 +5,26 @@
   - We first create 6 Jumper cables witht he provided Pins.
   - Based on the PIN diagram as elaborated in pg-53 of Spez_KUKA_Sunrise_Cabinet_en.pdf (section 6.6.2), we jump pins 1/2, 10/11 (external E-Stop), 3/4, 12/13 (Operator Safety) and 5/6, 14/15 (Safety stop 1).
 
+## Setting up the Windows laptop
+- Please install Ubuntu 22.04 from marketplace (Note the version is important. please do not install anything default)
+- Make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
+- Make sure the robot controller box is on
+- Connect your computer to the robot controller at X66 (default IP: 172.31.1.147) via an ethernet cable.
+- Configure the same network on your computer, therefore, set your IP to 172.31.1.148 (or anything else in /16 subnet).
+    - To do this on windows, go to settings -> Network & Internet -> Ethernet and then edit the IPv4 for manual setup setup to have IP as 172.21.1.148 and gateway as 255.255.0.0 ; leave other options as is and save.
+- Try ping the robot `ping 172.31.1.147` from powershell, expect something like:
+  ```
+  PING 172.31.1.147 (172.31.1.147) 56(84) bytes of data.
+  64 bytes from 172.31.1.147: icmp_seq=1 ttl=64 time=0.868 ms
+  ```
+- Enable hyper-v on the laptop
+- Now we also would need to setup networking for the WSL2. For this, go to WSL setting (should be in start menu) and change the Networking mode to Mirrored
+  <img width="1582" height="630" alt="image" src="https://github.com/user-attachments/assets/fe185222-e883-4979-a1f6-e80539cf166a" />
+- Run the following command in PowerShell window with admin privileges to Configure Hyper-V firewall settings to allow inbound connections:
+`Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow`
+
 ## Setting up the Stack
-*Note*: These steps are meant to be run on Ubuntu 22.04. If using Windows box, please setup Ubuntu 22.04 in your wsl (Note the version is important. please do not install anything default), and make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
+*Note*: These steps are meant to be run on Ubuntu 22.04. 
 - Install ROS 2 development tools. Refer this [link]( https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html#setup-sources) to understand details of steps.
   
   ```
@@ -77,3 +95,4 @@ Maintainer (Navin Modi) Disclosure: For my development, I have used VSCode and G
 Please note that this work has been built on top of Huber et al [^1] and hence all the original work credit for lbr_fri_ros2_Stack goes to that team.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software [doi](https://doi.org/10.21105/joss.06138)
+
