@@ -64,21 +64,31 @@ Follow [these](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr
 - In terminal 1, launch a mock setup via
 ```
 source install/setup.bash
-ros2 launch kuka_bringup iiwa7_mock_apple.launch.py
+ros2 launch sinthlab_bringup iiwa7_mock_apple.launch.py
 ```
 
 - In terminal 2, visualize setup via
 ```
 source install/setup.bash
 ros2 launch lbr_bringup rviz.launch.py \
-    rviz_cfg_pkg:=lbr_bringup \
-    rviz_cfg:=config/mock.rviz
+  rviz_cfg_pkg:=lbr_bringup \
+  rviz_cfg:=config/mock.rviz
 ```
 
 ## Running Physics Simulation via Gazebo
 ```
 source install/setup.bash
-ros2 launch kuka_bringup iiwa7_gazebo_apple.launch.py
+ros2 launch sinthlab_bringup iiwa7_gazebo_apple.launch.py
+```
+
+## MoveIt with apple (mock or gazebo)
+```
+source install/setup.bash
+# Mock + MoveIt + RViz
+ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=mock rviz:=true
+
+# Gazebo + MoveIt + RViz
+ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=true
 ```
 ## Running applications on the Hardware
 
@@ -104,5 +114,3 @@ Maintainer (Navin Modi) Disclosure: For my development, I have used VSCode and G
 Please note that this work has been built on top of Huber et al [^1] and hence all the original work credit for lbr_fri_ros2_Stack goes to that team.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software [doi](https://doi.org/10.21105/joss.06138)
-
-
