@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sinthlab_description</name>
+  <version>0.1.0</version>
+  <description>Sinthlab robot description additions (iiwa7 with apple, media flange).</description>
+  <maintainer email="nmodi5@alumni.jh.edu">Navin Modi</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>lbr_description</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

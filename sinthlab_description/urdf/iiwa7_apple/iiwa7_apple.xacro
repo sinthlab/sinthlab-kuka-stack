@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<robot name="iiwa7" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Parameters to control attachment and apple (declare first) -->
+  <xacro:arg name="apple_radius" default="0.04" />
+  <xacro:arg name="apple_mass" default="0.15" />
+  <xacro:arg name="adapter_length" default="0.1" />
+
+  <!-- Include upstream iiwa7 base description (adds world, base joint, iiwa) -->
+  <xacro:include filename="$(find lbr_description)/urdf/iiwa7/iiwa7.xacro"/>
+
+  <!-- Include local apple geometry -->
+  <xacro:include filename="$(find sinthlab_description)/urdf/models/apple.xacro"/>
+
+  <!--
+    Create an attachment adapter between the media flange and the apple to exert torque.
+    The adapter link adds a small lever arm (e.g., 10 cm along +Z of flange) so gravity
+    creates a moment at the flange. Apple then attaches at the end of this adapter.
+  -->
+  <link name="apple_adapter_link">
+    <!-- Keep it massless in kinematics (no inertial) to avoid double-counting; purely geometric -->
+    <visual>
+      <origin xyz="0 0 $(arg adapter_length)*0.5" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.01" length="$(arg adapter_length)"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 $(arg adapter_length)*0.5" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.01" length="$(arg adapter_length)"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Fixed joint from flange to adapter; +Z away from flange -->
+  <joint name="apple_adapter_fixed_joint" type="fixed">
+    <parent link="$(arg robot_name)_link_ee"/>
+    <child link="apple_adapter_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Instantiate the apple at the end of the adapter with a slight offset -->
+  <xacro:apple link_name="apple_link" radius="$(arg apple_radius)" mass="$(arg apple_mass)" color="1 0 0 1"/>
+  <joint name="apple_fixed_joint" type="fixed">
+    <parent link="apple_adapter_link"/>
+    <child link="apple_link"/>
+    <origin xyz="0 0 $(arg adapter_length)" rpy="0 0 0"/>
+  </joint>
+</robot>
