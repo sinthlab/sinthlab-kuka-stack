@@ -44,9 +44,13 @@
 
   <!-- Instantiate the apple at the end of the adapter with a slight offset -->
   <xacro:apple link_name="apple_link" radius="$(arg apple_radius)" mass="$(arg apple_mass)" color="1 0 0 1"/>
-  <joint name="apple_fixed_joint" type="fixed">
+  <!-- Allow apple to rotate about the adapter's axis to visualize torque -->
+  <joint name="apple_yaw_joint" type="revolute">
     <parent link="apple_adapter_link"/>
     <child link="apple_link"/>
-    <origin xyz="0 0 $(arg adapter_length)" rpy="0 0 0"/>
+  <origin xyz="0 0 $(arg adapter_length)" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="10.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
   </joint>
 </robot>

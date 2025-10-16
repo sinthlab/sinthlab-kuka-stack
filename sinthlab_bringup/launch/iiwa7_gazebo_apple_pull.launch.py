@@ -21,13 +21,17 @@ def generate_launch_description() -> LaunchDescription:
 
     # Args
     ld.add_action(LBRDescriptionMixin.arg_robot_name())
-    ld.add_action(LBRROS2ControlMixin.arg_ctrl())
+    # We don't use the guarded upstream 'ctrl' here; use sim_ctrl instead.
+    ld.add_action(DeclareLaunchArgument('sim_ctrl', default_value='joint_trajectory_controller'))
     # Override initial joints to down
     ld.add_action(DeclareLaunchArgument('init_jnt_pos', default_value='ros2_control/initial_joint_positions_down.yaml'))
     # Apple parameters
     apple_radius = LaunchConfiguration('apple_radius', default='0.04')
     apple_mass = LaunchConfiguration('apple_mass', default='0.15')
     adapter_length = LaunchConfiguration('adapter_length', default='0.1')
+    # No RViz for this scenario; focus on Gazebo only
+
+    # No admittance-specific system configuration required for supported sim controllers.
 
     # Start base Gazebo setup similar to gazebo apple
     ld.add_action(LBRDescriptionMixin.arg_mode())
@@ -49,7 +53,7 @@ def generate_launch_description() -> LaunchDescription:
                     'iiwa7_apple.xacro',
                 ]),
                 ' robot_name:=', LaunchConfiguration('robot_name', default='lbr'),
-                ' mode:=gazebo',
+                ' mode:=mock',
                 ' apple_radius:=', apple_radius,
                 ' apple_mass:=', apple_mass,
                 ' adapter_length:=', adapter_length,
@@ -71,15 +75,7 @@ def generate_launch_description() -> LaunchDescription:
     # Create entity in Gazebo
     ld.add_action(GazeboMixin.node_create())
 
-    # ros2_control and controllers
-    ros2_control_node = LBRROS2ControlMixin.node_ros2_control(
-        use_sim_time=True,
-        robot_description=robot_description,
-    )
-    ld.add_action(ros2_control_node)
-    js_broadcaster = LBRROS2ControlMixin.node_controller_spawner(controller='joint_state_broadcaster')
-    controller = LBRROS2ControlMixin.node_controller_spawner(controller=LaunchConfiguration('ctrl'))
-    ld.add_action(RegisterEventHandler(OnProcessStart(target_action=ros2_control_node, on_start=[js_broadcaster, controller])))
+    # No ros2_control manager or controllers in this Gazebo-only demo; robot is static and apple joint is simulated
 
     # Bridge a wrench topic for apple_link so we can apply forces
     # ROS -> Gazebo direction uses ']' before gz type
@@ -95,7 +91,7 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     ))
 
-    # Pull controller node (installed in libexec via CMake)
+    # Pull controller node (applies force only)
     ld.add_action(Node(
         package='sinthlab_bringup',
         executable='apple_pull_controller.py',
@@ -104,9 +100,11 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{
             'robot_name': LaunchConfiguration('robot_name', default='lbr'),
             'pull_force': 8.0,
-            'effort_threshold': 20.0,
+            'effort_threshold': 0.0,
             'publish_rate': 50.0,
         }]
     ))
+
+    # No RViz or visualization nodes
 
     return ld
