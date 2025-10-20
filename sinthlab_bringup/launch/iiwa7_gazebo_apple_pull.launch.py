@@ -29,9 +29,6 @@ def generate_launch_description() -> LaunchDescription:
     apple_radius = LaunchConfiguration('apple_radius', default='0.04')
     apple_mass = LaunchConfiguration('apple_mass', default='0.15')
     adapter_length = LaunchConfiguration('adapter_length', default='0.1')
-    # No RViz for this scenario; focus on Gazebo only
-
-    # No admittance-specific system configuration required for supported sim controllers.
 
     # Start base Gazebo setup similar to gazebo apple
     ld.add_action(LBRDescriptionMixin.arg_mode())
@@ -104,7 +101,5 @@ def generate_launch_description() -> LaunchDescription:
             'publish_rate': 50.0,
         }]
     ))
-
-    # No RViz or visualization nodes
 
     return ld
