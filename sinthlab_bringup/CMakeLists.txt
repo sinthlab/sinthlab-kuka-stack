@@ -8,6 +8,7 @@ find_package(rclpy REQUIRED)
 set(SINTHLAB_BRINGUP_PY_SCRIPTS
   scripts/apple_pull_controller.py
   scripts/apple_pluck_control.py
+  scripts/apple_pluck_impedance_control.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})
