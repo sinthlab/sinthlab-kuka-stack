@@ -101,7 +101,7 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 
 3. Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
 4. run `source install/setup.bash` in both the terminals. 
-   *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace*
+*Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
 5. From one terminal, Launch the Robot driver on the powershell by running command:
 ```
 ros2 launch lbr_bringup hardware.launch.py \
@@ -112,7 +112,8 @@ ros2 launch lbr_bringup hardware.launch.py \
 ```
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
 ```
-You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace)
+You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace).
+
 7. Try gently applying force on end effector
 
 **Troubleshoot**: 

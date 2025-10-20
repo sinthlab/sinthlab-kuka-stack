@@ -119,6 +119,10 @@ class ApplePluckImpedanceControlNode(Node):
         self._releasing = False
         self._release_elapsed = 0.0
         self._gamma = self._gamma_initial
+        self._started_move_to_start = False
+
+        # Periodic progress logging for move-to-start (1 Hz)
+        self._progress_timer = self.create_timer(1.0, self._log_move_progress)
 
         # ROS I/O
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
@@ -136,6 +140,10 @@ class ApplePluckImpedanceControlNode(Node):
         self.get_logger().info(
             f"* gamma_initial: {self._gamma_initial}, release_displacement: {self._release_disp} ({self._release_axis}), "
             f"hold: {self._release_hold_time}s, duration: {self._release_duration}s"
+        )
+        self.get_logger().info(
+            f"* move_to_start: {self._use_initial}, q_target(rad): {self._q_target.tolist()}, "
+            f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad"
         )
 
     def _retrieve_parameter(self, service: str, parameter_name: str) -> ParameterValue:
@@ -161,6 +169,11 @@ class ApplePluckImpedanceControlNode(Node):
                 x = self._fk_pos(q)
                 self._x0 = x.copy()
                 self._x_prev = x.copy()
+            elif self._phase == "move_to_start" and not self._started_move_to_start:
+                self.get_logger().info(
+                    "Starting move_to_start phase: commanding joint_position towards initial target"
+                )
+                self._started_move_to_start = True
             self._init = True
             return
 
@@ -211,6 +224,17 @@ class ApplePluckImpedanceControlNode(Node):
         out.joint_position = q_cmd.data
         out.wrench = np.zeros(6).data  # no wrench overlay during move-to-start
         return out
+
+    def _log_move_progress(self) -> None:
+        # Periodically log progress while in move_to_start
+        if not self._init or self._phase != "move_to_start":
+            return
+        err = self._q_target - self._q
+        err_norm = float(np.linalg.norm(err))
+        self.get_logger().info(
+            f"move_to_start progress: err_norm={err_norm:.4f} rad (tol={self._q_tol:.4f}), "
+            f"current_q[deg]={np.degrees(self._q).round(1).tolist()}"
+        )
 
     def _fk_pos(self, q: np.ndarray) -> np.ndarray:
         if self._fk_pos_func is None:
