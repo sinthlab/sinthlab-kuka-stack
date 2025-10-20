@@ -91,7 +91,29 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=mock rviz:=true
 ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=true
 ```
 ## Running applications on the Hardware
+### Running the apple pluck scenario
+1. On the KUKA Smartpad, launch the LBRServer application
+2. Select:
+  - FRI send period: 10 ms
+  - IP address: 172.31.1.148
+  - FRI control mode: CARTESIAN_IMPEDANCE_CONTROL
+  - FRI client command mode: POSITION
 
+3. Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
+4. run `source install/setup.bash` in both the terminals. 
+   *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace*
+5. From one terminal, Launch the Robot driver on the powershell by running command:
+```
+ros2 launch lbr_bringup hardware.launch.py \
+    ctrl:=lbr_joint_position_command_controller \
+    model:=iiwa7
+```
+6. Run the apple pluck scenario impedance controller using command
+```
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
+```
+You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace)
+7. Try gently applying force on end effector
 
 **Troubleshoot**: 
 - if your rviz window launches but is not displaying anything or gazebo window is crashing immediately, It might be because the graphics library trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the commands to launch rviz/gazebo again.

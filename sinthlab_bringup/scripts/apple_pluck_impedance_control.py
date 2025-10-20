@@ -48,6 +48,16 @@ class ApplePluckImpedanceControlNode(Node):
         self.declare_parameter("exp_smooth", 0.95)
         self.declare_parameter("pinv_rcond", 0.1)  # kept for parity; not needed for FK
 
+        # Move-to-start behavior (like Sunrise example)
+        self.declare_parameter("use_initial_joint_position", True)
+        # Default: [0, 10deg, 0, -80deg, 0, 90deg, 0]
+        self.declare_parameter(
+            "initial_joint_position",
+            [0.0, math.radians(10.0), 0.0, math.radians(-80.0), 0.0, math.radians(90.0), 0.0],
+        )
+        self.declare_parameter("joint_move_max_speed", 0.5)  # rad/s per joint
+        self.declare_parameter("joint_move_tolerance", 0.01)  # rad norm threshold
+
         # Virtual impedance gains (N/m for XYZ, Nm/rad for RPY) – default mirrors the Java example
         self.declare_parameter("stiffness", [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0])
         self.declare_parameter("damping", [80.0, 60.0, 100.0, 0.0, 0.0, 0.0])
@@ -76,6 +86,11 @@ class ApplePluckImpedanceControlNode(Node):
         self._release_hold_time = float(self.get_parameter("release_hold_time").value)
         self._release_duration = float(self.get_parameter("release_duration").value)
 
+        self._use_initial = bool(self.get_parameter("use_initial_joint_position").value)
+        self._q_target = np.array(self.get_parameter("initial_joint_position").value, dtype=float)
+        self._q_speed = float(self.get_parameter("joint_move_max_speed").value)
+        self._q_tol = float(self.get_parameter("joint_move_tolerance").value)
+
         if not (0.0 <= self._exp_smooth <= 1.0):
             raise ValueError("exp_smooth must be in [0,1]")
         if optas is None:
@@ -95,6 +110,7 @@ class ApplePluckImpedanceControlNode(Node):
 
         # State
         self._init = False
+        self._phase = "move_to_start" if self._use_initial else "impedance"
         self._q = np.zeros(7)
         self._x0 = np.zeros(3)
         self._x_prev = np.zeros(3)
@@ -141,17 +157,27 @@ class ApplePluckImpedanceControlNode(Node):
         q = np.array(msg.measured_joint_position.tolist())
         if not self._init:
             self._q = q
-            x = self._fk_pos(q)
-            self._x0 = x.copy()
-            self._x_prev = x.copy()
+            if self._phase == "impedance":
+                x = self._fk_pos(q)
+                self._x0 = x.copy()
+                self._x_prev = x.copy()
             self._init = True
             return
 
         # Smooth q for FK if desired (reuse exp_smooth to filter position estimate)
         s = self._exp_smooth
         self._q = (1 - s) * self._q + s * q
-        x = self._fk_pos(self._q)
+        # Phase handling: move to start or impedance hold
+        if self._phase == "move_to_start":
+            cmd = self._compute_move_to_start(self._q)
+            # Check convergence
+            if cmd is not None:
+                # Publish and return; convergence check happens inside as well
+                self._pub.publish(cmd)
+            return
 
+        # Impedance mode
+        x = self._fk_pos(self._q)
         # Finite-difference velocity (smoothed implicitly by q smoothing)
         v = (x - self._x_prev) / max(self._dt, 1e-6)
         self._x_prev = x
@@ -160,6 +186,31 @@ class ApplePluckImpedanceControlNode(Node):
         cmd = self._compute_command(x, v, self._q)
         if cmd is not None:
             self._pub.publish(cmd)
+
+    def _compute_move_to_start(self, q: np.ndarray) -> Optional[LBRWrenchCommand]:
+        # Joint-space incremental motion towards q_target with speed cap
+        err = self._q_target - q
+        err_norm = float(np.linalg.norm(err))
+        if err_norm <= self._q_tol:
+            # Arrived: set impedance reference from this pose and switch phase
+            x = self._fk_pos(q)
+            self._x0 = x.copy()
+            self._x_prev = x.copy()
+            self._phase = "impedance"
+            self.get_logger().info(
+                f"Reached initial joint position (err_norm={err_norm:.4f} rad). Switching to impedance hold."
+            )
+            return None
+
+        # Compute per-joint step limited by max speed
+        max_step = self._q_speed * self._dt
+        step = np.clip(err, -max_step, max_step)
+        q_cmd = q + step
+
+        out = LBRWrenchCommand()
+        out.joint_position = q_cmd.data
+        out.wrench = np.zeros(6).data  # no wrench overlay during move-to-start
+        return out
 
     def _fk_pos(self, q: np.ndarray) -> np.ndarray:
         if self._fk_pos_func is None:
