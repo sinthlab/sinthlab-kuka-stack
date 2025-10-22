@@ -27,15 +27,6 @@ class ApplePluckImpedanceControlNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
         self.get_logger().info("Initializing Apple Pluck Impedance Control Node")
-        # Minimal local defaults; all other params are supplied by YAML and auto-declared
-        self.declare_parameter("robot_description", "")
-        self.declare_parameter("update_rate", 100)
-        self._robot_description: str = str(self.get_parameter("robot_description").value)
-        self._update_rate: int = int(self.get_parameter("update_rate").value or 100)
-        if not self._update_rate:
-            self.get_logger().warn("update_rate missing; defaulting to 100 Hz")
-            self._update_rate = 100
-        self._dt: float = 1.0 / float(self._update_rate)
 
         # Helper to fetch parameters with safe defaults when not provided via YAML
         def _param(name: str, default):
@@ -43,10 +34,12 @@ class ApplePluckImpedanceControlNode(Node):
             return p.value if (p is not None and p.value is not None) else default
 
         # Read params (YAML overrides these defaults)
+        self._robot_description = str(_param("robot_description", ""))
+        self._update_rate = int(_param("update_rate", 100))
+        self._dt: float = 1.0 / float(self._update_rate)
         self._base_link = str(_param("base_link", "lbr_link_0"))
         self._ee_link = str(_param("end_effector_link", "lbr_link_ee"))
         self._exp_smooth = float(_param("exp_smooth", 0.95))
-        self._pinv_rcond = float(_param("pinv_rcond", 0.1))
         self._K = np.array(_param("stiffness", [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0]), dtype=float)
         self._B = np.array(_param("damping", [80.0, 60.0, 100.0, 0.0, 0.0, 0.0]), dtype=float)
         self._max_wrench = np.array(
