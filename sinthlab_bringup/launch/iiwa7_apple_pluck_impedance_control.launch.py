@@ -5,6 +5,10 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    # Core timing/URDF
+    robot_description = DeclareLaunchArgument("robot_description", default_value="")
+    update_rate = DeclareLaunchArgument("update_rate", default_value="100")
+
     base_link = DeclareLaunchArgument("base_link", default_value="lbr_link_0")
     end_effector_link = DeclareLaunchArgument("end_effector_link", default_value="lbr_link_ee")
     exp_smooth = DeclareLaunchArgument("exp_smooth", default_value="0.95")
@@ -32,6 +36,8 @@ def generate_launch_description():
         name="apple_pluck_impedance_control",
         output="screen",
         parameters=[
+            {"robot_description": LaunchConfiguration("robot_description")},
+            {"update_rate": LaunchConfiguration("update_rate")},
             {"base_link": LaunchConfiguration("base_link")},
             {"end_effector_link": LaunchConfiguration("end_effector_link")},
             {"exp_smooth": LaunchConfiguration("exp_smooth")},
@@ -49,6 +55,8 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            robot_description,
+            update_rate,
             base_link,
             end_effector_link,
             exp_smooth,

@@ -4,8 +4,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
-from rcl_interfaces.msg import ParameterValue
-from rcl_interfaces.srv import GetParameters
 from rclpy.node import Node
 
 try:
@@ -28,18 +26,16 @@ class ApplePluckImpedanceControlNode(Node):
 
     def __init__(self) -> None:
         super().__init__("apple_pluck_impedance_control")
-
-        # Retrieve required system params
-        self._robot_description = self._retrieve_parameter(
-            "robot_state_publisher/get_parameters", "robot_description"
-        ).string_value
-        update_rate_val = self._retrieve_parameter(
-            "controller_manager/get_parameters", "update_rate"
-        ).integer_value
-        if update_rate_val is None or update_rate_val == 0:
+        self.get_logger().info("Initializing Apple Pluck Impedance Control Node")
+        # Declare local parameters (no rcl_interfaces services)
+        # Consumers should pass these via launch or a params file.
+        self.declare_parameter("robot_description", "")
+        self.declare_parameter("update_rate", 100)
+        self._robot_description: str = str(self.get_parameter("robot_description").value)
+        self._update_rate: int = int(self.get_parameter("update_rate").value or 100)
+        if not self._update_rate:
             self.get_logger().warn("update_rate missing; defaulting to 100 Hz")
-            update_rate_val = 100
-        self._update_rate: int = int(update_rate_val)
+            self._update_rate = 100
         self._dt: float = 1.0 / float(self._update_rate)
 
         # Parameters
@@ -99,7 +95,18 @@ class ApplePluckImpedanceControlNode(Node):
             )
 
         # Kinematics (FK for pose)
-        self._robot = optas.RobotModel(urdf_string=self._robot_description) if optas else None
+        if optas and self._robot_description:
+            try:
+                self._robot = optas.RobotModel(urdf_string=self._robot_description)
+            except Exception as e:
+                self.get_logger().error(f"Failed to construct RobotModel from robot_description: {e}")
+                self._robot = None
+        else:
+            if not self._robot_description:
+                self.get_logger().error(
+                    "robot_description parameter is empty. Provide URDF via launch parameters or a YAML file."
+                )
+            self._robot = None
         self._fk_pos_func = (
             self._robot.get_global_link_position_function(
                 link=self._ee_link, base_link=self._base_link, numpy_output=True
@@ -146,20 +153,7 @@ class ApplePluckImpedanceControlNode(Node):
             f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad"
         )
 
-    def _retrieve_parameter(self, service: str, parameter_name: str) -> ParameterValue:
-        client = self.create_client(GetParameters, service)
-        while not client.wait_for_service(timeout_sec=1.0):
-            if not rclpy.ok():
-                self.get_logger().error("Interrupted while waiting for parameter service")
-                raise RuntimeError("Parameter retrieval interrupted")
-            self.get_logger().info(f"Waiting for '{service}' service...")
-        req = GetParameters.Request(names=[parameter_name])
-        future = client.call_async(request=req)
-        rclpy.spin_until_future_complete(self, future)
-        if future.result() is None:
-            raise RuntimeError(f"Failed to retrieve '{parameter_name}' from '{service}'")
-        self.get_logger().info(f"Received '{parameter_name}' from '{service}'.")
-        return future.result().values[0]
+    # rcl_interfaces parameter service retrieval removed; using local get_parameter instead.
 
     def _on_state(self, msg: LBRState) -> None:
         q = np.array(msg.measured_joint_position.tolist())
