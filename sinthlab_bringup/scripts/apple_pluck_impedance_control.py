@@ -30,8 +30,14 @@ class ApplePluckImpedanceControlNode(Node):
 
         # Helper to fetch parameters with safe defaults when not provided via YAML
         def _param(name: str, default):
-            p = self.get_parameter(name)
-            return p.value if (p is not None and p.value is not None) else default
+            try:
+                if self.has_parameter(name):
+                    p = self.get_parameter(name)
+                    return p.value if (p is not None and p.value is not None) else default
+            except Exception:
+                # Fallback to default if parameter infrastructure isn't ready yet
+                pass
+            return default
 
         # Read params (YAML overrides these defaults)
         self._robot_description = str(_param("robot_description", ""))
