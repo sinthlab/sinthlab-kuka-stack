@@ -7,7 +7,7 @@ import rclpy
 from rclpy.node import Node
 import optas
 
-from lbr_fri_idl.msg import LBRWrenchCommand, LBRState
+from lbr_fri_idl.msg import LBRWrenchCommand, LBRState, LBRJointPositionCommand
 
 
 class ApplePluckImpedanceControlNode(Node):
@@ -77,6 +77,13 @@ class ApplePluckImpedanceControlNode(Node):
         self._q_tol = float(_param("joint_move_tolerance", 0.01))
         # Move-to-start Cartesian gains (XYZ), used to generate force towards target
         self._mts_k = np.array(_param("move_to_start_k_xyz", [50.0, 50.0, 50.0]), dtype=float)
+        # Move-to-start mode: 'joint_position' (PTP-like) or 'cartesian_wrench'
+        self._mts_mode = str(_param("move_to_start_mode", "joint_position")).lower()
+        if self._mts_mode not in ("joint_position", "cartesian_wrench"):
+            self.get_logger().warn(
+                f"Unknown move_to_start_mode '{self._mts_mode}', defaulting to 'joint_position'"
+            )
+            self._mts_mode = "joint_position"
 
         if not (0.0 <= self._exp_smooth <= 1.0):
             raise ValueError("exp_smooth must be in [0,1]")
@@ -118,6 +125,9 @@ class ApplePluckImpedanceControlNode(Node):
         # ROS I/O
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
         self._pub = self.create_publisher(LBRWrenchCommand, "command/wrench", 1)
+        self._pub_joint = self.create_publisher(
+            LBRJointPositionCommand, "command/joint_position", 1
+        )
 
         self._log_parameters()
 
@@ -133,7 +143,7 @@ class ApplePluckImpedanceControlNode(Node):
             f"hold: {self._release_hold_time}s, duration: {self._release_duration}s"
         )
         self.get_logger().info(
-            f"* move_to_start: {self._use_initial}, q_target(rad): {self._q_target.tolist()}, "
+            f"* move_to_start: {self._use_initial} (mode={self._mts_mode}), q_target(rad): {self._q_target.tolist()}, "
             f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad, k_xyz: {self._mts_k.tolist()}"
         )
 
@@ -146,9 +156,14 @@ class ApplePluckImpedanceControlNode(Node):
                 self._x0 = x.copy()
                 self._x_prev = x.copy()
             elif self._phase == "move_to_start" and not self._started_move_to_start:
-                self.get_logger().info(
-                    "Starting move_to_start phase: applying Cartesian wrench towards the initial target"
-                )
+                if self._mts_mode == "joint_position":
+                    self.get_logger().info(
+                        "Starting move_to_start phase: commanding joint positions towards the initial target (PTP-like)"
+                    )
+                else:
+                    self.get_logger().info(
+                        "Starting move_to_start phase: applying Cartesian wrench towards the initial target"
+                    )
                 self._started_move_to_start = True
             self._init = True
             return
@@ -158,11 +173,8 @@ class ApplePluckImpedanceControlNode(Node):
         self._q = (1 - s) * self._q + s * q
         # Phase handling: move to start or impedance hold
         if self._phase == "move_to_start":
-            cmd = self._compute_move_to_start(self._q)
-            # Check convergence
-            if cmd is not None:
-                # Publish and return; convergence check happens inside as well
-                self._pub.publish(cmd)
+            # Compute and publish according to mode; function handles publishing
+            self._compute_move_to_start(self._q)
             return
 
         # Impedance mode
@@ -176,36 +188,42 @@ class ApplePluckImpedanceControlNode(Node):
         if cmd is not None:
             self._pub.publish(cmd)
 
-    def _compute_move_to_start(self, q: np.ndarray) -> Optional[LBRWrenchCommand]:
-        # Drive towards the target using a Cartesian wrench so motion works under CARTESIAN_IMPEDANCE_CONTROL
-        # Stop when joint error is small; optionally we could also stop on Cartesian error
+    def _compute_move_to_start(self, q: np.ndarray) -> None:
+        # Move to initial configuration either with joint position commands (PTP-like)
+        # or by applying a Cartesian wrench (works under CARTESIAN_IMPEDANCE_CONTROL).
         err_q = self._q_target - q
         err_q_norm = float(np.linalg.norm(err_q))
-        x = self._fk_pos(q)
-        x_tgt = self._fk_pos(self._q_target)
-        e = x_tgt - x
         if err_q_norm <= self._q_tol:
             # Arrived: set impedance reference from this pose and switch phase
-            self._x0 = x.copy()
-            self._x_prev = x.copy()
+            x_here = self._fk_pos(q)
+            self._x0 = x_here.copy()
+            self._x_prev = x_here.copy()
             self._phase = "impedance"
             self.get_logger().info(
                 f"Reached initial joint position (err_norm={err_q_norm:.4f} rad). Switching to impedance hold."
             )
-            return None
-
-        # Simple P controller in Cartesian space for move-to-start using configured gains
-        F = self._mts_k * e[:3]
-        # Clip to max_wrench limits on force axes
-        F = np.clip(F, -self._max_wrench[:3], self._max_wrench[:3])
-        wrench = np.zeros(6)
-        wrench[:3] = F
-
-        out = LBRWrenchCommand()
-        # Hold current joints as reference; wrench will create motion under Cartesian impedance
-        out.joint_position = q.data
-        out.wrench = wrench.data
-        return out
+            return
+        if self._mts_mode == "joint_position":
+            # Joint-space incremental motion towards q_target with speed cap (PTP-like)
+            max_step = self._q_speed * self._dt
+            step = np.clip(err_q, -max_step, max_step)
+            q_cmd = q + step
+            cmd = LBRJointPositionCommand()
+            cmd.joint_position = q_cmd.data
+            self._pub_joint.publish(cmd)
+        else:
+            # Cartesian wrench towards the target end-effector pose
+            x = self._fk_pos(q)
+            x_tgt = self._fk_pos(self._q_target)
+            e = x_tgt - x
+            F = self._mts_k * e[:3]
+            F = np.clip(F, -self._max_wrench[:3], self._max_wrench[:3])
+            wrench = np.zeros(6)
+            wrench[:3] = F
+            out = LBRWrenchCommand()
+            out.joint_position = q.data
+            out.wrench = wrench.data
+            self._pub.publish(out)
 
     def _log_move_progress(self) -> None:
         # Periodically log progress while in move_to_start

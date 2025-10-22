@@ -31,5 +31,7 @@ apple_pluck_impedance_control:
     initial_joint_position: [0.0, 0.1745329252, 0.0, -1.3962634016, 0.0, 1.5707963268, 0.0]
     joint_move_max_speed: 0.5
     joint_move_tolerance: 0.01
+  # Move-to-start mode: 'joint_position' mimics Sunrise PTP; 'cartesian_wrench' pushes with a force
+  move_to_start_mode: "joint_position"
   # Cartesian gains [Nx/m] used only during move-to-start (XYZ force only)
   move_to_start_k_xyz: [50.0, 50.0, 50.0]
