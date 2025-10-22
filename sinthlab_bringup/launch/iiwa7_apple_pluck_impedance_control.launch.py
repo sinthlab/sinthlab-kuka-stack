@@ -33,6 +33,7 @@ def generate_launch_description():
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control.py",
         name="apple_pluck_impedance_control",
+        namespace="lbr",
         output="screen",
         parameters=[
             LaunchConfiguration("params_file"),
