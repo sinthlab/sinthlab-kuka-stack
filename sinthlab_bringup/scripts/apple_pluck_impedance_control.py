@@ -5,11 +5,7 @@ from typing import Optional, Tuple
 import numpy as np
 import rclpy
 from rclpy.node import Node
-
-try:
-    import optas
-except ImportError:
-    optas = None
+import optas
 
 from lbr_fri_idl.msg import LBRWrenchCommand, LBRState
 
@@ -25,10 +21,13 @@ class ApplePluckImpedanceControlNode(Node):
     """
 
     def __init__(self) -> None:
-        super().__init__("apple_pluck_impedance_control")
+        # Auto-declare parameters that are provided via YAML/CLI; only keep minimal in-code defaults
+        super().__init__(
+            "apple_pluck_impedance_control",
+            automatically_declare_parameters_from_overrides=True,
+        )
         self.get_logger().info("Initializing Apple Pluck Impedance Control Node")
-        # Declare local parameters (no rcl_interfaces services)
-        # Consumers should pass these via launch or a params file.
+        # Minimal local defaults; all other params are supplied by YAML and auto-declared
         self.declare_parameter("robot_description", "")
         self.declare_parameter("update_rate", 100)
         self._robot_description: str = str(self.get_parameter("robot_description").value)
@@ -38,78 +37,62 @@ class ApplePluckImpedanceControlNode(Node):
             self._update_rate = 100
         self._dt: float = 1.0 / float(self._update_rate)
 
-        # Parameters
-        self.declare_parameter("base_link", "lbr_link_0")
-        self.declare_parameter("end_effector_link", "lbr_link_ee")
-        self.declare_parameter("exp_smooth", 0.95)
-        self.declare_parameter("pinv_rcond", 0.1)  # kept for parity; not needed for FK
+        # Helper to fetch parameters with safe defaults when not provided via YAML
+        def _param(name: str, default):
+            p = self.get_parameter(name)
+            return p.value if (p is not None and p.value is not None) else default
 
-        # Move-to-start behavior (like Sunrise example)
-        self.declare_parameter("use_initial_joint_position", True)
-        # Default: [0, 10deg, 0, -80deg, 0, 90deg, 0]
-        self.declare_parameter(
-            "initial_joint_position",
-            [0.0, math.radians(10.0), 0.0, math.radians(-80.0), 0.0, math.radians(90.0), 0.0],
+        # Read params (YAML overrides these defaults)
+        self._base_link = str(_param("base_link", "lbr_link_0"))
+        self._ee_link = str(_param("end_effector_link", "lbr_link_ee"))
+        self._exp_smooth = float(_param("exp_smooth", 0.95))
+        self._pinv_rcond = float(_param("pinv_rcond", 0.1))
+        self._K = np.array(_param("stiffness", [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0]), dtype=float)
+        self._B = np.array(_param("damping", [80.0, 60.0, 100.0, 0.0, 0.0, 0.0]), dtype=float)
+        self._max_wrench = np.array(
+            _param("max_wrench", [100.0, 100.0, 150.0, 10.0, 10.0, 10.0]), dtype=float
         )
-        self.declare_parameter("joint_move_max_speed", 0.5)  # rad/s per joint
-        self.declare_parameter("joint_move_tolerance", 0.01)  # rad norm threshold
+        self._gamma_initial = float(_param("gamma_initial", 1.0))
+        self._release_disp = float(_param("release_displacement", 0.03))
+        self._release_axis = str(_param("release_axis", "z"))
+        self._release_hold_time = float(_param("release_hold_time", 1.0))
+        self._release_duration = float(_param("release_duration", 1.5))
 
-        # Virtual impedance gains (N/m for XYZ, Nm/rad for RPY) – default mirrors the Java example
-        self.declare_parameter("stiffness", [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0])
-        self.declare_parameter("damping", [80.0, 60.0, 100.0, 0.0, 0.0, 0.0])
-        self.declare_parameter("max_wrench", [100.0, 100.0, 150.0, 10.0, 10.0, 10.0])
-
-        # Release scheduling
-        self.declare_parameter("gamma_initial", 1.0)  # scales stiffness/damping at start
-        self.declare_parameter("release_displacement", 0.03)  # [m] on Z or norm trigger
-        self.declare_parameter("release_axis", "z")  # "z" or "norm"
-        self.declare_parameter("release_hold_time", 1.0)  # [s]
-        self.declare_parameter("release_duration", 1.5)  # [s]
-
-        # Read params
-        self._base_link = self.get_parameter("base_link").get_parameter_value().string_value
-        self._ee_link = (
-            self.get_parameter("end_effector_link").get_parameter_value().string_value
+        self._use_initial = bool(_param("use_initial_joint_position", True))
+        self._q_target = np.array(
+            _param(
+                "initial_joint_position",
+                [
+                    0.0,
+                    math.radians(10.0),
+                    0.0,
+                    math.radians(-80.0),
+                    0.0,
+                    math.radians(90.0),
+                    0.0,
+                ],
+            ),
+            dtype=float,
         )
-        self._exp_smooth = float(self.get_parameter("exp_smooth").value)
-        self._pinv_rcond = float(self.get_parameter("pinv_rcond").value)
-        self._K = np.array(self.get_parameter("stiffness").value, dtype=float)
-        self._B = np.array(self.get_parameter("damping").value, dtype=float)
-        self._max_wrench = np.array(self.get_parameter("max_wrench").value, dtype=float)
-        self._gamma_initial = float(self.get_parameter("gamma_initial").value)
-        self._release_disp = float(self.get_parameter("release_displacement").value)
-        self._release_axis = str(self.get_parameter("release_axis").value)
-        self._release_hold_time = float(self.get_parameter("release_hold_time").value)
-        self._release_duration = float(self.get_parameter("release_duration").value)
-
-        self._use_initial = bool(self.get_parameter("use_initial_joint_position").value)
-        self._q_target = np.array(self.get_parameter("initial_joint_position").value, dtype=float)
-        self._q_speed = float(self.get_parameter("joint_move_max_speed").value)
-        self._q_tol = float(self.get_parameter("joint_move_tolerance").value)
+        self._q_speed = float(_param("joint_move_max_speed", 0.5))
+        self._q_tol = float(_param("joint_move_tolerance", 0.01))
 
         if not (0.0 <= self._exp_smooth <= 1.0):
             raise ValueError("exp_smooth must be in [0,1]")
-        if optas is None:
-            self.get_logger().error(
-                "optas is not available. Install 'optas' in your Python environment to run this node."
-            )
 
         # Kinematics (FK for pose)
-        if optas and self._robot_description:
-            try:
-                self._robot = optas.RobotModel(urdf_string=self._robot_description)
-            except Exception as e:
-                self.get_logger().error(f"Failed to construct RobotModel from robot_description: {e}")
-                self._robot = None
-        else:
-            if not self._robot_description:
-                self.get_logger().error(
-                    "robot_description parameter is empty. Provide URDF via launch parameters or a YAML file."
-                )
+        if not self._robot_description:
+            self.get_logger().error(
+                "robot_description parameter is empty. Provide URDF via launch parameters or a YAML file."
+            )
+        try:
+            self._robot = optas.RobotModel(urdf_string=self._robot_description)
+        except Exception as e:
+            self.get_logger().error(f"Failed to construct RobotModel from robot_description: {e}")
             self._robot = None
         self._fk_pos_func = (
             self._robot.get_global_link_position_function(
-                link=self._ee_link, base_link=self._base_link, numpy_output=True
+                link=self._ee_link, numpy_output=True
             )
             if self._robot
             else None

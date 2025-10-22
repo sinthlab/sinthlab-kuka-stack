@@ -7,11 +7,7 @@ import rclpy
 from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.srv import GetParameters
 from rclpy.node import Node
-
-try:
-    import optas
-except ImportError:
-    optas = None
+import optas
 
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
 
@@ -83,13 +79,8 @@ class ApplePluckControlNode(Node):
             raise ValueError("exp_smooth must be in [0, 1]")
         if not (0.0 <= self._dq_smooth <= 1.0):
             raise ValueError("dq_smooth must be in [0, 1]")
-        if optas is None:
-            self.get_logger().error(
-                "optas is not available. Install 'optas' in your Python environment to run this node."
-            )
-
         # Build kinematic model and Jacobian function
-        self._robot = optas.RobotModel(urdf_string=self._robot_description) if optas else None
+        self._robot = optas.RobotModel(urdf_string=self._robot_description)
         self._jacobian_func = (
             self._robot.get_link_geometric_jacobian_function(
                 link=self._ee_link, base_link=self._base_link, numpy_output=True
