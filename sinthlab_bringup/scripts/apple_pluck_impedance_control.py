@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import xml.etree.ElementTree as ET
 from typing import Optional, Tuple
 
 import numpy as np
@@ -118,6 +119,8 @@ class ApplePluckImpedanceControlNode(Node):
         self._release_elapsed = 0.0
         self._gamma = self._gamma_initial
         self._started_move_to_start = False
+        # Cached joint velocity limits [rad/s] from URDF (filled lazily)
+        self._q_vel_max = None
 
         # Periodic progress logging for move-to-start (1 Hz)
         self._progress_timer = self.create_timer(1.0, self._log_move_progress)
@@ -205,8 +208,12 @@ class ApplePluckImpedanceControlNode(Node):
             )
             return
         if self._mts_mode == "joint_position":
-            # Joint-space move using direct setpoint to target (PTP-like)
-            q_cmd = self._q_target
+            # Respect upstream joint velocity limits from URDF
+            self._ensure_velocity_limits()
+            v_lim = self._q_vel_max if self._q_vel_max is not None else np.full(7, 1.0)
+            max_step = v_lim * self._dt
+            step = np.clip(err_q, -max_step, max_step)
+            q_cmd = q + step
             cmd = LBRJointPositionCommand()
             cmd.joint_position = q_cmd.data
             self._pub_joint.publish(cmd)
@@ -223,6 +230,35 @@ class ApplePluckImpedanceControlNode(Node):
             out.joint_position = q.data
             out.wrench = wrench.data
             self._pub.publish(out)
+
+    def _ensure_velocity_limits(self) -> None:
+        if self._q_vel_max is not None:
+            return
+        # Fallback to 1.0 rad/s if no URDF
+        default_lim = np.full(7, 1.0, dtype=float)
+        if not self._robot_description:
+            self._q_vel_max = default_lim
+            return
+        try:
+            root = ET.fromstring(self._robot_description)
+            # Collect velocity limits by joint name
+            lims = {}
+            for j in root.findall('joint'):
+                name = j.get('name', '')
+                limit = j.find('limit')
+                if limit is not None and 'velocity' in limit.attrib:
+                    try:
+                        lims[name] = float(limit.attrib['velocity'])
+                    except Exception:
+                        pass
+            # Expected LBR joint names
+            names = [
+                'lbr_joint_1','lbr_joint_2','lbr_joint_3','lbr_joint_4',
+                'lbr_joint_5','lbr_joint_6','lbr_joint_7'
+            ]
+            self._q_vel_max = np.array([lims.get(n, 1.0) for n in names], dtype=float)
+        except Exception:
+            self._q_vel_max = default_lim
 
     def _log_move_progress(self) -> None:
         # Periodically log progress while in move_to_start
