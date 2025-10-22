@@ -143,8 +143,9 @@ class ApplePluckImpedanceControlNode(Node):
             f"hold: {self._release_hold_time}s, duration: {self._release_duration}s"
         )
         self.get_logger().info(
-            f"* move_to_start: {self._use_initial} (mode={self._mts_mode}), q_target(rad): {self._q_target.tolist()}, "
-            f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad, k_xyz: {self._mts_k.tolist()}"
+            f"* move_to_start: {self._use_initial} (mode={self._mts_mode}), "
+            f"q_target(rad): {self._q_target.tolist()}, max_speed: {self._q_speed} rad/s, "
+            f"tol: {self._q_tol} rad, k_xyz: {self._mts_k.tolist()}"
         )
 
     def _on_state(self, msg: LBRState) -> None:
@@ -204,10 +205,8 @@ class ApplePluckImpedanceControlNode(Node):
             )
             return
         if self._mts_mode == "joint_position":
-            # Joint-space incremental motion towards q_target with speed cap (PTP-like)
-            max_step = self._q_speed * self._dt
-            step = np.clip(err_q, -max_step, max_step)
-            q_cmd = q + step
+            # Joint-space move using direct setpoint to target (PTP-like)
+            q_cmd = self._q_target
             cmd = LBRJointPositionCommand()
             cmd.joint_position = q_cmd.data
             self._pub_joint.publish(cmd)
