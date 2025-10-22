@@ -2,33 +2,40 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import Command, PathJoinSubstitution, TextSubstitution
 
 
 def generate_launch_description():
-    # Core timing/URDF
-    robot_description = DeclareLaunchArgument("robot_description", default_value="")
-    update_rate = DeclareLaunchArgument("update_rate", default_value="100")
-
-    base_link = DeclareLaunchArgument("base_link", default_value="lbr_link_0")
-    end_effector_link = DeclareLaunchArgument("end_effector_link", default_value="lbr_link_ee")
-    exp_smooth = DeclareLaunchArgument("exp_smooth", default_value="0.95")
-    pinv_rcond = DeclareLaunchArgument("pinv_rcond", default_value="0.1")
-
-    stiffness = DeclareLaunchArgument(
-        "stiffness", default_value="[1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0]"
-    )
-    damping = DeclareLaunchArgument(
-        "damping", default_value="[80.0, 60.0, 100.0, 0.0, 0.0, 0.0]"
-    )
-    max_wrench = DeclareLaunchArgument(
-        "max_wrench", default_value="[100.0, 100.0, 150.0, 10.0, 10.0, 10.0]"
+    # Parameters via YAML; default to installed config/apple_pluck_impedance.yaml
+    params_file = DeclareLaunchArgument(
+        "params_file",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("sinthlab_bringup"),
+            "config",
+            "apple_pluck_impedance.yaml",
+        ]),
+        description="Path to YAML with parameters for apple_pluck_impedance_control",
     )
 
-    gamma_initial = DeclareLaunchArgument("gamma_initial", default_value="1.0")
-    release_displacement = DeclareLaunchArgument("release_displacement", default_value="0.03")
-    release_axis = DeclareLaunchArgument("release_axis", default_value="z")
-    release_hold_time = DeclareLaunchArgument("release_hold_time", default_value="1.0")
-    release_duration = DeclareLaunchArgument("release_duration", default_value="1.5")
+    # Xacro evaluation for robot_description (auto-inject) — require robot_type to be specified
+    robot_type = DeclareLaunchArgument(
+        "robot_type",
+        default_value="iiwa7",
+        description="Robot variant passed to lbr_description xacro (e.g., iiwa7, iiwa14)",
+    )
+    xacro_path = PathJoinSubstitution([
+        FindPackageShare("lbr_description"),
+        "urdf",
+        "lbr.urdf.xacro",
+    ])
+    robot_description_content = Command([
+        TextSubstitution(text="xacro "),
+        xacro_path,
+        TextSubstitution(text=" "),
+        TextSubstitution(text="robot_type:="),
+        LaunchConfiguration("robot_type"),
+    ])
 
     node = Node(
         package="sinthlab_bringup",
@@ -36,39 +43,16 @@ def generate_launch_description():
         name="apple_pluck_impedance_control",
         output="screen",
         parameters=[
-            {"robot_description": LaunchConfiguration("robot_description")},
-            {"update_rate": LaunchConfiguration("update_rate")},
-            {"base_link": LaunchConfiguration("base_link")},
-            {"end_effector_link": LaunchConfiguration("end_effector_link")},
-            {"exp_smooth": LaunchConfiguration("exp_smooth")},
-            {"pinv_rcond": LaunchConfiguration("pinv_rcond")},
-            {"stiffness": LaunchConfiguration("stiffness")},
-            {"damping": LaunchConfiguration("damping")},
-            {"max_wrench": LaunchConfiguration("max_wrench")},
-            {"gamma_initial": LaunchConfiguration("gamma_initial")},
-            {"release_displacement": LaunchConfiguration("release_displacement")},
-            {"release_axis": LaunchConfiguration("release_axis")},
-            {"release_hold_time": LaunchConfiguration("release_hold_time")},
-            {"release_duration": LaunchConfiguration("release_duration")},
+            LaunchConfiguration("params_file"),
+            {"robot_description": robot_description_content},
+            # All other parameters are sourced from the YAML (or node defaults)
         ],
     )
 
     return LaunchDescription(
         [
-            robot_description,
-            update_rate,
-            base_link,
-            end_effector_link,
-            exp_smooth,
-            pinv_rcond,
-            stiffness,
-            damping,
-            max_wrench,
-            gamma_initial,
-            release_displacement,
-            release_axis,
-            release_hold_time,
-            release_duration,
+            params_file,
+            robot_type,
             node,
         ]
     )

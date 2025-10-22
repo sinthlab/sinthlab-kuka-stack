@@ -1,0 +1,34 @@
+apple_pluck_impedance_control:
+  ros__parameters:
+    # Provide the full URDF as a string below. This node does not query other nodes for it.
+    robot_description: ""
+
+    # Controller / timing
+    update_rate: 100
+
+    # Frames
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+
+    # Filtering and numerical options
+    exp_smooth: 0.95
+    pinv_rcond: 0.1
+
+    # Virtual impedance gains (XYZ, RPY)
+    stiffness: [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0]
+    damping: [80.0, 60.0, 100.0, 0.0, 0.0, 0.0]
+    max_wrench: [100.0, 100.0, 150.0, 10.0, 10.0, 10.0]
+
+    # Release scheduling
+    gamma_initial: 1.0
+    release_displacement: 0.03
+    release_axis: "z"
+    release_hold_time: 1.0
+    release_duration: 1.5
+
+    # Move-to-start behavior
+    use_initial_joint_position: true
+    # [0, 10deg, 0, -80deg, 0, 90deg, 0]
+    initial_joint_position: [0.0, 0.1745329252, 0.0, -1.3962634016, 0.0, 1.5707963268, 0.0]
+    joint_move_max_speed: 0.5
+    joint_move_tolerance: 0.01
