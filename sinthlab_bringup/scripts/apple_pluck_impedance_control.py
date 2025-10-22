@@ -75,6 +75,8 @@ class ApplePluckImpedanceControlNode(Node):
         )
         self._q_speed = float(_param("joint_move_max_speed", 0.5))
         self._q_tol = float(_param("joint_move_tolerance", 0.01))
+        # Move-to-start Cartesian gains (XYZ), used to generate force towards target
+        self._mts_k = np.array(_param("move_to_start_k_xyz", [50.0, 50.0, 50.0]), dtype=float)
 
         if not (0.0 <= self._exp_smooth <= 1.0):
             raise ValueError("exp_smooth must be in [0,1]")
@@ -132,10 +134,8 @@ class ApplePluckImpedanceControlNode(Node):
         )
         self.get_logger().info(
             f"* move_to_start: {self._use_initial}, q_target(rad): {self._q_target.tolist()}, "
-            f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad"
+            f"max_speed: {self._q_speed} rad/s, tol: {self._q_tol} rad, k_xyz: {self._mts_k.tolist()}"
         )
-
-    # rcl_interfaces parameter service retrieval removed; using local get_parameter instead.
 
     def _on_state(self, msg: LBRState) -> None:
         q = np.array(msg.measured_joint_position.tolist())
@@ -147,7 +147,7 @@ class ApplePluckImpedanceControlNode(Node):
                 self._x_prev = x.copy()
             elif self._phase == "move_to_start" and not self._started_move_to_start:
                 self.get_logger().info(
-                    "Starting move_to_start phase: commanding joint_position towards initial target"
+                    "Starting move_to_start phase: applying Cartesian wrench towards the initial target"
                 )
                 self._started_move_to_start = True
             self._init = True
@@ -177,28 +177,34 @@ class ApplePluckImpedanceControlNode(Node):
             self._pub.publish(cmd)
 
     def _compute_move_to_start(self, q: np.ndarray) -> Optional[LBRWrenchCommand]:
-        # Joint-space incremental motion towards q_target with speed cap
-        err = self._q_target - q
-        err_norm = float(np.linalg.norm(err))
-        if err_norm <= self._q_tol:
+        # Drive towards the target using a Cartesian wrench so motion works under CARTESIAN_IMPEDANCE_CONTROL
+        # Stop when joint error is small; optionally we could also stop on Cartesian error
+        err_q = self._q_target - q
+        err_q_norm = float(np.linalg.norm(err_q))
+        x = self._fk_pos(q)
+        x_tgt = self._fk_pos(self._q_target)
+        e = x_tgt - x
+        if err_q_norm <= self._q_tol:
             # Arrived: set impedance reference from this pose and switch phase
-            x = self._fk_pos(q)
             self._x0 = x.copy()
             self._x_prev = x.copy()
             self._phase = "impedance"
             self.get_logger().info(
-                f"Reached initial joint position (err_norm={err_norm:.4f} rad). Switching to impedance hold."
+                f"Reached initial joint position (err_norm={err_q_norm:.4f} rad). Switching to impedance hold."
             )
             return None
 
-        # Compute per-joint step limited by max speed
-        max_step = self._q_speed * self._dt
-        step = np.clip(err, -max_step, max_step)
-        q_cmd = q + step
+        # Simple P controller in Cartesian space for move-to-start using configured gains
+        F = self._mts_k * e[:3]
+        # Clip to max_wrench limits on force axes
+        F = np.clip(F, -self._max_wrench[:3], self._max_wrench[:3])
+        wrench = np.zeros(6)
+        wrench[:3] = F
 
         out = LBRWrenchCommand()
-        out.joint_position = q_cmd.data
-        out.wrench = np.zeros(6).data  # no wrench overlay during move-to-start
+        # Hold current joints as reference; wrench will create motion under Cartesian impedance
+        out.joint_position = q.data
+        out.wrench = wrench.data
         return out
 
     def _log_move_progress(self) -> None:
