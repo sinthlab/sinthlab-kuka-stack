@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -29,7 +30,21 @@ def generate_launch_description():
         model=LaunchConfiguration("robot_type")
     )
 
-    node = Node(
+    # First: run move_to_start node. It will exit once the target is reached.
+    move_to_start_node = Node(
+        package="sinthlab_bringup",
+        executable="move_to_start.py",
+        name="move_to_start",
+        namespace="lbr",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("params_file"),
+            robot_description,
+        ],
+    )
+
+    # Second: apple_pluck_impedance_control node, starts only after move_to_start exits
+    impedance_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control.py",
         name="apple_pluck_impedance_control",
@@ -38,14 +53,21 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
-            # All other parameters are sourced from the YAML (or node defaults)
         ],
+    )
+
+    start_impedance_after_move = RegisterEventHandler(
+        OnProcessExit(
+            target_action=move_to_start_node,
+            on_exit=[impedance_node],
+        )
     )
 
     return LaunchDescription(
         [
             params_file,
             robot_type,
-            node,
+            move_to_start_node,
+            start_impedance_after_move,
         ]
     )
