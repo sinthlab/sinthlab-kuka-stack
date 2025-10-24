@@ -1,39 +1,27 @@
 apple_pluck_impedance_control:
   ros__parameters:
-    # Provide the full URDF as a string below. This node does not query other nodes for it.
-    robot_description: ""
-
-    # Controller / timing
+    # Control timing
     update_rate: 100
 
-    # Frames
-    base_link: "lbr_link_0"
-    end_effector_link: "lbr_link_ee"
-
-    # Filtering and numerical options
-    exp_smooth: 0.95
-
-    # Virtual impedance gains (XYZ, RPY)
-    stiffness: [1500.0, 700.0, 2500.0, 0.0, 0.0, 0.0]
-    damping: [80.0, 60.0, 100.0, 0.0, 0.0, 0.0]
-    max_wrench: [100.0, 100.0, 150.0, 10.0, 10.0, 10.0]
-
-    # Release scheduling
-    gamma_initial: 1.0
-    release_displacement: 0.03
-    release_axis: "z"
-    release_hold_time: 1.0
-    release_duration: 1.5
-
-    # Move-to-start behavior
+    # Move-to-start settings
     use_initial_joint_position: true
-    # [0, 10deg, 0, -80deg, 0, 90deg, 0]
+    # Start position in radians (equivalent to [0, 10deg, 0, -80deg, 0, 90deg, 0])
     initial_joint_position: [0.0, 0.1745329252, 0.0, -1.3962634016, 0.0, 1.5707963268, 0.0]
-    joint_move_max_speed: 0.5
-    joint_move_tolerance: 0.01
-    # Limit the per-cycle joint step during move-to-start [rad]. Larger = faster; lower avoids upstream cutoffs.
-    move_to_start_max_step_rad: 0.2
-  # Move-to-start mode: 'joint_position' mimics Sunrise PTP; 'cartesian_wrench' pushes with a force
-  move_to_start_mode: "joint_position"
-  # Cartesian gains [Nx/m] used only during move-to-start (XYZ force only)
-  move_to_start_k_xyz: [50.0, 50.0, 50.0]
+    joint_move_tolerance: 0.01  # [rad]
+
+    # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
+    # iiwa7 per-joint max velocities from URDF (deg/s) converted to rad/s:
+    # [98, 98, 100, 130, 140, 180, 180] * pi/180
+    move_to_start_v_max: [
+      1.7104226669544429,
+      1.7104226669544429,
+      1.7453292519943295,
+      2.2689280275926285,
+      2.4434609527920612,
+      3.1415926535897931,
+      3.1415926535897931
+    ]  # [rad/s]
+    # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
+    move_to_start_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    # Jerk is not specified upstream; keep a conservative default
+    move_to_start_j_max: 10.0   # [rad/s^3]
