@@ -57,13 +57,24 @@ class ApplePluckImpedanceControlNode(Node):
         self._target_pos = np.array(_param("impedance_target_position", [0.5, 0.0, 0.4]), dtype=float)
         self._target_rpy = np.array(_param("impedance_target_rpy", [0.0, math.pi, 0.0]), dtype=float)
 
+        # Pull-force stop parameters (EE frame)
+        self._stop_on_pull_force = bool(_param("stop_on_pull_force", True))
+        self._pull_force_threshold = float(_param("pull_force_threshold", 15.0))  # [N]
+        self._pull_force_axis = str(_param("pull_force_axis", "z")).lower()  # 'x'|'y'|'z' in EE frame
+        self._pull_force_filter_alpha = float(_param("pull_force_filter_alpha", 0.2))  # EMA, 0..1
+
         # State
         self._q = np.zeros(7)
         self._qd = np.zeros(7)
-        self._q_prev: Optional[np.ndarray] = None
+        self._q_prev = None  # type: Optional[np.ndarray]
+        self._tau_external = np.zeros(7)
+        self._have_tau_external = False
+        self._pull_force_filtered = None  # type: Optional[float]
+        self._impedance_active = True
+        self._pull_stop_latched = False
         self._init = False
         self._model_built = False
-        self._frame_id: Optional[int] = None
+        self._frame_id = None  # type: Optional[int]
 
         # Pinocchio model/data
         self._model = None
@@ -89,6 +100,14 @@ class ApplePluckImpedanceControlNode(Node):
                 self._qd = (q - self._q_prev) / self._dt
             self._q_prev = q.copy()
             self._q = q
+            # External torque (for estimating EE wrench)
+            try:
+                tau_ext = np.array(msg.external_torque, dtype=float)
+                if tau_ext.shape[0] == 7:
+                    self._tau_external = tau_ext
+                    self._have_tau_external = True
+            except Exception:
+                pass
             if not self._init:
                 self._init = True
 
@@ -186,6 +205,53 @@ class ApplePluckImpedanceControlNode(Node):
         msg.wrench = wrench.tolist()
         self._pub_wrench.publish(msg)
 
+    # ------------------------- Force Estimation -------------------------
+    def _estimate_ee_wrench_world(self) -> Optional[np.ndarray]:
+        """
+        Estimate external EE wrench (world frame) from external joint torques using J^T w = tau_ext.
+        Returns 6D wrench [Fx, Fy, Fz, Tx, Ty, Tz] in world frame.
+        """
+        if not (self._model_built and self._init and self._pin is not None and self._frame_id is not None):
+            return None
+        if not self._have_tau_external:
+            return None
+        pin = self._pin  # type: ignore
+        assert self._model is not None and self._data is not None
+        q = self._q
+        # Update kinematics (ensure frame placement up to date for Jacobian reference)
+        pin.forwardKinematics(self._model, self._data, q)
+        pin.updateFramePlacements(self._model, self._data)
+        # World-aligned spatial Jacobian at EE
+        J6 = pin.computeFrameJacobian(self._model, self._data, q, self._frame_id, pin.ReferenceFrame.WORLD)
+        try:
+            # Solve least-squares: (J^T) w = tau_ext -> w = argmin ||J^T w - tau_ext||
+            w, *_ = np.linalg.lstsq(J6.T, self._tau_external, rcond=None)
+            return w
+        except Exception:
+            return None
+
+    def _compute_pull_force_component(self) -> Optional[float]:
+        """
+        Compute the scalar pull force along configured axis in EE frame.
+        """
+        if not (self._model_built and self._init and self._pin is not None and self._frame_id is not None):
+            return None
+        pin = self._pin  # type: ignore
+        assert self._model is not None and self._data is not None
+        # Get current EE rotation
+        pin.forwardKinematics(self._model, self._data, self._q)
+        pin.updateFramePlacements(self._model, self._data)
+        R_we = self._data.oMf[self._frame_id].rotation  # world->ee rotation matrix columns are ee axes in world
+        w_world = self._estimate_ee_wrench_world()
+        if w_world is None:
+            return None
+        F_world = w_world[:3]
+        # Transform force to EE frame: F_ee = R^T * F_world (since R maps ee->world)
+        F_ee = R_we.T @ F_world
+        axis_map = {"x": 0, "y": 1, "z": 2}
+        idx = axis_map.get(self._pull_force_axis, 2)
+        return float(F_ee[idx])
+
     # ------------------------- Timer -------------------------
     def _step(self) -> None:
         # Ensure we have model and state
@@ -194,6 +260,27 @@ class ApplePluckImpedanceControlNode(Node):
             return
         if not self._init:
             return
+        # Monitor pull force and latch stop if threshold exceeded
+        if self._stop_on_pull_force:
+            f_comp = self._compute_pull_force_component()
+            if f_comp is not None:
+                if self._pull_force_filtered is None:
+                    self._pull_force_filtered = f_comp
+                else:
+                    a = float(np.clip(self._pull_force_filter_alpha, 0.0, 1.0))
+                    self._pull_force_filtered = a * f_comp + (1.0 - a) * self._pull_force_filtered
+                if not self._pull_stop_latched and abs(self._pull_force_filtered) >= self._pull_force_threshold:
+                    self._pull_stop_latched = True
+                    self._impedance_active = False
+                    self.get_logger().info(
+                        f"Pull-force threshold reached (|F|={abs(self._pull_force_filtered):.2f} N >= {self._pull_force_threshold:.2f} N). Stopping impedance and idling."
+                    )
+
+        if not self._impedance_active:
+            # Publish zero wrench to idle (keep joint posture hold)
+            self._publish_wrench(np.zeros(6))
+            return
+
         wrench = self._impedance_step()
         if wrench is not None:
             self._publish_wrench(wrench)

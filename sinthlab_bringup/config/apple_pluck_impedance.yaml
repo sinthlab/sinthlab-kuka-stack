@@ -1,6 +1,63 @@
 apple_pluck_impedance_control:
   ros__parameters:
     # Control timing
+    update_rate: 200  # control rate for impedance node [Hz]
+
+    # Move-to-start settings
+    use_initial_joint_position: true
+    # Start position in radians (equivalent to [0, 10deg, 0, -80deg, 0, 90deg, 0])
+    initial_joint_position: [0.0, 0.1745329252, 0.0, -1.3962634016, 0.0, 1.5707963268, 0.0]
+    joint_move_tolerance: 0.01  # [rad]
+
+    # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
+    # iiwa7 per-joint max velocities from URDF (deg/s) converted to rad/s:
+    # [98, 98, 100, 130, 140, 180, 180] * pi/180
+    move_to_start_v_max: [
+      1.7104226669544429,
+      1.7104226669544429,
+      1.7453292519943295,
+      2.2689280275926285,
+      2.4434609527920612,
+      3.1415926535897931,
+      3.1415926535897931
+    ]  # [rad/s]
+    # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
+    move_to_start_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    # Jerk is not specified upstream; keep a conservative default
+    move_to_start_j_max: 10.0   # [rad/s^3]
+
+    # Impedance control (Pinocchio-based)
+    # Frames
+    base_link: "lbr_link_0"
+    ee_link: "lbr_link_ee"
+
+    # Stiffness [N/m] and [Nm/rad] (diagonal per-axis)
+    impedance_stiffness_linear: [800.0, 800.0, 800.0]
+    impedance_stiffness_angular: [30.0, 30.0, 30.0]
+
+    # Damping [N·s/m] and [Nm·s/rad] (diagonal per-axis)
+    impedance_damping_linear: [40.0, 40.0, 40.0]
+    impedance_damping_angular: [5.0, 5.0, 5.0]
+
+    # Wrench saturation limits
+    wrench_max_linear: [60.0, 60.0, 60.0]   # [N]
+    wrench_max_angular: [8.0, 8.0, 8.0]     # [Nm]
+
+    # Target pose
+    use_current_pose_as_target: true
+    # If not using current pose, set explicit target (world frame)
+    impedance_target_position: [0.5, 0.0, 0.4]  # [m]
+    impedance_target_rpy: [0.0, 3.1415926536, 0.0]  # [rad]
+
+  # Pull-force stop (EE frame)
+  stop_on_pull_force: true
+  pull_force_threshold: 15.0     # [N] absolute value along selected axis
+  pull_force_axis: "z"           # axis in EE frame to monitor: x|y|z
+  pull_force_filter_alpha: 0.2   # EMA smoothing [0..1]
+
+move_to_start:
+  ros__parameters:
+    # Control timing for move-to-start
     update_rate: 100
 
     # Move-to-start settings
