@@ -15,7 +15,7 @@ class MoveToStartNode(Node):
     Standalone PTP-like move-to-start node using Ruckig.
     - Subscribes to robot state (LBRState)
     - Plans and publishes joint setpoints to reach an initial target configuration
-    - Exits the process once the target is reached (for sequential launch orchestration)
+    - Exits the process once the target is reached
     """
 
     def __init__(self) -> None:
@@ -70,7 +70,7 @@ class MoveToStartNode(Node):
         self._timer = self.create_timer(self._dt, self._step)
 
         self.get_logger().info(
-            f"move-to-start enabled={self._moving}, q_target(rad)={self._joint_pos_target.tolist()}, tol={self._joint_pos_tol}"
+            f"move-to-start enabled={self._moving}, trajectory_gen_target(rad)={self._joint_pos_target.tolist()}, tol={self._joint_pos_tol}"
         )
 
     def _on_state(self, msg: LBRState) -> None:
@@ -89,40 +89,40 @@ class MoveToStartNode(Node):
             # Delay slightly to allow last publish to flush
             self.create_timer(0.05, lambda: rclpy.shutdown())
 
-    def _compute_move_to_start(self, q: np.ndarray) -> None:
+    def _compute_move_to_start(self, trajectory_generation: np.ndarray) -> None:
         # Prepare Ruckig once
         if self._trajectory_generation is None:
-            self._prepare_ruckig(q)
+            self._prepare_ruckig(trajectory_generation)
             if self._trajectory_generation is None:
                 # Could not prepare; stop trying
                 self._moving = False
                 self._request_shutdown()
                 return
         # Check completion
-        err = self._joint_pos_target - q
+        err = self._joint_pos_target - trajectory_generation
         if float(np.linalg.norm(err)) <= self._joint_pos_tol:
             self._moving = False
             self.get_logger().info("Move-to-start complete; holding position.")
             self._request_shutdown()
             return
-        # Step OTG and publish
+        # Step Trajectory generation and publish
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
-        q_cmd = np.array(self._trajectory_gen_out.new_position, dtype=float)
+        trajectory_gen_cmd = np.array(self._trajectory_gen_out.new_position, dtype=float)
         cmd = LBRJointPositionCommand()
-        cmd.joint_position = q_cmd.tolist()
+        cmd.joint_position = trajectory_gen_cmd.tolist()
         self._pub_joint.publish(cmd)
         # Feed state forward for smooth next step
         self._trajectory_gen_in.current_position = self._trajectory_gen_out.new_position
         self._trajectory_gen_in.current_velocity = self._trajectory_gen_out.new_velocity
         self._trajectory_gen_in.current_acceleration = self._trajectory_gen_out.new_acceleration
 
-    def _prepare_ruckig(self, q_now: np.ndarray) -> None:
+    def _prepare_ruckig(self, trajectory_gen_now: np.ndarray) -> None:
         dofs = 7
         self._trajectory_generation = Ruckig(dofs, self._dt)
         self._trajectory_gen_in = InputParameter(dofs)
         self._trajectory_gen_out = OutputParameter(dofs)
         # Current state
-        self._trajectory_gen_in.current_position = np.array(q_now, dtype=float).tolist()
+        self._trajectory_gen_in.current_position = np.array(trajectory_gen_now, dtype=float).tolist()
         self._trajectory_gen_in.current_velocity = [0.0] * dofs
         self._trajectory_gen_in.current_acceleration = [0.0] * dofs
         # Target state
