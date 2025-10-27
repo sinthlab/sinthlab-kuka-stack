@@ -11,7 +11,7 @@ apple_pluck_impedance_control:
     done_topic: "move_to_start/done"
 
     # Pull-force stop (EE frame, Z-axis)
-    pull_force_threshold: 15.0     # [N] abs(Z) in EE frame
+    pull_force_threshold: 40.0     # [N] abs(Z) in EE frame
     pull_force_filter_alpha: 0.2   # EMA smoothing [0..1]
     pull_force_use_absolute: true  # compare |Fz| to threshold
 
@@ -23,6 +23,10 @@ move_to_start:
   ros__parameters:
     # Control timing for move-to-start
     update_rate: 100
+
+    # Wait for the correct controller to be active on the server before moving
+    wait_for_controller_activation: true
+    command_controller_name: "lbr_joint_position_command_controller"
 
     # Move-to-start settings
     use_initial_joint_position: true

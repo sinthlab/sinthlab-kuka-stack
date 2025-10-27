@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import math
 import sys
-import time
 from typing import Optional
 
 import numpy as np
@@ -10,6 +9,7 @@ from rclpy.node import Node
 from ruckig import Ruckig, InputParameter, OutputParameter
 from std_msgs.msg import Bool
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+import time
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
@@ -56,8 +56,13 @@ class MoveToStartNode(Node):
         self._j_max_param = _param("move_to_start_j_max", 10.0)
 
         # State
+        # Simple readiness gating: wait until our command topic has a subscriber
+        self._cmd_topic = "command/joint_position"
+        self._subscribers_ready = False
+        self._ready_log_accum = 0.0
+
         self._init = False
-        self._moving = self._use_initial
+        self._moving = False
         self._joint_pos = np.zeros(7)
         self._shutdown_requested = False
 
@@ -68,7 +73,7 @@ class MoveToStartNode(Node):
 
         # ROS I/O
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
-        self._pub_joint = self.create_publisher(LBRJointPositionCommand, "command/joint_position", 1)
+        self._pub_joint = self.create_publisher(LBRJointPositionCommand, self._cmd_topic, 1)
         # Done signal (latched/transient-local so late subscribers still receive it)
         done_qos = QoSProfile(depth=1)
         done_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -171,6 +176,26 @@ class MoveToStartNode(Node):
 
     def _step(self) -> None:
         # Timer-driven control loop
+        # Wait until our command topic has at least one subscriber (controller ready)
+        if not self._subscribers_ready:
+            try:
+                if self.count_subscribers(self._cmd_topic) >= 1:
+                    self._subscribers_ready = True
+                    self._moving = self._use_initial
+                    self.get_logger().info(
+                        f"Subscriber detected on '{self._cmd_topic}'. Starting move-to-start."
+                    )
+                else:
+                    self._ready_log_accum += self._dt
+                    if self._ready_log_accum >= 2.0:
+                        self._ready_log_accum = 0.0
+                        self.get_logger().info(
+                            f"Waiting for a subscriber on '{self._cmd_topic}'..."
+                        )
+                    return
+            except Exception:
+                return
+
         if not self._init:
             return
         if self._moving:
