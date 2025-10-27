@@ -10,7 +10,7 @@ from lbr_bringup.description import LBRDescriptionMixin
 
 
 def generate_launch_description() -> LaunchDescription:
-    # Optional pass-through arguments for the apple pluck launch
+    # Parameters via YAML; default to installed config/apple_pluck_impedance.yaml
     params_file_arg = DeclareLaunchArgument(
         "params_file",
         default_value=PathJoinSubstitution([
@@ -21,6 +21,7 @@ def generate_launch_description() -> LaunchDescription:
         description="Path to YAML with parameters for apple_pluck_impedance_control",
     )
 
+    # Robot description from mixin (xacro evaluated at launch)
     robot_type_arg = DeclareLaunchArgument(
         "robot_type",
         default_value="iiwa7",
@@ -41,10 +42,9 @@ def generate_launch_description() -> LaunchDescription:
                 "hardware.launch.py",
             ])
         )
-        # If you need to override hardware.launch.py args, add launch_arguments here
     )
 
-    # Define the two apple pluck nodes directly so we can hook a shutdown on the monitor exit
+   # First: run move_to_start node. It will exit once the target position of arm is reached.
     move_to_start_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
@@ -56,7 +56,9 @@ def generate_launch_description() -> LaunchDescription:
             robot_description,
         ],
     )
-
+    
+    # Second: apple_pluck_impedance_control node. It will internally wait for the
+    # move_to_start '/move_to_start/done' topic before starting to monitor force.
     monitor_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control.py",
