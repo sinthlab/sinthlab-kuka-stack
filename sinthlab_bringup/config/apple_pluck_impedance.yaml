@@ -6,9 +6,9 @@ apple_pluck_impedance_control:
     # Wrench topic to subscribe to (relative to node namespace)
     wrench_topic: "force_torque_broadcaster/wrench"
 
-  # Start gating
-  start_on_done_topic: true
-  done_topic: "move_to_start/done"
+    # Start gating
+    start_on_done_topic: true
+    done_topic: "move_to_start/done"
 
     # Pull-force stop (EE frame, Z-axis)
     pull_force_threshold: 15.0     # [N] abs(Z) in EE frame
