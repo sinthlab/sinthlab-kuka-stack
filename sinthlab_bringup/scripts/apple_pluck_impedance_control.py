@@ -5,6 +5,8 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import WrenchStamped
+from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 
 class ApplePluckImpedanceControlNode(Node):
@@ -37,6 +39,10 @@ class ApplePluckImpedanceControlNode(Node):
         # Wrench topic (ForceTorqueSensorBroadcaster)
         self._wrench_topic = str(_param("wrench_topic", "force_torque_broadcaster/wrench"))
 
+        # Optional gating on a done topic (published by move_to_start)
+        self._start_on_done_topic = bool(_param("start_on_done_topic", True))
+        self._done_topic = str(_param("done_topic", "move_to_start/done"))
+
         # Force threshold parameters
         self._pull_force_threshold = float(_param("pull_force_threshold", 15.0))  # [N], EE Z axis
         self._pull_force_filter_alpha = float(_param("pull_force_filter_alpha", 0.2))  # EMA 0..1
@@ -52,10 +58,19 @@ class ApplePluckImpedanceControlNode(Node):
         self._init = False
         self._shutdown_latched = False
         self._last_fz_raw = None  # type: Optional[float]
+        self._done_received = not self._start_on_done_topic
 
         # ROS I/O
         self._ws_sub = self.create_subscription(WrenchStamped, self._wrench_topic, self._on_wrench, 10)
         self.get_logger().info(f"Subscribed to wrench topic: '{self._wrench_topic}'")
+        if self._start_on_done_topic:
+            qos = QoSProfile(depth=1)
+            qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+            qos.reliability = ReliabilityPolicy.RELIABLE
+            self._done_sub = self.create_subscription(Bool, self._done_topic, self._on_done, qos)
+            self.get_logger().info(
+                f"Waiting for move-to-start done on topic: '{self._done_topic}' before starting force monitoring"
+            )
         self._timer = self.create_timer(self._dt, self._step)
 
         self.get_logger().info(
@@ -72,8 +87,20 @@ class ApplePluckImpedanceControlNode(Node):
         except Exception:
             pass
 
+    def _on_done(self, msg: Bool) -> None:
+        try:
+            if bool(msg.data):
+                if not self._done_received:
+                    self.get_logger().info("Received move-to-start done signal; starting force monitoring")
+                self._done_received = True
+        except Exception:
+            pass
+
     # ------------------------- Timer loop -------------------------
     def _step(self) -> None:
+        # Optionally wait for done signal
+        if not self._done_received:
+            return
         if not self._init:
             return
         fz = self._last_fz_raw

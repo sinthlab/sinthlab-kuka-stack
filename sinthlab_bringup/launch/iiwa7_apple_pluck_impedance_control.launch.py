@@ -1,6 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler, LogInfo
-from launch.event_handlers import OnProcessExit
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -43,7 +42,8 @@ def generate_launch_description():
         ],
     )
 
-    # Second: apple_pluck_impedance_control node, starts only after move_to_start exits
+    # Second: apple_pluck_impedance_control node. It will internally wait for the
+    # move_to_start '/move_to_start/done' topic before starting to monitor force.
     impedance_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control.py",
@@ -56,21 +56,11 @@ def generate_launch_description():
         ],
     )
 
-    start_impedance_after_move = RegisterEventHandler(
-        OnProcessExit(
-            target_action=move_to_start_node,
-            on_exit=[
-                LogInfo(msg="move_to_start has exited; starting apple_pluck_impedance_control"),
-                impedance_node,
-            ],
-        )
-    )
-
     return LaunchDescription(
         [
             params_file,
             robot_type,
             move_to_start_node,
-            start_impedance_after_move,
+            impedance_node,
         ]
     )

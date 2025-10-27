@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import math
 import sys
+import time
 from typing import Optional
 
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from ruckig import Ruckig, InputParameter, OutputParameter
+from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
@@ -66,6 +69,11 @@ class MoveToStartNode(Node):
         # ROS I/O
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
         self._pub_joint = self.create_publisher(LBRJointPositionCommand, "command/joint_position", 1)
+        # Done signal (latched/transient-local so late subscribers still receive it)
+        done_qos = QoSProfile(depth=1)
+        done_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        done_qos.reliability = ReliabilityPolicy.RELIABLE
+        self._pub_done = self.create_publisher(Bool, "move_to_start/done", done_qos)
 
         # Control timer
         self._timer = self.create_timer(self._dt, self._step)
@@ -86,8 +94,18 @@ class MoveToStartNode(Node):
     def _request_shutdown(self) -> None:
         if not self._shutdown_requested:
             self._shutdown_requested = True
-            self.get_logger().info("Move-to-start reached target; shutting down this node.")
-            # Request immediate shutdown so the process can terminate and OnProcessExit fires
+            # Publish done signal before shutting down, so downstream nodes can proceed
+            try:
+                self._pub_done.publish(Bool(data=True))
+                self.get_logger().info("Move-to-start reached target; published done=true. Shutting down this node.")
+            except Exception:
+                self.get_logger().warn("Failed to publish move_to_start/done; proceeding to shutdown.")
+            # Small delay to allow message to flush over DDS
+            try:
+                time.sleep(0.05)
+            except Exception:
+                pass
+            # Shutdown
             rclpy.shutdown()
 
     def _compute_move_to_start(self, trajectory_generation: np.ndarray) -> None:
