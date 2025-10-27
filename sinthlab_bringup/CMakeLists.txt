@@ -31,4 +31,10 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Install config files (YAML, etc.)
+install(
+  DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
+
 ament_package()
