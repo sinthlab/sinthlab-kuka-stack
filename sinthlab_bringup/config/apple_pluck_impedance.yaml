@@ -6,16 +6,14 @@ apple_pluck_impedance_control:
     # Wrench topic to subscribe to (relative to node namespace)
     wrench_topic: "force_torque_broadcaster/wrench"
 
-  # (no kinematics needed)
-
     # Pull-force stop (EE frame, Z-axis)
     pull_force_threshold: 15.0     # [N] abs(Z) in EE frame
     pull_force_filter_alpha: 0.2   # EMA smoothing [0..1]
     pull_force_use_absolute: true  # compare |Fz| to threshold
-    
-  # Debug logging for threshold tuning
-  debug_log_enabled: true
-  debug_log_rate_hz: 2.0
+
+    # Debug logging for threshold tuning
+    debug_log_enabled: true
+    debug_log_rate_hz: 2.0
 
 move_to_start:
   ros__parameters:
