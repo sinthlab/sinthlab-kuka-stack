@@ -98,11 +98,14 @@ class MoveToStartNode(Node):
                 self._moving = False
                 self._request_shutdown()
                 return
-        # Check completion
+        # Check completion (per-joint max error rather than L2 norm of all joints)
         err = self._joint_pos_target - trajectory_generation
-        if float(np.linalg.norm(err)) <= self._joint_pos_tol:
+        max_err = float(np.max(np.abs(err)))
+        if max_err <= self._joint_pos_tol:
             self._moving = False
-            self.get_logger().info("Move-to-start complete; holding position.")
+            self.get_logger().info(
+                f"Move-to-start complete; holding position. max_err={max_err:.4f} rad (tol={self._joint_pos_tol:.4f} rad)"
+            )
             self._request_shutdown()
             return
         # Step Trajectory generation and publish
