@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, LogInfo
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -59,7 +59,10 @@ def generate_launch_description():
     start_impedance_after_move = RegisterEventHandler(
         OnProcessExit(
             target_action=move_to_start_node,
-            on_exit=[impedance_node],
+            on_exit=[
+                LogInfo(msg="move_to_start has exited; starting apple_pluck_impedance_control"),
+                impedance_node,
+            ],
         )
     )
 

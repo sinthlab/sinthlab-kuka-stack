@@ -98,7 +98,7 @@ class MoveToStartNode(Node):
                 self._moving = False
                 self._request_shutdown()
                 return
-        # Check completion (per-joint max error rather than L2 norm of all joints)
+        # Check completion (per-joint max error)
         err = self._joint_pos_target - trajectory_generation
         max_err = float(np.max(np.abs(err)))
         if max_err <= self._joint_pos_tol:
