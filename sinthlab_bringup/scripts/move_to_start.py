@@ -87,8 +87,8 @@ class MoveToStartNode(Node):
         if not self._shutdown_requested:
             self._shutdown_requested = True
             self.get_logger().info("Move-to-start reached target; shutting down this node.")
-            # Delay slightly to allow last publish to flush
-            self.create_timer(0.05, lambda: rclpy.shutdown())
+            # Request immediate shutdown so the process can terminate and OnProcessExit fires
+            rclpy.shutdown()
 
     def _compute_move_to_start(self, trajectory_generation: np.ndarray) -> None:
         # Prepare Ruckig once
@@ -171,8 +171,6 @@ def main(args=None) -> None:
         pass
     node.destroy_node()
     rclpy.shutdown()
-    # Ensure the process exits so OnProcessExit handlers in the launch file fire reliably
-    sys.exit(0)
 
 
 if __name__ == "__main__":
