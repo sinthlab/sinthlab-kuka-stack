@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import sys
 from typing import Optional
 
 import numpy as np
@@ -170,6 +171,8 @@ def main(args=None) -> None:
         pass
     node.destroy_node()
     rclpy.shutdown()
+    # Ensure the process exits so OnProcessExit handlers in the launch file fire reliably
+    sys.exit(0)
 
 
 if __name__ == "__main__":
