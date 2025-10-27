@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from typing import Optional
 
-import numpy as np
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import WrenchStamped
@@ -13,7 +12,7 @@ class ApplePluckImpedanceControlNode(Node):
     """
     Minimal force threshold monitor for a robot already in controller-side Cartesian impedance.
     - Subscribes to ForceTorqueSensorBroadcaster (WrenchStamped), reads EE force.z.
-    - Monitors Z-axis force with optional EMA smoothing; shuts down once threshold is exceeded.
+    - Monitors absolute Z-axis force; shuts down once threshold is exceeded.
     """
 
     def __init__(self) -> None:
@@ -43,10 +42,8 @@ class ApplePluckImpedanceControlNode(Node):
         self._start_on_done_topic = bool(_param("start_on_done_topic", True))
         self._done_topic = str(_param("done_topic", "move_to_start/done"))
 
-        # Force threshold parameters
-        self._pull_force_threshold = float(_param("pull_force_threshold", 15.0))  # [N], EE Z axis
-        self._pull_force_filter_alpha = float(_param("pull_force_filter_alpha", 0.2))  # EMA 0..1
-        self._use_abs_force = bool(_param("pull_force_use_absolute", True))
+        # Force threshold parameter (absolute EE Z force)
+        self._pull_force_threshold = float(_param("pull_force_threshold", 80.0))  # [N], EE Z axis
 
         # Debug logging for tuning
         self._debug_log_enabled = bool(_param("debug_log_enabled", True))
@@ -54,9 +51,8 @@ class ApplePluckImpedanceControlNode(Node):
         self._debug_log_accum = 0.0
 
         # State
-        self._pull_force_filtered = None  # type: Optional[float]
         self._init = False
-        self._shutdown_latched = False
+        self._stopping = False
         self._last_fz_raw = None  # type: Optional[float]
         self._done_received = not self._start_on_done_topic
 
@@ -106,14 +102,8 @@ class ApplePluckImpedanceControlNode(Node):
         fz = self._last_fz_raw
         if fz is None:
             return
-        # EMA filtering
-        if self._pull_force_filtered is None:
-            self._pull_force_filtered = fz
-        else:
-            a = float(np.clip(self._pull_force_filter_alpha, 0.0, 1.0))
-            self._pull_force_filtered = a * fz + (1.0 - a) * self._pull_force_filtered
 
-        comp = abs(self._pull_force_filtered) if self._use_abs_force else self._pull_force_filtered
+        fz_abs = abs(fz)
 
         # Low-rate debug log for threshold tuning
         if self._debug_log_enabled:
@@ -121,18 +111,17 @@ class ApplePluckImpedanceControlNode(Node):
             period = 1.0 / max(self._debug_log_rate_hz, 1e-3)
             if self._debug_log_accum >= period:
                 self._debug_log_accum = 0.0
-                mode = "abs" if self._use_abs_force else "direct"
                 try:
                     self.get_logger().info(
-                        f"Fz raw={fz:.2f} N, filt={self._pull_force_filtered:.2f} N, {mode}={comp:.2f}, thr={self._pull_force_threshold:.2f} N"
+                        f"Fz raw={fz:.2f} N, abs={fz_abs:.2f} N, thr={self._pull_force_threshold:.2f} N"
                     )
                 except Exception:
-                    # tolerate formatting errors if values are not finite yet
                     pass
-        if not self._shutdown_latched and comp >= self._pull_force_threshold:
-            self._shutdown_latched = True
+
+        if not self._stopping and fz_abs >= self._pull_force_threshold:
+            self._stopping = True
             self.get_logger().info(
-                f"Force threshold reached on EE Z: value={self._pull_force_filtered:.2f} N, threshold={self._pull_force_threshold:.2f} N. Stopping server."
+                f"Force threshold reached on EE Z: value={fz_abs:.2f} N, threshold={self._pull_force_threshold:.2f} N. Stopping server."
             )
             # Clean shutdown
             try:

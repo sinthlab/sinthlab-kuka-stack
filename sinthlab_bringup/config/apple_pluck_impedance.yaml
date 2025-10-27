@@ -11,9 +11,7 @@ apple_pluck_impedance_control:
     done_topic: "move_to_start/done"
 
     # Pull-force stop (EE frame, Z-axis)
-    pull_force_threshold: 40.0     # [N] abs(Z) in EE frame
-    pull_force_filter_alpha: 0.2   # EMA smoothing [0..1]
-    pull_force_use_absolute: true  # compare |Fz| to threshold
+    pull_force_threshold: 80.0     # [N] abs(Z) in EE frame
 
     # Debug logging for threshold tuning
     debug_log_enabled: true
