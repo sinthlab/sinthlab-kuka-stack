@@ -9,7 +9,7 @@ from rclpy.duration import Duration
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 
-from helpers.common_threshold import DoneGate, DebugTicker, get_param
+from sinthlab_bringup.helpers.common_threshold import DoneGate, DebugTicker, get_param
 
 
 class ApplePluckImpedanceControlDisplacementNode(Node):

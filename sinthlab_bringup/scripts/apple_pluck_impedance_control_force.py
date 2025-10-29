@@ -6,7 +6,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import WrenchStamped
 
 # Shared helpers
-from helpers.common_threshold import DoneGate, DebugTicker, get_param
+from sinthlab_bringup.helpers.common_threshold import DoneGate, DebugTicker, get_param
 
 
 class ApplePluckImpedanceControlForceNode(Node):
