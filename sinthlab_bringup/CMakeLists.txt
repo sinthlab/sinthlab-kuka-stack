@@ -26,9 +26,9 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Install helper modules (non-executable)
+# Install helpers package alongside the scripts so `from helpers...` works
 install(
-  DIRECTORY helpers
+  DIRECTORY scripts/helpers
   DESTINATION lib/${PROJECT_NAME}
 )
 
