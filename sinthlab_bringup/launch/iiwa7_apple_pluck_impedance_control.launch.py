@@ -54,10 +54,10 @@ def generate_launch_description():
 
     # Second: apple_pluck_impedance_control node (force mode). It will internally wait for the
     # move_to_start '/move_to_start/done' topic before starting to monitor force.
-    impedance_node = Node(
+    impedance_force_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_force.py",
-        name="apple_pluck_impedance_control",
+        name="apple_pluck_impedance_control_force",
         namespace="lbr",
         output="screen",
         parameters=[
@@ -70,10 +70,10 @@ def generate_launch_description():
     )
 
     # Alternative: displacement stop criterion node
-    displacement_node = Node(
+    impedance_displacement_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_displacement.py",
-        name="apple_pluck_displacement_control",
+        name="apple_pluck_impedance_control_displacement",
         namespace="lbr",
         output="screen",
         parameters=[
@@ -91,7 +91,7 @@ def generate_launch_description():
             robot_type,
             move_to_start_node,
             threshold_condition,
-            impedance_node,
-            displacement_node,
+            impedance_force_node,
+            impedance_displacement_node,
         ]
     )

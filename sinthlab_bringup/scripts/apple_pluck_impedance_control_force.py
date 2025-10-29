@@ -18,7 +18,7 @@ class ApplePluckImpedanceControlForceNode(Node):
 
     def __init__(self) -> None:
         super().__init__(
-            "apple_pluck_impedance_control",
+            "apple_pluck_impedance_control_force",
             automatically_declare_parameters_from_overrides=True,
         )
 

@@ -21,7 +21,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
 
     def __init__(self) -> None:
         super().__init__(
-            "apple_pluck_displacement_control",
+            "apple_pluck_impedance_control_displacement",
             automatically_declare_parameters_from_overrides=True,
         )
 
