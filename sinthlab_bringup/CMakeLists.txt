@@ -7,7 +7,8 @@ find_package(rclpy REQUIRED)
 # Install Python scenario script
 set(SINTHLAB_BRINGUP_PY_SCRIPTS
   scripts/apple_pull_controller.py
-  scripts/apple_pluck_impedance_control.py
+  scripts/apple_pluck_impedance_control_force.py
+  scripts/apple_pluck_impedance_control_displacement.py
   scripts/move_to_start.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
@@ -22,6 +23,12 @@ endforeach()
 install(
   PROGRAMS
     ${SINTHLAB_BRINGUP_PY_SCRIPTS}
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install helper modules (non-executable)
+install(
+  DIRECTORY helpers
   DESTINATION lib/${PROJECT_NAME}
 )
 

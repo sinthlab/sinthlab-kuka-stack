@@ -1,6 +1,8 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution
@@ -29,6 +31,14 @@ def generate_launch_description():
         model=LaunchConfiguration("robot_type")
     )
 
+    # Stop threshold criteria selection.
+    threshold_condition = DeclareLaunchArgument(
+        "threshold_condition",
+        default_value="force",
+        description="Stop criterion: 'force' (EE Z force) or 'displacement' (Cartesian EE displacement)",
+        choices=["force", "displacement"],
+    )
+
     # First: run move_to_start node. It will exit once the target is reached.
     move_to_start_node = Node(
         package="sinthlab_bringup",
@@ -42,11 +52,11 @@ def generate_launch_description():
         ],
     )
 
-    # Second: apple_pluck_impedance_control node. It will internally wait for the
+    # Second: apple_pluck_impedance_control node (force mode). It will internally wait for the
     # move_to_start '/move_to_start/done' topic before starting to monitor force.
     impedance_node = Node(
         package="sinthlab_bringup",
-        executable="apple_pluck_impedance_control.py",
+        executable="apple_pluck_impedance_control_force.py",
         name="apple_pluck_impedance_control",
         namespace="lbr",
         output="screen",
@@ -54,6 +64,25 @@ def generate_launch_description():
             LaunchConfiguration("params_file"),
             robot_description,
         ],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("threshold_condition"), "' == 'force'"
+        ])),
+    )
+
+    # Alternative: displacement stop criterion node
+    displacement_node = Node(
+        package="sinthlab_bringup",
+        executable="apple_pluck_impedance_control_displacement.py",
+        name="apple_pluck_displacement_control",
+        namespace="lbr",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("params_file"),
+            robot_description,
+        ],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("threshold_condition"), "' == 'displacement'"
+        ])),
     )
 
     return LaunchDescription(
@@ -61,6 +90,8 @@ def generate_launch_description():
             params_file,
             robot_type,
             move_to_start_node,
+            threshold_condition,
             impedance_node,
+            displacement_node,
         ]
     )

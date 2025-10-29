@@ -1,5 +1,7 @@
-apple_pluck_impedance_control:
+apple_pluck_impedance_control_force:
   ros__parameters:
+    # Launch threshold criteria (informational; launch arg selects the node)
+    threshold_condition: "force"  # options: force | displacement
     # Control timing
     update_rate: 200  # control rate for impedance node [Hz]
 
@@ -15,6 +17,29 @@ apple_pluck_impedance_control:
 
     # Debug logging for threshold tuning
     debug_log_enabled: true
+    debug_log_rate_hz: 2.0
+
+apple_pluck_impedance_control_displacement:
+  ros__parameters:
+    # Launch threshold criteria (informational; launch arg selects the node)
+    threshold_condition: "displacement"  # options: force | displacement
+
+    # Control timing
+    update_rate: 200  # [Hz]
+
+    # Start gating
+    start_on_done_topic: true
+    done_topic: "move_to_start/done"
+
+    # Cartesian frames
+    base_frame: "lbr_link_0"
+    ee_frame: "lbr_link_ee"
+
+    # Displacement stop criterion
+    cartesian_axis: "z"   # x | y | z | norm
+    cartesian_displacement_threshold_m: 1.00  # [m]
+
+    # Debug logging
     debug_log_rate_hz: 2.0
 
 move_to_start:
