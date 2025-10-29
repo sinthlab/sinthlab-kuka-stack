@@ -9,7 +9,7 @@ from rclpy.duration import Duration
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 
-from helpers.common_threshold import DoneGate, DebugTicker, get_param
+from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
 
 
 class ApplePluckImpedanceControlDisplacementNode(Node):
@@ -25,27 +25,27 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
 
-        # Parameters
-        self._update_rate = int(get_param(self, "update_rate", 200))
+        # Parameters (must be provided via YAML or overrides)
+        self._update_rate = int(get_required_param(self, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
 
-        self._start_on_done_topic = bool(get_param(self, "start_on_done_topic", True))
-        self._done_topic = str(get_param(self, "done_topic", "move_to_start/done"))
+        self._start_on_done_topic = bool(get_required_param(self, "start_on_done_topic"))
+        self._done_topic = str(get_required_param(self, "done_topic"))
 
         # Cartesian frames
-        self._base_frame = str(get_param(self, "base_frame", "lbr_link_0"))
-        self._ee_frame = str(get_param(self, "ee_frame", "lbr_link_ee"))
+        self._base_frame = str(get_required_param(self, "base_frame"))
+        self._ee_frame = str(get_required_param(self, "ee_frame"))
 
         # Threshold
-        self._disp_axis = str(get_param(self, "cartesian_axis", "z")).lower()  # x|y|z|norm
-        self._disp_threshold_m = float(get_param(self, "cartesian_displacement_threshold_m", 0.01))
+        self._disp_axis = str(get_required_param(self, "cartesian_axis")).lower()  # x|y|z|norm
+        self._disp_threshold_m = float(get_required_param(self, "cartesian_displacement_threshold_m"))
 
         # Debug
-        dbg_rate = float(get_param(self, "debug_log_rate_hz", 2.0))
+        dbg_rate = float(get_required_param(self, "debug_log_rate_hz"))
         self._dbg = DebugTicker(dbg_rate)
 
         # State
-        self._baseline: Optional[TransformStamped] = None
+        self._baseline = None
         self._ready = not self._start_on_done_topic
         self._stopping = False
 

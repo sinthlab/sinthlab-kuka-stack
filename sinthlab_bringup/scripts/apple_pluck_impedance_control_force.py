@@ -6,7 +6,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import WrenchStamped
 
 # Shared helpers
-from helpers.common_threshold import DoneGate, DebugTicker, get_param
+from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
 
 
 class ApplePluckImpedanceControlForceNode(Node):
@@ -21,30 +21,29 @@ class ApplePluckImpedanceControlForceNode(Node):
             "apple_pluck_impedance_control_force",
             automatically_declare_parameters_from_overrides=True,
         )
-
-        # Timing
-        self._update_rate = int(get_param(self, "update_rate", 200))
+        # Timing (no defaults; must be provided via YAML or overrides)
+        self._update_rate = int(get_required_param(self, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
 
         # Wrench topic (ForceTorqueSensorBroadcaster)
-        self._wrench_topic = str(get_param(self, "wrench_topic", "force_torque_broadcaster/wrench"))
+        self._wrench_topic = str(get_required_param(self, "wrench_topic"))
 
         # Optional gating on a done topic (published by move_to_start)
-        self._start_on_done_topic = bool(get_param(self, "start_on_done_topic", True))
-        self._done_topic = str(get_param(self, "done_topic", "move_to_start/done"))
+        self._start_on_done_topic = bool(get_required_param(self, "start_on_done_topic"))
+        self._done_topic = str(get_required_param(self, "done_topic"))
 
         # Force threshold parameter (absolute EE Z force)
-        self._pull_force_threshold = float(get_param(self, "pull_force_threshold", 80.0))  # [N], EE Z axis
+        self._pull_force_threshold = float(get_required_param(self, "pull_force_threshold"))  # [N], EE Z axis
 
         # Debug logging for tuning
-        self._debug_log_enabled = bool(get_param(self, "debug_log_enabled", True))
-        self._debug_log_rate_hz = float(get_param(self, "debug_log_rate_hz", 2.0))  # logs per second
+        self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
+        self._debug_log_rate_hz = float(get_required_param(self, "debug_log_rate_hz"))  # logs per second
         self._dbg = DebugTicker(self._debug_log_rate_hz)
 
         # State
         self._init = False
         self._stopping = False
-        self._last_fz_raw = None  # type: Optional[float]
+        self._last_fz_raw = None
         self._done_received = not self._start_on_done_topic
 
         # ROS I/O

@@ -57,12 +57,16 @@ class DoneGate:
         return self._done
 
 
-def get_param(node: Node, name: str, default):
-    """Helper to read a declared/override parameter with default fallback."""
-    try:
-        if node.has_parameter(name):
-            p = node.get_parameter(name)
-            return p.value if p is not None else default
-    except Exception:
-        pass
-    return default
+def get_required_param(node: Node, name: str):
+    """
+    Fetch a required parameter.
+
+    Raises a ValueError if the parameter is missing or unset. Intended for use when
+    all parameters must come from YAML or runtime overrides.
+    """
+    if not node.has_parameter(name):
+        raise ValueError(f"Required parameter '{name}' is missing; ensure it's set in YAML or as an override.")
+    p = node.get_parameter(name)
+    if p is None or p.value is None:
+        raise ValueError(f"Required parameter '{name}' is unset or None; provide a concrete value.")
+    return p.value
