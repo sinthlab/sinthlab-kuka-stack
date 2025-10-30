@@ -7,6 +7,7 @@ from geometry_msgs.msg import WrenchStamped
 
 # Shared helpers
 from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
+from helpers.param_logging import log_params_once
 
 
 class ApplePluckImpedanceControlForceNode(Node):
@@ -39,6 +40,22 @@ class ApplePluckImpedanceControlForceNode(Node):
         self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
         self._debug_log_rate_hz = float(get_required_param(self, "debug_log_rate_hz"))  # logs per second
         self._dbg = DebugTicker(self._debug_log_rate_hz)
+
+        # One-time parameter dump (optional)
+        if self._debug_log_enabled:
+            log_params_once(
+                self,
+                params={
+                    "update_rate": self._update_rate,
+                    "wrench_topic": self._wrench_topic,
+                    "start_on_done_topic": self._start_on_done_topic,
+                    "done_topic": self._done_topic,
+                    "pull_force_threshold": self._pull_force_threshold,
+                    "debug_log_enabled": self._debug_log_enabled,
+                    "debug_log_rate_hz": self._debug_log_rate_hz,
+                },
+                context="apple_pluck_impedance_control_force",
+            )
 
         # State
         self._init = False

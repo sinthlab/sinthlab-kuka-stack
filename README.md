@@ -108,9 +108,9 @@ ros2 launch lbr_bringup hardware.launch.py \
     ctrl:=lbr_joint_position_command_controller \
     model:=iiwa7
 ```
-6. Run the apple pluck scenario impedance controller using command
+6. Run the apple pluck scenario impedance controller using command. here we have two different stopping criteria: "force" and "displacement" and that needs to be specified via threshold_condition as shown in example below
 ```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py threshold_condition:=displacement
 ```
 You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace).
 

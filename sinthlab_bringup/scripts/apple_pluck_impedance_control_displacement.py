@@ -10,6 +10,7 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped
 
 from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
+from helpers.param_logging import log_params_once
 
 
 class ApplePluckImpedanceControlDisplacementNode(Node):
@@ -41,8 +42,27 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._disp_threshold_m = float(get_required_param(self, "cartesian_displacement_threshold_m"))
 
         # Debug
+        self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
         dbg_rate = float(get_required_param(self, "debug_log_rate_hz"))
         self._dbg = DebugTicker(dbg_rate)
+
+        # One-time parameter dump (optional)
+        if self._debug_log_enabled:
+            log_params_once(
+                self,
+                params={
+                    "update_rate": self._update_rate,
+                    "start_on_done_topic": self._start_on_done_topic,
+                    "done_topic": self._done_topic,
+                    "base_frame": self._base_frame,
+                    "ee_frame": self._ee_frame,
+                    "cartesian_axis": self._disp_axis,
+                    "cartesian_displacement_threshold_m": self._disp_threshold_m,
+                    "debug_log_enabled": self._debug_log_enabled,
+                    "debug_log_rate_hz": dbg_rate,
+                },
+                context="apple_pluck_impedance_control_displacement",
+            )
 
         # State
         self._baseline = None
