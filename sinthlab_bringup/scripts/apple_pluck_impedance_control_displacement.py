@@ -12,7 +12,6 @@ from geometry_msgs.msg import TransformStamped
 from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
 from helpers.param_logging import log_params_once
 
-
 class ApplePluckImpedanceControlDisplacementNode(Node):
     """
     Cartesian displacement monitor for a robot already in controller-side Cartesian impedance.
@@ -46,7 +45,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         dbg_rate = float(get_required_param(self, "debug_log_rate_hz"))
         self._dbg = DebugTicker(dbg_rate)
 
-        # One-time parameter dump (optional)
+        # One-time parameter dump, when debug enabled
         if self._debug_log_enabled:
             log_params_once(
                 self,
@@ -69,7 +68,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._ready = not self._start_on_done_topic
         self._stopping = False
 
-        # Done gating
+        # Done gating: wait for done topic
         self._done_gate = DoneGate(self, self._done_topic) if self._start_on_done_topic else None
 
         # TF buffer/listener

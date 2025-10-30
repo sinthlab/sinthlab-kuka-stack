@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import math
-import sys
 from typing import Optional
 
 import numpy as np
@@ -12,6 +10,8 @@ from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 import time
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
+from helpers.common_threshold import get_required_param, DebugTicker
+from helpers.param_logging import log_params_once
 
 
 class MoveToStartNode(Node):
@@ -28,38 +28,43 @@ class MoveToStartNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
 
-        # Helper to get parameter or default
-        def _param(name: str, default):
-            try:
-                if self.has_parameter(name):
-                    p = self.get_parameter(name)
-                    return p.value if p is not None else default
-            except Exception:
-                pass
-            return default
-
-        # Parameters (minimal set)
-        self._update_rate = int(_param("update_rate", 100))
+        # Parameters (all required, provided via YAML or overrides)
+        self._update_rate = int(get_required_param(self, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
-        self._use_initial = bool(_param("use_initial_joint_position", True))
-        self._joint_pos_target = np.array(
-            _param(
-                "initial_joint_position",
-                [0.0, math.radians(10.0), 0.0, math.radians(-80.0), 0.0, math.radians(90.0), 0.0],
-            ),
-            dtype=float,
-        )
-        self._joint_pos_tol = float(_param("joint_move_tolerance", 0.01))
+        self._use_initial = bool(get_required_param(self, "use_initial_joint_position"))
+        self._joint_pos_target_rad = np.array(get_required_param(self, "initial_joint_position"), dtype=float)
+        self._joint_pos_target = np.radians(self._joint_pos_target_rad) 
+        self._joint_pos_tol = float(get_required_param(self, "joint_move_tolerance"))
         # Limits (can be scalar or 7-long list)
-        self._v_max_param = _param("move_to_start_v_max", 1.0)
-        self._a_max_param = _param("move_to_start_a_max", 2.0)
-        self._j_max_param = _param("move_to_start_j_max", 10.0)
+        self._v_max_param_deg = np.array(get_required_param(self, "move_to_start_v_max"), dtype=float)
+        self._v_max_param = np.radians(self._v_max_param_deg)
+        self._a_max_param = get_required_param(self, "move_to_start_a_max")
+        self._j_max_param = get_required_param(self, "move_to_start_j_max")
+
+        # Debug logging once if enabled
+        self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
+        self._debug_log_rate_hz = float(get_required_param(self, "debug_log_rate_hz"))  # logs per second
+        self._dbg = DebugTicker(self._debug_log_rate_hz)
+
+        if self._debug_log_enabled:
+            log_params_once(
+                self,
+                params={
+                    "update_rate": self._update_rate,
+                    "use_initial_joint_position": self._use_initial,
+                    "initial_joint_position": self._joint_pos_target.tolist(),
+                    "joint_move_tolerance": self._joint_pos_tol,
+                    "move_to_start_v_max": self._v_max_param.tolist(),
+                    "move_to_start_a_max": self._a_max_param,
+                    "move_to_start_j_max": self._j_max_param,
+                },
+                context="move_to_start",
+            )
 
         # State
         # Simple readiness gating: wait until our command topic has a subscriber
         self._cmd_topic = "command/joint_position"
         self._subscribers_ready = False
-        self._ready_log_accum = 0.0
 
         self._init = False
         self._moving = False
@@ -186,9 +191,7 @@ class MoveToStartNode(Node):
                         f"Subscriber detected on '{self._cmd_topic}'. Starting move-to-start."
                     )
                 else:
-                    self._ready_log_accum += self._dt
-                    if self._ready_log_accum >= 2.0:
-                        self._ready_log_accum = 0.0
+                    if self._debug_log_enabled and self._dbg.tick(self._dt):
                         self.get_logger().info(
                             f"Waiting for a subscriber on '{self._cmd_topic}'..."
                         )

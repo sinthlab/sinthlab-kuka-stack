@@ -22,6 +22,7 @@ class ApplePluckImpedanceControlForceNode(Node):
             "apple_pluck_impedance_control_force",
             automatically_declare_parameters_from_overrides=True,
         )
+        
         # Timing (no defaults; must be provided via YAML or overrides)
         self._update_rate = int(get_required_param(self, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
@@ -41,7 +42,7 @@ class ApplePluckImpedanceControlForceNode(Node):
         self._debug_log_rate_hz = float(get_required_param(self, "debug_log_rate_hz"))  # logs per second
         self._dbg = DebugTicker(self._debug_log_rate_hz)
 
-        # One-time parameter dump (optional)
+        # One-time parameter dump , when debug enabled
         if self._debug_log_enabled:
             log_params_once(
                 self,
