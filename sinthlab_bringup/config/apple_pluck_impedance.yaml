@@ -43,10 +43,10 @@
     force_release_threshold_newton: 5.0
     force_release_duration_sec: 3.0
     force_release_done_topic: "displacement_force_release/done"
-    force_release_shutdown_delay_sec: 0.1
+    force_release_shutdown_delay_sec: 0.3
 
     # Debug logging
-    debug_log_enabled: true
+    debug_log_enabled: false
     debug_log_rate_hz: 2.0
 
 /lbr/move_to_start:

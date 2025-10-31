@@ -222,12 +222,12 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
 
     def _shutdown(self) -> None:
         self._stop_hold_publish()
+        self.get_logger().info("Displacement node shutting down (release sequence complete).")
         self.destroy_node()
         rclpy.shutdown()
 
     def _stop_hold_publish(self) -> None:
-        # Cancel timer and destroy the hold publisher 
-        # so shutdown leaves the controller idle.
+        # Cancel timer and destroy the hold publisher so shutdown leaves the controller idle.
         if self._timer is not None:
             try:
                 self._timer.cancel()
