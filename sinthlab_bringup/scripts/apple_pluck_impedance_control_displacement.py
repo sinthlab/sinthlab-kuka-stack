@@ -266,7 +266,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             return
 
         disp = self._axis_disp_m(ts_now, self._baseline, self._disp_axis)
-        if self._debug_log_enabled and self._dbg.tick(self._dt):
+        if self._debug_log_enabled and not self._holding and self._dbg.tick(self._dt):
             self.get_logger().info(f"EE disp={disp:.4f} m (axis={self._disp_axis}, thr={self._disp_threshold_m:.4f} m)")
 
         if not self._stopping and disp >= self._disp_threshold_m:

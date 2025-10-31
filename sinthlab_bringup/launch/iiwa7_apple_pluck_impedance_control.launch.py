@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler, EmitEvent, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler, EmitEvent
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch.substitutions import PythonExpression
@@ -87,38 +87,35 @@ def generate_launch_description():
         ])),
     )
     
-    # Restart move_to_start node upon displacement monitoring exit
-    # Need to do it this way as directly calling like above after exit is not working
-    def _spawn_recovery(context, *args, **kwargs):
-        recovery_node = Node(
-            package="sinthlab_bringup",
-            executable="move_to_start.py",
-            name="move_to_start_recover",
-            namespace="lbr",
-            output="screen",
-            parameters=[
-                LaunchConfiguration("params_file"),
-                robot_description,
-            ],
-        )
-        return [
-            LogInfo(msg="Displacement monitoring finished; relaunching move_to_start."),
-            recovery_node,
-            RegisterEventHandler(
-                OnProcessExit(
-                    target_action=recovery_node,
-                    on_exit=[
-                        LogInfo(msg="move_to_start recovery complete; shutting down launch."),
-                        EmitEvent(event=Shutdown(reason="move_to_start recovery complete")),
-                    ],
-                )
-            ),
-        ]
+    move_to_start_recover_node = Node(
+        package="sinthlab_bringup",
+        executable="move_to_start.py",
+        name="move_to_start_recover",
+        namespace="lbr",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("params_file"),
+            robot_description,
+        ],
+    )
 
     restart_move_to_start_handler = RegisterEventHandler(
         OnProcessExit(
             target_action=impedance_displacement_node,
-            on_exit=[OpaqueFunction(function=_spawn_recovery)],
+            on_exit=[
+                LogInfo(msg="Displacement monitoring finished; relaunching move_to_start."),
+                move_to_start_recover_node,
+            ],
+        )
+    )
+
+    shutdown_after_recover = RegisterEventHandler(
+        OnProcessExit(
+            target_action=move_to_start_recover_node,
+            on_exit=[
+                LogInfo(msg="move_to_start recovery complete; shutting down launch."),
+                EmitEvent(event=Shutdown(reason="move_to_start recovery complete")),
+            ],
         )
     )
 
@@ -131,5 +128,6 @@ def generate_launch_description():
             impedance_force_node,
             impedance_displacement_node,
             restart_move_to_start_handler,
+            shutdown_after_recover,
         ]
     )
