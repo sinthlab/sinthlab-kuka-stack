@@ -32,7 +32,17 @@
 
     # Displacement stop criterion
     cartesian_axis: "z"   # x | y | z | norm
-    cartesian_displacement_threshold_m: 1.00  # [m]
+    cartesian_displacement_threshold_m: 0.3  # [m]
+
+    # Topics for holding and monitoring
+    state_topic: "state"
+    command_topic: "command/joint_position"
+    wrench_topic: "force_torque_broadcaster/wrench"
+
+    # Force release detection after holding
+    force_release_threshold_newton: 5.0
+    force_release_duration_sec: 3.0
+    force_release_done_topic: "displacement_force_release/done"
 
     # Debug logging
     debug_log_enabled: true
