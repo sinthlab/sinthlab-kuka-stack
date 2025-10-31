@@ -32,7 +32,7 @@
 
     # Displacement stop criterion
     cartesian_axis: "z"   # x | y | z | norm
-    cartesian_displacement_threshold_m: 0.3  # [m]
+    cartesian_displacement_threshold_m: 0.2  # [m]
 
     # Topics for holding and monitoring
     state_topic: "state"
@@ -43,6 +43,7 @@
     force_release_threshold_newton: 5.0
     force_release_duration_sec: 3.0
     force_release_done_topic: "displacement_force_release/done"
+    force_release_shutdown_delay_sec: 0.1
 
     # Debug logging
     debug_log_enabled: true

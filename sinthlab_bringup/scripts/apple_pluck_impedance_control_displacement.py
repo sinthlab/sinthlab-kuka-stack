@@ -50,6 +50,8 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._force_release_threshold = float(get_required_param(self, "force_release_threshold_newton"))
         self._force_release_duration = float(get_required_param(self, "force_release_duration_sec"))
         self._release_done_topic = str(get_required_param(self, "force_release_done_topic"))
+        # Optional delay (sec) to let the controller settle before we signal release
+        self._release_shutdown_delay = max(0.0, float(get_required_param(self, "force_release_shutdown_delay_sec")))
 
         # Debug
         self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
@@ -74,6 +76,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                     "force_release_threshold_newton": self._force_release_threshold,
                     "force_release_duration_sec": self._force_release_duration,
                     "force_release_done_topic": self._release_done_topic,
+                    "force_release_shutdown_delay_sec": self._release_shutdown_delay,
                     "debug_log_enabled": self._debug_log_enabled,
                     "debug_log_rate_hz": dbg_rate,
                 },
@@ -171,6 +174,8 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                 self.get_logger().info("Captured joint pose for displacement hold")
             else:
                 return
+        if self._hold_pub is None:
+            return
         cmd = LBRJointPositionCommand()
         cmd.joint_position = list(self._hold_position)
         self._hold_pub.publish(cmd)
@@ -184,7 +189,16 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             self._release_reset_logged = False
             if self._release_elapsed >= self._force_release_duration and not self._release_published:
                 self._release_published = True
+                self._holding = False
+                self._stop_hold_publish()
+                if self._release_shutdown_delay > 0.0:
+                    # Allow the controller a brief quiet period with no commands in flight
+                    try:
+                        time.sleep(self._release_shutdown_delay)
+                    except Exception:
+                        pass
                 self._release_pub.publish(Bool(data=True))
+                # Give ROS2 QOS a moment to flush the latched release event before shutdown
                 try:
                     time.sleep(0.05)
                 except Exception:
@@ -207,12 +221,25 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             self._release_elapsed = 0.0
 
     def _shutdown(self) -> None:
-        try:
-            self._timer.cancel()
-        except Exception:
-            pass
+        self._stop_hold_publish()
         self.destroy_node()
         rclpy.shutdown()
+
+    def _stop_hold_publish(self) -> None:
+        # Cancel timer and destroy the hold publisher 
+        # so shutdown leaves the controller idle.
+        if self._timer is not None:
+            try:
+                self._timer.cancel()
+            except Exception:
+                pass
+            self._timer = None
+        if self._hold_pub is not None:
+            try:
+                self.destroy_publisher(self._hold_pub)
+            except Exception:
+                pass
+            self._hold_pub = None
 
     # ------------------------- Timer loop -------------------------
     def _step(self) -> None:
