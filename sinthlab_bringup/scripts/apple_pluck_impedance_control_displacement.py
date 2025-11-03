@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from typing import Optional
 
+import sys
 import math
 import time
 import rclpy
@@ -225,6 +226,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self.get_logger().info("Displacement node shutting down (release sequence complete).")
         self.destroy_node()
         rclpy.shutdown()
+        sys.exit(0)
 
     def _stop_hold_publish(self) -> None:
         # Cancel timer and destroy the hold publisher so shutdown leaves the controller idle.
@@ -285,18 +287,17 @@ def main(args=None) -> None:
     try:
         rclpy.spin(node)
     except SystemExit:
-        # Catch SystemExit from rclpy.shutdown()
         pass
     except KeyboardInterrupt:
         pass
     
-    # clean resource for systemexit or keyboard interrupt
-    node.destroy_node()
-
-    # reaches here only if keyboard interrupt occurs
-    # we clean up resource here after
     if rclpy.ok():
+        # reaches here only if keyboard interrupt occurs
+        print("Keyboard interrupt received, shutting down...")
+        node.destroy_node()
         rclpy.shutdown()
+    
+    print("Displacement Node shutdown complete.")
 
 if __name__ == "__main__":
     main()
