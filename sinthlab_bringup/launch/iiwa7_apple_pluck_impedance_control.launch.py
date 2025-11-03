@@ -90,7 +90,7 @@ def generate_launch_description():
     move_to_start_recover_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
-        name="move_to_start_recover",
+        name="move_to_start",
         namespace="lbr",
         output="screen",
         parameters=[
