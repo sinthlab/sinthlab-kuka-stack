@@ -82,6 +82,9 @@ def generate_launch_description():
             LaunchConfiguration("params_file"),
             robot_description,
         ],
+        on_exit=[
+            LogInfo(msg="apple_pluck_impedance_control_displacement shutting down."),
+        ],
         condition=IfCondition(PythonExpression([
             "'", LaunchConfiguration("threshold_condition"), "' == 'displacement'"
         ])),
