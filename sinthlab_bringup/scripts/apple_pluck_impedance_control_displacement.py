@@ -223,6 +223,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
     def _shutdown(self) -> None:
         self._stop_hold_publish()
         self.get_logger().info("Displacement node shutting down (release sequence complete).")
+        self.destroy_node()
         rclpy.shutdown()
 
     def _stop_hold_publish(self) -> None:
@@ -236,6 +237,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             except Exception:
                 pass
             self._hold_pub = None
+        self.get_logger().info("hold publisher stopped.")
 
     # ------------------------- Timer loop -------------------------
     def _step(self) -> None:
@@ -284,6 +286,8 @@ def main(args=None) -> None:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    # In case node was not shut down cleanly, 
+    # because of any interruption like ctrl + C
     if rclpy.ok():
         node.destroy_node()
         rclpy.shutdown()
