@@ -221,14 +221,13 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                 self._release_reset_logged = True
             self._release_elapsed = 0.0
 
+    # setting self._shutdown_requested flag to avoid multiple calls and then 
+    # shutdown the node from main()
     def _shutdown(self) -> None:
         if self._shutdown_requested:
             return
         self._shutdown_requested = True
         self._stop_hold_publish()
-        self.get_logger().info("Displacement node shutting down (release sequence complete).")
-        self.destroy_node()
-        rclpy.shutdown()
 
     def _stop_hold_publish(self) -> None:
         # Cancel timer and destroy the hold publisher so shutdown leaves the controller idle.
@@ -289,16 +288,15 @@ def main(args=None) -> None:
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
-    shutdown_requested = getattr(node, "_shutdown_requested", False)
-    print(
-        f"[main] displacement shutdown_requested={shutdown_requested}, rclpy_ok={rclpy.ok()}"
-    )
-    # In case node was not shut down cleanly, 
-    # because of any interruption like ctrl + C
-    if rclpy.ok():
-        node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            node.destroy_node()
+            rclpy.shutdown()
+    finally:
+        shutdown_requested = getattr(node, "_shutdown_requested", False)
+        if shutdown_requested:
+            print(f"Displacement node shutdown (release sequence completed)")
+            node.destroy_node()
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
