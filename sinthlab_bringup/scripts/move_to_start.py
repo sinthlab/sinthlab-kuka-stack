@@ -80,11 +80,10 @@ class MoveToStartNode(Node):
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
         self._pub_joint = self.create_publisher(LBRJointPositionCommand, self._cmd_topic, 1)
         # Done signal (latched/transient-local so late subscribers still receive it)
-        # Publishing the transient done topic is disabled while launch sequencing handles readiness.
-        # done_qos = QoSProfile(depth=1)
-        # done_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        # done_qos.reliability = ReliabilityPolicy.RELIABLE
-        # self._pub_done = self.create_publisher(Bool, "move_to_start/done", done_qos)
+        done_qos = QoSProfile(depth=1)
+        done_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        done_qos.reliability = ReliabilityPolicy.RELIABLE
+        self._pub_done = self.create_publisher(Bool, "move_to_start/done", done_qos)
 
         # Control timer
         self._timer = self.create_timer(self._dt, self._step)
@@ -103,22 +102,21 @@ class MoveToStartNode(Node):
             self._init = True
 
     def _request_shutdown(self) -> None:
-        if self._shutdown_requested:
-            # Ensure we only attempt shutdown once.
-            self._shutdown_requested = False
-        self.get_logger().info("Move-to-start node shutting down.")
-        # Publishing the transient done signal is disabled while launch sequencing handles readiness.
-        # try:
-        #     self._pub_done.publish(Bool(data=True))
-        #     self.get_logger().info("Move-to-start reached target; published done=true. Shutting down this node.")
-        # except Exception:
-        #     self.get_logger().warn("Failed to publish move_to_start/done; proceeding to shutdown.")
-        # Small delay to allow message to flush over DDS
-        # time.sleep(0.05)
-
-        # Shutdown
-        self.destroy_node()
-        rclpy.shutdown()
+        if not self._shutdown_requested:
+            self._shutdown_requested = True
+            # Publish done signal before shutting down, so downstream nodes can proceed
+            try:
+                self._pub_done.publish(Bool(data=True))
+                self.get_logger().info("Move-to-start reached target; published done=true. Shutting down this node.")
+            except Exception:
+                self.get_logger().warn("Failed to publish move_to_start/done; proceeding to shutdown.")
+            # Small delay to allow message to flush over DDS
+            try:
+                time.sleep(0.05)
+            except Exception:
+                pass
+            # Shutdown
+            rclpy.shutdown()
 
     def _compute_move_to_start(self, trajectory_generation: np.ndarray) -> None:
         # Prepare Ruckig once
@@ -127,7 +125,7 @@ class MoveToStartNode(Node):
             if self._trajectory_generation is None:
                 # Could not prepare; stop trying
                 self._moving = False
-                self._shutdown_requested = True
+                self._request_shutdown()
                 return
         # Check completion (per-joint max error)
         err = self._joint_pos_target - trajectory_generation
@@ -137,7 +135,7 @@ class MoveToStartNode(Node):
             self.get_logger().info(
                 f"Move-to-start complete; holding position. max_err={max_err:.4f} rad (tol={self._joint_pos_tol:.4f} rad)"
             )
-            self._shutdown_requested = True
+            self._request_shutdown()
             return
         # Step Trajectory generation and publish
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
@@ -205,11 +203,8 @@ class MoveToStartNode(Node):
             return
         if self._moving:
             self._compute_move_to_start(self._joint_pos)
-            if self._shutdown_requested:
-                self._request_shutdown()
-        # covers the window where the shutdown flag is set
-        # but the node has self._moving == False in the next timer tick
-        elif self._shutdown_requested:
+        elif not self._shutdown_requested:
+            # If not moving anymore and shutdown not yet requested, do it now
             self._request_shutdown()
 
 
