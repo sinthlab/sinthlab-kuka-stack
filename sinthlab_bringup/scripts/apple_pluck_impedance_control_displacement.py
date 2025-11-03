@@ -85,7 +85,9 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
 
         # State
         self._baseline = None
-        self._ready = not self._start_on_done_topic
+        # Launch on_exit sequencing provides the start trigger now.
+        # Keep parameter retrieval for compatibility but ignore DoneGate gating.
+        self._ready = True
         self._stopping = False
         self._holding = False
         self._hold_position = None
@@ -97,7 +99,8 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._shutdown_requested = False
 
         # Done gating: wait for done topic
-        self._done_gate = DoneGate(self, self._done_topic) if self._start_on_done_topic else None
+        # self._done_gate = DoneGate(self, self._done_topic) if self._start_on_done_topic else None
+        self._done_gate = None
 
         # Publishers and subscribers to maintain hold and monitor forces
         self._state_sub = self.create_subscription(LBRState, self._state_topic, self._on_state, 1)
@@ -247,11 +250,9 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
     # ------------------------- Timer loop -------------------------
     def _step(self) -> None:
         # Ready gating on done topic
+        # DoneGate-based gating disabled; readiness managed via launch sequencing.
         if not self._ready:
-            if self._done_gate and self._done_gate.done:
-                self._ready = True
-            else:
-                return
+            return
 
         # Ensure baseline
         if self._baseline is None:

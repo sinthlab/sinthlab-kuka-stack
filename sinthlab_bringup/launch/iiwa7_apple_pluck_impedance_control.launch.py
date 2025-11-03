@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler, EmitEvent
+from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler, EmitEvent, GroupAction
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch.substitutions import PythonExpression
@@ -87,10 +87,27 @@ def generate_launch_description():
         ])),
     )
     
+    start_displacement_handler = RegisterEventHandler(
+        OnProcessExit(
+            target_action=move_to_start_node,
+            on_exit=[
+                GroupAction(
+                    actions=[
+                        LogInfo(msg="move_to_start complete; launching displacement monitor."),
+                        impedance_displacement_node,
+                    ],
+                    condition=IfCondition(PythonExpression([
+                        "'", LaunchConfiguration("threshold_condition"), "' == 'displacement'"
+                    ])),
+                )
+            ],
+        )
+    )
+
     move_to_start_recover_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
-        name="move_to_start_recover",
+        name="move_to_start",
         namespace="lbr",
         output="screen",
         parameters=[
@@ -126,7 +143,8 @@ def generate_launch_description():
             move_to_start_node,
             threshold_condition,
             impedance_force_node,
-            impedance_displacement_node,
+            # impedance_displacement_node,
+            start_displacement_handler,
             restart_move_to_start_handler,
             shutdown_after_recover,
         ]
