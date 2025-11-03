@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from typing import Optional
 
-import sys
 import math
 import time
 import rclpy
@@ -95,6 +94,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._release_elapsed = 0.0
         self._release_published = False
         self._release_reset_logged = False
+        self._shutdown_requested = False
 
         # Done gating: wait for done topic
         self._done_gate = DoneGate(self, self._done_topic) if self._start_on_done_topic else None
@@ -208,7 +208,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                     f"Force below threshold ({self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) "
                     f"for {self._release_elapsed:.2f}s. Published '{self._release_done_topic}' and shutting down."
                 )
-                self._shutdown()
+                self._shutdown_requested = True
         else:
             if (
                 self._release_elapsed > 0.0
@@ -221,13 +221,6 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                 self._release_reset_logged = True
             self._release_elapsed = 0.0
 
-    def _shutdown(self) -> None:
-        self._stop_hold_publish()
-        self.get_logger().info("Displacement node shutting down (release sequence complete).")
-        self.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
-
     def _stop_hold_publish(self) -> None:
         # Cancel timer and destroy the hold publisher so shutdown leaves the controller idle.
         if self._timer is not None:
@@ -239,7 +232,17 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
             except Exception:
                 pass
             self._hold_pub = None
-        self.get_logger().info("hold publisher stopped.")
+        if not self._hold_publish_stopped:
+            self.get_logger().info("hold publisher stopped.")
+            self._hold_publish_stopped = True
+    
+    def _shutdown(self) -> None:
+        if self._shutdown_requested:
+            # Ensure we only attempt shutdown once.
+            self._shutdown_requested = False
+        self.get_logger().info("Displacement node shutting down (release sequence complete).")
+        self.destroy_node()
+        rclpy.shutdown()
 
     # ------------------------- Timer loop -------------------------
     def _step(self) -> None:
@@ -279,6 +282,12 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         if self._holding:
             self._publish_hold()
             self._check_force_release()
+            if self._shutdown_requested:
+                self._shutdown()
+        # covers the window where the shutdown flag is set
+        # but the node is no longer in the active hold loop
+        elif self._shutdown_requested:
+            self._shutdown()
 
 
 def main(args=None) -> None:
@@ -286,8 +295,6 @@ def main(args=None) -> None:
     node = ApplePluckImpedanceControlDisplacementNode()
     try:
         rclpy.spin(node)
-    except SystemExit:
-        pass
     except KeyboardInterrupt:
         pass
     
