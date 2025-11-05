@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional
 import numpy as np
 
@@ -22,7 +23,7 @@ class MoveToPositionAction:
     - Exits the process once the target is reached
     """
 
-    def __init__(self, node: Node, *, on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: Node, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
         self._node = node
         self._on_complete = on_complete
 
@@ -207,5 +208,7 @@ class MoveToPositionAction:
             self._node.get_logger().error(
                 "Exception raised while move-to-pos shutdown: %s", exc
             )
+        # Give ROS2 QOS a moment to flush the latched release event before shutdown
+        time.sleep(0.1)
         self._node.destroy_node()
         rclpy.shutdown()

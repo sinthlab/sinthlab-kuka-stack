@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
@@ -27,7 +26,7 @@ class MoveToStartNode(Node):
         self._pub_done = create_transient_bool_publisher(self, "move_to_start/done")
         self._done_published = False
 
-        self._action = MoveToPositionAction(self, on_complete=self._on_action_complete)
+        self._action = MoveToPositionAction(self, to_start=None, on_complete=self._on_action_complete)
 
     def _on_action_complete(self) -> None:
         if self._done_published:
