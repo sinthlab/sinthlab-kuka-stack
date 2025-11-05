@@ -6,11 +6,10 @@ import rclpy
 from rclpy.node import Node
 from ruckig import Ruckig, InputParameter, OutputParameter
 from std_msgs.msg import Bool
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 import time
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from helpers.common_threshold import get_required_param, DebugTicker
+from helpers.common_threshold import get_required_param, DebugTicker, create_transient_bool_publisher
 from helpers.param_logging import log_params_once
 
 
@@ -72,24 +71,21 @@ class MoveToStartNode(Node):
         self._shutdown_requested = False
 
         # Trajectory generator (Ruckig) members (lazy init)
-        self._trajectory_generation: Optional[Ruckig] = None
-        self._trajectory_gen_in: Optional[InputParameter] = None
-        self._trajectory_gen_out: Optional[OutputParameter] = None
+        self._trajectory_generation = None  # type: Optional[Ruckig]
+        self._trajectory_gen_in = None      # type: Optional[InputParameter]
+        self._trajectory_gen_out = None     # type: Optional[OutputParameter]
 
         # ROS I/O
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
         self._pub_joint = self.create_publisher(LBRJointPositionCommand, self._cmd_topic, 1)
-        # Done signal (latched/transient-local so late subscribers still receive it)
-        done_qos = QoSProfile(depth=1)
-        done_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        done_qos.reliability = ReliabilityPolicy.RELIABLE
-        self._pub_done = self.create_publisher(Bool, "move_to_start/done", done_qos)
+        self._pub_done = create_transient_bool_publisher(self, "move_to_start/done")
 
         # Control timer
         self._timer = self.create_timer(self._dt, self._step)
 
         self.get_logger().info(
-            f"move-to-start enabled={self._moving}, trajectory_gen_target(rad)={self._joint_pos_target.tolist()}, tol={self._joint_pos_tol}"
+            f"move-to-start enabled={self._moving}, trajectory_gen_target(rad)={self._joint_pos_target.tolist()}, "
+            f"tol={self._joint_pos_tol}"
         )
 
     def _on_state(self, msg: LBRState) -> None:

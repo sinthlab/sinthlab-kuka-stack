@@ -5,6 +5,7 @@ from typing import Optional
 from rclpy.node import Node
 from std_msgs.msg import Bool
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+from rclpy.publisher import Publisher
 
 
 class DebugTicker:
@@ -55,6 +56,14 @@ class DoneGate:
     @property
     def done(self) -> bool:
         return self._done
+
+
+def create_transient_bool_publisher(node: Node, topic: str) -> Publisher:
+    """Create a latched/transient-local Bool publisher suitable for done gating topics."""
+    qos = QoSProfile(depth=1)
+    qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+    qos.reliability = ReliabilityPolicy.RELIABLE
+    return node.create_publisher(Bool, topic, qos)
 
 
 def get_required_param(node: Node, name: str):

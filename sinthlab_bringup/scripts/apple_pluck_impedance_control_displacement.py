@@ -13,7 +13,7 @@ from geometry_msgs.msg import TransformStamped, WrenchStamped
 from std_msgs.msg import Bool
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from helpers.common_threshold import DoneGate, DebugTicker, get_required_param
+from helpers.common_threshold import DoneGate, DebugTicker, get_required_param, create_transient_bool_publisher
 from helpers.param_logging import log_params_once
 
 class ApplePluckImpedanceControlDisplacementNode(Node):
@@ -103,11 +103,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._state_sub = self.create_subscription(LBRState, self._state_topic, self._on_state, 1)
         self._wrench_sub = self.create_subscription(WrenchStamped, self._wrench_topic, self._on_wrench, 10)
         self._hold_pub = self.create_publisher(LBRJointPositionCommand, self._command_topic, 1)
-
-        release_qos = rclpy.qos.QoSProfile(depth=1)
-        release_qos.durability = rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL
-        release_qos.reliability = rclpy.qos.ReliabilityPolicy.RELIABLE
-        self._release_pub = self.create_publisher(Bool, self._release_done_topic, release_qos)
+        self._release_pub = create_transient_bool_publisher(self, self._release_done_topic)
 
         # TF listener fills the buffer with incoming transforms 
         # so EE pose lookups stay live
