@@ -207,5 +207,5 @@ class MoveToPositionAction:
             self._node.get_logger().error(
                 "Exception raised while move-to-pos shutdown: %s", exc
             )
-        self.destroy_node()
+        self._node.destroy_node()
         rclpy.shutdown()
