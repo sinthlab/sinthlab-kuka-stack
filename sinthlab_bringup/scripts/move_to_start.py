@@ -36,8 +36,6 @@ class MoveToStartNode(Node):
         # Publish done signal before shutting down, so downstream nodes can proceed
         try:
             self._pub_done.publish(Bool(data=True))
-            # Small delay to allow message to flush over DDS
-            time.sleep(0.05)
             self.get_logger().info("Move-to-start reached target; published done=true.")
         except Exception:
             self.get_logger().warn("Failed to publish move_to_start/done; proceeding to shutdown.")

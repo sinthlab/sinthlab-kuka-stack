@@ -23,7 +23,6 @@
     update_rate: 200  # [Hz]
 
     # Start gating
-    start_on_done_topic: true
     done_topic: "move_to_start/done"
 
     # Cartesian frames
@@ -56,7 +55,7 @@
 
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
-    joint_move_tolerance: 0.01  # [rad]
+    joint_move_tolerance: 0.02  # [rad]
 
     # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
     # iiwa7 per-joint max velocities from URDF (deg/s):

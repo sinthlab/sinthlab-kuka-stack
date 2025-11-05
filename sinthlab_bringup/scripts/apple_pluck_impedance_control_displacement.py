@@ -34,7 +34,6 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._update_rate = int(get_required_param(self, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
 
-        self._start_on_done_topic = bool(get_required_param(self, "start_on_done_topic"))
         self._done_topic = str(get_required_param(self, "done_topic"))
 
         # Cartesian frames
@@ -64,7 +63,6 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
                 self,
                 params={
                     "update_rate": self._update_rate,
-                    "start_on_done_topic": self._start_on_done_topic,
                     "done_topic": self._done_topic,
                     "base_frame": self._base_frame,
                     "ee_frame": self._ee_frame,
@@ -85,7 +83,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
 
         # State
         self._baseline = None
-        self._ready = not self._start_on_done_topic
+        self._ready = False
         self._stopping = False
         self._holding = False
         self._hold_position = None
@@ -97,7 +95,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._shutdown_requested = False
 
         # Done gating: wait for done topic
-        self._done_gate = DoneGate(self, self._done_topic) if self._start_on_done_topic else None
+        self._done_gate = DoneGate(self, self._done_topic)
 
         # Publishers and subscribers to maintain hold and monitor forces
         self._state_sub = self.create_subscription(LBRState, self._state_topic, self._on_state, 1)

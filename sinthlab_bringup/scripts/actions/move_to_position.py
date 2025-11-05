@@ -35,7 +35,7 @@ class MoveToPositionAction:
         self._joint_pos_target = np.radians(self._joint_pos_target_deg)
         self._joint_pos_tol = float(get_required_param(node, "joint_move_tolerance"))
 
-        self._v_max_param = np.radians(np.array(get_required_param(node, "move_to_pos_v_max"), dtype=float))
+        self._v_max_param = np.radians(np.array(get_required_param(node, "move_to_pos_v_max"), dtype=float)).tolist()
         self._a_max_param = get_required_param(node, "move_to_pos_a_max")
         self._j_max_param = get_required_param(node, "move_to_pos_j_max")
 
