@@ -141,7 +141,7 @@ class MoveToPositionAction:
         max_err = float(np.max(np.abs(err)))
         if max_err <= self._joint_pos_tol:
             self._moving = False
-            self.get_logger().info(
+            self._node.get_logger().info(
                 f"Move-to-position complete; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
             )
             self._request_shutdown()
@@ -186,7 +186,7 @@ class MoveToPositionAction:
         self._trajectory_gen_in.max_acceleration = _to_arr(self._a_max_param, 2.0)
         self._trajectory_gen_in.max_jerk = _to_arr(self._j_max_param, 10.0)
 
-        self.get_logger().info(
+        self._node.get_logger().info(
             f"Trajectory generation v_max={np.round(self._trajectory_gen_in.max_velocity,2)}, a_max={np.round(self._trajectory_gen_in.max_acceleration,2)}, j_max={np.round(self._trajectory_gen_in.max_jerk,2)}"
         )
         
