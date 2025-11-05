@@ -27,11 +27,10 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         self._release_done_topic = str(get_required_param(self, "force_release_done_topic"))
         self._release_pub = create_transient_bool_publisher(self, self._release_done_topic)
 
-
-        if self._done_gate and self._done_gate.done:
-            self._action = CartesianImpedanceDisplacementMonitor(
-                self, to_start=self._to_start_action, on_complete=self._on_action_complete
-            )
+        self._action = CartesianImpedanceDisplacementMonitor(
+            self, to_start=self._to_start_action, 
+            on_complete=self._on_action_complete
+        )
     
     def _to_start_action(self) -> bool:
         return self._done_gate and self._done_gate.done

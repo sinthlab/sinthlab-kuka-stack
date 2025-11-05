@@ -99,7 +99,7 @@ class CartesianImpedanceDisplacementMonitor:
 
         self._timer = node.create_timer(self._dt, self._step)
 
-        node.get_logger().info(
+        self._node.get_logger().info(
             "Displacement monitor started: rate=%dHz, base='%s', ee='%s', axis='%s', disp_thr=%.4f m, hold_cmd_topic='%s', force_release_thr=%.2f N",
             self._update_rate,
             self._base_frame,
