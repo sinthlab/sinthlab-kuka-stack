@@ -32,6 +32,12 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install actions package alongside the scripts so `from actions...` works
+install(
+  DIRECTORY scripts/actions
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # Install launch files
 install(
   DIRECTORY launch

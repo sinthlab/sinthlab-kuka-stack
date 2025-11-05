@@ -58,20 +58,18 @@
     wait_for_controller_activation: true
     command_controller_name: "lbr_joint_position_command_controller"
 
-    # Move-to-start settings
-    use_initial_joint_position: true
     # Start position in degrees
-    initial_joint_position: [0, 10, 0, -80, 0, 90, 0]
+    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
     joint_move_tolerance: 0.01  # [rad]
 
     # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
     # iiwa7 per-joint max velocities from URDF (deg/s):
-    move_to_start_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
     # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
-    move_to_start_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    move_to_pos_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
     # Jerk is not specified upstream; keep a conservative default
-    move_to_start_j_max: 10.0   # [rad/s^3]
+    move_to_pos_j_max: 10.0   # [rad/s^3]
     
     # Debug logging
-    debug_log_enabled: true
+    debug_log_enabled: false
     debug_log_rate_hz: 2.0
