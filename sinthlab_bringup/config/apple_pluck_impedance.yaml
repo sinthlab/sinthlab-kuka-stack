@@ -54,10 +54,6 @@
     # Control timing for move-to-start
     update_rate: 100
 
-    # Wait for the correct controller to be active on the server before moving
-    wait_for_controller_activation: true
-    command_controller_name: "lbr_joint_position_command_controller"
-
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
     joint_move_tolerance: 0.01  # [rad]
