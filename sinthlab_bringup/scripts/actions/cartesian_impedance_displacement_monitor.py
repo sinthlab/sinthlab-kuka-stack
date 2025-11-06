@@ -14,12 +14,7 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped, WrenchStamped
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from helpers.common_threshold import (
-    DoneGate,
-    DebugTicker,
-    create_transient_bool_publisher,
-    get_required_param,
-)
+from helpers.common_threshold import DebugTicker, get_required_param
 from helpers.param_logging import log_params_once
 
 
@@ -35,7 +30,8 @@ class CartesianImpedanceDisplacementMonitor:
         self._node = node
         self._to_start = to_start
         self._on_complete = on_complete
-
+        
+        # Tracks when the action is ready to be triggered
         self._ready = False
 
         # Parameters sourced from the hosting node (YAML/overrides)
@@ -100,14 +96,10 @@ class CartesianImpedanceDisplacementMonitor:
         self._timer = node.create_timer(self._dt, self._step)
 
         self._node.get_logger().info(
-            "Displacement monitor started: rate=%dHz, base='%s', ee='%s', axis='%s', disp_thr=%.4f m, hold_cmd_topic='%s', force_release_thr=%.2f N",
-            self._update_rate,
-            self._base_frame,
-            self._ee_frame,
-            self._disp_axis,
-            self._disp_threshold_m,
-            self._command_topic,
-            self._force_release_threshold,
+            f"Displacement monitor started: rate={self._update_rate}Hz, "
+            f"base='{self._base_frame}', ee='{self._ee_frame}', axis='{self._disp_axis}', "
+            f"disp_thr={self._disp_threshold_m:.4f} m, hold_cmd_topic='{self._command_topic}', "
+            f"force_release_thr={self._force_release_threshold:.2f} N"
         )
 
     # ------------------------------------------------------------------
@@ -219,10 +211,11 @@ class CartesianImpedanceDisplacementMonitor:
 
     def _step(self) -> None:
         # wait till ready callback is ready to start this action
-        if not self._ready and self._to_start():
-            self._ready = True
-        else:
-            return
+        if not self._ready:
+            if self._to_start():
+                self._ready = True
+            else:
+                return
         
         if self._baseline is None:
             ts = self._lookup()

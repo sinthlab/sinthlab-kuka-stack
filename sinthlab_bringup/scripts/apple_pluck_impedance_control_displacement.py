@@ -26,6 +26,7 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         
         self._release_done_topic = str(get_required_param(self, "force_release_done_topic"))
         self._release_pub = create_transient_bool_publisher(self, self._release_done_topic)
+        self._done_published = False
 
         self._action = CartesianImpedanceDisplacementMonitor(
             self, to_start=self._to_start_action, 
@@ -36,7 +37,16 @@ class ApplePluckImpedanceControlDisplacementNode(Node):
         return self._done_gate and self._done_gate.done
     
     def _on_action_complete(self) -> None:
-        self._release_pub.publish(Bool(data=True))      
+        if self._done_published:
+            return
+        self._done_published = True
+        # Publish done signal before shutting down
+        # Note, shutdown handled by action itself
+        try:
+            self._release_pub.publish(Bool(data=True))
+            self.get_logger().info(f"Force is released from EE; published done=true in {self._release_done_topic}.")
+        except Exception:
+            self.get_logger().warn(f"Failed to publish to {self._release_done_topic}; proceeding to shutdown.")
 
 def main(args=None) -> None:
     rclpy.init(args=args)

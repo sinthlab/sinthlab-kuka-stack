@@ -1,22 +1,3 @@
-/lbr/apple_pluck_impedance_control_force:
-  ros__parameters:
-    # Control timing
-    update_rate: 200  # control rate for impedance node [Hz]
-
-    # Wrench topic to subscribe to (relative to node namespace)
-    wrench_topic: "force_torque_broadcaster/wrench"
-
-    # Start gating
-    start_on_done_topic: true
-    done_topic: "move_to_start/done"
-
-    # Pull-force stop (EE frame, Z-axis)
-    pull_force_threshold: 80.0     # [N] abs(Z) in EE frame
-
-    # Debug logging for threshold tuning
-    debug_log_enabled: true
-    debug_log_rate_hz: 2.0
-
 /lbr/apple_pluck_impedance_control_displacement:
   ros__parameters:
     # Control timing
@@ -64,6 +45,34 @@
     move_to_pos_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
     # Jerk is not specified upstream; keep a conservative default
     move_to_pos_j_max: 10.0   # [rad/s^3]
+    
+    start_action_needed: False
+    move_done_topic: "move_to_start/done"
+
+    # Debug logging
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
+/lbr/move_to_start_recover:
+  ros__parameters:
+    # Control timing for move-to-start
+    update_rate: 100
+
+    # Start position in degrees
+    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
+    joint_move_tolerance: 0.02  # [rad]
+
+    # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
+    # iiwa7 per-joint max velocities from URDF (deg/s):
+    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
+    move_to_pos_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    # Jerk is not specified upstream; keep a conservative default
+    move_to_pos_j_max: 10.0   # [rad/s^3]
+    
+    start_action_needed: True
+    move_done_topic: "move_to_start/done"
+    force_release_done_topic: "displacement_force_release/done"
     
     # Debug logging
     debug_log_enabled: false

@@ -108,13 +108,55 @@ ros2 launch lbr_bringup hardware.launch.py \
     ctrl:=lbr_joint_position_command_controller \
     model:=iiwa7
 ```
-6. Run the apple pluck scenario impedance controller using command. here we have two different stopping criteria: "force" and "displacement" and that needs to be specified via threshold_condition as shown in example below
+6. Run the apple pluck scenario impedance controller using command. 
 ```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py threshold_condition:=displacement
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
 ```
 You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace).
 
 7. Try gently applying force on end effector
+
+## EXPLANATION and setup for apple pluck scenario
+```mermaid
+graph LR
+    subgraph "Nodes (namespace: lbr)"
+        start["move_to_start 
+        script: move_to_start.py"]
+        impedance["apple_pluck_impedance_control_displacement 
+        script: apple_pluck_impedance_control_displacement.py"]
+        recover["move_to_start_recover
+        script: move_to_start.py"]
+    end
+
+    subgraph "Topics / Streams"
+        moveDone["lbr/move_to_start/done (Bool)"]
+        forceDone["lbr/displacement_force_release/done (Bool)"]
+        stateTopic["lbr/state (LBRState)"]
+        wrenchTopic["lbr/force_torque_broadcaster/wrench (WrenchStamped)"]
+        cmdTopic["lbr/command/joint_position (LBRJointPositionCommand)"]
+        tfbuf["tf buffer (base <-> ee frames)"]
+    end
+
+    start -->|publish| moveDone
+    start -->|publish| cmdTopic
+    impedance -->|publish| forceDone
+    impedance -->|publish hold| cmdTopic
+    recover -->|publish| moveDone
+    recover -->|publish| cmdTopic
+
+    moveDone -->|subscribe| impedance
+    forceDone -->|optional gate| start
+    stateTopic -->|subscribe| start
+    stateTopic -->|subscribe| impedance
+    wrenchTopic -->|subscribe| impedance
+    moveDone -->|subscribe| recover
+    forceDone -->|must gate| recover
+    tfbuf -->|lookup| impedance
+```
+- `lbr/move_to_start` (move_to_start.py) drives the arm to the initial pose, publishing commands on `lbr/command/joint_position` and announcing completion on `lbr/move_to_start/done`. It always listens to `lbr/state` and optionally to `lbr/displacement_force_release/done` when `start_action_needed == true`.
+- `lbr/apple_pluck_impedance_control_displacement` (apple_pluck_impedance_control_displacement.py) waits on `lbr/move_to_start/done`, then monitors displacement/force via `lbr/state`, `lbr/force_torque_broadcaster/wrench`, and `TF`. It latches completion on `lbr/displacement_force_release/done` and temporarily publishes hold commands on `lbr/command/joint_position`.
+- `lbr/move_to_start_recover` (same script as the first node) runs after the displacement node exits. With `start_action_needed == true`, it blocks on `lbr/displacement_force_release/done` before republishing the start trajectory and then shuts down the launch once `lbr/move_to_start/done` fires again.
+
 
 **Troubleshoot**: 
 - if your rviz window launches but is not displaying anything or gazebo window is crashing immediately, It might be because the graphics library trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the commands to launch rviz/gazebo again.

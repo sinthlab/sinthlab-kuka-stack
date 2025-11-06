@@ -33,13 +33,6 @@ def generate_launch_description():
         model=LaunchConfiguration("robot_type")
     )
 
-    # Stop threshold criteria selection.
-    threshold_condition = DeclareLaunchArgument(
-        "threshold_condition",
-        default_value="force",
-        description="Stop criterion: 'force' (EE Z force) or 'displacement' (Cartesian EE displacement)",
-        choices=["force", "displacement"],
-    )
 
     # First: run move_to_start node. It will exit once the target is reached.
     move_to_start_node = Node(
@@ -54,24 +47,8 @@ def generate_launch_description():
         ],
     )
 
-    # Second: apple_pluck_impedance_control node (force mode). It will internally wait for the
+    # Second: apple_pluck_impedance_control node. It will internally wait for the
     # move_to_start '/move_to_start/done' topic before starting to monitor force.
-    impedance_force_node = Node(
-        package="sinthlab_bringup",
-        executable="apple_pluck_impedance_control_force.py",
-        name="apple_pluck_impedance_control_force",
-        namespace="lbr",
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-        condition=IfCondition(PythonExpression([
-            "'", LaunchConfiguration("threshold_condition"), "' == 'force'"
-        ])),
-    )
-
-    # Alternative: displacement stop criterion node
     impedance_displacement_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_displacement.py",
@@ -82,15 +59,13 @@ def generate_launch_description():
             LaunchConfiguration("params_file"),
             robot_description,
         ],
-        condition=IfCondition(PythonExpression([
-            "'", LaunchConfiguration("threshold_condition"), "' == 'displacement'"
-        ])),
     )
     
+    # Finally: run move_to_start again to recover to start position after pluck.
     move_to_start_recover_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
-        name="move_to_start",
+        name="move_to_start_recover",
         namespace="lbr",
         output="screen",
         parameters=[
@@ -98,17 +73,8 @@ def generate_launch_description():
             robot_description,
         ],
     )
-
-    restart_move_to_start_handler = RegisterEventHandler(
-        OnProcessExit(
-            target_action=impedance_displacement_node,
-            on_exit=[
-                LogInfo(msg="Displacement monitoring finished; relaunching move_to_start."),
-                move_to_start_recover_node,
-            ],
-        )
-    )
-
+    
+    # Shutdown launch once recovery move_to_start completes
     shutdown_after_recover = RegisterEventHandler(
         OnProcessExit(
             target_action=move_to_start_recover_node,
@@ -124,10 +90,8 @@ def generate_launch_description():
             params_file,
             robot_type,
             move_to_start_node,
-            threshold_condition,
-            impedance_force_node,
             impedance_displacement_node,
-            restart_move_to_start_handler,
+            move_to_start_recover_node,
             shutdown_after_recover,
         ]
     )

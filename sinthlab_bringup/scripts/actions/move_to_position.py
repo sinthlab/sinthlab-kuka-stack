@@ -25,7 +25,11 @@ class MoveToPositionAction:
 
     def __init__(self, node: Node, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
         self._node = node
+        self._to_start = to_start
         self._on_complete = on_complete
+        
+        # Tracks when the action is ready to be triggered
+        self._ready = False
 
         # Parameters
         self._update_rate = int(get_required_param(node, "update_rate"))
@@ -96,6 +100,14 @@ class MoveToPositionAction:
             self._init = True
 
     def _step(self) -> None:
+        # wait till ready callback is ready to start this action
+        if not self._ready:
+            if self._to_start():
+                self._ready = True
+            else:
+                return
+        
+        # Early exit if shutdown requested
         if self._shutdown_requested:
             return
 
@@ -134,6 +146,7 @@ class MoveToPositionAction:
             self._prepare_ruckig(trajectory_generation)
             if self._trajectory_generation is None:
                 # Could not prepare; stop trying
+                self._node.get_logger().info(f"Move-to-position couldnot generate trajectory; stopping.")
                 self._moving = False
                 self._request_shutdown()
                 return
