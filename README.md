@@ -154,10 +154,10 @@ graph LR
 - `lbr/apple_pluck_impedance_control_displacement` (apple_pluck_impedance_control_displacement.py) waits on `lbr/move_to_start/done`, then monitors displacement/force via `lbr/state`, `lbr/force_torque_broadcaster/wrench`, and `TF`. It latches completion on `lbr/displacement_force_release/done` and temporarily publishes hold commands on `lbr/command/joint_position`.
 - `lbr/move_to_start_recover` (same script as the first node) runs after the displacement node exits. With `start_action_needed == true`, it blocks on `lbr/displacement_force_release/done` before republishing the start trajectory and then shuts down the launch once `lbr/move_to_start/done` fires again.
 
-**Note on default topics/states available**
+**Note on default topics/states available from server**
 - `lbr/state` comes from the lbr_state_broadcaster controller (`lbr_ros2_control/LBRStateBroadcaster`) that hardware.launch.py spawns via `/controller_manager`. It wraps the real-time stream coming from the KUKA FRI driver and republishes it as an LBRState message.
 - `lbr/force_torque_broadcaster/wrench` is published by the standard ROS 2 controller force_torque_broadcaster (`force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster`), also spawned by the same launch file. It exposes the estimated wrist wrench provided by the hardware interface.
-- TF frames are produced by the robot_state_publisher node (`lbr/robot_state_publisher`). It listens to `joint_states` from the joint state broadcaster and continuously republishes the `lbr_link_*` transforms.
+- TF frames are produced by the robot_state_publisher node (`lbr/robot_state_publisher`), also in the same launch file. It listens to `joint_states` from the joint state broadcaster and continuously republishes the `lbr_link_*` transforms.
 
 ## Troubleshoot 
 - if your rviz window launches but is not displaying anything or gazebo window is crashing immediately, It might be because the graphics library trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the commands to launch rviz/gazebo again.
