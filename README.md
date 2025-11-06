@@ -91,6 +91,8 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=mock rviz:=true
 ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=true
 ```
 ## Running applications on the Hardware
+Note that there is a python dependency to be installed called ruckig to run the move_to_position. This step needs to be run only once, after you launch wsl:
+`pip install ruckig` 
 ### Running the apple pluck scenario
 1. On the KUKA Smartpad, launch the LBRServer application
 2. Select:
