@@ -121,13 +121,12 @@ class MoveToPositionAction:
                     self._subscribers_ready = True
                     self._moving = True
                     self._node.get_logger().info(
-                        "Subscriber detected on '%s'. Starting move-to-pos.",
-                        self._cmd_topic,
+                        f"Subscriber detected on '{self._cmd_topic}'. Starting move-to-pos."
                     )
                 else:
                     if self._debug_log_enabled and self._dbg.tick(self._dt):
                         self._node.get_logger().info(
-                            "Waiting for a subscriber on '%s'...", self._cmd_topic
+                            f"Waiting for a subscriber on '{self._cmd_topic}'..."
                         )
                     return
             except Exception:
@@ -219,7 +218,7 @@ class MoveToPositionAction:
             self._on_complete()
         except Exception as exc:
             self._node.get_logger().error(
-                "Exception raised while move-to-pos shutdown: %s", exc
+                f"Exception raised while move-to-pos shutdown: {exc}"
             )
         # Give ROS2 QOS a moment to flush the latched release event before shutdown
         time.sleep(0.2)

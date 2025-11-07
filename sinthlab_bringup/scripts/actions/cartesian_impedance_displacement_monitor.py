@@ -163,10 +163,7 @@ class CartesianImpedanceDisplacementMonitor:
                 self._holding = False
                 self._stop_hold_publish()
                 self._node.get_logger().info(
-                    "Force below threshold (|F|=%.2f N <= %.2f N) for %.2fs. requesting shutdown.",
-                    self._force_magnitude,
-                    self._force_release_threshold,
-                    self._release_elapsed
+                    f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
                 )
                 if self._release_shutdown_delay > 0.0:
                     time.sleep(self._release_shutdown_delay)
@@ -174,9 +171,7 @@ class CartesianImpedanceDisplacementMonitor:
         else:
             if self._release_elapsed > 0.0 and self._debug_log_enabled and not self._release_reset_logged:
                 self._node.get_logger().info(
-                    "Force release timer reset: |F|=%.2f N > %.2f N",
-                    self._force_magnitude,
-                    self._force_release_threshold,
+                    f"Force release timer reset: |F|={self._force_magnitude:.2f} N > {self._force_release_threshold:.2f} N"
                 )
                 self._release_reset_logged = True
             self._release_elapsed = 0.0
@@ -203,7 +198,7 @@ class CartesianImpedanceDisplacementMonitor:
         try:
             self._on_complete()
         except Exception as exc:
-            self._node.get_logger().error("Exception during displacement monitor shutdown callback: %s", exc)
+            self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
         # Give ROS2 QOS a moment to flush the latched release event before shutdown
         time.sleep(self._release_shutdown_delay)
         self._node.destroy_node()
@@ -233,7 +228,7 @@ class CartesianImpedanceDisplacementMonitor:
         disp = self._axis_disp_m(ts_now, self._baseline, self._disp_axis)
         if self._debug_log_enabled and not self._holding and self._dbg.tick(self._dt):
             self._node.get_logger().info(
-                "EE disp=%.4f m (axis=%s, thr=%.4f m)", disp, self._disp_axis, self._disp_threshold_m
+                f"EE disp={disp:.4f} m (axis={self._disp_axis}, thr={self._disp_threshold_m:.4f} m)"
             )
 
         if not self._stopping and disp >= self._disp_threshold_m:
