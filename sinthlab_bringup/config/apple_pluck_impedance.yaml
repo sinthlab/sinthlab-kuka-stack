@@ -23,7 +23,7 @@
     force_release_threshold_newton: 5.0
     force_release_duration_sec: 3.0
     force_release_done_topic: "displacement_force_release/done"
-    force_release_shutdown_delay_sec: 0.3
+    force_release_shutdown_delay_sec: 0.5
 
     # Debug logging
     debug_log_enabled: false
@@ -48,6 +48,7 @@
     
     start_action_needed: False
     move_done_topic: "move_to_start/done"
+    subscriber_latch_delay_sec: 0.5
 
     # Debug logging
     debug_log_enabled: false
@@ -72,6 +73,8 @@
     
     start_action_needed: True
     move_done_topic: "move_to_start/done"
+    subscriber_latch_delay_sec: 0.5
+
     force_release_done_topic: "displacement_force_release/done"
     
     # Debug logging

@@ -205,7 +205,7 @@ class CartesianImpedanceDisplacementMonitor:
         except Exception as exc:
             self._node.get_logger().error("Exception during displacement monitor shutdown callback: %s", exc)
         # Give ROS2 QOS a moment to flush the latched release event before shutdown
-        time.sleep(0.1)
+        time.sleep(self._release_shutdown_delay)
         self._node.destroy_node()
         rclpy.shutdown() 
 
@@ -240,9 +240,7 @@ class CartesianImpedanceDisplacementMonitor:
             self._stopping = True
             self._holding = True
             self._node.get_logger().info(
-                "Displacement threshold reached: value=%.4f m >= %.4f m. Holding position and monitoring force.",
-                disp,
-                self._disp_threshold_m,
+                f"Displacement threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. Holding position and monitoring force.",
             )
 
         if self._holding:

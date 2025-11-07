@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rclpy
+import time
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
@@ -50,6 +51,8 @@ class MoveToStartNode(Node):
         try:
             self._move_done.publish(Bool(data=True))
             self.get_logger().info(f"Move-to-start reached target; published done=true in {self._move_done_topic}.")
+            # Allow some time for subscribers to latch onto the message
+            time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
         except Exception:
             self.get_logger().warn(f"Failed to publish to {self._move_done_topic}; proceeding to shutdown.")
 

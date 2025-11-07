@@ -222,6 +222,6 @@ class MoveToPositionAction:
                 "Exception raised while move-to-pos shutdown: %s", exc
             )
         # Give ROS2 QOS a moment to flush the latched release event before shutdown
-        time.sleep(0.1)
+        time.sleep(0.2)
         self._node.destroy_node()
         rclpy.shutdown()
