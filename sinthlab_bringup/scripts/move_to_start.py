@@ -29,10 +29,11 @@ class MoveToStartNode(Node):
         
         # Flag to control if we are waiting for force release from impedance control node.
         self.start_action_needed = bool(get_required_param(self, "start_action_needed"))
-        
-        self._force_release_topic = str(get_required_param(self, "force_release_done_topic"))
-        # Done gating: wait for force release in impedance displacement node
-        self._force_release_gate = DoneGate(self, self._force_release_topic)
+
+        if self.start_action_needed:
+            self._force_release_topic = str(get_required_param(self, "force_release_done_topic"))
+            # Done gating: wait for force release in impedance displacement node
+            self._force_release_gate = DoneGate(self, self._force_release_topic)
 
         self._action = MoveToPositionAction(self, to_start=self._to_start_action, on_complete=self._on_action_complete)
     
