@@ -49,6 +49,7 @@ def generate_launch_description():
 
     # Second: apple_pluck_impedance_control node. It will internally wait for the
     # move_to_start '/move_to_start/done' topic before starting to monitor force.
+    # TODO: add the admittance control change to this node and adjust the motion resistance
     impedance_displacement_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_displacement.py",
