@@ -6,8 +6,8 @@ from rclpy.node import Node
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
-from lbr_demos_advanced_py.lbr_demos_advanced_py.admittance_controller import AdmittanceController
-from lbr_demos_advanced_py.lbr_demos_advanced_py.lbr_base_position_command_node import (
+from lbr_demos_advanced_py.admittance_controller import AdmittanceController
+from lbr_demos_advanced_py.lbr_base_position_command_node import (
     LBRBasePositionCommandNode,
 )
 

@@ -24,13 +24,12 @@ class MoveToStartNode(Node):
         )
         
         self._move_done_topic = str(get_required_param(self, "move_done_topic"))
-        self._move_done = create_transient_bool_publisher(self._move_done_topic)
+        self._move_done = create_transient_bool_publisher(self, self._move_done_topic)
         self._done_published = False
         
         # Flag to control if we are waiting for force release from impedance control node.
-        self.start_action_needed = False
-        if self.has_parameter("start_action_needed"):
-            self.start_action_needed = bool(self.get_parameter("start_action_needed").value)
+        self.start_action_needed = bool(get_required_param(self, "start_action_needed"))
+        
         self._force_release_topic = str(get_required_param(self, "force_release_done_topic"))
         # Done gating: wait for force release in impedance displacement node
         self._force_release_gate = DoneGate(self, self._force_release_topic)
