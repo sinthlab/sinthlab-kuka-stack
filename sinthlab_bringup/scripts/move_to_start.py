@@ -32,16 +32,16 @@ class MoveToStartNode(Node):
         self.start_action_needed = bool(get_required_param(self, "start_action_needed"))
 
         if self.start_action_needed:
-            self._force_release_topic = str(get_required_param(self, "force_release_done_topic"))
+            self._admittance_release_topic = str(get_required_param(self, "admittance_done_topic"))
             # Done gating: wait for force release in impedance displacement node
-            self._force_release_gate = DoneGate(self, self._force_release_topic)
+            self._admittance_release_gate = DoneGate(self, self._admittance_release_topic)
 
         self._action = MoveToPositionAction(self, to_start=self._to_start_action, on_complete=self._on_action_complete)
     
     def _to_start_action(self) -> bool:
         if not self.start_action_needed:
             return True
-        return self._force_release_gate and self._force_release_gate.done
+        return self._admittance_release_gate and self._admittance_release_gate.done
 
     def _on_action_complete(self) -> None:
         if self._done_published:

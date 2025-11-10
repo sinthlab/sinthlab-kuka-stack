@@ -4,7 +4,7 @@
     update_rate: 200  # [Hz]
 
     # Start gating
-    done_topic: "move_to_start/done"
+    done_topic: "admittance_start/done"
 
     # Cartesian frames
     base_frame: "lbr_link_0"
@@ -75,8 +75,32 @@
     move_done_topic: "move_to_start/done"
     subscriber_latch_delay_sec: 0.5
 
-    force_release_done_topic: "displacement_force_release/done"
+    admittance_done_topic: "admittance_done/done"
     
     # Debug logging
     debug_log_enabled: false
     debug_log_rate_hz: 2.0
+
+/lbr/admittance_controller:
+  ros__parameters:
+    # Control timing
+    update_rate: 100  # [Hz]
+
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+
+    move_done_topic: "move_to_start/done"
+    admittance_start_topic: "admittance_start/done"
+    force_release_done_topic: "displacement_force_release/done"
+    admittance_done_topic: "admittance_done/done"
+
+    f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
+    dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    exp_smooth: 0.95
+
+    # Topics for holding and monitoring
+    lbr_joint_position_command_topic: "command/joint_position"
+    lbr_state_topic: "state"
+
+    subscriber_latch_delay_sec: 0.5

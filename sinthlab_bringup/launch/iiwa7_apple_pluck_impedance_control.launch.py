@@ -34,7 +34,7 @@ def generate_launch_description():
     )
 
 
-    # First: run move_to_start node. It will exit once the target is reached.
+    # Move the arm to the predefined start position.
     move_to_start_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
@@ -47,9 +47,20 @@ def generate_launch_description():
         ],
     )
 
-    # Second: apple_pluck_impedance_control node. It will internally wait for the
-    # move_to_start '/move_to_start/done' topic before starting to monitor force.
-    # TODO: add the admittance control change to this node and adjust the motion resistance
+    # Start admittance control (software impedance while the robot stays in FRI position mode).
+    admittance_control_node = Node(
+        package="sinthlab_bringup",
+        executable="admittance_control_mode.py",
+        name="admittance_controller",
+        namespace="lbr",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("params_file"),
+            robot_description,
+        ],
+    )
+
+    # Monitor displacement and force-release while admittance control keeps running.
     impedance_displacement_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_displacement.py",
@@ -61,8 +72,8 @@ def generate_launch_description():
             robot_description,
         ],
     )
-    
-    # Finally: run move_to_start again to recover to start position after pluck.
+
+    # Recover to start once the displacement monitor signals force release.
     move_to_start_recover_node = Node(
         package="sinthlab_bringup",
         executable="move_to_start.py",
@@ -74,7 +85,7 @@ def generate_launch_description():
             robot_description,
         ],
     )
-    
+
     # Shutdown launch once recovery move_to_start completes
     shutdown_after_recover = RegisterEventHandler(
         OnProcessExit(
@@ -91,6 +102,7 @@ def generate_launch_description():
             params_file,
             robot_type,
             move_to_start_node,
+            admittance_control_node,
             impedance_displacement_node,
             move_to_start_recover_node,
             shutdown_after_recover,

@@ -66,7 +66,6 @@ class CartesianImpedanceDisplacementMonitor:
                     "wrench_topic": self._wrench_topic,
                     "force_release_threshold_newton": self._force_release_threshold,
                     "force_release_duration_sec": self._force_release_duration,
-                    "force_release_shutdown_delay_sec": self._release_shutdown_delay,
                     "debug_log_enabled": self._debug_log_enabled,
                     "debug_log_rate_hz": dbg_rate,
                 },
