@@ -9,6 +9,7 @@ from launch.substitutions import PathJoinSubstitution
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from lbr_bringup.description import LBRDescriptionMixin
+from lbr_bringup.ros2_control import LBRROS2ControlMixin
 
 
 def generate_launch_description():
@@ -31,6 +32,13 @@ def generate_launch_description():
     )
     robot_description = LBRDescriptionMixin.param_robot_description(
         model=LaunchConfiguration("robot_type")
+        mode="hardware"
+    )
+    
+    # Added robot_state_publisher to the launch so all nodes read the same pre-expanded robot_description
+    robot_state_publisher = LBRROS2ControlMixin.node_robot_state_publisher(
+        robot_description=robot_description,
+        use_sim_time=False,
     )
 
 
@@ -101,6 +109,7 @@ def generate_launch_description():
         [
             params_file,
             robot_type,
+            robot_state_publisher,
             move_to_start_node,
             admittance_control_node,
             impedance_displacement_node,

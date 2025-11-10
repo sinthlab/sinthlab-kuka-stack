@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from typing import Callable
+import re
 import numpy as np
 from numpy.typing import NDArray
 
@@ -56,7 +57,7 @@ class AdmittanceControlAction:
             raise ValueError("Exponential smoothing factor must be in [0, 1].")
         
         self._controller = AdmittanceController(
-            robot_description=str(get_required_param(node, "robot_description")),
+            robot_description=self._strip_ros2_control(str(get_required_param(node, "robot_description"))),
             base_link=str(get_required_param(node, "base_link")),
             end_effector_link=str(get_required_param(node, "end_effector_link")),
             f_ext_th=np.array(get_required_param(node, "f_ext_th")),
@@ -64,6 +65,10 @@ class AdmittanceControlAction:
             dx_gains=np.array(get_required_param(node, "dx_gains")),
         )
     
+    def _strip_ros2_control(self, urdf: str) -> str:
+        # Remove ros2_control blocks which optas cannot parse
+        return re.sub(r"<ros2_control[^>]*>.*?</ros2_control>", "", urdf, flags=re.DOTALL)
+
     def _on_lbr_state(self, lbr_state: LBRState) -> None:
         if not self._ready:
             if not self._to_start():
@@ -80,10 +85,9 @@ class AdmittanceControlAction:
             self._start_done = True
 
         elif self._ready and self._start_done:
-            try:
-                self._on_complete()
-            except Exception as exc:
-                self._node.get_logger().error(f"AdmittanceControlAction on_complete raised: {exc}")
+            # using on_complete callback to signal that admittance control has completed
+            # This will be called repeatedly to check for completion condition
+            self._on_complete()
 
     def _smooth_lbr_state(self, lbr_state: LBRState) -> None:
         if not self._init:
