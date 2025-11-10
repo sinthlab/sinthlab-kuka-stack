@@ -97,29 +97,26 @@ pip install ruckig
 pip install pyoptas
 ``` 
 ### Running the apple pluck scenario
-1. On the KUKA Smartpad, launch the LBRServer application
-2. Select:
-  - FRI send period: 10 ms
-  - IP address: 172.31.1.148
-  - FRI control mode: POSITION_CONTROL
-  - FRI client command mode: POSITION
-
-3. Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
-4. run `source install/setup.bash` in both the terminals. 
+1. On the Laptop, Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
+2. run `source install/setup.bash` in both the terminals. 
 *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
-5. From one terminal, Launch the Robot driver on the powershell by running command:
+3. From one terminal, Launch the Robot driver on the powershell by running command:
 ```
 ros2 launch lbr_bringup hardware.launch.py \
     ctrl:=lbr_joint_position_command_controller \
     model:=iiwa7
 ```
-6. Run the apple pluck scenario impedance controller using command. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
+4. On the KUKA Smartpad, launch the LBRServer application
+5. Select:
+  - FRI send period: 10 ms
+  - IP address: 172.31.1.148
+  - FRI control mode: POSITION_CONTROL
+  - FRI client command mode: POSITION
+6. Now back on the laptop, on the other terminal run the apple pluck scenario impedance controller using command below. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
 ```
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py stiffness_scale:=0.5
 ```
-You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace).
-
-7. Try gently applying force on end effector
+7. Try gently applying force on end effector, once the arm reaches at the start position for experiment and the message is displayed on the screen saying `Captured baseline EE pose for displacement thresholding`
 
 ### Explanation and setup for apple pluck scenario
 ```mermaid
