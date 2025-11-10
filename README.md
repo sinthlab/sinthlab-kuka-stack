@@ -101,7 +101,7 @@ pip install pyoptas
 2. Select:
   - FRI send period: 10 ms
   - IP address: 172.31.1.148
-  - FRI control mode: CARTESIAN_IMPEDANCE_CONTROL
+  - FRI control mode: POSITION_CONTROL
   - FRI client command mode: POSITION
 
 3. Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
@@ -113,9 +113,9 @@ ros2 launch lbr_bringup hardware.launch.py \
     ctrl:=lbr_joint_position_command_controller \
     model:=iiwa7
 ```
-6. Run the apple pluck scenario impedance controller using command. 
+6. Run the apple pluck scenario impedance controller using command. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
 ```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py stiffness_scale:=0.5
 ```
 You can adjust any parameter from here directly as needed by just passing it at the end of command (need not re-build whole workspace).
 
