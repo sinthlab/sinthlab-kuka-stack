@@ -31,7 +31,7 @@ def generate_launch_description():
         description="Robot variant passed to lbr_description xacro (e.g., iiwa7, iiwa14)",
     )
     robot_description = LBRDescriptionMixin.param_robot_description(
-        model=LaunchConfiguration("robot_type")
+        model=LaunchConfiguration("robot_type"),
         mode="hardware"
     )
     
