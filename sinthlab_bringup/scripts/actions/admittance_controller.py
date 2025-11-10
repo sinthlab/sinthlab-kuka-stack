@@ -56,13 +56,21 @@ class AdmittanceControlAction:
         if not 0.0 <= self._exp_smooth <= 1.0:
             raise ValueError("Exponential smoothing factor must be in [0, 1].")
         
+        stiffness_scale = float(get_required_param(node, "stiffness_scale"))
+        if not 0.0 <= stiffness_scale <= 1.0:
+            raise ValueError("stiffness_scale must be in [0, 1].")
+
+        scaled_f_ext_th = stiffness_scale * np.array(get_required_param(node, "f_ext_th"))
+        scaled_dq_gains = stiffness_scale * np.array(get_required_param(node, "dq_gains"))
+        scaled_dx_gains = stiffness_scale * np.array(get_required_param(node, "dx_gains"))
+
         self._controller = AdmittanceController(
             robot_description=self._strip_ros2_control(str(get_required_param(node, "robot_description"))),
             base_link=str(get_required_param(node, "base_link")),
             end_effector_link=str(get_required_param(node, "end_effector_link")),
-            f_ext_th=np.array(get_required_param(node, "f_ext_th")),
-            dq_gains=np.array(get_required_param(node, "dq_gains")),
-            dx_gains=np.array(get_required_param(node, "dx_gains")),
+            f_ext_th=scaled_f_ext_th,
+            dq_gains=scaled_dq_gains,
+            dx_gains=scaled_dx_gains,
         )
     
     def _strip_ros2_control(self, urdf: str) -> str:

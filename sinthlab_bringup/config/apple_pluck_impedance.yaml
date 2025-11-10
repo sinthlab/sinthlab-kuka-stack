@@ -86,6 +86,8 @@
     # Control timing
     update_rate: 100  # [Hz]
 
+    stiffness_scale: 1.0
+
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
@@ -94,9 +96,12 @@
     force_release_done_topic: "displacement_force_release/done"
     admittance_done_topic: "admittance_done/done"
 
-    f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
+    # multiplies the joint-space velocity correction after mapping through the Jacobian
+    # must have values for 7 joints of the arm
     dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    # acts in the cartesian space, which is 3 linear + 3 angular velocity gains
     dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
     exp_smooth: 0.95
 
     # Topics for holding and monitoring
