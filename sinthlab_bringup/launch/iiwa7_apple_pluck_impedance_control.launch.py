@@ -30,6 +30,12 @@ def generate_launch_description():
         default_value="iiwa7",
         description="Robot variant passed to lbr_description xacro (e.g., iiwa7, iiwa14)",
     )
+
+    stiffness_scale = DeclareLaunchArgument(
+        "stiffness_scale",
+        default_value="1.0",
+        description="Scalar applied to admittance gains ( (0,1] stiffer to softer )",
+    )
     robot_description = LBRDescriptionMixin.param_robot_description(
         model=LaunchConfiguration("robot_type"),
         mode="hardware"
@@ -65,6 +71,7 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
+            {"stiffness_scale": LaunchConfiguration("stiffness_scale")},
         ],
     )
 
@@ -110,6 +117,7 @@ def generate_launch_description():
             params_file,
             robot_type,
             robot_state_publisher,
+            stiffness_scale,
             move_to_start_node,
             admittance_control_node,
             impedance_displacement_node,
