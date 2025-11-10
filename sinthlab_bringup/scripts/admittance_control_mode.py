@@ -51,7 +51,7 @@ class AdmittanceControlNode(Node):
             self.get_logger().warn(f"Failed to publish to {self._admittance_in_action_topic};")
     
     def _on_action_complete(self) -> None:
-        if not self._force_release_gate and not self._force_release_gate.done:
+        if not self._force_release_gate.done:
             return
         try:
             self._admittance_done.publish(Bool(data=True))
