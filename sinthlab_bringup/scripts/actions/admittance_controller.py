@@ -57,8 +57,8 @@ class AdmittanceControlAction:
             raise ValueError("Exponential smoothing factor must be in [0, 1].")
         
         stiffness_scale = float(get_required_param(node, "stiffness_scale"))
-        if not 0.0 <= stiffness_scale <= 1.0:
-            raise ValueError("stiffness_scale must be in [0, 1].")
+        if not 0.0 < stiffness_scale <= 1.0:
+            raise ValueError("stiffness_scale must be in (0, 1].")
 
         scaled_f_ext_th = stiffness_scale * np.array(get_required_param(node, "f_ext_th"))
         scaled_dq_gains = stiffness_scale * np.array(get_required_param(node, "dq_gains"))
@@ -74,14 +74,15 @@ class AdmittanceControlAction:
         )
     
     def _strip_ros2_control(self, urdf: str) -> str:
-        # Remove ros2_control blocks which optas cannot parse
+        # Remove ros2_control blocks which optas cannot parse in 
+        # the URDF of robot description
         return re.sub(r"<ros2_control[^>]*>.*?</ros2_control>", "", urdf, flags=re.DOTALL)
 
     def _on_lbr_state(self, lbr_state: LBRState) -> None:
         if not self._ready:
             if not self._to_start():
-                return          # stay idle until the gate flips
-            self._ready = True      # latch once the gate opens
+                return # stay idle until ready to start the admittance control
+            self._ready = True # latch once the gate opens
         
         self._smooth_lbr_state(lbr_state)
         lbr_command = self._controller(self._lbr_state, self._dt)
