@@ -32,7 +32,7 @@
 /lbr/move_to_start:
   ros__parameters:
     # Control timing for move-to-start
-    update_rate: 100
+    update_rate: 200
 
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
@@ -57,7 +57,7 @@
 /lbr/move_to_start_recover:
   ros__parameters:
     # Control timing for move-to-start
-    update_rate: 100
+    update_rate: 200
 
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
@@ -84,7 +84,7 @@
 /lbr/admittance_controller:
   ros__parameters:
     # Control timing
-    update_rate: 100  # [Hz]
+    update_rate: 200  # [Hz]
 
     stiffness_scale: 1.0
 
@@ -99,7 +99,7 @@
     # multiplies the joint-space velocity correction after mapping through the Jacobian
     # must have values for 7 joints of the arm
     dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    # acts in the cartesian space, which is 3 linear + 3 angular velocity gains
+    # acts in the cartesian space, which is 3 linear + 3 angular velocity gains 
     dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
     exp_smooth: 0.95
