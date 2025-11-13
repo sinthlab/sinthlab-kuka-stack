@@ -23,7 +23,7 @@
     force_release_threshold_newton: 5.0
     force_release_duration_sec: 3.0
     force_release_done_topic: "displacement_force_release/done"
-    force_release_shutdown_delay_sec: 0.5
+    force_release_shutdown_delay_sec: 0.8
 
     # Debug logging
     debug_log_enabled: false
@@ -48,7 +48,7 @@
     
     start_action_needed: False
     move_done_topic: "move_to_start/done"
-    subscriber_latch_delay_sec: 0.5
+    subscriber_latch_delay_sec: 1.0
 
     # Debug logging
     debug_log_enabled: false
@@ -73,7 +73,7 @@
     
     start_action_needed: True
     move_done_topic: "move_to_start/done"
-    subscriber_latch_delay_sec: 0.5
+    subscriber_latch_delay_sec: 1.0
 
     admittance_done_topic: "admittance_done/done"
     
@@ -98,7 +98,7 @@
 
     # multiplies the joint-space velocity correction after mapping through the Jacobian
     # must have values for 7 joints of the arm
-    dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    dq_gains: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
     # acts in the cartesian space, which is 3 linear + 3 angular velocity gains 
     dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
@@ -108,4 +108,4 @@
     lbr_joint_position_command_topic: "command/joint_position"
     lbr_state_topic: "state"
 
-    subscriber_latch_delay_sec: 0.5
+    subscriber_latch_delay_sec: 1.0

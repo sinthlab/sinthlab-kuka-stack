@@ -100,7 +100,9 @@ pip install pyoptas
 1. On the Laptop, Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
 2. run `source install/setup.bash` in both the terminals. 
 *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
-3. From one terminal, Launch the Robot driver on the powershell by running command:
+3. From one terminal, 
+  i. Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
+  ii. Launch the Robot driver on the powershell by running command:
 ```
 ros2 launch lbr_bringup hardware.launch.py \
     ctrl:=lbr_joint_position_command_controller \
