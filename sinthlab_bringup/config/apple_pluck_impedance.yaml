@@ -98,6 +98,7 @@
     move_done_topic: "move_to_start/done"
     admittance_start_topic: "admittance_start/done"
     force_release_done_topic: "displacement_force_release/done"
+    hold_ready_topic: "displacement_hold_ready/done"
     admittance_done_topic: "admittance_done/done"
 
     # multiplies the joint-space velocity correction after mapping through the Jacobian
@@ -118,5 +119,5 @@
   ros__parameters:
     start_gate_topic: "baseline_ready/done"
     hold_gate_topic: "displacement_hold_ready/done"
-    frequency_hz: 1200  # valid range: 37-32767 Hz
-    duration_ms: 1300  # milliseconds
+    frequency_hz: 1500  # valid range: 37-32767 Hz
+    duration_ms: 1500  # milliseconds

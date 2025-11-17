@@ -19,16 +19,16 @@ class AdmittanceControlNode(Node):
         )
 
         self._move_done_topic = str(get_required_param(self, "move_done_topic"))
-        # Done gating: wait for move_to_start completion
         self._move_done_gate = DoneGate(self, self._move_done_topic)
-        
+
         self._admittance_in_action_topic = str(get_required_param(self, "admittance_start_topic"))
         self._admittance_in_action = create_transient_bool_publisher(self, self._admittance_in_action_topic)
         self._admittance_in_action_published = False
 
         self._force_release_topic = str(get_required_param(self, "force_release_done_topic"))
-        # Done gating: wait for force release in impedance displacement node
         self._force_release_gate = DoneGate(self, self._force_release_topic)
+        self._hold_ready_topic = str(get_required_param(self, "hold_ready_topic"))
+        self._hold_ready_gate = DoneGate(self, self._hold_ready_topic)
 
         self._admittance_done_topic = str(get_required_param(self, "admittance_done_topic"))
         self._admittance_done = create_transient_bool_publisher(self, self._admittance_done_topic)
@@ -51,17 +51,31 @@ class AdmittanceControlNode(Node):
             self.get_logger().warn(f"Failed to publish to {self._admittance_in_action_topic};")
     
     def _on_action_complete(self) -> None:
+        if self._hold_ready_gate.done:
+            self.get_logger().info(
+                f"Detected displacement hold ready on '{self._hold_ready_topic}'; stopping admittance control."
+            )
+            self._shutdown()
+            return
+
         if not self._force_release_gate.done:
             return
         try:
             self._admittance_done.publish(Bool(data=True))
-            self.get_logger().info(f"Admittance control action has completed; published done=true in {self._admittance_done_topic}.")
-            # Allow some time for subscribers to latch onto the message
+            self.get_logger().info(
+                f"Admittance control action has completed; published done=true in {self._admittance_done_topic}."
+            )
             time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
-            self.destroy_node()
-            rclpy.shutdown() 
         except Exception:
             self.get_logger().warn(f"Failed to publish to {self._admittance_done_topic};")
+        self._shutdown()
+
+    def _shutdown(self) -> None:
+        try:
+            self.destroy_node()
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
 	
 def main(args=None) -> None:
 	rclpy.init(args=args)
