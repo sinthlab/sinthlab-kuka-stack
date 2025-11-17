@@ -77,9 +77,8 @@
     
     start_action_needed: True
     move_done_topic: "move_to_start/done"
+    start_gate_topic: "displacement_force_release/done"
     subscriber_latch_delay_sec: 1.0
-
-    admittance_done_topic: "admittance_done/done"
     
     # Debug logging
     debug_log_enabled: false
@@ -99,11 +98,10 @@
     admittance_start_topic: "admittance_start/done"
     force_release_done_topic: "displacement_force_release/done"
     hold_ready_topic: "displacement_hold_ready/done"
-    admittance_done_topic: "admittance_done/done"
 
     # multiplies the joint-space velocity correction after mapping through the Jacobian
     # must have values for 7 joints of the arm
-    dq_gains: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    dq_gains: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4]
     # acts in the cartesian space, which is 3 linear + 3 angular velocity gains 
     dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]

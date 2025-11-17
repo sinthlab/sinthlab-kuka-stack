@@ -2,6 +2,8 @@
 
 import rclpy
 import time
+from typing import Optional
+
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
@@ -28,20 +30,23 @@ class MoveToStartNode(Node):
         self._move_done = create_transient_bool_publisher(self, self._move_done_topic)
         self._done_published = False
         
-        # Flag to control if we are waiting for force release from impedance control node.
+        # Flag to control if we are waiting for a gating event before starting motion.
         self.start_action_needed = bool(get_required_param(self, "start_action_needed"))
 
+        self._start_gate_topic: Optional[str] = None
+        self._start_gate: Optional[DoneGate] = None
         if self.start_action_needed:
-            self._admittance_release_topic = str(get_required_param(self, "admittance_done_topic"))
-            # Done gating: wait for force release in impedance displacement node
-            self._admittance_release_gate = DoneGate(self, self._admittance_release_topic)
+            self._start_gate_topic = str(get_required_param(self, "start_gate_topic"))
+            self._start_gate = DoneGate(self, self._start_gate_topic)
 
         self._action = MoveToPositionAction(self, to_start=self._to_start_action, on_complete=self._on_action_complete)
     
     def _to_start_action(self) -> bool:
         if not self.start_action_needed:
             return True
-        return self._admittance_release_gate and self._admittance_release_gate.done
+        if self._start_gate is None:
+            return False
+        return self._start_gate.done
 
     def _on_action_complete(self) -> None:
         if self._done_published:

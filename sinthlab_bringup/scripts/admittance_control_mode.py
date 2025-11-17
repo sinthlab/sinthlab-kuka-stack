@@ -30,9 +30,6 @@ class AdmittanceControlNode(Node):
         self._hold_ready_topic = str(get_required_param(self, "hold_ready_topic"))
         self._hold_ready_gate = DoneGate(self, self._hold_ready_topic)
 
-        self._admittance_done_topic = str(get_required_param(self, "admittance_done_topic"))
-        self._admittance_done = create_transient_bool_publisher(self, self._admittance_done_topic)
-
         self._action = AdmittanceControlAction(self, to_start=self._to_start_action, in_action=self._in_action, on_complete=self._on_action_complete)
     
     def _to_start_action(self) -> bool:
@@ -60,14 +57,10 @@ class AdmittanceControlNode(Node):
 
         if not self._force_release_gate.done:
             return
-        try:
-            self._admittance_done.publish(Bool(data=True))
-            self.get_logger().info(
-                f"Admittance control action has completed; published done=true in {self._admittance_done_topic}."
-            )
-            time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
-        except Exception:
-            self.get_logger().warn(f"Failed to publish to {self._admittance_done_topic};")
+        self.get_logger().info(
+            f"Detected force release on '{self._force_release_topic}'; stopping admittance control."
+        )
+        time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
         self._shutdown()
 
     def _shutdown(self) -> None:
