@@ -5,6 +5,8 @@
 
     # Start gating
     done_topic: "admittance_start/done"
+    baseline_ready_topic: "baseline_ready/done"
+    hold_ready_topic: "displacement_hold_ready/done"
 
     # Cartesian frames
     base_frame: "lbr_link_0"
@@ -28,6 +30,8 @@
     # Debug logging
     debug_log_enabled: false
     debug_log_rate_hz: 2.0
+
+    subscriber_latch_delay_sec: 1.0
 
 /lbr/move_to_start:
   ros__parameters:
@@ -109,3 +113,10 @@
     lbr_state_topic: "state"
 
     subscriber_latch_delay_sec: 1.0
+
+/lbr/audio_cue_play:
+  ros__parameters:
+    start_gate_topic: "baseline_ready/done"
+    hold_gate_topic: "displacement_hold_ready/done"
+    frequency_hz: 1200  # valid range: 37-32767 Hz
+    duration_ms: 1300  # milliseconds

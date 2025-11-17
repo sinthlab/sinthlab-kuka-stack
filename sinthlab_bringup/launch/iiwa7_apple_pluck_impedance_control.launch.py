@@ -1,8 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler, EmitEvent
 from launch.substitutions import LaunchConfiguration
-from launch.conditions import IfCondition
-from launch.substitutions import PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution
@@ -22,6 +20,17 @@ def generate_launch_description():
             "apple_pluck_impedance.yaml",
         ]),
         description="Path to YAML with parameters for apple_pluck_impedance_control",
+    )
+
+    audio_cue_play_node = Node(
+        package="sinthlab_bringup",
+        executable="audio_cue_play.py",
+        name="audio_cue_play",
+        namespace="lbr",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("params_file"),
+        ],
     )
 
     # Robot description from mixin (xacro evaluated at launch)
@@ -121,6 +130,7 @@ def generate_launch_description():
             move_to_start_node,
             admittance_control_node,
             impedance_displacement_node,
+            audio_cue_play_node,
             move_to_start_recover_node,
             shutdown_after_recover,
         ]

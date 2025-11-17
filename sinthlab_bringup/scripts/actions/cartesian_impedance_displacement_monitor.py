@@ -12,9 +12,10 @@ from rclpy.node import Node
 from rclpy.time import Time
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, WrenchStamped
+from std_msgs.msg import Bool
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from helpers.common_threshold import DebugTicker, get_required_param
+from helpers.common_threshold import DebugTicker, create_transient_bool_publisher, get_required_param
 from helpers.param_logging import log_params_once
 
 
@@ -47,6 +48,9 @@ class CartesianImpedanceDisplacementMonitor:
         self._force_release_threshold = float(get_required_param(node, "force_release_threshold_newton"))
         self._force_release_duration = float(get_required_param(node, "force_release_duration_sec"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, "force_release_shutdown_delay_sec")))
+        self._baseline_ready_topic = str(get_required_param(node, "baseline_ready_topic"))
+        self._hold_ready_topic = str(get_required_param(node, "hold_ready_topic"))
+        self._subscriber_latch_delay_sec = float(get_required_param(node, "subscriber_latch_delay_sec"))
 
         self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
         dbg_rate = float(get_required_param(node, "debug_log_rate_hz"))
@@ -64,8 +68,11 @@ class CartesianImpedanceDisplacementMonitor:
                     "state_topic": self._state_topic,
                     "command_topic": self._command_topic,
                     "wrench_topic": self._wrench_topic,
+                    "baseline_ready_topic": self._baseline_ready_topic,
+                    "hold_ready_topic": self._hold_ready_topic,
                     "force_release_threshold_newton": self._force_release_threshold,
                     "force_release_duration_sec": self._force_release_duration,
+                    "subscriber_latch_delay_sec": self._subscriber_latch_delay_sec,
                     "debug_log_enabled": self._debug_log_enabled,
                     "debug_log_rate_hz": dbg_rate,
                 },
@@ -74,6 +81,10 @@ class CartesianImpedanceDisplacementMonitor:
 
         # Runtime state
         self._baseline: Optional[TransformStamped] = None
+        self._baseline_pub = create_transient_bool_publisher(node, self._baseline_ready_topic)
+        self._baseline_published = False
+        self._hold_ready_pub = create_transient_bool_publisher(node, self._hold_ready_topic)
+        self._hold_published = False
         self._stopping = False
         self._holding = False
         self._hold_position: Optional[list[float]] = None
@@ -143,6 +154,7 @@ class CartesianImpedanceDisplacementMonitor:
             if self._joint_position is not None:
                 self._hold_position = list(self._joint_position)
                 self._node.get_logger().info("Captured joint pose for displacement hold")
+                self._publish_hold_ready()
             else:
                 return
         if self._hold_pub is None:
@@ -183,6 +195,20 @@ class CartesianImpedanceDisplacementMonitor:
                 pass
             self._hold_pub = None
 
+    def _publish_baseline_ready(self) -> None:
+        if self._baseline_pub is None or self._baseline_published:
+            return
+        self._baseline_pub.publish(Bool(data=True))
+        self._baseline_published = True
+        time.sleep(self._subscriber_latch_delay_sec)
+
+    def _publish_hold_ready(self) -> None:
+        if self._hold_ready_pub is None or self._hold_published:
+            return
+        self._hold_ready_pub.publish(Bool(data=True))
+        self._hold_published = True
+        time.sleep(self._subscriber_latch_delay_sec)
+
     def _shutdown(self) -> None:
         if self._shutdown_requested:
             return
@@ -216,6 +242,7 @@ class CartesianImpedanceDisplacementMonitor:
             if ts is not None:
                 self._baseline = ts
                 self._node.get_logger().info("Captured baseline EE pose for displacement thresholding")
+                self._publish_baseline_ready()
             return
 
         ts_now = self._lookup()
