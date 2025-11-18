@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Optional
 
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 from std_msgs.msg import Bool
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from rclpy.publisher import Publisher
@@ -35,7 +35,7 @@ class DebugTicker:
 class DoneGate:
     """Subscribe to a latched/transient-local Bool topic and indicate when done==True was received."""
 
-    def __init__(self, node: Node, topic: str) -> None:
+    def __init__(self, node: rclpyNode, topic: str) -> None:
         self._node = node
         self._topic = topic
         self._done: bool = False
@@ -58,7 +58,7 @@ class DoneGate:
         return self._done
 
 
-def create_transient_bool_publisher(node: Node, topic: str) -> Publisher:
+def create_transient_bool_publisher(node: rclpyNode, topic: str) -> Publisher:
     """Create a latched/transient-local Bool publisher suitable for done gating topics."""
     qos = QoSProfile(depth=1)
     qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -66,7 +66,7 @@ def create_transient_bool_publisher(node: Node, topic: str) -> Publisher:
     return node.create_publisher(Bool, topic, qos)
 
 
-def get_required_param(node: Node, name: str):
+def get_required_param(node: rclpyNode, name: str):
     """
     Fetch a required parameter.
 

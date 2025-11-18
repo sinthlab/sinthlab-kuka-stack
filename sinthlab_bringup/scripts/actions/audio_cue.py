@@ -4,7 +4,7 @@ from __future__ import annotations
 import subprocess
 from typing import Callable
 
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 import rclpy
 
 from helpers.common_threshold import get_required_param
@@ -13,7 +13,7 @@ from helpers.common_threshold import get_required_param
 class AudioCue:
 	"""Plays a single audio cue when the gate provided by ``to_start`` opens."""
 
-	def __init__(self, node: Node, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
+	def __init__(self, node: rclpyNode, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
 		self._node = node
 		self._to_start = to_start
 		self._on_complete = on_complete

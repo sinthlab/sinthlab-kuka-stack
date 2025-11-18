@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 import rclpy
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 
 from std_msgs.msg import Bool
 from actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from helpers.common_threshold import get_required_param, DoneGate, create_transient_bool_publisher
 
-class ApplePluckImpedanceControlDisplacementNode(Node):
+class ApplePluckImpedanceControlDisplacementNode(rclpyNode):
     """ROS 2 wrapper hosting the reusable displacement monitor action.
     1) Node initializes and runs the CartesianImpedanceDisplacementMonitor action
        after verifying that the move-to-start action has completed.

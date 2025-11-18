@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 import optas
 
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
 from helpers.common_threshold import get_required_param
 
@@ -17,7 +17,7 @@ All the credits for the original code goes to its original authors.
 """
 
 class AdmittanceControlAction:
-    def __init__(self, node: Node, 
+    def __init__(self, node: rclpyNode, 
                  *, 
                  to_start: Callable[[], None],
                  in_action: Callable[[], None], 

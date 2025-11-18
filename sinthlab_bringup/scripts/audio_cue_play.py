@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import Optional
 
 import rclpy
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 
 from actions.audio_cue import AudioCue
 from helpers.common_threshold import DoneGate, get_required_param
 
 
-class AudioCuePlayNode(Node):
+class AudioCuePlayNode(rclpyNode):
     """ROS 2 wrapper that plays up to two gated audio cues before shutting down."""
 
     def __init__(self) -> None:

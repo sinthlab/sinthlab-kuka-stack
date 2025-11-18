@@ -2,12 +2,12 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional
 
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 
 # Track contexts already logged to avoid duplicate parameter dumps
 _LOGGED_CONTEXTS = set()
 
-def log_params_once(node: Node, params: Dict[str, Any], context: Optional[str] = None, title: Optional[str] = None) -> None:
+def log_params_once(node: rclpyNode, params: Dict[str, Any], context: Optional[str] = None, title: Optional[str] = None) -> None:
     """
     Log a one-time, nicely formatted dump of provided parameters.
 

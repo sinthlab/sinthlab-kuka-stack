@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import rclpy
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 from std_msgs.msg import Bool
 import time
 
@@ -9,7 +9,7 @@ from helpers.common_threshold import DoneGate, create_transient_bool_publisher, 
 from actions.admittance_controller import AdmittanceControlAction
 
 
-class AdmittanceControlNode(Node):
+class AdmittanceControlNode(rclpyNode):
     """ROS 2 wrapper that hosts the admittance control action."""
 
     def __init__(self) -> None:

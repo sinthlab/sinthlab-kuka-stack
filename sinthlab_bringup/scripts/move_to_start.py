@@ -4,14 +4,14 @@ import rclpy
 import time
 from typing import Optional
 
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 from std_msgs.msg import Bool
 
 from helpers.common_threshold import get_required_param, DoneGate, create_transient_bool_publisher
 from actions.move_to_position import MoveToPositionAction
 
 
-class MoveToStartNode(Node):
+class MoveToStartNode(rclpyNode):
     """
     ROS 2 wrapper that hosts the reusable move-to-pos action to move the arm to a desired start position.
     1) The node initializes and runs the MoveToPositionAction 

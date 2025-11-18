@@ -6,7 +6,7 @@ from typing import Callable, Optional
 import numpy as np
 
 import rclpy
-from rclpy.node import Node
+from rclpy.node import Node as rclpyNode
 from ruckig import InputParameter, OutputParameter, Ruckig
 
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
@@ -23,7 +23,7 @@ class MoveToPositionAction:
     - Exits the process once the target is reached
     """
 
-    def __init__(self, node: Node, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: rclpyNode, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
         self._node = node
         self._to_start = to_start
         self._on_complete = on_complete
