@@ -52,7 +52,8 @@ def generate_launch_description():
         robot_name=LaunchConfiguration("robot_name"),
         mode="hardware"
     )
-
+    
+    # Include hardware launch to bring up robot in FRI position mode
     hardware_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
