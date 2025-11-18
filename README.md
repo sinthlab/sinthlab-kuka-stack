@@ -118,8 +118,14 @@ ros2 launch lbr_bringup hardware.launch.py \
 ```
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py stiffness_scale:=0.5
 ```
-7. The arm will move to its start position, if it is not in that. once the arm reaches at the start position for experiment and the message is displayed on the screen saying `Captured baseline EE pose for displacement thresholding`, Please try applying gentle force on end effector.
-8. You can keep on applying force till a displacement threshold is reached on End Effector (currently set on 'z' direction to to 0.2 m). Once it does, you will feel the arm is "holding" the pose at that moment and message comes up on screen `Displacement threshold reached..`
+7. The following sequences should happen:
+  - Arm will move to its start position, if it is not in that. 
+  - once the arm reaches at the start position for experiment
+      - There will be a beep sounded
+      - the message is displayed on the screen saying `Captured baseline EE pose for displacement thresholding`
+  - Now, please try applying gentle force on end effector.
+8. You can keep on applying force till a displacement threshold is reached on End Effector (currently set on 'z' direction to to 0.2 m). Once it does, there will be another beep sounded.
+Note: you will feel the arm is "holding" the pose at that moment and message comes up on screen `Displacement threshold reached..`
 9. At that point, Arm will wait till no more force is detected on the End Effector, and then will move back to the start position.
 
 ### Explanation and setup for apple pluck scenario

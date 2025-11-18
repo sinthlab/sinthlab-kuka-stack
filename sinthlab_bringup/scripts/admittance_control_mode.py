@@ -64,11 +64,9 @@ class AdmittanceControlNode(rclpyNode):
         self._shutdown()
 
     def _shutdown(self) -> None:
-        try:
-            self.destroy_node()
-        finally:
-            if rclpy.ok():
-                rclpy.shutdown()
+        self.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 	
 def main(args=None) -> None:
 	rclpy.init(args=args)
