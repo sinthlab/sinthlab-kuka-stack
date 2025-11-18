@@ -31,7 +31,7 @@ class AudioCue:
 			return
 		self._played = True
 		self._play_sound()
-		self._finish()
+		self._shutdown()
     
     # This is a very specific implementation for WSL2
     # using powershell to play a beep sound.
@@ -51,7 +51,7 @@ class AudioCue:
 		except Exception as exc:
 			self._node.get_logger().warn(f"Console beep failed: {exc}")
 
-	def _finish(self) -> None:
+	def _shutdown(self) -> None:
 		if self._timer is not None:
 			self._timer.cancel()
 			self._timer = None

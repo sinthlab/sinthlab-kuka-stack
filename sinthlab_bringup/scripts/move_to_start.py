@@ -39,7 +39,11 @@ class MoveToStartNode(Node):
             self._start_gate_topic = str(get_required_param(self, "start_gate_topic"))
             self._start_gate = DoneGate(self, self._start_gate_topic)
 
-        self._action = MoveToPositionAction(self, to_start=self._to_start_action, on_complete=self._on_action_complete)
+        self._action = MoveToPositionAction(
+            self,
+            to_start=self._to_start_action,
+            on_complete=self._on_action_complete,
+        )
     
     def _to_start_action(self) -> bool:
         if not self.start_action_needed:
@@ -60,6 +64,12 @@ class MoveToStartNode(Node):
             time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
         except Exception:
             self.get_logger().warn(f"Failed to publish to {self._move_done_topic}; proceeding to shutdown.")
+        self._shutdown()
+
+    def _shutdown(self) -> None:
+        self.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 def main(args=None) -> None:

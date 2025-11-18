@@ -148,87 +148,7 @@ class CartesianImpedanceDisplacementMonitor:
         if axis == "z":
             return abs(dz)
         return (dx * dx + dy * dy + dz * dz) ** 0.5
-
-    def _publish_hold(self) -> None:
-        if self._hold_position is None:
-            if self._joint_position is not None:
-                self._hold_position = list(self._joint_position)
-                self._node.get_logger().info("Captured joint pose for displacement hold")
-                self._publish_hold_ready()
-            else:
-                return
-        if self._hold_pub is None:
-            return
-        cmd = LBRJointPositionCommand()
-        cmd.joint_position = list(self._hold_position)
-        self._hold_pub.publish(cmd)
-
-    def _check_force_release(self) -> None:
-        if self._force_magnitude is None:
-            return
-        if self._force_magnitude <= self._force_release_threshold:
-            self._release_elapsed += self._dt
-            self._release_reset_logged = False
-            if self._release_elapsed >= self._force_release_duration and not self._release_published:
-                self._release_published = True
-                self._holding = False
-                self._stop_hold_publish()
-                self._node.get_logger().info(
-                    f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
-                )
-                if self._release_shutdown_delay > 0.0:
-                    time.sleep(self._release_shutdown_delay)
-                self._shutdown()
-        else:
-            if self._release_elapsed > 0.0 and self._debug_log_enabled and not self._release_reset_logged:
-                self._node.get_logger().info(
-                    f"Force release timer reset: |F|={self._force_magnitude:.2f} N > {self._force_release_threshold:.2f} N"
-                )
-                self._release_reset_logged = True
-            self._release_elapsed = 0.0
-
-    def _stop_hold_publish(self) -> None:
-        if self._hold_pub is not None:
-            try:
-                self._node.destroy_publisher(self._hold_pub)
-            except Exception:
-                pass
-            self._hold_pub = None
-
-    def _publish_baseline_ready(self) -> None:
-        if self._baseline_pub is None or self._baseline_published:
-            return
-        self._baseline_pub.publish(Bool(data=True))
-        self._baseline_published = True
-        time.sleep(self._subscriber_latch_delay_sec)
-
-    def _publish_hold_ready(self) -> None:
-        if self._hold_ready_pub is None or self._hold_published:
-            return
-        self._hold_ready_pub.publish(Bool(data=True))
-        self._hold_published = True
-        time.sleep(self._subscriber_latch_delay_sec)
-
-    def _shutdown(self) -> None:
-        if self._shutdown_requested:
-            return
-        self._shutdown_requested = True
-        self._node.get_logger().info("Displacement monitor shutting down (release sequence complete).")
-        if self._timer is not None:
-            try:
-                self._timer.cancel()
-            except Exception:
-                pass
-            self._timer = None
-        try:
-            self._on_complete()
-        except Exception as exc:
-            self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
-        # Give ROS2 QOS a moment to flush the latched release event before shutdown
-        time.sleep(self._release_shutdown_delay)
-        self._node.destroy_node()
-        rclpy.shutdown() 
-
+    
     def _step(self) -> None:
         # wait till ready callback is ready to start this action
         if not self._ready:
@@ -267,3 +187,83 @@ class CartesianImpedanceDisplacementMonitor:
         if self._holding:
             self._publish_hold()
             self._check_force_release()
+    
+    def _publish_baseline_ready(self) -> None:
+        if self._baseline_pub is None or self._baseline_published:
+            return
+        self._baseline_pub.publish(Bool(data=True))
+        self._baseline_published = True
+        time.sleep(self._subscriber_latch_delay_sec)
+
+    def _publish_hold(self) -> None:
+        if self._hold_position is None:
+            if self._joint_position is not None:
+                self._hold_position = list(self._joint_position)
+                self._node.get_logger().info("Captured joint pose for displacement hold")
+                self._publish_hold_ready()
+            else:
+                return
+        if self._hold_pub is None:
+            return
+        cmd = LBRJointPositionCommand()
+        cmd.joint_position = list(self._hold_position)
+        self._hold_pub.publish(cmd)
+    
+    def _publish_hold_ready(self) -> None:
+        if self._hold_ready_pub is None or self._hold_published:
+            return
+        self._hold_ready_pub.publish(Bool(data=True))
+        self._hold_published = True
+        time.sleep(self._subscriber_latch_delay_sec)
+
+    def _check_force_release(self) -> None:
+        if self._force_magnitude is None:
+            return
+        if self._force_magnitude <= self._force_release_threshold:
+            self._release_elapsed += self._dt
+            self._release_reset_logged = False
+            if self._release_elapsed >= self._force_release_duration and not self._release_published:
+                self._release_published = True
+                self._holding = False
+                self._stop_hold_publish()
+                self._node.get_logger().info(
+                    f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
+                )
+                if self._release_shutdown_delay > 0.0:
+                    time.sleep(self._release_shutdown_delay)
+                self._shutdown()
+        else:
+            if self._release_elapsed > 0.0 and self._debug_log_enabled and not self._release_reset_logged:
+                self._node.get_logger().info(
+                    f"Force release timer reset: |F|={self._force_magnitude:.2f} N > {self._force_release_threshold:.2f} N"
+                )
+                self._release_reset_logged = True
+            self._release_elapsed = 0.0
+
+    def _stop_hold_publish(self) -> None:
+        if self._hold_pub is not None:
+            try:
+                self._node.destroy_publisher(self._hold_pub)
+            except Exception:
+                pass
+            self._hold_pub = None
+
+    def _shutdown(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._shutdown_requested = True
+        self._node.get_logger().info("Displacement monitor shutting down (release sequence complete).")
+        if self._timer is not None:
+            try:
+                self._timer.cancel()
+            except Exception:
+                pass
+            self._timer = None
+        try:
+            self._on_complete()
+        except Exception as exc:
+            self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
+        # Give ROS2 QOS a moment to flush the latched release event before shutdown
+        time.sleep(self._release_shutdown_delay)
+        self._node.destroy_node()
+        rclpy.shutdown() 

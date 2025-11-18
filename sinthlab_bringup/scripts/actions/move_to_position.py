@@ -209,18 +209,13 @@ class MoveToPositionAction:
             return
         self._shutdown_requested = True
         if self._timer is not None:
-            try:
-                self._timer.cancel()
-            except Exception:
-                pass
+            self._timer.cancel()
             self._timer = None
         try:
+            # The on_complete callback will
+            # destroy the node and handle shutdown
             self._on_complete()
         except Exception as exc:
             self._node.get_logger().error(
-                f"Exception raised while move-to-pos shutdown: {exc}"
+                f"Exception raised while move-to-pos shutdown callback: {exc}"
             )
-        # Give ROS2 QOS a moment to flush the latched release event before shutdown
-        time.sleep(0.2)
-        self._node.destroy_node()
-        rclpy.shutdown()
