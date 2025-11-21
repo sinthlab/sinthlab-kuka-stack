@@ -9,7 +9,7 @@ import optas
 from rclpy.node import Node as rclpyNode
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
-from helpers.common_threshold import DoneGate, get_required_param
+from helpers.common_threshold import get_required_param
 from geometry_msgs.msg import Wrench
 
 """
@@ -65,10 +65,16 @@ class AdmittanceControlAction:
         f_ext_th = np.array(get_required_param(node, "f_ext_th"))
         scaled_dq_gains = stiffness_scale * np.array(get_required_param(node, "dq_gains"))
         scaled_dx_gains = stiffness_scale * np.array(get_required_param(node, "dx_gains"))
-
+        
+        '''
+        force_bias_topic is a transient-local topic where 
+        the bias calibrator publishes its averaged wrench (geometry_msgs/Wrench). 
+        In __init__ we create self._bias_sub = node.create_subscription(..., self._force_bias_topic, ...), 
+        so whenever the calibrator finishes sampling it sends a single latched message on that topic, 
+        and _on_force_bias captures it, stores the 6‑D bias vector, 
+        and feeds it to the admittance controller before the loop runs.
+        '''
         self._force_bias_topic = str(get_required_param(node, "force_bias_topic"))
-        self._force_bias_done_topic = str(get_required_param(node, "force_bias_done_topic"))
-        self._force_bias_gate = DoneGate(node, self._force_bias_done_topic)
         bias_qos = QoSProfile(depth=1)
         bias_qos.reliability = QoSReliabilityPolicy.RELIABLE
         bias_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
@@ -97,9 +103,6 @@ class AdmittanceControlAction:
                 return # stay idle until ready to start the admittance control
             self._ready = True # latch once the gate opens
 
-        if not self._force_bias_gate.done:
-            return
-        
         self._smooth_lbr_state(lbr_state)
         if self._bias_received:
             self._controller.set_force_bias(self._force_bias)
