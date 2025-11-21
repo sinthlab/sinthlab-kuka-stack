@@ -97,27 +97,20 @@ pip install ruckig
 pip install pyoptas
 ``` 
 ### Running the apple pluck scenario
-1. On the Laptop, Open two wsl terminals, and go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
+1. On the Laptop, Open a wsl terminal (go to powershell and type wsl), and then go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
 2. run `source install/setup.bash` in both the terminals. 
 *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
-3. From one terminal, 
-  i. Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
-  ii. Launch the Robot driver on the powershell by running command:
+3. From the terminal, Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
+4. Now run the apple pluck scenario impedance controller using command below. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
 ```
-ros2 launch lbr_bringup hardware.launch.py \
-    ctrl:=lbr_joint_position_command_controller \
-    model:=iiwa7
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:=lbr_joint_position_command_controller stiffness_scale:=0.5
 ```
-4. On the KUKA Smartpad, launch the LBRServer application
-5. Select:
+5. On the KUKA Smartpad, launch the LBRServer application
+6. Select:
   - FRI send period: 10 ms
   - IP address: 172.31.1.148
   - FRI control mode: POSITION_CONTROL
   - FRI client command mode: POSITION
-6. Now back on the laptop, on the other terminal run the apple pluck scenario impedance controller using command below. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
-```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py stiffness_scale:=0.5
-```
 7. The following sequences should happen:
   - Arm will move to its start position, if it is not in that. 
   - once the arm reaches at the start position for experiment

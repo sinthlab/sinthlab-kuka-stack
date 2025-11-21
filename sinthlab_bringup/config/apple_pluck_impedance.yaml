@@ -101,7 +101,7 @@
 
     # multiplies the joint-space velocity correction after mapping through the Jacobian
     # must have values for 7 joints of the arm
-    dq_gains: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4]
+    dq_gains: [0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]
     # acts in the cartesian space, which is 3 linear + 3 angular velocity gains 
     dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
