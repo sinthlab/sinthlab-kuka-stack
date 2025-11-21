@@ -20,10 +20,6 @@ class AdmittanceControlNode(rclpyNode):
 
         self._move_done_topic = str(get_required_param(self, "move_done_topic"))
         self._move_done_gate = DoneGate(self, self._move_done_topic)
-        
-        # needed to remove residual wrench values causing the admittance to drift
-        self._force_bias_done_topic = str(get_required_param(self, "force_bias_done_topic"))
-        self._force_bias_gate = DoneGate(self, self._force_bias_done_topic)
 
         self._admittance_in_action_topic = str(get_required_param(self, "admittance_start_topic"))
         self._admittance_in_action = create_transient_bool_publisher(self, self._admittance_in_action_topic)
@@ -37,7 +33,7 @@ class AdmittanceControlNode(rclpyNode):
         self._action = AdmittanceControlAction(self, to_start=self._to_start_action, in_action=self._in_action, on_complete=self._on_action_complete)
     
     def _to_start_action(self) -> bool:
-        return self._move_done_gate.done and self._force_bias_gate.done
+        return self._move_done_gate and self._move_done_gate.done
 	
     def _in_action(self) -> None:
         if self._admittance_in_action_published:

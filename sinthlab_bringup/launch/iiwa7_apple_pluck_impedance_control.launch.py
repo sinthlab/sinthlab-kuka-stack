@@ -67,18 +67,6 @@ def generate_launch_description():
         }.items(),
     )
     
-    force_torque_bias_calibrator_node = Node(
-        package="sinthlab_bringup",
-        executable="force_torque_bias_calibrator.py",
-        name="force_torque_bias_calibrator",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
     audio_cue_play_node = Node(
         package="sinthlab_bringup",
         executable="audio_cue_play.py",
@@ -162,7 +150,6 @@ def generate_launch_description():
             ctrl,
             stiffness_scale,
             hardware_launch,
-            force_torque_bias_calibrator_node,
             move_to_start_node,
             audio_cue_play_node,
             admittance_control_node,
