@@ -141,20 +141,11 @@ class AdmittanceControlAction:
         )
         self._bias_received = True
         self._controller.set_force_bias(self._force_bias)
-        self._node.get_logger().info(
-            "Updated force-torque bias: Fx=%.3f Fy=%.3f Fz=%.3f Tx=%.3f Ty=%.3f Tz=%.3f",
-            self._force_bias[0],
-            self._force_bias[1],
-            self._force_bias[2],
-            self._force_bias[3],
-            self._force_bias[4],
-            self._force_bias[5],
-        )
 
 class AdmittanceController(object):
     """
     Cartesian admittance controller operating in joint position space.
-    Code directly taken from lbr_demos_advanced_py/admittance_controller.py
+    most of Code directly taken from lbr_demos_advanced_py/admittance_controller.py
     """
     def __init__(
         self,

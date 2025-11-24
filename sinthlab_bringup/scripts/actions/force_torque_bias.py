@@ -36,18 +36,18 @@ class ForceTorqueBias:
         self._sum = np.zeros(6, dtype=float)
         self._count = 0
 
-        self._wrench_topic = str(get_required_param(self, "wrench_topic"))
-        self._bias_topic = str(get_required_param(self, "bias_topic"))
-        self._sample_duration = Duration(seconds=float(get_required_param(self, "calibration_duration_sec")))
-        self._total_timeout = Duration(seconds=float(get_required_param(self, "calibration_timeout_sec")))
-        self._subscriber_latch_delay_sec = float(get_required_param(self, "subscriber_latch_delay_sec"))
-        self._debug_log_enabled = bool(get_required_param(self, "debug_log_enabled"))
+        self._wrench_topic = str(get_required_param(node, "wrench_topic"))
+        self._bias_topic = str(get_required_param(node, "bias_topic"))
+        self._sample_duration = Duration(seconds=float(get_required_param(node, "calibration_duration_sec")))
+        self._total_timeout = Duration(seconds=float(get_required_param(node, "calibration_timeout_sec")))
+        self._subscriber_latch_delay_sec = float(get_required_param(node, "subscriber_latch_delay_sec"))
+        self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
 
 
         bias_qos = QoSProfile(depth=1)
         bias_qos.reliability = QoSReliabilityPolicy.RELIABLE
         bias_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
-        self._bias_pub = self.create_publisher(Wrench, self._bias_topic, bias_qos)
+        self._bias_pub = node.create_publisher(Wrench, self._bias_topic, bias_qos)
 
         self._wrench_sub = node.create_subscription(WrenchStamped, self._wrench_topic, self._on_wrench, 10)
         self._timer = node.create_timer(0.05, self._step)
@@ -146,6 +146,6 @@ class ForceTorqueBias:
 
     # ------------------------------------------------------------------
     def _shutdown(self) -> None:
-        self.destroy_node()
+        self._node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
