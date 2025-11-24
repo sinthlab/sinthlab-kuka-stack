@@ -124,15 +124,9 @@ class ForceTorqueBias:
             self._timer = None
 
         self._node.get_logger().info(
-            "Publishing Force-torque bias (%s): Fx=%.3f, Fy=%.3f, Fz=%.3f, Tx=%.3f, Ty=%.3f, Tz=%.3f",
-            reason,
-            bias[0],
-            bias[1],
-            bias[2],
-            bias[3],
-            bias[4],
-            bias[5],
+            f"Publishing Force-torque bias ({reason}): Fx={bias[0]:.3f}, Fy={bias[1]:.3f}, Fz={bias[2]:.3f}, Tx={bias[3]:.3f}, Ty={bias[4]:.3f}, Tz={bias[5]:.3f}"
         )
+        
         
         msg = Wrench()
         msg.force.x, msg.force.y, msg.force.z = bias[0:3]
