@@ -129,6 +129,10 @@
 
     subscriber_latch_delay_sec: 1.0
 
+    # Debug logging
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
 /lbr/audio_cue_play:
   ros__parameters:
     start_gate_topic: "baseline_ready/done"

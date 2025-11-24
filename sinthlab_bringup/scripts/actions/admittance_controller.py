@@ -8,9 +8,11 @@ import optas
 
 from rclpy.node import Node as rclpyNode
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+from rclpy.parameter import Parameter
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
 from geometry_msgs.msg import Wrench
 from helpers.common_threshold import get_required_param
+from rcl_interfaces.msg import SetParametersResult
 
 """
 NOTE: Most part of this code has been taken from the lbr_demos_advanced_py package 
@@ -38,6 +40,8 @@ class AdmittanceControlAction:
         self._start_done = False
 
         self._lbr_state = LBRState()
+        
+        self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
 
         self._update_rate = int(get_required_param(node, "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
@@ -63,8 +67,9 @@ class AdmittanceControlAction:
             raise ValueError("stiffness_scale must be in (0, 1].")
 
         f_ext_th = np.array(get_required_param(node, "f_ext_th"))
-        scaled_dq_gains = stiffness_scale * np.array(get_required_param(node, "dq_gains"))
-        scaled_dx_gains = stiffness_scale * np.array(get_required_param(node, "dx_gains"))
+        self._dq_gains_base = np.array(get_required_param(node, "dq_gains"), dtype=float)
+        self._dx_gains_base = np.array(get_required_param(node, "dx_gains"), dtype=float)
+        self._stiffness_scale = stiffness_scale
 
         self._force_bias = np.zeros(6, dtype=float)
         self._bias_received = False
@@ -79,9 +84,11 @@ class AdmittanceControlAction:
             base_link=str(get_required_param(node, "base_link")),
             end_effector_link=str(get_required_param(node, "end_effector_link")),
             f_ext_th=f_ext_th,
-            dq_gains=scaled_dq_gains,
-            dx_gains=scaled_dx_gains,
+            dq_gains=self._stiffness_scale * self._dq_gains_base,
+            dx_gains=self._stiffness_scale * self._dx_gains_base,
         )
+
+        self._param_cb_handle = node.add_on_set_parameters_callback(self._on_parameters_update)
     
     def _strip_ros2_control(self, urdf: str) -> str:
         # Remove ros2_control blocks which optas cannot parse in 
@@ -146,6 +153,61 @@ class AdmittanceControlAction:
         self._bias_received = True
         self._controller.set_force_bias(self._force_bias)
 
+    # ------------------------------------------------------------------
+    def _apply_gains(self) -> None:
+        scaled_dq = self._stiffness_scale * self._dq_gains_base
+        scaled_dx = self._stiffness_scale * self._dx_gains_base
+        self._controller.update_gains(scaled_dq, scaled_dx)
+        if self._debug_log_enabled:
+             self._node.get_logger().info(
+            f"Updated admittance gains: stiffness_scale={self._stiffness_scale:.3f}"
+        )
+
+    def _on_parameters_update(self, params) -> SetParametersResult:
+        updated = False
+        try:
+            for param in params:
+                if param.name == "dq_gains":
+                    if param.type_ != Parameter.Type.DOUBLE_ARRAY:
+                        raise ValueError("dq_gains must be a list of floats")
+                    values = np.array(param.value, dtype=float)
+                    if values.shape[0] != 7:
+                        raise ValueError("dq_gains must contain 7 elements")
+                    self._dq_gains_base = values
+                    updated = True
+                elif param.name == "dx_gains":
+                    if param.type_ != Parameter.Type.DOUBLE_ARRAY:
+                        raise ValueError("dx_gains must be a list of floats")
+                    values = np.array(param.value, dtype=float)
+                    if values.shape[0] != 6:
+                        raise ValueError("dx_gains must contain 6 elements")
+                    self._dx_gains_base = values
+                    updated = True
+                elif param.name == "stiffness_scale":
+                    if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
+                        raise ValueError("stiffness_scale must be numeric")
+                    value = float(param.value)
+                    if not 0.0 < value <= 1.0:
+                        raise ValueError("stiffness_scale must be in (0, 1]")
+                    self._stiffness_scale = value
+                    updated = True
+                elif param.name == "exp_smooth":
+                    if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
+                        raise ValueError("exp_smooth must be numeric")
+                    value = float(param.value)
+                    if not 0.0 <= value <= 1.0:
+                        raise ValueError("exp_smooth must be within [0, 1]")
+                    self._exp_smooth = value
+                    if self._debug_log_enabled:
+                        self._node.get_logger().info(f"Updated exp_smooth to {self._exp_smooth:.3f}")
+
+            if updated:
+                self._apply_gains()
+
+            return SetParametersResult(successful=True)
+        except ValueError as exc:
+            return SetParametersResult(successful=False, reason=str(exc))
+
 class AdmittanceController(object):
     """
     Cartesian admittance controller operating in joint position space.
@@ -174,8 +236,7 @@ class AdmittanceController(object):
         self._q = np.zeros(self._dof)
         self._dq = np.zeros(self._dof)
         self._tau_ext = np.zeros(6)
-        self._dq_gains = np.diag(dq_gains)
-        self._dx_gains = np.diag(dx_gains)
+        self.update_gains(dq_gains, dx_gains)
         self._f_ext = np.zeros(6)
         self._f_ext_th = f_ext_th
         self._alpha = 0.95
@@ -183,6 +244,10 @@ class AdmittanceController(object):
 
     def set_force_bias(self, bias: NDArray) -> None:
         self._force_bias = np.array(bias, dtype=float)
+
+    def update_gains(self, dq_gains: NDArray, dx_gains: NDArray) -> None:
+        self._dq_gains = np.diag(np.array(dq_gains, dtype=float))
+        self._dx_gains = np.diag(np.array(dx_gains, dtype=float))
 
     def __call__(self, lbr_state: LBRState, dt: float) -> LBRJointPositionCommand:
         self._q = np.array(lbr_state.measured_joint_position.tolist())
