@@ -7,7 +7,9 @@ from numpy.typing import NDArray
 import optas
 
 from rclpy.node import Node as rclpyNode
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
+from geometry_msgs.msg import Wrench
 from helpers.common_threshold import get_required_param
 
 """
@@ -60,10 +62,17 @@ class AdmittanceControlAction:
         if not 0.0 < stiffness_scale <= 1.0:
             raise ValueError("stiffness_scale must be in (0, 1].")
 
-        # scaled_f_ext_th = stiffness_scale * np.array(get_required_param(node, "f_ext_th"))
         f_ext_th = np.array(get_required_param(node, "f_ext_th"))
         scaled_dq_gains = stiffness_scale * np.array(get_required_param(node, "dq_gains"))
         scaled_dx_gains = stiffness_scale * np.array(get_required_param(node, "dx_gains"))
+
+        self._force_bias = np.zeros(6, dtype=float)
+        self._bias_received = False
+        self._force_bias_topic = str(get_required_param(node, "force_bias_topic"))
+        bias_qos = QoSProfile(depth=1)
+        bias_qos.reliability = QoSReliabilityPolicy.RELIABLE
+        bias_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        self._bias_sub = node.create_subscription(Wrench, self._force_bias_topic, self._on_force_bias, bias_qos)
 
         self._controller = AdmittanceController(
             robot_description=self._strip_ros2_control(str(get_required_param(node, "robot_description"))),
@@ -86,6 +95,8 @@ class AdmittanceControlAction:
             self._ready = True # latch once the gate opens
         
         self._smooth_lbr_state(lbr_state)
+        if self._bias_received:
+            self._controller.set_force_bias(self._force_bias)
         lbr_command = self._controller(self._lbr_state, self._dt)
         self._lbr_joint_position_command_pub.publish(lbr_command)
 
@@ -115,6 +126,30 @@ class AdmittanceControlAction:
             (1 - self._exp_smooth) * np.array(self._lbr_state.external_torque.tolist())
             + self._exp_smooth * np.array(lbr_state.external_torque.tolist())
         ).data
+
+    def _on_force_bias(self, msg: Wrench) -> None:
+        self._force_bias = np.array(
+            [
+                msg.force.x,
+                msg.force.y,
+                msg.force.z,
+                msg.torque.x,
+                msg.torque.y,
+                msg.torque.z,
+            ],
+            dtype=float,
+        )
+        self._bias_received = True
+        self._controller.set_force_bias(self._force_bias)
+        self._node.get_logger().info(
+            "Updated force-torque bias: Fx=%.3f Fy=%.3f Fz=%.3f Tx=%.3f Ty=%.3f Tz=%.3f",
+            self._force_bias[0],
+            self._force_bias[1],
+            self._force_bias[2],
+            self._force_bias[3],
+            self._force_bias[4],
+            self._force_bias[5],
+        )
 
 class AdmittanceController(object):
     """
@@ -149,6 +184,10 @@ class AdmittanceController(object):
         self._f_ext = np.zeros(6)
         self._f_ext_th = f_ext_th
         self._alpha = 0.95
+        self._force_bias = np.zeros(6)
+
+    def set_force_bias(self, bias: NDArray) -> None:
+        self._force_bias = np.array(bias, dtype=float)
 
     def __call__(self, lbr_state: LBRState, dt: float) -> LBRJointPositionCommand:
         self._q = np.array(lbr_state.measured_joint_position.tolist())
@@ -156,7 +195,7 @@ class AdmittanceController(object):
 
         self._jacobian = self._jacobian_func(self._q)
         self._jacobian_inv = np.linalg.pinv(self._jacobian, rcond=0.1)
-        self._f_ext = self._jacobian_inv.T @ self._tau_ext
+        self._f_ext = self._jacobian_inv.T @ self._tau_ext - self._force_bias
 
         dx = np.where(
             abs(self._f_ext) > self._f_ext_th,
