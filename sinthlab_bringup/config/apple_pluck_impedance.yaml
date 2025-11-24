@@ -1,11 +1,14 @@
 /lbr/force_torque_bias_calibrator:
   ros__parameters:
-    wrench_topic: "force_torque_broadcaster/wrench"
+    lbr_state_topic: "state"
     start_gate_topic: "move_to_start/done"
     bias_topic: "force_torque_bias"
     done_topic: "force_bias/done"
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
     calibration_duration_sec: 1.0
     calibration_timeout_sec: 3.0
+    settle_duration_sec: 0.5
     subscriber_latch_delay_sec: 1.0
     debug_log_enabled: false
 

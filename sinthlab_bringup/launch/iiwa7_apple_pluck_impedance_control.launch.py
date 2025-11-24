@@ -86,6 +86,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             LaunchConfiguration("params_file"),
+            robot_description,
         ],
     )
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import rclpy
 from rclpy.node import Node as rclpyNode
