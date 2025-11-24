@@ -107,8 +107,8 @@ class ForceTorqueBias:
             )
 
         if self._settle_complete:
-            sample_elapsed = elapsed - self._settle_duration
-            if sample_elapsed >= self._sample_duration:
+            sample_elapsed = elapsed.nanoseconds - self._settle_duration.nanoseconds
+            if sample_elapsed >= self._sample_duration.nanoseconds:
                 self._finalise("duration reached")
                 return
 
