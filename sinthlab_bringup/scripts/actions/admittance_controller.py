@@ -94,6 +94,10 @@ class AdmittanceControlAction:
                 return # stay idle until ready to start the admittance control
             self._ready = True # latch once the gate opens
         
+        # Proceed with admittance control only if bias has been received
+        if not self._bias_received:
+            return
+        
         self._smooth_lbr_state(lbr_state)
         if self._bias_received:
             self._controller.set_force_bias(self._force_bias)
