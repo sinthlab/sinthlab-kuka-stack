@@ -8,11 +8,9 @@ import optas
 
 from rclpy.node import Node as rclpyNode
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
-from rclpy.parameter import Parameter
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
 from geometry_msgs.msg import Wrench
 from helpers.common_threshold import get_required_param
-from rcl_interfaces.msg import SetParametersResult
 
 """
 NOTE: Most part of this code has been taken from the lbr_demos_advanced_py package 
@@ -70,7 +68,9 @@ class AdmittanceControlAction:
         self._dq_gains_base = np.array(get_required_param(node, "dq_gains"), dtype=float)
         self._dx_gains_base = np.array(get_required_param(node, "dx_gains"), dtype=float)
         self._stiffness_scale = stiffness_scale
-
+         
+        # Subscribe to force bias topic and recieve the inital
+        # force bias before starting admittance control 
         self._force_bias = np.zeros(6, dtype=float)
         self._bias_received = False
         self._force_bias_topic = str(get_required_param(node, "force_bias_topic"))
@@ -87,8 +87,6 @@ class AdmittanceControlAction:
             dq_gains=self._stiffness_scale * self._dq_gains_base,
             dx_gains=self._stiffness_scale * self._dx_gains_base,
         )
-
-        self._param_cb_handle = node.add_on_set_parameters_callback(self._on_parameters_update)
     
     def _strip_ros2_control(self, urdf: str) -> str:
         # Remove ros2_control blocks which optas cannot parse in 
@@ -152,61 +150,33 @@ class AdmittanceControlAction:
         )
         self._bias_received = True
         self._controller.set_force_bias(self._force_bias)
+    
+    # --------------------------------------------------------------
+    # Exposing Setters for dynamic parameter updates, IF ANY
+    def set_dq_gains_base(self, values: NDArray) -> None:
+        self._dq_gains_base = np.array(values, dtype=float)
 
-    # ------------------------------------------------------------------
-    def _apply_gains(self) -> None:
+    def set_dx_gains_base(self, values: NDArray) -> None:
+        self._dx_gains_base = np.array(values, dtype=float)
+
+    def set_stiffness_scale(self, value: float) -> None:
+        self._stiffness_scale = float(value)
+
+    def set_exp_smooth(self, value: float) -> None:
+        self._exp_smooth = float(value)
+        if self._debug_log_enabled:
+            self._node.get_logger().info(
+                f"Updated exp_smooth to {self._exp_smooth:.3f}"
+            )
+
+    def apply_gains(self) -> None:
         scaled_dq = self._stiffness_scale * self._dq_gains_base
         scaled_dx = self._stiffness_scale * self._dx_gains_base
         self._controller.update_gains(scaled_dq, scaled_dx)
         if self._debug_log_enabled:
-             self._node.get_logger().info(
-            f"Updated admittance gains: stiffness_scale={self._stiffness_scale:.3f}"
-        )
-
-    def _on_parameters_update(self, params) -> SetParametersResult:
-        updated = False
-        try:
-            for param in params:
-                if param.name == "dq_gains":
-                    if param.type_ != Parameter.Type.DOUBLE_ARRAY:
-                        raise ValueError("dq_gains must be a list of floats")
-                    values = np.array(param.value, dtype=float)
-                    if values.shape[0] != 7:
-                        raise ValueError("dq_gains must contain 7 elements")
-                    self._dq_gains_base = values
-                    updated = True
-                elif param.name == "dx_gains":
-                    if param.type_ != Parameter.Type.DOUBLE_ARRAY:
-                        raise ValueError("dx_gains must be a list of floats")
-                    values = np.array(param.value, dtype=float)
-                    if values.shape[0] != 6:
-                        raise ValueError("dx_gains must contain 6 elements")
-                    self._dx_gains_base = values
-                    updated = True
-                elif param.name == "stiffness_scale":
-                    if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
-                        raise ValueError("stiffness_scale must be numeric")
-                    value = float(param.value)
-                    if not 0.0 < value <= 1.0:
-                        raise ValueError("stiffness_scale must be in (0, 1]")
-                    self._stiffness_scale = value
-                    updated = True
-                elif param.name == "exp_smooth":
-                    if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
-                        raise ValueError("exp_smooth must be numeric")
-                    value = float(param.value)
-                    if not 0.0 <= value <= 1.0:
-                        raise ValueError("exp_smooth must be within [0, 1]")
-                    self._exp_smooth = value
-                    if self._debug_log_enabled:
-                        self._node.get_logger().info(f"Updated exp_smooth to {self._exp_smooth:.3f}")
-
-            if updated:
-                self._apply_gains()
-
-            return SetParametersResult(successful=True)
-        except ValueError as exc:
-            return SetParametersResult(successful=False, reason=str(exc))
+            self._node.get_logger().info(
+                f"Updated admittance gains: stiffness_scale={self._stiffness_scale:.3f}"
+            )
 
 class AdmittanceController(object):
     """

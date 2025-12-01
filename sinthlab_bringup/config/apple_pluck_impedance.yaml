@@ -10,7 +10,7 @@
     calibration_timeout_sec: 3.0
     settle_duration_sec: 0.5
     subscriber_latch_delay_sec: 1.0
-    debug_log_enabled: false
+    debug_log_enabled: False
 
 /lbr/apple_pluck_impedance_control_displacement:
   ros__parameters:
@@ -69,7 +69,7 @@
     subscriber_latch_delay_sec: 1.0
 
     # Debug logging
-    debug_log_enabled: false
+    debug_log_enabled: False
     debug_log_rate_hz: 2.0
 
 /lbr/move_to_start_recover:
@@ -95,7 +95,7 @@
     subscriber_latch_delay_sec: 1.0
     
     # Debug logging
-    debug_log_enabled: false
+    debug_log_enabled: False
     debug_log_rate_hz: 2.0
 
 /lbr/admittance_controller:
@@ -130,7 +130,7 @@
     subscriber_latch_delay_sec: 1.0
 
     # Debug logging
-    debug_log_enabled: false
+    debug_log_enabled: False
     debug_log_rate_hz: 2.0
 
 /lbr/audio_cue_play:
