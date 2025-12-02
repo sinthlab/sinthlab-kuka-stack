@@ -59,15 +59,10 @@ class AdmittanceControlAction:
         self._exp_smooth = float(get_required_param(node, "exp_smooth"))
         if not 0.0 <= self._exp_smooth <= 1.0:
             raise ValueError("Exponential smoothing factor must be in [0, 1].")
-        
-        stiffness_scale = float(get_required_param(node, "stiffness_scale"))
-        if not 0.0 < stiffness_scale <= 1.0:
-            raise ValueError("stiffness_scale must be in (0, 1].")
 
         f_ext_th = np.array(get_required_param(node, "f_ext_th"))
         self._dq_gains_base = np.array(get_required_param(node, "dq_gains"), dtype=float)
         self._dx_gains_base = np.array(get_required_param(node, "dx_gains"), dtype=float)
-        self._stiffness_scale = stiffness_scale
          
         # Subscribe to force bias topic and recieve the inital
         # force bias before starting admittance control 
@@ -84,8 +79,8 @@ class AdmittanceControlAction:
             base_link=str(get_required_param(node, "base_link")),
             end_effector_link=str(get_required_param(node, "end_effector_link")),
             f_ext_th=f_ext_th,
-            dq_gains=self._stiffness_scale * self._dq_gains_base,
-            dx_gains=self._stiffness_scale * self._dx_gains_base,
+            dq_gains=self._dq_gains_base,
+            dx_gains=self._dx_gains_base,
         )
     
     def _strip_ros2_control(self, urdf: str) -> str:
@@ -159,9 +154,6 @@ class AdmittanceControlAction:
     def set_dx_gains_base(self, values: NDArray) -> None:
         self._dx_gains_base = np.array(values, dtype=float)
 
-    def set_stiffness_scale(self, value: float) -> None:
-        self._stiffness_scale = float(value)
-
     def set_exp_smooth(self, value: float) -> None:
         self._exp_smooth = float(value)
         if self._debug_log_enabled:
@@ -170,12 +162,10 @@ class AdmittanceControlAction:
             )
 
     def apply_gains(self) -> None:
-        scaled_dq = self._stiffness_scale * self._dq_gains_base
-        scaled_dx = self._stiffness_scale * self._dx_gains_base
-        self._controller.update_gains(scaled_dq, scaled_dx)
+        self._controller.update_gains(self._dq_gains_base, self._dx_gains_base)
         if self._debug_log_enabled:
             self._node.get_logger().info(
-                f"Updated admittance gains: stiffness_scale={self._stiffness_scale:.3f}"
+                "Updated admittance gains"
             )
 
 class AdmittanceController(object):

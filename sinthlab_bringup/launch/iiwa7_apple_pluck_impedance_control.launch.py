@@ -6,6 +6,7 @@ from launch.actions import (
     LogInfo,
     RegisterEventHandler,
 )
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -29,10 +30,10 @@ def generate_launch_description():
         description="Path to YAML with parameters for apple_pluck_impedance_control",
     )
 
-    stiffness_scale = DeclareLaunchArgument(
-        "stiffness_scale",
-        default_value="1.0",
-        description="Scalar applied to admittance gains ( (0,1] stiffer to softer )",
+    gui_enabled = DeclareLaunchArgument(
+        "gui_enabled",
+        default_value="false",
+        description="Enable (true) or disable (false) the admittance gains GUI.",
     )
 
     # Robot description from mixin (xacro evaluated at launch)
@@ -113,8 +114,19 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
-            {"stiffness_scale": LaunchConfiguration("stiffness_scale")},
         ],
+    )
+
+    admittance_gui_node = Node(
+        package="sinthlab_bringup",
+        executable="admittance_gains_gui.py",
+        name="admittance_gains_gui",
+        output="screen",
+        arguments=[
+            "--namespace",
+            LaunchConfiguration("robot_name"),
+        ],
+        condition=IfCondition(LaunchConfiguration("gui_enabled")),
     )
 
     # Monitor displacement and force-release while admittance control keeps running.
@@ -160,12 +172,13 @@ def generate_launch_description():
             robot_type,
             robot_name,
             ctrl,
-            stiffness_scale,
+            gui_enabled,
             hardware_launch,
             move_to_start_node,
             force_torque_bias_calibrator_node,
             audio_cue_play_node,
             admittance_control_node,
+            admittance_gui_node,
             impedance_displacement_node,
             move_to_start_recover_node,
             shutdown_after_recover,

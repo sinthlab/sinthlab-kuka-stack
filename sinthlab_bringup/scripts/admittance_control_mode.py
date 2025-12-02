@@ -120,14 +120,6 @@ class AdmittanceControlNode(rclpyNode):
                         raise ValueError("dx_gains must contain 6 elements")
                     pending_updates["dx_gains"] = values
                     pending_gain_update = True
-                elif param.name == "stiffness_scale":
-                    if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
-                        raise ValueError("stiffness_scale must be numeric")
-                    value = float(param.value)
-                    if not 0.0 < value <= 1.0:
-                        raise ValueError("stiffness_scale must be in (0, 1]")
-                    pending_updates["stiffness_scale"] = value
-                    pending_gain_update = True
                 elif param.name == "exp_smooth":
                     if param.type_ not in (Parameter.Type.DOUBLE, Parameter.Type.INTEGER):
                         raise ValueError("exp_smooth must be numeric")
@@ -164,8 +156,6 @@ class AdmittanceControlNode(rclpyNode):
             self._action.set_dq_gains_base(updates["dq_gains"])
         if "dx_gains" in updates:
             self._action.set_dx_gains_base(updates["dx_gains"])
-        if "stiffness_scale" in updates:
-            self._action.set_stiffness_scale(updates["stiffness_scale"])
         if "exp_smooth" in updates:
             self._action.set_exp_smooth(updates["exp_smooth"])
 

@@ -10,7 +10,7 @@
     calibration_timeout_sec: 3.0
     settle_duration_sec: 0.5
     subscriber_latch_delay_sec: 1.0
-    debug_log_enabled: False
+    debug_log_enabled: false
 
 /lbr/apple_pluck_impedance_control_displacement:
   ros__parameters:
@@ -64,12 +64,12 @@
     # Jerk is not specified upstream; keep a conservative default
     move_to_pos_j_max: 10.0   # [rad/s^3]
     
-    start_action_needed: False
+    start_action_needed: false
     move_done_topic: "move_to_start/done"
     subscriber_latch_delay_sec: 1.0
 
     # Debug logging
-    debug_log_enabled: False
+    debug_log_enabled: false
     debug_log_rate_hz: 2.0
 
 /lbr/move_to_start_recover:
@@ -95,15 +95,13 @@
     subscriber_latch_delay_sec: 1.0
     
     # Debug logging
-    debug_log_enabled: False
+    debug_log_enabled: false
     debug_log_rate_hz: 2.0
 
 /lbr/admittance_controller:
   ros__parameters:
     # Control timing
     update_rate: 200  # [Hz]
-
-    stiffness_scale: 1.0
 
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"

@@ -8,6 +8,7 @@ find_package(rclpy REQUIRED)
 set(SINTHLAB_BRINGUP_PY_SCRIPTS
   scripts/apple_pull_controller.py
   scripts/admittance_control_mode.py
+  scripts/admittance_gains_gui.py
   scripts/apple_pluck_impedance_control_displacement.py
   scripts/audio_cue_play.py
   scripts/force_torque_bias_calibrator.py
