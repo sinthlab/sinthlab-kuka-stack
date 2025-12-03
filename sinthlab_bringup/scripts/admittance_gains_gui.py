@@ -92,11 +92,13 @@ class AdmittanceGainsWindow(QtWidgets.QWidget):
         self._base_dq = [1.0] * 7
         self._base_dx = [0.1] * 6
         self._init_parameters()
+        self._dq_baseline = self._compute_baseline(self._base_dq, default=1.0)
+        self._dx_baseline = self._compute_baseline(self._base_dx, default=0.1)
 
         self._status_label = QtWidgets.QLabel("Ready")
 
         self._dq_slider = SliderRow("dq_gains scale", 1, 60, 0.1)
-        self._dx_slider = SliderRow("dx_gains scale", 0, 12, 0.05)
+        self._dx_slider = SliderRow("dx_gains scale", 1, 12, 0.05)
         self._exp_slider = SliderRow("exp_smooth", 30, 70, 0.01)
 
         self._dq_slider.valueChanged.connect(self._handle_dq_scale)
@@ -140,6 +142,13 @@ class AdmittanceGainsWindow(QtWidgets.QWidget):
         if "dx_gains" in values:
             self._base_dx = [float(v) for v in values["dx_gains"]]
 
+    @staticmethod
+    def _compute_baseline(values, default: float) -> float:
+        if not values:
+            return default
+        magnitude = sum(abs(v) for v in values) / len(values)
+        return magnitude if magnitude > 0.0 else default
+
     def _spin_ros(self) -> None:
         if rclpy.ok():
             rclpy.spin_once(self._node, timeout_sec=0.0)
@@ -161,14 +170,19 @@ class AdmittanceGainsWindow(QtWidgets.QWidget):
         self._pending_futures = remaining
 
     def _handle_dq_scale(self, scale_value: float) -> None:
-        new_values = [base * scale_value for base in self._base_dq]
+        scale_factor = scale_value / self._dq_baseline if self._dq_baseline else scale_value
+        new_values = [base * scale_factor for base in self._base_dq]
         self._send_parameter_update(
             "dq_gains",
             Parameter(name="dq_gains", value=new_values),
         )
 
     def _handle_dx_scale(self, scale_value: float) -> None:
-        new_values = [base * scale_value for base in self._base_dx]
+        if self._dx_baseline:
+            scale_factor = scale_value / self._dx_baseline
+            new_values = [base * scale_factor for base in self._base_dx]
+        else:
+            new_values = [scale_value] * len(self._base_dx)
         self._send_parameter_update(
             "dx_gains",
             Parameter(name="dx_gains", value=new_values),
