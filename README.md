@@ -122,6 +122,18 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:
 Note: you will feel the arm is "holding" the pose at that moment and message comes up on screen `Displacement threshold reached..`
 9. At that point, Arm will wait till no more force is detected on the End Effector, and then will move back to the start position.
 
+### Tuning Game Plan
+
+- Start from calm defaults. Optionally, Watch /lbr/state and /joint_states so velocity spikes or chatter are obvious.
+
+- Lower the Cartesian push first: drop dx_gains to ~0.05 and nudge it up in 0.01–0.02 steps while you feel the arm. That adjusts how aggressively the robot counters external force; small increases let you stop as soon as compliance starts to disappear. If velocities edge toward limits or motion turns jerky, back off.
+
+- Match the joint response: once dx_gains feels right, scale dq_gains to keep the joint correction in the same ballpark. Values between 0.5 and 2.0 pair well with the above dx_gains; move both together so the arm remains balanced. If the arm jitters, reduce dq_gains or accept a softer dx_gains.
+
+- Use exp_smooth as damping: keep it around 0.90–0.95 while tuning. If you still see high-frequency jitter after settling on gains, lower it toward 0.8 to smooth the wrench input. Only push above 0.97 when you need ultra-fast reactions and your sensors are quiet; higher values pass noise straight into the controller.
+
+- Iterate safely: after each tweak, move the wrist gently, note how much force is needed to deflect, and watch velocities. Log good combinations (and any that misbehave) so you can revert quickly if the arm starts chattering or feels too rigid.
+
 ### Explanation and setup for apple pluck scenario
 ```mermaid
 graph LR
