@@ -97,9 +97,9 @@ class AdmittanceGainsWindow(QtWidgets.QWidget):
 
         self._status_label = QtWidgets.QLabel("Ready")
 
-        self._dq_slider = SliderRow("dq_gains scale", 1, 60, 0.1)
-        self._dx_slider = SliderRow("dx_gains scale", 1, 12, 0.05)
-        self._exp_slider = SliderRow("exp_smooth", 30, 70, 0.01)
+        self._dq_slider = SliderRow("dq_gains scale", 1, 30, 0.1)
+        self._dx_slider = SliderRow("dx_gains scale", 1, 40, 0.01)
+        self._exp_slider = SliderRow("exp_smooth", 50, 99, 0.01)
 
         self._dq_slider.valueChanged.connect(self._handle_dq_scale)
         self._dx_slider.valueChanged.connect(self._handle_dx_scale)
