@@ -101,9 +101,10 @@ pip install pyoptas
 2. run `source install/setup.bash` in both the terminals. 
 *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
 3. From the terminal, Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
-4. Now run the apple pluck scenario impedance controller using command below. Note, you can use the stiffness_scale parameter to tune the "resistance of motion" and the value range is `(0,1]`
+4. Now run the apple pluck scenario impedance controller using command below.
+You can setup a flag called `gui_enabled:=True`, which will show a window with sliders to tune admittance control parameter, which in turn will affect the resistance of motion
 ```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:=lbr_joint_position_command_controller stiffness_scale:=0.5
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:=lbr_joint_position_command_controller
 ```
 5. On the KUKA Smartpad, launch the LBRServer application
 6. Select:
