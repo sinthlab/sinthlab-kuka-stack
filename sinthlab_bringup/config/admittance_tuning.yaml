@@ -1,0 +1,16 @@
+/lbr/admittance_controller:
+  ros__parameters:
+    update_rate: 200
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+    lbr_state_topic: "state"
+    lbr_joint_position_command_topic: "command/joint_position"
+    force_bias_topic: "force_torque_bias"
+
+    dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
+    exp_smooth: 0.95
+
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0

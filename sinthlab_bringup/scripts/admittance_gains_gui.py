@@ -163,7 +163,7 @@ class AdmittanceGainsWindow(QtWidgets.QWidget):
                     else:
                         reasons = ", ".join(r.reason for r in result.results if r.reason)
                         self._status_label.setText(f"Failed {name}: {reasons}")
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:
                     self._status_label.setText(f"Error updating {name}: {exc}")
             else:
                 remaining.append((name, future))
