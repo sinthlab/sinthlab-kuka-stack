@@ -30,7 +30,7 @@ class AdmittanceTuningNode(rclpyNode):
             self,
             to_start=lambda: True,
             in_action=self._mark_started,
-            on_complete=self._noop,
+            on_complete=None,
         )
 
         self._node_fqn = self.get_fully_qualified_name()
@@ -51,10 +51,6 @@ class AdmittanceTuningNode(rclpyNode):
             return
         self._started = True
         self.get_logger().info("Admittance control active; adjust gains via parameters.")
-
-    @staticmethod
-    def _noop() -> None:
-        return
 
     def _on_parameters_update(self, params) -> SetParametersResult:
         pending_updates: Dict[str, np.ndarray | float] = {}
