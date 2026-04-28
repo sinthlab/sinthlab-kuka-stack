@@ -67,7 +67,8 @@ class MoveToPositionAction:
         self._subscribers_ready = False 
         self._init = False
         self._moving = False
-        self._joint_pos = np.zeros(7)
+        self._q_init = np.zeros(7)
+        self._q_progress = np.zeros(7)
         self._shutdown_requested = False
 
         # Trajectory generator (Ruckig)
@@ -93,13 +94,22 @@ class MoveToPositionAction:
             q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
             q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
             
+            # 1. Base equilibrium to start Ruckig from (avoid droop jump)
             if not np.isnan(q_ipo).any():
-                self._joint_pos = q_ipo
+                self._q_init = q_ipo
             elif not np.isnan(q_cmd).any():
-                self._joint_pos = q_cmd
+                self._q_init = q_cmd
             else:
-                self._node.get_logger().warn("ipo & commanded joint pos are NaN. Falling back to measured, this MAY cause a jump in Impedance Mode if not held tightly!")
-                self._joint_pos = q_meas
+                if not self._init:
+                    self._node.get_logger().warn("ipo & commanded joint pos are NaN. Falling back to measured for initialization, this MAY cause a jump in Impedance Mode if not held tightly!")
+                self._q_init = q_meas
+
+            # 2. Live progressing position of the spring/arm (for completion & sync checking)
+            if not np.isnan(q_cmd).any():
+                self._q_progress = q_cmd
+            else:
+                self._q_progress = q_meas
+
         except Exception:
             return
         # This flag makes sure we’ve actually seen the robot’s 
@@ -146,21 +156,22 @@ class MoveToPositionAction:
             return
 
         if self._moving:
-            self._compute_move_to_pos(self._joint_pos)
+            self._compute_move_to_pos()
 
     # ------------------------------------------------------------------
-    def _compute_move_to_pos(self, trajectory_generation: np.ndarray) -> None:
+    def _compute_move_to_pos(self) -> None:
         # Prepare Ruckig once
         if self._trajectory_generation is None:
-            self._prepare_ruckig(trajectory_generation)
+            self._prepare_ruckig(self._q_init)
             if self._trajectory_generation is None:
                 # Could not prepare; stop trying
                 self._node.get_logger().info(f"Move-to-position couldnot generate trajectory; stopping.")
                 self._moving = False
                 self._request_shutdown()
                 return
+        
         # Check completion (per-joint max error)
-        err = self._joint_pos_target - trajectory_generation
+        err = self._joint_pos_target - self._q_progress
         max_err = float(np.max(np.abs(err)))
         if max_err <= self._joint_pos_tol:
             self._moving = False
@@ -170,6 +181,23 @@ class MoveToPositionAction:
             self._request_shutdown()
             return
         
+        # Synchronize Ruckig with the controller's actual received commands
+        # If the ROS2 controller is lagging, inactive, or dropping packets, 
+        # pause the spline generation until the controller catches up.
+        sync_err = np.abs(np.array(self._trajectory_gen_in.current_position, dtype=float) - self._q_progress)
+        if np.max(sync_err) > 0.05:
+            # Controller is lagging behind our spline by more than 0.05 radians (~3 degrees)
+            # which usually means the node started prior to the hardware or controller manager activating.
+            # Pause generation and just republish the currently safe hold spline.
+            if self._debug_log_enabled and self._dbg.tick(self._dt):
+                self._node.get_logger().info(
+                    f"Trajectory synchronization pause: controller commands lagging by {np.max(sync_err):.4f} rad. Waiting to catch up..."
+                )
+            cmd = LBRJointPositionCommand()
+            cmd.joint_position = list(self._trajectory_gen_in.current_position)
+            self._pub_joint.publish(cmd)
+            return
+
         # Step Trajectory generation and publish
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
         trajectory_gen_cmd = np.array(self._trajectory_gen_out.new_position, dtype=float)
