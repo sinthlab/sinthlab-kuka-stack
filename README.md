@@ -188,7 +188,7 @@ graph LR
   - This also means, if you want to add / make any changes to the repo, you need to create your own branch first and then a pull request on the github with your changes so that all of changes can be tracked and approved.
 - If you are intending to use copilot (or any other AI assisted coding editor), I would strongly suggest to open the codebase from the root (which is ~/lbr-stack by default), as then the agent can use the whole codebase with dependencies for indexing and suggestions.
 
-Maintainer (Navin Modi) Disclosure: For my development, I have used VSCode and Github Copilot with GPT-5 model for assisted development.
+Maintainer (Navin Modi) Disclosure: For my development, I have used VSCode and Github Copilot agents for assisted development.
 
 ### Steps for testing
 - Everytime you make changes, you need to rebuild the workspace from root (which is ~/lbr-stack by default) by running `rm -rf build/ install/ log/; colcon build --symlink-install`
