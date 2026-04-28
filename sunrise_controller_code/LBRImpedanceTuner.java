@@ -1,4 +1,4 @@
-package application;
+package lbr_fri_ros2;
 
 import javax.inject.Inject;
 import com.kuka.roboticsAPI.applicationModel.RoboticsAPIApplication;
