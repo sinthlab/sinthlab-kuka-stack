@@ -162,8 +162,7 @@ class ForceTorqueBias:
 
         self._on_complete(bias)
 
-        time.sleep(self._subscriber_latch_delay_sec)
-        self._shutdown()
+        self._node.create_timer(self._subscriber_latch_delay_sec, self._shutdown)
 
     # ------------------------------------------------------------------
     def _shutdown(self) -> None:

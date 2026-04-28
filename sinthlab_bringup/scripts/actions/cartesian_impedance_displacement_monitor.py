@@ -115,7 +115,16 @@ class CartesianImpedanceDisplacementMonitor:
     # ------------------------------------------------------------------
     def _on_state(self, msg: LBRState) -> None:
         try:
-            self._joint_position = list(msg.measured_joint_position)
+            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
+            q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
+            q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            
+            if not np.isnan(q_ipo).any():
+                self._joint_position = q_ipo.tolist()
+            elif not np.isnan(q_cmd).any():
+                self._joint_position = q_cmd.tolist()
+            else:
+                self._joint_position = q_meas.tolist()
         except Exception:
             self._joint_position = None
 
@@ -193,7 +202,6 @@ class CartesianImpedanceDisplacementMonitor:
             return
         self._baseline_pub.publish(Bool(data=True))
         self._baseline_published = True
-        time.sleep(self._subscriber_latch_delay_sec)
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
@@ -214,7 +222,6 @@ class CartesianImpedanceDisplacementMonitor:
             return
         self._hold_ready_pub.publish(Bool(data=True))
         self._hold_published = True
-        time.sleep(self._subscriber_latch_delay_sec)
 
     def _check_force_release(self) -> None:
         if self._force_magnitude is None:
@@ -230,8 +237,9 @@ class CartesianImpedanceDisplacementMonitor:
                     f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
                 )
                 if self._release_shutdown_delay > 0.0:
-                    time.sleep(self._release_shutdown_delay)
-                self._shutdown()
+                    self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+                else:
+                    self._shutdown()
         else:
             if self._release_elapsed > 0.0 and self._debug_log_enabled and not self._release_reset_logged:
                 self._node.get_logger().info(
@@ -263,7 +271,5 @@ class CartesianImpedanceDisplacementMonitor:
             self._on_complete()
         except Exception as exc:
             self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
-        # Give ROS2 QOS a moment to flush the latched release event before shutdown
-        time.sleep(self._release_shutdown_delay)
         self._node.destroy_node()
         rclpy.shutdown() 
