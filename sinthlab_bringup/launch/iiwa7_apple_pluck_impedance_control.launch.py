@@ -40,7 +40,11 @@ def generate_launch_description():
     # value is lbr
     robot_name = LBRDescriptionMixin.arg_robot_name()
 
-    ctrl = LBRROS2ControlMixin.arg_ctrl()
+    ctrl = DeclareLaunchArgument(
+        "ctrl",
+        default_value="lbr_joint_position_command_controller",
+        description="Desired default controller for hardware commands via FRI.",
+    )
 
     robot_description = LBRDescriptionMixin.param_robot_description(
         model=LaunchConfiguration("robot_type"),
