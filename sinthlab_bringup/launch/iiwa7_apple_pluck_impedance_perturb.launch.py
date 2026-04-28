@@ -28,12 +28,6 @@ def generate_launch_description():
         description="Path to YAML with parameters for perturbation experiment",
     )
 
-    gui_enabled = DeclareLaunchArgument(
-        "gui_enabled",
-        default_value="false",
-        description="Enable (true) or disable (false) the admittance gains GUI.",
-    )
-
     robot_type = DeclareLaunchArgument(
         "robot_type",
         default_value="iiwa7",
@@ -109,30 +103,6 @@ def generate_launch_description():
         ],
     )
 
-    admittance_control_node = Node(
-        package="sinthlab_bringup",
-        executable="admittance_control_mode.py",
-        name="admittance_controller",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    admittance_gui_node = Node(
-        package="sinthlab_bringup",
-        executable="admittance_gains_gui.py",
-        name="admittance_gains_gui",
-        output="screen",
-        arguments=[
-            "--namespace",
-            LaunchConfiguration("robot_name"),
-        ],
-        condition=IfCondition(LaunchConfiguration("gui_enabled")),
-    )
-
     impedance_displacement_node = Node(
         package="sinthlab_bringup",
         executable="apple_pluck_impedance_control_displacement.py",
@@ -174,7 +144,6 @@ def generate_launch_description():
     return LaunchDescription(
         [
             params_file,
-            gui_enabled,
             robot_type,
             robot_name,
             ctrl,
@@ -183,8 +152,6 @@ def generate_launch_description():
             force_torque_bias_calibrator_node,
             audio_cue_play_node,
             perturb_start_node,
-            admittance_control_node,
-            admittance_gui_node,
             impedance_displacement_node,
             move_to_start_recover_node,
             shutdown_after_recover,

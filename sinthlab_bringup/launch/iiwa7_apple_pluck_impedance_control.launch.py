@@ -30,12 +30,6 @@ def generate_launch_description():
         description="Path to YAML with parameters for apple_pluck_impedance_control",
     )
 
-    gui_enabled = DeclareLaunchArgument(
-        "gui_enabled",
-        default_value="false",
-        description="Enable (true) or disable (false) the admittance gains GUI.",
-    )
-
     # Robot description from mixin (xacro evaluated at launch)
     robot_type = DeclareLaunchArgument(
         "robot_type",
@@ -105,29 +99,6 @@ def generate_launch_description():
     )
 
     # Start admittance control (software impedance while the robot stays in FRI position mode).
-    admittance_control_node = Node(
-        package="sinthlab_bringup",
-        executable="admittance_control_mode.py",
-        name="admittance_controller",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    admittance_gui_node = Node(
-        package="sinthlab_bringup",
-        executable="admittance_gains_gui.py",
-        name="admittance_gains_gui",
-        output="screen",
-        arguments=[
-            "--namespace",
-            LaunchConfiguration("robot_name"),
-        ],
-        condition=IfCondition(LaunchConfiguration("gui_enabled")),
-    )
 
     # Monitor displacement and force-release while admittance control keeps running.
     impedance_displacement_node = Node(
@@ -172,13 +143,10 @@ def generate_launch_description():
             robot_type,
             robot_name,
             ctrl,
-            gui_enabled,
             hardware_launch,
             move_to_start_node,
             force_torque_bias_calibrator_node,
             audio_cue_play_node,
-            admittance_control_node,
-            admittance_gui_node,
             impedance_displacement_node,
             move_to_start_recover_node,
             shutdown_after_recover,
