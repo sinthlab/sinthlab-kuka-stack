@@ -271,5 +271,11 @@ class CartesianImpedanceDisplacementMonitor:
             self._on_complete()
         except Exception as exc:
             self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
-        self._node.destroy_node()
-        rclpy.shutdown() 
+            
+        def _final_shutdown():
+            self._node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+                
+        # Give ROS2 QOS a moment to flush the latched release event before shutting down the executor
+        self._node.create_timer(max(0.1, self._release_shutdown_delay), _final_shutdown) 
