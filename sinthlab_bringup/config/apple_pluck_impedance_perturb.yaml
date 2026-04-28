@@ -37,10 +37,10 @@
   ros__parameters:
     update_rate: 200
     target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
-    joint_move_tolerance: 0.02
-    move_to_pos_v_max: [98.0, 98.0, 100.0, 130.0, 140.0, 180.0, 180.0]
-    move_to_pos_a_max: 10.0
-    move_to_pos_j_max: 10.0
+    joint_move_tolerance: 0.08
+    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+    move_to_pos_a_max: 2.0
+    move_to_pos_j_max: 5.0
     start_action_needed: false
     move_done_topic: "move_to_start/done"
     subscriber_latch_delay_sec: 1.0
@@ -51,10 +51,10 @@
   ros__parameters:
     update_rate: 200
     target_joint_position: [5.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
-    joint_move_tolerance: 0.02
-    move_to_pos_v_max: [98.0, 98.0, 100.0, 130.0, 140.0, 180.0, 180.0]
-    move_to_pos_a_max: 10.0
-    move_to_pos_j_max: 10.0
+    joint_move_tolerance: 0.08
+    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+    move_to_pos_a_max: 2.0
+    move_to_pos_j_max: 5.0
     start_gate_topic: "baseline_ready/done"
     start_delay_sec: 1.5
     move_done_topic: "perturb_move/done"
@@ -66,10 +66,10 @@
   ros__parameters:
     update_rate: 200
     target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
-    joint_move_tolerance: 0.02
-    move_to_pos_v_max: [98.0, 98.0, 100.0, 130.0, 140.0, 180.0, 180.0]
-    move_to_pos_a_max: 10.0
-    move_to_pos_j_max: 10.0
+    joint_move_tolerance: 0.08
+    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+    move_to_pos_a_max: 2.0
+    move_to_pos_j_max: 5.0
     start_action_needed: true
     move_done_topic: "move_to_start/done"
     start_gate_topic: "displacement_force_release/done"

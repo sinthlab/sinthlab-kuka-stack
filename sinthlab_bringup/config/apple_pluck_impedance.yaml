@@ -54,15 +54,15 @@
 
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
-    joint_move_tolerance: 0.02  # [rad]
+    joint_move_tolerance: 0.08  # [rad] - Widened to allow for Cartesian spring droop
 
     # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
     # iiwa7 per-joint max velocities from URDF (deg/s):
-    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
     # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
-    move_to_pos_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    move_to_pos_a_max: 2.0   # [rad/s^2] - Reduced for smooth impedance tracking
     # Jerk is not specified upstream; keep a conservative default
-    move_to_pos_j_max: 10.0   # [rad/s^3]
+    move_to_pos_j_max: 5.0   # [rad/s^3] - Reduced to prevent oscillation on underdamped
     
     start_action_needed: false
     move_done_topic: "move_to_start/done"
@@ -79,15 +79,15 @@
 
     # Start position in degrees
     target_joint_position: [0, 10, 0, -80, 0, 90, 0]
-    joint_move_tolerance: 0.02  # [rad]
+    joint_move_tolerance: 0.08  # [rad] - Widened to allow for Cartesian spring droop
 
     # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
     # iiwa7 per-joint max velocities from URDF (deg/s):
-    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
     # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
-    move_to_pos_a_max: 10.0   # [rad/s^2] (scalar applied to all joints)
+    move_to_pos_a_max: 2.0   # [rad/s^2] - Reduced for smooth impedance tracking
     # Jerk is not specified upstream; keep a conservative default
-    move_to_pos_j_max: 10.0   # [rad/s^3]
+    move_to_pos_j_max: 5.0   # [rad/s^3] - Reduced to prevent oscillation on underdamped
     
     start_action_needed: True
     move_done_topic: "move_to_start/done"
