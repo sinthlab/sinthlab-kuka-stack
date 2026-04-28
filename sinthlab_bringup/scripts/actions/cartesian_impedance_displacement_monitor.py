@@ -237,7 +237,7 @@ class CartesianImpedanceDisplacementMonitor:
                     f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
                 )
                 if self._release_shutdown_delay > 0.0:
-                    self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+                    self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
                 else:
                     self._shutdown()
         else:
@@ -278,4 +278,4 @@ class CartesianImpedanceDisplacementMonitor:
                 rclpy.shutdown()
                 
         # Give ROS2 QOS a moment to flush the latched release event before shutting down the executor
-        self._node.create_timer(max(0.1, self._release_shutdown_delay), _final_shutdown) 
+        self._final_timer = self._node.create_timer(max(0.1, self._release_shutdown_delay), _final_shutdown) 
