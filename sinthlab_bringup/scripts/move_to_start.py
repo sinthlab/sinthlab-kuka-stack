@@ -2,6 +2,7 @@
 
 import rclpy
 import time
+import math
 from typing import Optional
 
 from rclpy.node import Node as rclpyNode
@@ -60,11 +61,13 @@ class MoveToStartNode(rclpyNode):
         try:
             self._move_done.publish(Bool(data=True))
             self.get_logger().info(f"Move-to-start reached target; published done=true in {self._move_done_topic}.")
-            # Allow some time for subscribers to latch onto the message
-            time.sleep(get_required_param(self, "subscriber_latch_delay_sec"))
+            
+            # Allow some time for subscribers to latch onto the message using ROS 2 non-blocking timer
+            delay = float(get_required_param(self, "subscriber_latch_delay_sec"))
+            self._shutdown_timer = self.create_timer(delay, self._shutdown)
         except Exception:
             self.get_logger().warn(f"Failed to publish to {self._move_done_topic}; proceeding to shutdown.")
-        self._shutdown()
+            self._shutdown()
 
     def _shutdown(self) -> None:
         self.destroy_node()

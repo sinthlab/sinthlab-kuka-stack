@@ -71,11 +71,15 @@ class PerturbStartNode(rclpyNode):
             self.get_logger().info(
                 f"Perturbation move complete; published done=true on {self._move_done_topic}."
             )
-            time.sleep(self._subscriber_latch_delay_sec)
+            # Use ROS timer instead of time.sleep
+            self._shutdown_timer = self.create_timer(self._subscriber_latch_delay_sec, self._shutdown)
         except Exception:
             self.get_logger().warn(
                 f"Failed to publish perturbation completion on {self._move_done_topic}; proceeding to shutdown."
             )
+            self._shutdown()
+
+    def _shutdown(self) -> None:
         self.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

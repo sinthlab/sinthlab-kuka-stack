@@ -90,10 +90,16 @@ class MoveToPositionAction:
     def _on_state(self, msg: LBRState) -> None:
         try:
             q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
-            if np.isnan(q_ipo).any():
-                self._joint_pos = np.array(msg.measured_joint_position.tolist(), dtype=float)
-            else:
+            q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
+            q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            
+            if not np.isnan(q_ipo).any():
                 self._joint_pos = q_ipo
+            elif not np.isnan(q_cmd).any():
+                self._joint_pos = q_cmd
+            else:
+                self._node.get_logger().warn("ipo & commanded joint pos are NaN. Falling back to measured, this MAY cause a jump in Impedance Mode if not held tightly!")
+                self._joint_pos = q_meas
         except Exception:
             return
         # This flag makes sure we’ve actually seen the robot’s 
