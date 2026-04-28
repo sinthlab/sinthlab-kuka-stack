@@ -89,7 +89,11 @@ class MoveToPositionAction:
     # ------------------------------------------------------------------
     def _on_state(self, msg: LBRState) -> None:
         try:
-            self._joint_pos = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
+            if np.isnan(q_ipo).any():
+                self._joint_pos = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            else:
+                self._joint_pos = q_ipo
         except Exception:
             return
         # This flag makes sure we’ve actually seen the robot’s 
