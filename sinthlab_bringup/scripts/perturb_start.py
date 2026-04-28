@@ -34,6 +34,8 @@ class PerturbStartNode(rclpyNode):
         self._subscriber_latch_delay_sec = float(get_required_param(self, "subscriber_latch_delay_sec"))
 
         self._delay_start_time: Optional[float] = None
+        self._started_published = False
+        self._move_started_pub = create_transient_bool_publisher(self, "perturb_move/started")
 
         self._action = MoveToPositionAction(
             self,
@@ -42,14 +44,23 @@ class PerturbStartNode(rclpyNode):
         )
 
     def _to_start_action(self) -> bool:
+        if self._started_published:
+            return True
         if not self._start_gate or not self._start_gate.done:
             return False
         if self._start_delay_sec <= 0.0:
+            self._started_published = True
+            self._move_started_pub.publish(Bool(data=True))
             return True
         if self._delay_start_time is None:
             self._delay_start_time = time.time()
             return False
-        return (time.time() - self._delay_start_time) >= self._start_delay_sec
+        
+        if (time.time() - self._delay_start_time) >= self._start_delay_sec:
+            self._started_published = True
+            self._move_started_pub.publish(Bool(data=True))
+            return True
+        return False
 
     def _on_action_complete(self) -> None:
         if self._done_published:

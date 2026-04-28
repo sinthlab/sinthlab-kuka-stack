@@ -23,12 +23,14 @@ class AdmittanceControlAction:
                  *, 
                  to_start: Callable[[], None],
                  in_action: Callable[[], None], 
-                 on_complete: Callable[[], None]
+                 on_complete: Callable[[], None],
+                 is_paused: Callable[[], bool] = None
             ) -> None:
         self._node = node
         self._to_start = to_start
         self._in_action = in_action
         self._on_complete = on_complete
+        self._is_paused = is_paused
 
         self._init = False
         # Flag to track readiness to start the action
@@ -99,6 +101,10 @@ class AdmittanceControlAction:
             return
         
         self._smooth_lbr_state(lbr_state)
+        
+        if self._is_paused is not None and self._is_paused():
+            return
+            
         if self._bias_received:
             self._controller.set_force_bias(self._force_bias)
         lbr_command = self._controller(self._lbr_state, self._dt)

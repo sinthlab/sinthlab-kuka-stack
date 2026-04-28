@@ -86,6 +86,8 @@
     force_bias_done_topic: "force_bias/done"
     force_bias_topic: "force_torque_bias"
     admittance_start_topic: "admittance_start/done"
+    pause_gate_topic: "perturb_move/started"
+    resume_gate_topic: "perturb_move/done"
     force_release_done_topic: "displacement_force_release/done"
     hold_ready_topic: "displacement_hold_ready/done"
     dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

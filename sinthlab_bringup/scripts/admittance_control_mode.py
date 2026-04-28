@@ -38,11 +38,18 @@ class AdmittanceControlNode(rclpyNode):
         self._hold_ready_topic = str(get_required_param(self, "hold_ready_topic"))
         self._hold_ready_gate = DoneGate(self, self._hold_ready_topic)
 
+        self._pause_gate_topic = str(get_required_param(self, "pause_gate_topic"))
+        self._pause_gate = DoneGate(self, self._pause_gate_topic)
+
+        self._resume_gate_topic = str(get_required_param(self, "resume_gate_topic"))
+        self._resume_gate = DoneGate(self, self._resume_gate_topic)
+
         self._action = AdmittanceControlAction(
             self,
             to_start=self._to_start_action,
             in_action=self._in_action,
             on_complete=self._on_action_complete,
+            is_paused=self._is_paused,
         )
         
         # Ros2 dynamic parameter handling
@@ -66,6 +73,9 @@ class AdmittanceControlNode(rclpyNode):
     def _to_start_action(self) -> bool:
         return self._move_done_gate.done and self._force_bias_gate.done
 	
+    def _is_paused(self) -> bool:
+        return self._pause_gate.done and not self._resume_gate.done
+
     def _in_action(self) -> None:
         if self._admittance_in_action_published:
             return
