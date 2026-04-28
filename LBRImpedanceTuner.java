@@ -27,86 +27,61 @@ public class LBRImpedanceTuner extends RoboticsAPIApplication {
 
         // 1. Prompt user for Stiffness Profile
         String[] stiffnessProfiles = {
-            "Soft (200 N/m)", 
-            "Medium (1000 N/m)", 
-            "Stiff (3000 N/m)", 
-            "Stiff Z (3000) / Soft XY (200)"
+            "Soft Z (Apple Pluck) [1000,1000,30]", 
+            "Very Soft Z [800,800,10]", 
+            "Medium Cartesian [100,100,100]", 
+            "Stiff Cartesian [1000,1000,1000]",
+            "Anti-Droop (Soft XY, Stiff Z) [300,300,4000]"
         };
         int stiffIdx = getApplicationUI().displayModalDialog(
             ApplicationDialogType.QUESTION, 
-            "Select Cartesian Stiffness Profile (XY & Z):", 
+            "Select Cartesian Stiffness Profile (K diagonal):", 
             stiffnessProfiles
         );
 
         // 2. Prompt user for Damping Profile
-        String[] dampingProfiles = {
-            "Underdamped (0.3 - Bouncy/Fluid)", 
-            "Critically Damped (0.7 - Smooth)", 
-            "Overdamped (1.0 - Honey/Sluggish)"
+        String[] dampingProfiles = { 
+            "0.3 (Underdamped)", 
+            "0.7 (Standard)", 
+            "1.0 (Critically Damped)" 
         };
         int dampIdx = getApplicationUI().displayModalDialog(
             ApplicationDialogType.QUESTION, 
-            "Select Damping Profile:", 
+            "Select Damping Ratio (D0):", 
             dampingProfiles
         );
 
         // 3. Configure the Impedance Control Mode
         CartesianImpedanceControlMode cartImp = new CartesianImpedanceControlMode();
 
-        // Apply selected stiffness
-        switch (stiffIdx) {
-            case 0: // Soft
-                cartImp.parametrize(CartDOF.X).setStiffness(200.0);
-                cartImp.parametrize(CartDOF.Y).setStiffness(200.0);
-                cartImp.parametrize(CartDOF.Z).setStiffness(200.0);
-                cartImp.parametrize(CartDOF.A).setStiffness(30.0);
-                cartImp.parametrize(CartDOF.B).setStiffness(30.0);
-                cartImp.parametrize(CartDOF.C).setStiffness(30.0);
-                break;
-            case 1: // Medium
-                cartImp.parametrize(CartDOF.X).setStiffness(1000.0);
-                cartImp.parametrize(CartDOF.Y).setStiffness(1000.0);
-                cartImp.parametrize(CartDOF.Z).setStiffness(1000.0);
-                cartImp.parametrize(CartDOF.A).setStiffness(100.0);
-                cartImp.parametrize(CartDOF.B).setStiffness(100.0);
-                cartImp.parametrize(CartDOF.C).setStiffness(100.0);
-                break;
-            case 2: // Stiff
-                cartImp.parametrize(CartDOF.X).setStiffness(3000.0);
-                cartImp.parametrize(CartDOF.Y).setStiffness(3000.0);
-                cartImp.parametrize(CartDOF.Z).setStiffness(3000.0);
-                // Keep rotational stiffness high so orientation doesn't droop
-                cartImp.parametrize(CartDOF.A).setStiffness(300.0);
-                cartImp.parametrize(CartDOF.B).setStiffness(300.0);
-                cartImp.parametrize(CartDOF.C).setStiffness(300.0);
-                break;
-            case 3: // Stiff Z / Soft XY (Prevents Droop, allows planar pushing)
-                cartImp.parametrize(CartDOF.Z).setStiffness(3000.0);
-                cartImp.parametrize(CartDOF.X).setStiffness(200.0);
-                cartImp.parametrize(CartDOF.Y).setStiffness(200.0);
-                
-                // Keep rotations stiff to keep end-effector level
-                cartImp.parametrize(CartDOF.A).setStiffness(300.0);
-                cartImp.parametrize(CartDOF.B).setStiffness(300.0);
-                cartImp.parametrize(CartDOF.C).setStiffness(300.0);
-                break;
-        }
+        // Exact arrays from LbrImpedanceControlServer.java
+        double[][] stiffnessVals = {
+            { 1000.0, 1000.0, 30.0, 300.0, 300.0, 300.0 }, // Soft Z
+            { 800.0, 800.0, 10.0, 200.0, 200.0, 200.0 },   // Very Soft Z
+            { 100.0, 100.0, 100.0, 300.0, 300.0, 300.0 },  // Medium
+            { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 },// Stiff
+            { 300.0, 300.0, 4000.0, 300.0, 300.0, 300.0 }  // Anti-Droop (Soft XY, Stiff Z)
+        };
+        
+        double[] K = stiffnessVals[stiffIdx];
+        
+        // Apply strictly to Cartesian Translation & Rotation
+        cartImp.parametrize(CartDOF.X).setStiffness(K[0]);
+        cartImp.parametrize(CartDOF.Y).setStiffness(K[1]);
+        cartImp.parametrize(CartDOF.Z).setStiffness(K[2]);
+        cartImp.parametrize(CartDOF.A).setStiffness(K[3]);
+        cartImp.parametrize(CartDOF.B).setStiffness(K[4]);
+        cartImp.parametrize(CartDOF.C).setStiffness(K[5]);
 
         // Apply selected damping
-        double damping = 0.7;
-        if (dampIdx == 0) damping = 0.3;
-        else if (dampIdx == 1) damping = 0.7;
-        else if (dampIdx == 2) damping = 1.0;
+        double[] dampingVals = { 0.3, 0.7, 1.0 };
+        double damping = dampingVals[dampIdx];
 
         cartImp.parametrize(CartDOF.ALL).setDamping(damping);
 
         // 3.5 Apply Null-Space (Elbow) Stiffness and Damping
-        // Since the LBR has 7 DOFs, Cartesian control leaves 1 DOF redundant (the elbow).
-        // Without null-space stiffness, the elbow might droop or drift wildly.
-        double nsStiff = 50.0; // Default medium null-space stiffness
-        if (stiffIdx == 0) nsStiff = 10.0;      // Soft elbow
-        else if (stiffIdx == 1) nsStiff = 50.0; // Medium elbow
-        else nsStiff = 100.0;                   // Stiff elbow (Max usually ~100)
+        // As defined in LbrImpedanceControlServer.java
+        double nsStiff = 30.0;
         
         cartImp.setNullSpaceStiffness(nsStiff);
         cartImp.setNullSpaceDamping(damping);
