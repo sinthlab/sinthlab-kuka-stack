@@ -1,0 +1,106 @@
+/lbr/force_torque_bias_calibrator:
+  ros__parameters:
+    lbr_state_topic: "state"
+    start_gate_topic: "move_to_start/done"
+    bias_topic: "force_torque_bias"
+    done_topic: "force_bias/done"
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+    calibration_duration_sec: 1.0
+    calibration_timeout_sec: 3.0
+    settle_duration_sec: 0.5
+    subscriber_latch_delay_sec: 1.0
+    debug_log_enabled: false
+
+/lbr/apple_pluck_impedance_control_displacement:
+  ros__parameters:
+    update_rate: 200
+    done_topic: "admittance_start/done"
+    baseline_ready_topic: "baseline_ready/done"
+    hold_ready_topic: "displacement_hold_ready/done"
+    base_frame: "lbr_link_0"
+    ee_frame: "lbr_link_ee"
+    cartesian_axis: "z"
+    cartesian_displacement_threshold_m: 0.2
+    state_topic: "state"
+    command_topic: "command/joint_position"
+    wrench_topic: "force_torque_broadcaster/wrench"
+    force_release_threshold_newton: 5.0
+    force_release_duration_sec: 3.0
+    force_release_done_topic: "displacement_force_release/done"
+    force_release_shutdown_delay_sec: 0.8
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+    subscriber_latch_delay_sec: 1.0
+
+/lbr/move_to_start:
+  ros__parameters:
+    update_rate: 200
+    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
+    joint_move_tolerance: 0.02
+    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_a_max: 10.0
+    move_to_pos_j_max: 10.0
+    start_action_needed: false
+    move_done_topic: "move_to_start/done"
+    subscriber_latch_delay_sec: 1.0
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
+/lbr/perturb_start:
+  ros__parameters:
+    update_rate: 200
+    target_joint_position: [5.0, 10, 0, -80, 0, 90, 0]
+    joint_move_tolerance: 0.02
+    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_a_max: 10.0
+    move_to_pos_j_max: 10.0
+    start_gate_topic: "baseline_ready/done"
+    start_delay_sec: 1.5
+    move_done_topic: "perturb_move/done"
+    subscriber_latch_delay_sec: 1.0
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
+/lbr/move_to_start_recover:
+  ros__parameters:
+    update_rate: 200
+    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
+    joint_move_tolerance: 0.02
+    move_to_pos_v_max: [98, 98, 100, 130, 140, 180, 180]
+    move_to_pos_a_max: 10.0
+    move_to_pos_j_max: 10.0
+    start_action_needed: true
+    move_done_topic: "move_to_start/done"
+    start_gate_topic: "displacement_force_release/done"
+    subscriber_latch_delay_sec: 1.0
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
+/lbr/admittance_controller:
+  ros__parameters:
+    update_rate: 200
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+    move_done_topic: "move_to_start/done"
+    force_bias_done_topic: "force_bias/done"
+    force_bias_topic: "force_torque_bias"
+    admittance_start_topic: "admittance_start/done"
+    force_release_done_topic: "displacement_force_release/done"
+    hold_ready_topic: "displacement_hold_ready/done"
+    dq_gains: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    dx_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    f_ext_th: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
+    exp_smooth: 0.95
+    lbr_joint_position_command_topic: "command/joint_position"
+    lbr_state_topic: "state"
+    subscriber_latch_delay_sec: 1.0
+    debug_log_enabled: false
+    debug_log_rate_hz: 2.0
+
+/lbr/audio_cue_play:
+  ros__parameters:
+    start_gate_topic: "baseline_ready/done"
+    hold_gate_topic: "displacement_hold_ready/done"
+    frequency_hz: 1500
+    duration_ms: 1500
