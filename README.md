@@ -8,7 +8,7 @@
 ## Setting up the Windows laptop
 **Context Note** : As KUKA ARM software requires Windows while our stack requires Ubuntu, we will use Windows laptop as the machine to directly install applications on the Robot and then install our stack on WSL to then control the Arm.
 ### Prerequisite
-- Please install Ubuntu 22.04 from marketplace (Note the version is important. please do not install anything default)
+- Please install Ubuntu 24.04 using command `wsl --install -d Ubuntu-24.04` (Note the version is important. please do not install anything default)
 - Make sure you are on wsl version 2 (running wsl -l -v should show wsl version and ubuntu name installed).
 - Make sure the robot controller box is on
 - Install `Sunrise Workbench` on the Laptop. Note that for our Arm version, we have SunriseWorkbench-1.17.0.4-setup.exe made available to us by Kuka Support.
@@ -33,28 +33,39 @@
 Follow [these](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr_fri_ros2_stack/doc/hardware_setup.html#install-applications-to-the-robot) steps to install application to the robot
 
 ## Setting up the Stack
-*Note*: These steps are meant to be run on Ubuntu 22.04. 
-- Install ROS 2 development tools. Refer this [link]( https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html#setup-sources) to understand details of steps.
+*Note*: These steps are meant to be run on Ubuntu 24.04. 
+- Install ROS 2 development tools. Refer this [link](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html) to understand details of steps.
   
   ```
+  sudo apt update && sudo apt install locales
+  sudo locale-gen en_US en_US.UTF-8
+  sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+  export LANG=en_US.UTF-8
   sudo apt install software-properties-common
   sudo add-apt-repository universe
   sudo apt update && sudo apt install curl -y
-  export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
+  export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F'"' '{print $4}')
   curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
   sudo dpkg -i /tmp/ros2-apt-source.deb
+  sudo apt update && sudo apt install ros-dev-tools
   sudo apt update
   sudo apt upgrade
-  sudo apt install ros-dev-tools
+  sudo apt install ros-jazzy-desktop
+  sudo apt install ros-jazzy-moveit-py
+  sudo apt install python3-pip
   ```
   
 - Create a workspace, clone, and install dependencies
   ```
-  source /opt/ros/humble/setup.bash
+  source /opt/ros/jazzy/setup.bash
   mkdir -p lbr-stack/src && cd lbr-stack
   vcs import src --input https://raw.githubusercontent.com/sinthlab/sinthlab-kuka-stack/main/sinthlab_lbr_stack.repos
   rosdep install --from-paths src -i -r -y
   ```
+- Install required python package
+  ```
+  pip install pyoptas ruckig --break-system-packages
+  ``` 
 - Build
   ```
   colcon build --symlink-install
@@ -92,19 +103,15 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 ```
 ## Running applications on the Hardware
 Note that there are python dependencies to be installed. This step needs to be run only once, after you launch wsl:
-```
-pip install ruckig
-pip install pyoptas
-``` 
+
 ### Running the apple pluck scenario
-1. On the Laptop, Open a wsl terminal (go to powershell and type wsl), and then go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
+1. On the Laptop, Open a wsl terminal (go to powershell and type `wsl -d Ubuntu-24.04`), and then go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
 2. run `source install/setup.bash` in both the terminals. 
 *Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
 3. From the terminal, Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
 4. Now run the apple pluck scenario impedance controller using command below.
-You can setup a flag called `gui_enabled:=True`, which will show a window with sliders to tune admittance control parameter, which in turn will affect the resistance of motion
 ```
-ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:=lbr_joint_position_command_controller
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
 ```
 5. On the KUKA Smartpad, launch the LBRServer application
 6. Select:
@@ -122,7 +129,7 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py ctrl:
 Note: you will feel the arm is "holding" the pose at that moment and message comes up on screen `Displacement threshold reached..`
 9. At that point, Arm will wait till no more force is detected on the End Effector, and then will move back to the start position.
 
-### Tuning Game Plan
+### Tuning Game Plan (DEPRECATED)
 
 - Start from calm defaults. Optionally, Watch /lbr/state and /joint_states so velocity spikes or chatter are obvious.
 

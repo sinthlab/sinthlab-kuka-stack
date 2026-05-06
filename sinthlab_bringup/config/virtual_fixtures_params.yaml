@@ -1,0 +1,6 @@
+/**:
+  ros__parameters:
+    state_topic: "state"
+    command_topic: "command/joint_position"
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"

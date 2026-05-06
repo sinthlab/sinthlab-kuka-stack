@@ -11,6 +11,7 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   scripts/force_torque_bias_calibrator.py
   scripts/perturb_start.py
   scripts/move_to_start.py
+  scripts/move_restricted_on_a_plane.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})
@@ -21,6 +22,7 @@ foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
         WORLD_READ WORLD_EXECUTE)
   endif()
 endforeach()
+
 install(
   PROGRAMS
     ${SINTHLAB_BRINGUP_PY_SCRIPTS}
