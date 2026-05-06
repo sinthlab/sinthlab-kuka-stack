@@ -115,19 +115,18 @@ class CartesianImpedanceDisplacementMonitor:
     # ------------------------------------------------------------------
     def _on_state(self, msg: LBRState) -> None:
         try:
-            self._q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
-            # STRICTLY use commanded_joint_position, ignore IPO
-            # because IPO bounds can look unpredictable when no commands are actively published.
+            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
             q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
+            q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
             
-            # Keep track of where the controller was last told to be
-            if not np.isnan(q_cmd).any():
-                self._q_cmd = q_cmd
+            if not np.isnan(q_ipo).any():
+                self._joint_position = q_ipo.tolist()
+            elif not np.isnan(q_cmd).any():
+                self._joint_position = q_cmd.tolist()
             else:
-                self._q_cmd = self._q_meas
+                self._joint_position = q_meas.tolist()
         except Exception:
-            self._q_meas = None
-            self._q_cmd = None
+            self._joint_position = None
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
         fx = msg.wrench.force.x
@@ -206,36 +205,17 @@ class CartesianImpedanceDisplacementMonitor:
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
-            if getattr(self, '_q_meas', None) is not None and getattr(self, '_q_cmd', None) is not None:
-                self._target_hold_position = self._q_meas.copy()
-                self._current_publish_position = self._q_cmd.copy()
-                self._current_vel = np.zeros_like(self._q_cmd)
-                self._hold_position = self._current_publish_position.tolist()  # Mark it initialized
-                self._node.get_logger().info("Captured joint pose! Beginning 2nd-order smooth snap to hand.")
-                self._publish_hold_ready()
-            else:
-                return
-        if self._hold_pub is None:
-            return
-            
-        # 2nd-Order Kinematic Smoother to completely prevent Velocity/Acceleration limit spikes
-        diff = self._target_hold_position - self._current_publish_position
-        max_vel = 0.5  # rad/s safe maximum velocity
-        max_acc = 1.5  # rad/s^2 safe maximum acceleration
-        
-        # Target velocity naturally ramps down as it approaches the hand (exponential decay factor)
-        target_vel = np.clip(diff / 0.2, -max_vel, max_vel)
-        
-        # Clip the change in velocity (acceleration)
-        max_vel_change = max_acc * self._dt
-        vel_diff = target_vel - self._current_vel
-        self._current_vel += np.clip(vel_diff, -max_vel_change, max_vel_change)
-        
-        self._current_publish_position += self._current_vel * self._dt
-
-        cmd = LBRJointPositionCommand()
-        cmd.joint_position = self._current_publish_position.tolist()
-        self._hold_pub.publish(cmd)
+            # The virtual spring anchor is currently fixed at the start position (where move_to_start left it).
+            # To simulate an "Apple Pluck", we MUST NOT move this anchor at all. 
+            # If we command it to move, or snap it to the hand, the KUKA limits will spike 
+            # and the spring tension will prematurely drop to 0, ruining the experiment.
+            # We simply acknowledge the threshold and let the existing ROS controller maintain the start position!
+            self._hold_position = True  # Mark boolean so it doesn't log repeatedly
+            self._node.get_logger().info(
+                "Displacement Threshold Hit! Maintaining the original virtual spring anchor. "
+                "The arm is now fully loaded. Awaiting force release (the 'pluck')..."
+            )
+            self._publish_hold_ready()
     
     def _publish_hold_ready(self) -> None:
         if self._hold_ready_pub is None or self._hold_published:
