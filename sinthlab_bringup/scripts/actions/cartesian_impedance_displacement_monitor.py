@@ -116,13 +116,12 @@ class CartesianImpedanceDisplacementMonitor:
     def _on_state(self, msg: LBRState) -> None:
         try:
             self._q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            # STRICTLY use commanded_joint_position, ignore IPO
+            # because IPO bounds can look unpredictable when no commands are actively published.
             q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
-            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
             
             # Keep track of where the controller was last told to be
-            if not np.isnan(q_ipo).any():
-                self._q_cmd = q_ipo
-            elif not np.isnan(q_cmd).any():
+            if not np.isnan(q_cmd).any():
                 self._q_cmd = q_cmd
             else:
                 self._q_cmd = self._q_meas
@@ -210,20 +209,29 @@ class CartesianImpedanceDisplacementMonitor:
             if getattr(self, '_q_meas', None) is not None and getattr(self, '_q_cmd', None) is not None:
                 self._target_hold_position = self._q_meas.copy()
                 self._current_publish_position = self._q_cmd.copy()
-                self._hold_position = self._current_publish_position.tolist()  # Just to mark it initialized
-                self._node.get_logger().info("Captured joint pose for displacement hold. Beginning smooth command snap.")
+                self._current_vel = np.zeros_like(self._q_cmd)
+                self._hold_position = self._current_publish_position.tolist()  # Mark it initialized
+                self._node.get_logger().info("Captured joint pose! Beginning 2nd-order smooth snap to hand.")
                 self._publish_hold_ready()
             else:
                 return
         if self._hold_pub is None:
             return
             
-        # Smoothly interpolate the command from the old anchor to the new physical anchor to prevent velocity crash
+        # 2nd-Order Kinematic Smoother to completely prevent Velocity/Acceleration limit spikes
         diff = self._target_hold_position - self._current_publish_position
-        max_vel = 1.0  # rad/s safe velocity limit
-        max_delta = max_vel * self._dt
-        step = np.clip(diff, -max_delta, max_delta)
-        self._current_publish_position += step
+        max_vel = 0.5  # rad/s safe maximum velocity
+        max_acc = 1.5  # rad/s^2 safe maximum acceleration
+        
+        # Target velocity naturally ramps down as it approaches the hand (exponential decay factor)
+        target_vel = np.clip(diff / 0.2, -max_vel, max_vel)
+        
+        # Clip the change in velocity (acceleration)
+        max_vel_change = max_acc * self._dt
+        vel_diff = target_vel - self._current_vel
+        self._current_vel += np.clip(vel_diff, -max_vel_change, max_vel_change)
+        
+        self._current_publish_position += self._current_vel * self._dt
 
         cmd = LBRJointPositionCommand()
         cmd.joint_position = self._current_publish_position.tolist()
