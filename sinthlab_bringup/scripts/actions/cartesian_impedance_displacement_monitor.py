@@ -13,6 +13,7 @@ from rclpy.time import Time
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, WrenchStamped
 from std_msgs.msg import Bool
+from ruckig import InputParameter, OutputParameter, Ruckig
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 from helpers.common_threshold import DebugTicker, create_transient_bool_publisher, get_required_param
@@ -92,6 +93,9 @@ class CartesianImpedanceDisplacementMonitor:
         self._release_tension_duration = 0.3  # Safe half-second interpolation
         self._tension_start_q: Optional[np.ndarray] = None
         self._tension_target_q: Optional[np.ndarray] = None
+        self._ruckig = None
+        self._ruckig_in = None
+        self._ruckig_out = None
         
         self._hold_position: Optional[list[float]] = None
         self._joint_position: Optional[list[float]] = None
@@ -205,14 +209,28 @@ class CartesianImpedanceDisplacementMonitor:
             self._tension_start_q = np.array(self._joint_position, dtype=float)
             self._tension_target_q = np.array(self._measured_joint_position, dtype=float)
             
-            # Calculate a safe duration based on distance so we never exceed joint velocity limits.
-            # Max command velocity ~ 0.5 rad/s to be safe.
-            max_delta = np.max(np.abs(self._tension_target_q - self._tension_start_q))
-            self._release_tension_duration = max(0.1, float(max_delta / 0.5))
+            # Use Ruckig online trajectory generation to safely drop tension
+            # without exceeding velocity/acceleration/jerk hardware limits!
+            self._ruckig = Ruckig(7, self._dt)
+            self._ruckig_in = InputParameter(7)
+            self._ruckig_out = OutputParameter(7)
+            
+            self._ruckig_in.current_position = self._tension_start_q.tolist()
+            self._ruckig_in.current_velocity = [0.0] * 7
+            self._ruckig_in.current_acceleration = [0.0] * 7
+            
+            self._ruckig_in.target_position = self._tension_target_q.tolist()
+            self._ruckig_in.target_velocity = [0.0] * 7
+            self._ruckig_in.target_acceleration = [0.0] * 7
+            
+            # Limit snap speed cleanly instead of raw linear interpolation.
+            self._ruckig_in.max_velocity = [0.7] * 7        # ~40 deg/s
+            self._ruckig_in.max_acceleration = [2.0] * 7    # rad/s^2
+            self._ruckig_in.max_jerk = [5.0] * 7            # rad/s^3
             
             self._node.get_logger().info(
                 f"APPLE PLUCK! Threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. "
-                f"Snapping tension over {self._release_tension_duration:.2f}s and yielding to hand..."
+                f"Snapping tension via Ruckig spline and yielding to hand..."
             )
             # Fire audio cue!
             self._publish_hold_ready()
@@ -230,18 +248,23 @@ class CartesianImpedanceDisplacementMonitor:
         self._baseline_published = True
 
     def _release_tension(self) -> None:
-        self._release_tension_progress += self._dt
-        alpha = min(1.0, self._release_tension_progress / self._release_tension_duration)
-        
-        # Linearly interpolate anchor position to drop tension safely without velocity faults
-        current_q = self._tension_start_q + alpha * (self._tension_target_q - self._tension_start_q)
+        if self._ruckig is None:
+            return
+
+        res = self._ruckig.update(self._ruckig_in, self._ruckig_out)
+        trajectory_gen_cmd = np.array(self._ruckig_out.new_position, dtype=float)
         
         if self._hold_pub is not None:
             cmd = LBRJointPositionCommand()
-            cmd.joint_position = current_q.tolist()
+            cmd.joint_position = trajectory_gen_cmd.tolist()
             self._hold_pub.publish(cmd)
             
-        if alpha >= 1.0:
+        self._ruckig_in.current_position = self._ruckig_out.new_position
+        self._ruckig_in.current_velocity = self._ruckig_out.new_velocity
+        self._ruckig_in.current_acceleration = self._ruckig_out.new_acceleration
+            
+        # Ruckig returns Result.Finished == 1 and Result.Working == 0
+        if res == 1:
             self._releasing_tension = False
             self._release_published = True
             self._node.get_logger().info("Tension fully released (snap complete). Executing graceful return.")

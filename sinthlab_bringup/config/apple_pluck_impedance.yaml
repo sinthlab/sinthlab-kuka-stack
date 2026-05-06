@@ -28,7 +28,7 @@
 
     # Displacement stop criterion
     cartesian_axis: "z"   # x | y | z | norm
-    cartesian_displacement_threshold_m: 0.2  # [m]
+    cartesian_displacement_threshold_m: 0.1  # [m]
 
     # Topics for holding and monitoring
     state_topic: "state"
