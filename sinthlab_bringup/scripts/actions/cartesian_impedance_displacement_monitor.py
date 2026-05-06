@@ -115,13 +115,20 @@ class CartesianImpedanceDisplacementMonitor:
     # ------------------------------------------------------------------
     def _on_state(self, msg: LBRState) -> None:
         try:
-            # Always capture the physical measured position.
-            # If the user pushed the arm in impedance mode, the commanded/ipo 
-            # positions are stale. Snapping to them will cause a high-velocity jump crash.
-            q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
-            self._joint_position = q_meas.tolist()
+            self._q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
+            q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
+            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
+            
+            # Keep track of where the controller was last told to be
+            if not np.isnan(q_ipo).any():
+                self._q_cmd = q_ipo
+            elif not np.isnan(q_cmd).any():
+                self._q_cmd = q_cmd
+            else:
+                self._q_cmd = self._q_meas
         except Exception:
-            self._joint_position = None
+            self._q_meas = None
+            self._q_cmd = None
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
         fx = msg.wrench.force.x
@@ -200,16 +207,26 @@ class CartesianImpedanceDisplacementMonitor:
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
-            if self._joint_position is not None:
-                self._hold_position = list(self._joint_position)
-                self._node.get_logger().info("Captured joint pose for displacement hold")
+            if getattr(self, '_q_meas', None) is not None and getattr(self, '_q_cmd', None) is not None:
+                self._target_hold_position = self._q_meas.copy()
+                self._current_publish_position = self._q_cmd.copy()
+                self._hold_position = self._current_publish_position.tolist()  # Just to mark it initialized
+                self._node.get_logger().info("Captured joint pose for displacement hold. Beginning smooth command snap.")
                 self._publish_hold_ready()
             else:
                 return
         if self._hold_pub is None:
             return
+            
+        # Smoothly interpolate the command from the old anchor to the new physical anchor to prevent velocity crash
+        diff = self._target_hold_position - self._current_publish_position
+        max_vel = 1.0  # rad/s safe velocity limit
+        max_delta = max_vel * self._dt
+        step = np.clip(diff, -max_delta, max_delta)
+        self._current_publish_position += step
+
         cmd = LBRJointPositionCommand()
-        cmd.joint_position = list(self._hold_position)
+        cmd.joint_position = self._current_publish_position.tolist()
         self._hold_pub.publish(cmd)
     
     def _publish_hold_ready(self) -> None:
