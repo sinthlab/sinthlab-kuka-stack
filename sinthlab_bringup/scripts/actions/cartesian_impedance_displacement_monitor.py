@@ -205,17 +205,21 @@ class CartesianImpedanceDisplacementMonitor:
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
-            # The virtual spring anchor is currently fixed at the start position (where move_to_start left it).
-            # To simulate an "Apple Pluck", we MUST NOT move this anchor at all. 
-            # If we command it to move, or snap it to the hand, the KUKA limits will spike 
-            # and the spring tension will prematurely drop to 0, ruining the experiment.
-            # We simply acknowledge the threshold and let the existing ROS controller maintain the start position!
-            self._hold_position = True  # Mark boolean so it doesn't log repeatedly
             self._node.get_logger().info(
-                "Displacement Threshold Hit! Maintaining the original virtual spring anchor. "
-                "The arm is now fully loaded. Awaiting force release (the 'pluck')..."
+                "APPLE PLUCK MAX DISPLACEMENT REACHED! The 'stem' has snapped. "
+                "Force is released. Executing graceful return."
             )
-            self._publish_hold_ready()
+            # The 'stem' breaks! We bypass the force release logic entirely
+            # so the outer orchestrator can immediately execute the move_to_start 
+            # recovery to simulate the branch springing upward!
+            self._hold_position = True
+            self._holding = False
+            self._release_published = True
+            
+            if self._release_shutdown_delay > 0.0:
+                self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+            else:
+                self._shutdown()
     
     def _publish_hold_ready(self) -> None:
         if self._hold_ready_pub is None or self._hold_published:
