@@ -105,10 +105,14 @@ class MoveToPositionAction:
                 self._q_init = q_meas
 
             # 2. Live progressing position of the spring/arm (for completion & sync checking)
-            if not np.isnan(q_cmd).any():
-                self._q_progress = q_cmd
-            else:
+            # We ONLY use the physical measured joint position here. 
+            # If we used commanded_joint_position, nodes like `move_to_start_recover` 
+            # would instantly exit because the command anchor is already at the target,
+            # completely dropping the arm!
+            if not np.isnan(q_meas).any():
                 self._q_progress = q_meas
+            else:
+                self._q_progress = q_cmd
 
         except Exception:
             return

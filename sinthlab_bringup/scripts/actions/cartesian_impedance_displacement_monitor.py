@@ -202,42 +202,29 @@ class CartesianImpedanceDisplacementMonitor:
 
         if not self._stopping and disp >= self._disp_threshold_m:
             self._stopping = True
-            self._holding = False
-            self._releasing_tension = True
-            
-            # Start interpolation from current commanded anchor down to the physical deflected position
-            self._tension_start_q = np.array(self._joint_position, dtype=float)
-            self._tension_target_q = np.array(self._measured_joint_position, dtype=float)
-            
-            # Use Ruckig online trajectory generation to safely drop tension
-            # without exceeding velocity/acceleration/jerk hardware limits!
-            self._ruckig = Ruckig(7, self._dt)
-            self._ruckig_in = InputParameter(7)
-            self._ruckig_out = OutputParameter(7)
-            
-            self._ruckig_in.current_position = self._tension_start_q.tolist()
-            self._ruckig_in.current_velocity = [0.0] * 7
-            self._ruckig_in.current_acceleration = [0.0] * 7
-            
-            self._ruckig_in.target_position = self._tension_target_q.tolist()
-            self._ruckig_in.target_velocity = [0.0] * 7
-            self._ruckig_in.target_acceleration = [0.0] * 7
-            
-            # Limit snap speed cleanly instead of raw linear interpolation.
-            self._ruckig_in.max_velocity = [0.7] * 7        # ~40 deg/s
-            self._ruckig_in.max_acceleration = [2.0] * 7    # rad/s^2
-            self._ruckig_in.max_jerk = [5.0] * 7            # rad/s^3
             
             self._node.get_logger().info(
                 f"APPLE PLUCK! Threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. "
-                f"Snapping tension via Ruckig spline and yielding to hand..."
+                f"Snapping tension and entering recovery."
             )
             # Fire audio cue!
             self._publish_hold_ready()
+            
+            # The exact moment the displacement crosses the threshold, the branch "Snaps".
+            # We DO NOT move the commanded anchor down to the hand. Doing so causes the arm
+            # to race down and fault dynamically.
+            # Instead, we simply publish release immediately. Because the commanded anchor
+            # is STILL at the top, the moment you let go, the arm will naturally and organically
+            # recoil to the top. The move_to_start_recovery node will take over merely to
+            # keep the launch file alive until the arm physically reaches the top.
+            self._holding = False
+            self._release_published = True
+            if self._release_shutdown_delay > 0.0:
+                self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+            else:
+                self._shutdown()
 
-        if self._releasing_tension:
-            self._release_tension()
-        elif self._holding:
+        if self._holding:
             self._publish_hold()
             self._check_force_release()
     
@@ -246,32 +233,6 @@ class CartesianImpedanceDisplacementMonitor:
             return
         self._baseline_pub.publish(Bool(data=True))
         self._baseline_published = True
-
-    def _release_tension(self) -> None:
-        if self._ruckig is None:
-            return
-
-        res = self._ruckig.update(self._ruckig_in, self._ruckig_out)
-        trajectory_gen_cmd = np.array(self._ruckig_out.new_position, dtype=float)
-        
-        if self._hold_pub is not None:
-            cmd = LBRJointPositionCommand()
-            cmd.joint_position = trajectory_gen_cmd.tolist()
-            self._hold_pub.publish(cmd)
-            
-        self._ruckig_in.current_position = self._ruckig_out.new_position
-        self._ruckig_in.current_velocity = self._ruckig_out.new_velocity
-        self._ruckig_in.current_acceleration = self._ruckig_out.new_acceleration
-            
-        # Ruckig returns Result.Finished == 1 and Result.Working == 0
-        if res == 1:
-            self._releasing_tension = False
-            self._release_published = True
-            self._node.get_logger().info("Tension fully released (snap complete). Executing graceful return.")
-            if self._release_shutdown_delay > 0.0:
-                self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
-            else:
-                self._shutdown()
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
