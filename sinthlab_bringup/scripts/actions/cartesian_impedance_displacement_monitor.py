@@ -87,8 +87,15 @@ class CartesianImpedanceDisplacementMonitor:
         self._hold_published = False
         self._stopping = False
         self._holding = False
+        self._releasing_tension = False
+        self._release_tension_progress = 0.0
+        self._release_tension_duration = 0.3  # Safe half-second interpolation
+        self._tension_start_q: Optional[np.ndarray] = None
+        self._tension_target_q: Optional[np.ndarray] = None
+        
         self._hold_position: Optional[list[float]] = None
         self._joint_position: Optional[list[float]] = None
+        self._measured_joint_position: Optional[list[float]] = None
         self._force_magnitude: Optional[float] = None
         self._release_elapsed = 0.0
         self._release_published = False
@@ -119,6 +126,9 @@ class CartesianImpedanceDisplacementMonitor:
             q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
             q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
             
+            if not np.isnan(q_meas).any():
+                self._measured_joint_position = q_meas.tolist()
+
             if not np.isnan(q_ipo).any():
                 self._joint_position = q_ipo.tolist()
             elif not np.isnan(q_cmd).any():
@@ -188,12 +198,23 @@ class CartesianImpedanceDisplacementMonitor:
 
         if not self._stopping and disp >= self._disp_threshold_m:
             self._stopping = True
-            self._holding = True
+            self._holding = False
+            self._releasing_tension = True
+            
+            # Start interpolation from current commanded anchor down to the physical deflected position
+            self._tension_start_q = np.array(self._joint_position, dtype=float)
+            self._tension_target_q = np.array(self._measured_joint_position, dtype=float)
+            
             self._node.get_logger().info(
-                f"Displacement threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. Holding position and monitoring force.",
+                f"APPLE PLUCK! Threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. "
+                "Snapping tension and yielding to hand..."
             )
+            # Fire audio cue!
+            self._publish_hold_ready()
 
-        if self._holding:
+        if self._releasing_tension:
+            self._release_tension()
+        elif self._holding:
             self._publish_hold()
             self._check_force_release()
     
@@ -203,23 +224,39 @@ class CartesianImpedanceDisplacementMonitor:
         self._baseline_pub.publish(Bool(data=True))
         self._baseline_published = True
 
-    def _publish_hold(self) -> None:
-        if self._hold_position is None:
-            self._node.get_logger().info(
-                "APPLE PLUCK MAX DISPLACEMENT REACHED! The 'stem' has snapped. "
-                "Force is released. Executing graceful return."
-            )
-            # The 'stem' breaks! We bypass the force release logic entirely
-            # so the outer orchestrator can immediately execute the move_to_start 
-            # recovery to simulate the branch springing upward!
-            self._hold_position = True
-            self._holding = False
-            self._release_published = True
+    def _release_tension(self) -> None:
+        self._release_tension_progress += self._dt
+        alpha = min(1.0, self._release_tension_progress / self._release_tension_duration)
+        
+        # Linearly interpolate anchor position to drop tension safely without velocity faults
+        current_q = self._tension_start_q + alpha * (self._tension_target_q - self._tension_start_q)
+        
+        if self._hold_pub is not None:
+            cmd = LBRJointPositionCommand()
+            cmd.joint_position = current_q.tolist()
+            self._hold_pub.publish(cmd)
             
+        if alpha >= 1.0:
+            self._releasing_tension = False
+            self._release_published = True
+            self._node.get_logger().info("Tension fully released (snap complete). Executing graceful return.")
             if self._release_shutdown_delay > 0.0:
                 self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
             else:
                 self._shutdown()
+
+    def _publish_hold(self) -> None:
+        if self._hold_position is None:
+            self._hold_position = self._joint_position
+            self._node.get_logger().info("Holding position to monitor force (Legacy mode)")
+            self._publish_hold_ready()
+            
+        if self._hold_pub is None:
+            return
+
+        cmd = LBRJointPositionCommand()
+        cmd.joint_position = self._hold_position
+        self._hold_pub.publish(cmd)
     
     def _publish_hold_ready(self) -> None:
         if self._hold_ready_pub is None or self._hold_published:
