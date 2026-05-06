@@ -205,9 +205,14 @@ class CartesianImpedanceDisplacementMonitor:
             self._tension_start_q = np.array(self._joint_position, dtype=float)
             self._tension_target_q = np.array(self._measured_joint_position, dtype=float)
             
+            # Calculate a safe duration based on distance so we never exceed joint velocity limits.
+            # Max command velocity ~ 0.5 rad/s to be safe.
+            max_delta = np.max(np.abs(self._tension_target_q - self._tension_start_q))
+            self._release_tension_duration = max(0.1, float(max_delta / 0.5))
+            
             self._node.get_logger().info(
                 f"APPLE PLUCK! Threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. "
-                "Snapping tension and yielding to hand..."
+                f"Snapping tension over {self._release_tension_duration:.2f}s and yielding to hand..."
             )
             # Fire audio cue!
             self._publish_hold_ready()
