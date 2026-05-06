@@ -115,16 +115,11 @@ class CartesianImpedanceDisplacementMonitor:
     # ------------------------------------------------------------------
     def _on_state(self, msg: LBRState) -> None:
         try:
-            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
-            q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
+            # Always capture the physical measured position.
+            # If the user pushed the arm in impedance mode, the commanded/ipo 
+            # positions are stale. Snapping to them will cause a high-velocity jump crash.
             q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
-            
-            if not np.isnan(q_ipo).any():
-                self._joint_position = q_ipo.tolist()
-            elif not np.isnan(q_cmd).any():
-                self._joint_position = q_cmd.tolist()
-            else:
-                self._joint_position = q_meas.tolist()
+            self._joint_position = q_meas.tolist()
         except Exception:
             self._joint_position = None
 
