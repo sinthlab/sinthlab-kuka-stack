@@ -68,7 +68,8 @@ class MoveToPositionAction:
         self._init = False
         self._moving = False
         self._q_init = np.zeros(7)
-        self._q_progress = np.zeros(7)
+        self._q_cmd_sync = np.zeros(7)
+        self._q_meas_completion = np.zeros(7)
         self._shutdown_requested = False
 
         # Trajectory generator (Ruckig)
@@ -104,15 +105,17 @@ class MoveToPositionAction:
                     self._node.get_logger().warn("ipo & commanded joint pos are NaN. Falling back to measured for initialization, this MAY cause a jump in Impedance Mode if not held tightly!")
                 self._q_init = q_meas
 
-            # 2. Live progressing position of the spring/arm (for completion & sync checking)
-            # We ONLY use the physical measured joint position here. 
-            # If we used commanded_joint_position, nodes like `move_to_start_recover` 
-            # would instantly exit because the command anchor is already at the target,
-            # completely dropping the arm!
-            if not np.isnan(q_meas).any():
-                self._q_progress = q_meas
+            # 2. Command sync reference for Ruckig to ensure packets aren't dropped
+            if not np.isnan(q_cmd).any():
+                self._q_cmd_sync = q_cmd
             else:
-                self._q_progress = q_cmd
+                self._q_cmd_sync = q_meas
+                
+            # 3. Physical measurement reference for true trajectory completion
+            if not np.isnan(q_meas).any():
+                self._q_meas_completion = q_meas
+            else:
+                self._q_meas_completion = q_cmd
 
         except Exception:
             return
@@ -174,13 +177,15 @@ class MoveToPositionAction:
                 self._request_shutdown()
                 return
         
-        # Check completion (per-joint max error)
-        err = self._joint_pos_target - self._q_progress
+        # Check completion against the *physical* arm (per-joint max error).
+        # We DO NOT check completion against the commanded anchor here, otherwise
+        # the recovery sequence will instantly exit if the anchor is already at the target
+        err = self._joint_pos_target - self._q_meas_completion
         max_err = float(np.max(np.abs(err)))
         if max_err <= self._joint_pos_tol:
             self._moving = False
             self._node.get_logger().info(
-                f"Move-to-position complete; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
+                f"Move-to-position physical completion check passed; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
             )
             self._request_shutdown()
             return
@@ -188,7 +193,7 @@ class MoveToPositionAction:
         # Synchronize Ruckig with the controller's actual received commands
         # If the ROS2 controller is lagging, inactive, or dropping packets, 
         # pause the spline generation until the controller catches up.
-        sync_err = np.abs(np.array(self._trajectory_gen_in.current_position, dtype=float) - self._q_progress)
+        sync_err = np.abs(np.array(self._trajectory_gen_in.current_position, dtype=float) - self._q_cmd_sync)
         if np.max(sync_err) > 0.05:
             # Controller is lagging behind our spline by more than 0.05 radians (~3 degrees)
             # which usually means the node started prior to the hardware or controller manager activating.
