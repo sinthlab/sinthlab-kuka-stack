@@ -10,8 +10,8 @@ from rclpy.node import Node as rclpyNode
 from ruckig import InputParameter, OutputParameter, Ruckig
 
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
-from helpers.common_threshold import DebugTicker, get_required_param
-from helpers.param_logging import log_params_once
+from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
+from sinthlab_bringup.helpers.param_logging import log_params_once
 
 
 class MoveToPositionAction:
@@ -20,32 +20,37 @@ class MoveToPositionAction:
     Standalone PTP-like action using Ruckig.
     - Subscribes to robot state (LBRState)
     - Plans and publishes joint setpoints to reach a target configuration
-    - Exits the process once the target is reached
+    - Calls on_complete() and goes idle when the target is reached
     """
 
-    def __init__(self, node: rclpyNode, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None]) -> None:
         self._node = node
-        self._to_start = to_start
         self._on_complete = on_complete
+        self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
         
-        # Tracks when the action is ready to be triggered
+        # Tracks when the action is active
         self._ready = False
 
         # Parameters
-        self._update_rate = int(get_required_param(node, "update_rate"))
+        self._update_rate = int(get_required_param(node, self._param_prefix + "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
         self._joint_pos_target_deg = np.array(
-            get_required_param(node, "target_joint_position"), dtype=float
+            get_required_param(node, self._param_prefix + "target_joint_position"), dtype=float
         )
         self._joint_pos_target = np.radians(self._joint_pos_target_deg)
-        self._joint_pos_tol = float(get_required_param(node, "joint_move_tolerance"))
+        self._joint_pos_tol = float(get_required_param(node, self._param_prefix + "joint_move_tolerance"))
+        
+        if node.has_parameter(self._param_prefix + "wait_for_physical_arrival"):
+            self._wait_for_physical_arrival = bool(node.get_parameter(self._param_prefix + "wait_for_physical_arrival").value)
+        else:
+            self._wait_for_physical_arrival = False
 
-        self._v_max_param = np.radians(np.array(get_required_param(node, "move_to_pos_v_max"), dtype=float)).tolist()
-        self._a_max_param = get_required_param(node, "move_to_pos_a_max")
-        self._j_max_param = get_required_param(node, "move_to_pos_j_max")
+        self._v_max_param = np.radians(np.array(get_required_param(node, self._param_prefix + "move_to_pos_v_max"), dtype=float)).tolist()
+        self._a_max_param = get_required_param(node, self._param_prefix + "move_to_pos_a_max")
+        self._j_max_param = get_required_param(node, self._param_prefix + "move_to_pos_j_max")
 
-        self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
-        debug_rate_hz = float(get_required_param(node, "debug_log_rate_hz"))
+        self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
+        debug_rate_hz = float(get_required_param(node, self._param_prefix + "debug_log_rate_hz"))
         self._dbg = DebugTicker(debug_rate_hz)
 
         if self._debug_log_enabled:
@@ -69,6 +74,7 @@ class MoveToPositionAction:
         self._moving = False
         self._q_init = np.zeros(7)
         self._q_cmd_sync = np.zeros(7)
+        self._q_cmd_completion = np.zeros(7)
         self._q_meas_completion = np.zeros(7)
         self._shutdown_requested = False
 
@@ -111,7 +117,15 @@ class MoveToPositionAction:
             else:
                 self._q_cmd_sync = q_meas
                 
-            # 3. Physical measurement reference for true trajectory completion
+            # 3. Trajectory completion must ALWAYS check the commanded anchor!
+            # Under Cartesian Impedance, the physical arm (q_meas) sags physically due
+            # to gravity. Wait for q_cmd instead so the action completes as soon as
+            # the virtual spring anchor reaches the target, regardless of droop.
+            if not np.isnan(q_cmd).any():
+                self._q_cmd_completion = q_cmd
+            else:
+                self._q_cmd_completion = q_meas
+                
             if not np.isnan(q_meas).any():
                 self._q_meas_completion = q_meas
             else:
@@ -126,13 +140,24 @@ class MoveToPositionAction:
         if not self._init:
             self._init = True
 
+    def start(self) -> None:
+        """Trigger the action to start."""
+        if self._ready:
+            self._node.get_logger().warn("MoveToPositionAction is already running.")
+            return
+        
+        self._init = False
+        self._moving = False
+        self._subscribers_ready = False
+        self._trajectory_generation = None
+        self._shutdown_requested = False
+        self._ready = True
+        self._node.get_logger().info("MoveToPositionAction started.")
+
     def _step(self) -> None:
-        # wait till ready callback is ready to start this action
+        # early exit if not active
         if not self._ready:
-            if self._to_start():
-                self._ready = True
-            else:
-                return
+            return
         
         # Early exit if shutdown requested
         if self._shutdown_requested:
@@ -177,15 +202,21 @@ class MoveToPositionAction:
                 self._request_shutdown()
                 return
         
-        # Check completion against the *physical* arm (per-joint max error).
-        # We DO NOT check completion against the commanded anchor here, otherwise
-        # the recovery sequence will instantly exit if the anchor is already at the target
-        err = self._joint_pos_target - self._q_meas_completion
+        # Check completion against the *commanded* anchor (per-joint max error)
+        # OR the *measured* physical joint positions, depending on context!
+        if self._wait_for_physical_arrival:
+            # During "recovery", we want to wait for the actual arm to recoil
+            err = self._joint_pos_target - self._q_meas_completion
+        else:
+            # During "init", we want to complete as soon as spline arrives
+            # so we don't get stuck waiting for physical perfection fighting against sagging gravity droop
+            err = self._joint_pos_target - self._q_cmd_completion
+            
         max_err = float(np.max(np.abs(err)))
         if max_err <= self._joint_pos_tol:
             self._moving = False
             self._node.get_logger().info(
-                f"Move-to-position physical completion check passed; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
+                f"Move-to-position command completion check passed; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
             )
             self._request_shutdown()
             return
@@ -255,14 +286,11 @@ class MoveToPositionAction:
         if self._shutdown_requested:
             return
         self._shutdown_requested = True
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        self._ready = False
         try:
-            # The on_complete callback will
-            # destroy the node and handle shutdown
+            # Notify orchestrator that we are done
             self._on_complete()
         except Exception as exc:
             self._node.get_logger().error(
-                f"Exception raised while move-to-pos shutdown callback: {exc}"
+                f"Exception raised while move-to-pos completion callback: {exc}"
             )

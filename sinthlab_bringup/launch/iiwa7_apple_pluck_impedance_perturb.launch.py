@@ -60,89 +60,20 @@ def generate_launch_description():
         }.items(),
     )
 
-    move_to_start_node = Node(
+    orchestrator_node = Node(
         package="sinthlab_bringup",
-        executable="move_to_start.py",
-        name="move_to_start",
+        executable="perturb_orchestrator.py",
+        name="perturb_orchestrator",
         namespace=LaunchConfiguration("robot_name"),
         output="screen",
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
         ],
-    )
-
-    force_torque_bias_calibrator_node = Node(
-        package="sinthlab_bringup",
-        executable="force_torque_bias_calibrator.py",
-        name="force_torque_bias_calibrator",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    audio_cue_play_node = Node(
-        package="sinthlab_bringup",
-        executable="audio_cue_play.py",
-        name="audio_cue_play",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-        ],
-    )
-
-    perturb_start_node = Node(
-        package="sinthlab_bringup",
-        executable="perturb_start.py",
-        name="perturb_start",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    impedance_displacement_node = Node(
-        package="sinthlab_bringup",
-        executable="apple_pluck_impedance_control_displacement.py",
-        name="apple_pluck_impedance_control_displacement",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    move_to_start_recover_node = Node(
-        package="sinthlab_bringup",
-        executable="move_to_start.py",
-        name="move_to_start_recover",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    shutdown_after_recover = RegisterEventHandler(
-        OnProcessExit(
-            target_action=move_to_start_recover_node,
-            on_exit=[
-                LogInfo(msg="move_to_start recovery complete; shutting down perturbation launch."),
-                EmitEvent(event=Shutdown(reason="move_to_start recovery complete")),
-            ],
-        )
     )
 
     status_message = LogInfo(
-        msg="Perturbation launch active. Robot will nudge start pose after baseline beep."
+        msg="Perturbation logic started via multi-trial Orchestrator."
     )
 
     return LaunchDescription(
@@ -152,13 +83,7 @@ def generate_launch_description():
             robot_name,
             ctrl,
             hardware_launch,
-            move_to_start_node,
-            force_torque_bias_calibrator_node,
-            audio_cue_play_node,
-            perturb_start_node,
-            impedance_displacement_node,
-            move_to_start_recover_node,
-            shutdown_after_recover,
+            orchestrator_node,
             status_message,
         ]
     )

@@ -5,6 +5,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from lbr_bringup.description import LBRDescriptionMixin
+from lbr_bringup.moveit import LBRMoveGroupMixin
 from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
@@ -22,10 +23,16 @@ def generate_launch_description():
     )
     
     # 3. Initialize MoveIt Configs to supply semantic/kinematics params for `moveit_py`
-    # We dynamically build the moveit properties for your specific KUKA model
-    moveit_config = MoveItConfigsBuilder(
+    moveit_config_builder = LBRMoveGroupMixin.moveit_configs_builder(
         robot_name="iiwa7", package_name="iiwa7_moveit_config"
-    ).to_moveit_configs()
+    )
+    moveit_config = moveit_config_builder.to_moveit_configs()
+    
+    moveit_config_dict = moveit_config.to_dict()
+    
+    # MoveItPy/MoveItCpp expects "planning_pipelines.pipeline_names" to be the list of pipelines
+    if "planning_pipelines" in moveit_config_dict and isinstance(moveit_config_dict["planning_pipelines"], list):
+        moveit_config_dict["planning_pipelines"] = {"pipeline_names": moveit_config_dict["planning_pipelines"]}
 
     # 4. Bring up KUKA Hardware in Impedance/Position Mode
     hardware_launch = IncludeLaunchDescription(
@@ -40,16 +47,15 @@ def generate_launch_description():
     )
 
     # 5. Launch the Virtual Fixture Node with MoveIt Py parameters
-    virtual_fixture_node = Node(
+    orchestrator_node = Node(
         package="sinthlab_bringup",
-        executable="move_restricted_on_a_plane.py",
-        name="virtual_fixture_node",
+        executable="restricted_plane_orchestrator.py",
+        name="restricted_plane_orchestrator",
         namespace=LaunchConfiguration("robot_name"),
         output="screen",
         parameters=[
+            moveit_config_dict,
             robot_description,
-            moveit_config.robot_description_semantic,
-            moveit_config.robot_description_kinematics,
             PathJoinSubstitution([
                 FindPackageShare("sinthlab_bringup"),
                 "config",
@@ -64,6 +70,6 @@ def generate_launch_description():
             robot_name,
             ctrl,
             hardware_launch,
-            virtual_fixture_node,
+            orchestrator_node,
         ]
     )

@@ -16,7 +16,7 @@ from rclpy.time import Time
 
 from lbr_fri_idl.msg import LBRState
 
-from helpers.common_threshold import get_required_param
+from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 
 class ForceTorqueBias:
@@ -26,13 +26,14 @@ class ForceTorqueBias:
         self,
         node: rclpyNode,
         *,
-        to_start: Callable[[], bool],
+        param_prefix: str = "",
         on_complete: Callable[[np.ndarray], None],
     ) -> None:
         self._node = node
-        self._to_start = to_start
         self._on_complete = on_complete
+        self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
 
+        self._active = False
         self._collecting = False
         self._completed = False
         self._settle_complete = False
@@ -40,18 +41,18 @@ class ForceTorqueBias:
         self._sum = np.zeros(6, dtype=float)
         self._count = 0
 
-        self._lbr_state_topic = str(get_required_param(node, "lbr_state_topic"))
-        self._bias_topic = str(get_required_param(node, "bias_topic"))
-        self._sample_duration = Duration(seconds=float(get_required_param(node, "calibration_duration_sec")))
-        self._total_timeout = Duration(seconds=float(get_required_param(node, "calibration_timeout_sec")))
+        self._lbr_state_topic = str(get_required_param(node, self._param_prefix + "lbr_state_topic"))
+        self._bias_topic = str(get_required_param(node, self._param_prefix + "bias_topic"))
+        self._sample_duration = Duration(seconds=float(get_required_param(node, self._param_prefix + "calibration_duration_sec")))
+        self._total_timeout = Duration(seconds=float(get_required_param(node, self._param_prefix + "calibration_timeout_sec")))
         # optional quiet window after move-to-start before collecting torque samples
-        self._settle_duration = Duration(seconds=float(get_required_param(node, "settle_duration_sec")))
-        self._subscriber_latch_delay_sec = float(get_required_param(node, "subscriber_latch_delay_sec"))
-        self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
+        self._settle_duration = Duration(seconds=float(get_required_param(node, self._param_prefix + "settle_duration_sec")))
+        self._subscriber_latch_delay_sec = float(get_required_param(node, self._param_prefix + "subscriber_latch_delay_sec"))
+        self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
 
         robot_description = str(get_required_param(node, "robot_description"))
-        base_link = str(get_required_param(node, "base_link"))
-        end_effector_link = str(get_required_param(node, "end_effector_link"))
+        base_link = str(get_required_param(node, self._param_prefix + "base_link"))
+        end_effector_link = str(get_required_param(node, self._param_prefix + "end_effector_link"))
 
         self._robot = optas.RobotModel(urdf_string=robot_description)
         self._jacobian_func = self._robot.get_link_geometric_jacobian_function(
@@ -68,30 +69,33 @@ class ForceTorqueBias:
         self._lbr_state_sub = node.create_subscription(LBRState, self._lbr_state_topic, self._on_lbr_state, 10)
         self._timer = node.create_timer(0.05, self._step)
 
-        self._node.get_logger().info(
-            f"Waiting for bias gate; monitoring '{self._lbr_state_topic}'."
-        )
+    def start(self) -> None:
+        """Trigger the bias calibrator to start collecting samples."""
+        if self._active:
+            self._node.get_logger().warn("ForceTorqueBias calibrator is already active.")
+            return
+
+        self._active = True
+        self._collecting = True
+        self._completed = False
+        self._collection_start = self._node.get_clock().now()
+        self._settle_complete = self._settle_duration.nanoseconds == 0
+        self._sum[:] = 0.0
+        self._count = 0
+        if self._settle_complete:
+            self._node.get_logger().info(
+                f"Bias capture started; averaging wrench for {self._sample_duration.nanoseconds / 1e9:.2f}s."
+            )
+        else:
+            self._node.get_logger().info(
+                f"Bias capture activated; waiting {self._settle_duration.nanoseconds / 1e9:.2f}s before sampling."
+            )
 
     def _step(self) -> None:
-        if self._completed:
+        if not self._active or self._completed:
             return
 
         if not self._collecting:
-            if not self._to_start():
-                return
-            self._collecting = True
-            self._collection_start = self._node.get_clock().now()
-            self._settle_complete = self._settle_duration.nanoseconds == 0
-            self._sum[:] = 0.0
-            self._count = 0
-            if self._settle_complete:
-                self._node.get_logger().info(
-                    f"Bias capture started; averaging wrench for {self._sample_duration.nanoseconds / 1e9:.2f}s."
-                )
-            else:
-                self._node.get_logger().info(
-                    f"Bias gate open; waiting {self._settle_duration.nanoseconds / 1e9:.2f}s before sampling."
-                )
             return
 
         assert self._collection_start is not None
@@ -146,10 +150,7 @@ class ForceTorqueBias:
 
         self._completed = True
         self._collecting = False
-
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        self._active = False
 
         self._node.get_logger().info(
             f"Publishing Force-torque bias ({reason}): Fx={bias[0]:.3f}, Fy={bias[1]:.3f}, Fz={bias[2]:.3f}, Tx={bias[3]:.3f}, Ty={bias[4]:.3f}, Tz={bias[5]:.3f}"
@@ -162,10 +163,4 @@ class ForceTorqueBias:
 
         self._on_complete(bias)
 
-        self._shutdown_timer = self._node.create_timer(self._subscriber_latch_delay_sec, self._shutdown)
-
     # ------------------------------------------------------------------
-    def _shutdown(self) -> None:
-        self._node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()

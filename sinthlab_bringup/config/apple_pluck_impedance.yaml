@@ -1,106 +1,92 @@
-/lbr/force_torque_bias_calibrator:
+/**:
   ros__parameters:
-    lbr_state_topic: "state"
-    start_gate_topic: "move_to_start/done"
-    bias_topic: "force_torque_bias"
-    done_topic: "force_bias/done"
-    base_link: "lbr_link_0"
-    end_effector_link: "lbr_link_ee"
-    calibration_duration_sec: 1.0
-    calibration_timeout_sec: 3.0
-    settle_duration_sec: 0.5
-    subscriber_latch_delay_sec: 1.0
-    debug_log_enabled: false
-
-/lbr/apple_pluck_impedance_control_displacement:
-  ros__parameters:
-    # Control timing
-    update_rate: 200  # [Hz]
-
-    # Start gating
-    done_topic: "force_bias/done"
-    baseline_ready_topic: "baseline_ready/done"
-    hold_ready_topic: "displacement_hold_ready/done"
-
-    # Cartesian frames
-    base_frame: "lbr_link_0"
-    ee_frame: "lbr_link_ee"
-
-    # Displacement stop criterion
-    cartesian_axis: "z"   # x | y | z | norm
-    cartesian_displacement_threshold_m: 0.1  # [m]
-
-    # Topics for holding and monitoring
-    state_topic: "state"
-    command_topic: "command/joint_position"
-    wrench_topic: "force_torque_broadcaster/wrench"
-
-    # Force release detection after holding
-    force_release_threshold_newton: 5.0
-    force_release_duration_sec: 3.0
-    force_release_done_topic: "displacement_force_release/done"
-    force_release_shutdown_delay_sec: 0.8
-
-    # Debug logging
-    debug_log_enabled: false
-    debug_log_rate_hz: 2.0
-
-    subscriber_latch_delay_sec: 1.0
-
-/lbr/move_to_start:
-  ros__parameters:
-    # Control timing for move-to-start
-    update_rate: 200
-
-    # Start position in degrees
-    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
-    joint_move_tolerance: 0.08  # [rad] - Widened to allow for Cartesian spring droop
-
-    # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
-    # iiwa7 per-joint max velocities from URDF (deg/s):
-    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-    # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
-    move_to_pos_a_max: 2.0   # [rad/s^2] - Reduced for smooth impedance tracking
-    # Jerk is not specified upstream; keep a conservative default
-    move_to_pos_j_max: 5.0   # [rad/s^3] - Reduced to prevent oscillation on underdamped
-    
-    start_action_needed: false
-    move_done_topic: "move_to_start/done"
-    subscriber_latch_delay_sec: 1.0
-
-    # Debug logging
-    debug_log_enabled: false
-    debug_log_rate_hz: 2.0
-
-/lbr/move_to_start_recover:
-  ros__parameters:
-    # Control timing for move-to-start
-    update_rate: 200
-
-    # Start position in degrees
-    target_joint_position: [0, 10, 0, -80, 0, 90, 0]
-    joint_move_tolerance: 0.08  # [rad] - Widened to allow for Cartesian spring droop
-
-    # Motion limits (scalar applies to all 7 joints; or provide a 7-element array)
-    # iiwa7 per-joint max velocities from URDF (deg/s):
-    move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-    # Acceleration limits are not in the URDF; use MoveIt defaults (10 rad/s^2)
-    move_to_pos_a_max: 2.0   # [rad/s^2] - Reduced for smooth impedance tracking
-    # Jerk is not specified upstream; keep a conservative default
-    move_to_pos_j_max: 5.0   # [rad/s^3] - Reduced to prevent oscillation on underdamped
-    
-    start_action_needed: True
-    move_done_topic: "move_to_start/done"
-    start_gate_topic: "displacement_force_release/done"
-    subscriber_latch_delay_sec: 1.0
-    
-    # Debug logging
-    debug_log_enabled: false
-    debug_log_rate_hz: 2.0
-
-/lbr/audio_cue_play:
-  ros__parameters:
-    start_gate_topic: "baseline_ready/done"
-    hold_gate_topic: "displacement_hold_ready/done"
-    frequency_hz: 1500  # valid range: 37-32767 Hz
-    duration_ms: 1500  # milliseconds
+    force_torque_bias_calibrator:
+      lbr_state_topic: state
+      start_gate_topic: move_to_start/done
+      bias_topic: force_torque_bias
+      done_topic: force_bias/done
+      base_link: lbr_link_0
+      end_effector_link: lbr_link_ee
+      calibration_duration_sec: 1.0
+      calibration_timeout_sec: 3.0
+      settle_duration_sec: 0.5
+      subscriber_latch_delay_sec: 1.0
+      debug_log_enabled: false
+    apple_pluck_impedance_control_displacement:
+      update_rate: 200
+      done_topic: force_bias/done
+      baseline_ready_topic: baseline_ready/done
+      hold_ready_topic: displacement_hold_ready/done
+      base_frame: lbr_link_0
+      ee_frame: lbr_link_ee
+      cartesian_axis: z
+      cartesian_displacement_threshold_m: 0.1
+      state_topic: state
+      command_topic: command/joint_position
+      wrench_topic: force_torque_broadcaster/wrench
+      force_release_threshold_newton: 5.0
+      force_release_duration_sec: 3.0
+      force_release_done_topic: displacement_force_release/done
+      force_release_shutdown_delay_sec: 0.8
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+      subscriber_latch_delay_sec: 1.0
+    move_to_start:
+      update_rate: 200
+      target_joint_position:
+      - 0
+      - 10
+      - 0
+      - -80
+      - 0
+      - 90
+      - 0
+      joint_move_tolerance: 0.08
+      move_to_pos_v_max:
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      start_action_needed: false
+      move_done_topic: move_to_start/done
+      subscriber_latch_delay_sec: 1.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+    move_to_start_recover:
+      update_rate: 200
+      target_joint_position:
+      - 0
+      - 10
+      - 0
+      - -80
+      - 0
+      - 90
+      - 0
+      joint_move_tolerance: 0.08
+      move_to_pos_v_max:
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      start_action_needed: true
+      wait_for_physical_arrival: true
+      move_done_topic: move_to_start/done
+      start_gate_topic: displacement_force_release/done
+      subscriber_latch_delay_sec: 1.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+    audio_cue_play:
+      start_gate_topic: baseline_ready/done
+      hold_gate_topic: displacement_hold_ready/done
+      frequency_hz: 1500
+      duration_ms: 1500

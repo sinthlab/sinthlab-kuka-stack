@@ -12,12 +12,11 @@ from rclpy.node import Node as rclpyNode
 from rclpy.time import Time
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, WrenchStamped
-from std_msgs.msg import Bool
 from ruckig import InputParameter, OutputParameter, Ruckig
 
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from helpers.common_threshold import DebugTicker, create_transient_bool_publisher, get_required_param
-from helpers.param_logging import log_params_once
+from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
+from sinthlab_bringup.helpers.param_logging import log_params_once
 
 
 class CartesianImpedanceDisplacementMonitor:
@@ -28,33 +27,33 @@ class CartesianImpedanceDisplacementMonitor:
     - Shutdown after forces stay below the configured threshold long enough.
     """
 
-    def __init__(self, node: rclpyNode, *, to_start: Callable[[], None], on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None]) -> None:
         self._node = node
-        self._to_start = to_start
         self._on_complete = on_complete
+        self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
         
-        # Tracks when the action is ready to be triggered
+        # Tracks when the action is active
         self._ready = False
 
         # Parameters sourced from the hosting node (YAML/overrides)
-        self._update_rate = int(get_required_param(node, "update_rate"))
+        self._update_rate = int(get_required_param(node, self._param_prefix + "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
-        self._base_frame = str(get_required_param(node, "base_frame"))
-        self._ee_frame = str(get_required_param(node, "ee_frame"))
-        self._disp_axis = str(get_required_param(node, "cartesian_axis")).lower()
-        self._disp_threshold_m = float(get_required_param(node, "cartesian_displacement_threshold_m"))
-        self._state_topic = str(get_required_param(node, "state_topic"))
-        self._command_topic = str(get_required_param(node, "command_topic"))
-        self._wrench_topic = str(get_required_param(node, "wrench_topic"))
-        self._force_release_threshold = float(get_required_param(node, "force_release_threshold_newton"))
-        self._force_release_duration = float(get_required_param(node, "force_release_duration_sec"))
-        self._release_shutdown_delay = max(0.0, float(get_required_param(node, "force_release_shutdown_delay_sec")))
-        self._baseline_ready_topic = str(get_required_param(node, "baseline_ready_topic"))
-        self._hold_ready_topic = str(get_required_param(node, "hold_ready_topic"))
-        self._subscriber_latch_delay_sec = float(get_required_param(node, "subscriber_latch_delay_sec"))
+        self._base_frame = str(get_required_param(node, self._param_prefix + "base_frame"))
+        self._ee_frame = str(get_required_param(node, self._param_prefix + "ee_frame"))
+        self._disp_axis = str(get_required_param(node, self._param_prefix + "cartesian_axis")).lower()
+        self._disp_threshold_m = float(get_required_param(node, self._param_prefix + "cartesian_displacement_threshold_m"))
+        self._state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
+        self._command_topic = str(get_required_param(node, self._param_prefix + "command_topic"))
+        self._wrench_topic = str(get_required_param(node, self._param_prefix + "wrench_topic"))
+        self._force_release_threshold = float(get_required_param(node, self._param_prefix + "force_release_threshold_newton"))
+        self._force_release_duration = float(get_required_param(node, self._param_prefix + "force_release_duration_sec"))
+        self._release_shutdown_delay = max(0.0, float(get_required_param(node, self._param_prefix + "force_release_shutdown_delay_sec")))
+        self._baseline_ready_topic = str(get_required_param(node, self._param_prefix + "baseline_ready_topic"))
+        self._hold_ready_topic = str(get_required_param(node, self._param_prefix + "hold_ready_topic"))
+        self._subscriber_latch_delay_sec = float(get_required_param(node, self._param_prefix + "subscriber_latch_delay_sec"))
 
-        self._debug_log_enabled = bool(get_required_param(node, "debug_log_enabled"))
-        dbg_rate = float(get_required_param(node, "debug_log_rate_hz"))
+        self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
+        dbg_rate = float(get_required_param(node, self._param_prefix + "debug_log_rate_hz"))
         self._dbg = DebugTicker(dbg_rate)
 
         if self._debug_log_enabled:
@@ -82,9 +81,6 @@ class CartesianImpedanceDisplacementMonitor:
 
         # Runtime state
         self._baseline: Optional[TransformStamped] = None
-        self._baseline_pub = create_transient_bool_publisher(node, self._baseline_ready_topic)
-        self._baseline_published = False
-        self._hold_ready_pub = create_transient_bool_publisher(node, self._hold_ready_topic)
         self._hold_published = False
         self._stopping = False
         self._holding = False
@@ -172,20 +168,37 @@ class CartesianImpedanceDisplacementMonitor:
             return abs(dz)
         return (dx * dx + dy * dy + dz * dz) ** 0.5
     
+    def start(self) -> None:
+        """Trigger the action to start monitoring displacement."""
+        if self._ready:
+            self._node.get_logger().warn("DisplacementMonitor is already running.")
+            return
+
+        self._baseline = None
+        self._hold_published = False
+        self._stopping = False
+        self._holding = False
+        self._hold_position = None
+        self._force_magnitude = None
+        self._release_elapsed = 0.0
+        self._release_published = False
+        self._release_reset_logged = False
+        self._shutdown_requested = False
+        
+        self._ready = True
+        self._node.get_logger().info("Displacement monitor activated for new trial.")
+
     def _step(self) -> None:
         # wait till ready callback is ready to start this action
         if not self._ready:
-            if self._to_start():
-                self._ready = True
-            else:
-                return
+            return
         
         if self._baseline is None:
             ts = self._lookup()
             if ts is not None:
                 self._baseline = ts
                 self._node.get_logger().info("Captured baseline EE pose for displacement thresholding")
-                self._publish_baseline_ready()
+
             return
 
         ts_now = self._lookup()
@@ -208,8 +221,7 @@ class CartesianImpedanceDisplacementMonitor:
                 f"Snapping tension and entering recovery."
             )
             # Fire audio cue!
-            self._publish_hold_ready()
-            
+
             # The exact moment the displacement crosses the threshold, the branch "Snaps".
             # We DO NOT move the commanded anchor down to the hand. Doing so causes the arm
             # to race down and fault dynamically.
@@ -228,18 +240,13 @@ class CartesianImpedanceDisplacementMonitor:
             self._publish_hold()
             self._check_force_release()
     
-    def _publish_baseline_ready(self) -> None:
-        if self._baseline_pub is None or self._baseline_published:
             return
-        self._baseline_pub.publish(Bool(data=True))
-        self._baseline_published = True
 
     def _publish_hold(self) -> None:
         if self._hold_position is None:
             self._hold_position = self._joint_position
             self._node.get_logger().info("Holding position to monitor force (Legacy mode)")
-            self._publish_hold_ready()
-            
+
         if self._hold_pub is None:
             return
 
@@ -247,11 +254,6 @@ class CartesianImpedanceDisplacementMonitor:
         cmd.joint_position = self._hold_position
         self._hold_pub.publish(cmd)
     
-    def _publish_hold_ready(self) -> None:
-        if self._hold_ready_pub is None or self._hold_published:
-            return
-        self._hold_ready_pub.publish(Bool(data=True))
-        self._hold_published = True
 
     def _check_force_release(self) -> None:
         if self._force_magnitude is None:
@@ -290,22 +292,10 @@ class CartesianImpedanceDisplacementMonitor:
         if self._shutdown_requested:
             return
         self._shutdown_requested = True
-        self._node.get_logger().info("Displacement monitor shutting down (release sequence complete).")
-        if self._timer is not None:
-            try:
-                self._timer.cancel()
-            except Exception:
-                pass
-            self._timer = None
+        self._ready = False
+        self._node.get_logger().info("Displacement monitor sequence complete. Yielding control.")
+        
         try:
             self._on_complete()
         except Exception as exc:
-            self._node.get_logger().error(f"Exception during displacement monitor shutdown callback: {exc}")
-            
-        def _final_shutdown():
-            self._node.destroy_node()
-            if rclpy.ok():
-                rclpy.shutdown()
-                
-        # Give ROS2 QOS a moment to flush the latched release event before shutting down the executor
-        self._final_timer = self._node.create_timer(max(0.1, self._release_shutdown_delay), _final_shutdown) 
+            self._node.get_logger().error(f"Exception during displacement monitor complete callback: {exc}") 

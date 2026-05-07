@@ -66,79 +66,16 @@ def generate_launch_description():
         }.items(),
     )
     
-    audio_cue_play_node = Node(
+    orchestrator_node = Node(
         package="sinthlab_bringup",
-        executable="audio_cue_play.py",
-        name="audio_cue_play",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-        ],
-    )
-
-    force_torque_bias_calibrator_node = Node(
-        package="sinthlab_bringup",
-        executable="force_torque_bias_calibrator.py",
-        name="force_torque_bias_calibrator",
+        executable="apple_pluck_orchestrator.py",
+        name="apple_pluck_orchestrator",
         namespace=LaunchConfiguration("robot_name"),
         output="screen",
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
         ],
-    )
-
-    # Move the arm to the predefined start position.
-    move_to_start_node = Node(
-        package="sinthlab_bringup",
-        executable="move_to_start.py",
-        name="move_to_start",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    # Start admittance control (software impedance while the robot stays in FRI position mode).
-
-    # Monitor displacement and force-release while admittance control keeps running.
-    impedance_displacement_node = Node(
-        package="sinthlab_bringup",
-        executable="apple_pluck_impedance_control_displacement.py",
-        name="apple_pluck_impedance_control_displacement",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    # Recover to start once the displacement monitor signals force release.
-    move_to_start_recover_node = Node(
-        package="sinthlab_bringup",
-        executable="move_to_start.py",
-        name="move_to_start_recover",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        parameters=[
-            LaunchConfiguration("params_file"),
-            robot_description,
-        ],
-    )
-
-    # Shutdown launch once recovery move_to_start completes
-    shutdown_after_recover = RegisterEventHandler(
-        OnProcessExit(
-            target_action=move_to_start_recover_node,
-            on_exit=[
-                LogInfo(msg="move_to_start recovery complete; shutting down launch."),
-                EmitEvent(event=Shutdown(reason="move_to_start recovery complete")),
-            ],
-        )
     )
 
     return LaunchDescription(
@@ -148,11 +85,6 @@ def generate_launch_description():
             robot_name,
             ctrl,
             hardware_launch,
-            move_to_start_node,
-            force_torque_bias_calibrator_node,
-            audio_cue_play_node,
-            impedance_displacement_node,
-            move_to_start_recover_node,
-            shutdown_after_recover,
+            orchestrator_node,
         ]
     )

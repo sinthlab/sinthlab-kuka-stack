@@ -3,9 +3,6 @@ from __future__ import annotations
 from typing import Optional
 
 from rclpy.node import Node as rclpyNode
-from std_msgs.msg import Bool
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
-from rclpy.publisher import Publisher
 
 
 class DebugTicker:
@@ -30,40 +27,6 @@ class DebugTicker:
             self._accum = 0.0
             return True
         return False
-
-
-class DoneGate:
-    """Subscribe to a latched/transient-local Bool topic and indicate when done==True was received."""
-
-    def __init__(self, node: rclpyNode, topic: str) -> None:
-        self._node = node
-        self._topic = topic
-        self._done: bool = False
-        qos = QoSProfile(depth=1)
-        qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        qos.reliability = ReliabilityPolicy.RELIABLE
-        self._sub = node.create_subscription(Bool, topic, self._on_msg, qos)
-
-    def _on_msg(self, msg: Bool) -> None:
-        try:
-            if bool(msg.data):
-                if not self._done:
-                    self._node.get_logger().info(f"Received done on '{self._topic}'")
-                self._done = True
-        except Exception:
-            pass
-
-    @property
-    def done(self) -> bool:
-        return self._done
-
-
-def create_transient_bool_publisher(node: rclpyNode, topic: str) -> Publisher:
-    """Create a latched/transient-local Bool publisher suitable for done gating topics."""
-    qos = QoSProfile(depth=1)
-    qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-    qos.reliability = ReliabilityPolicy.RELIABLE
-    return node.create_publisher(Bool, topic, qos)
 
 
 def get_required_param(node: rclpyNode, name: str):

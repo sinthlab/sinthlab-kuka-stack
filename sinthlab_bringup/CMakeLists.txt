@@ -2,16 +2,16 @@ cmake_minimum_required(VERSION 3.22)
 project(sinthlab_bringup)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
+
+ament_python_install_package(${PROJECT_NAME})
 
 # Install Python scenario script
 set(SINTHLAB_BRINGUP_PY_SCRIPTS
-  scripts/apple_pluck_impedance_control_displacement.py
-  scripts/audio_cue_play.py
-  scripts/force_torque_bias_calibrator.py
-  scripts/perturb_start.py
-  scripts/move_to_start.py
-  scripts/move_restricted_on_a_plane.py
+  orchestrators/apple_pluck_orchestrator.py
+  orchestrators/perturb_orchestrator.py
+  orchestrators/restricted_plane_orchestrator.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})
@@ -26,18 +26,6 @@ endforeach()
 install(
   PROGRAMS
     ${SINTHLAB_BRINGUP_PY_SCRIPTS}
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Install helpers package alongside the scripts so `from helpers...` works
-install(
-  DIRECTORY scripts/helpers
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Install actions package alongside the scripts so `from actions...` works
-install(
-  DIRECTORY scripts/actions
   DESTINATION lib/${PROJECT_NAME}
 )
 

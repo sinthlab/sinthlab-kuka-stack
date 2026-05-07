@@ -4,3 +4,17 @@
     command_topic: "command/joint_position"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
+
+    move_to_start:
+      update_rate: 200
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      joint_move_tolerance: 0.08
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
+    audio_cue_play:
+      frequency_hz: 1500
+      duration_ms: 1500
