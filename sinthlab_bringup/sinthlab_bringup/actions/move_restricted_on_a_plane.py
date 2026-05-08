@@ -24,10 +24,10 @@ class MoveRestrictedOnAPlaneAction:
 
         self._active = False
 
-        state_topic = get_required_param(node, self._param_prefix + "state_topic").value
-        cmd_topic = get_required_param(node, self._param_prefix + "command_topic").value
-        self.ee_link = get_required_param(node, self._param_prefix + "end_effector_link").value
-        self.base_link = get_required_param(node, self._param_prefix + "base_link").value
+        state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
+        cmd_topic = str(get_required_param(node, self._param_prefix + "command_topic"))
+        self.ee_link = str(get_required_param(node, self._param_prefix + "end_effector_link"))
+        self.base_link = str(get_required_param(node, self._param_prefix + "base_link"))
 
         self._state_sub = node.create_subscription(LBRState, state_topic, self._state_cb, 1)
         self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)

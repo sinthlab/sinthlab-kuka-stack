@@ -30,6 +30,10 @@ def generate_launch_description():
     
     moveit_config_dict = moveit_config.to_dict()
     
+    # We must pop robot_description so it doesn't conflict with Launch evaluation
+    if "robot_description" in moveit_config_dict:
+        moveit_config_dict.pop("robot_description")
+
     # MoveItPy/MoveItCpp expects "planning_pipelines.pipeline_names" to be the list of pipelines
     if "planning_pipelines" in moveit_config_dict and isinstance(moveit_config_dict["planning_pipelines"], list):
         moveit_config_dict["planning_pipelines"] = {"pipeline_names": moveit_config_dict["planning_pipelines"]}
