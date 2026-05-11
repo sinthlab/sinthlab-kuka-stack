@@ -11,6 +11,13 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def __init__(self):
         super().__init__('restricted_plane_orchestrator', automatically_declare_parameters_from_overrides=True)
 
+        # Audio driver warmup for Windows/WSL2
+        import subprocess
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "[console]::Beep(37, 10)"])
+        except Exception:
+            pass
+
         self.move_to_start = MoveToPositionAction(
             self,
             param_prefix="move_to_start",

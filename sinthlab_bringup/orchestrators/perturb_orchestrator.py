@@ -15,6 +15,13 @@ class PerturbOrchestratorNode(rclpyNode):
             "perturb_orchestrator",
             automatically_declare_parameters_from_overrides=True,
         )
+        # Audio driver warmup for Windows/WSL2
+        import subprocess
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "[console]::Beep(37, 10)"])
+        except Exception:
+            pass
+            
         self.trial_count = 0
 
         # Initialize the state machine components
@@ -45,7 +52,14 @@ class PerturbOrchestratorNode(rclpyNode):
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self,
             param_prefix="apple_pluck_impedance_control_displacement",
-            on_complete=self.on_monitor_complete
+            on_complete=self.on_monitor_complete,
+            on_snap=self.on_monitor_snap
+        )
+
+        self.audio_cue_snap = AudioCue(
+            self,
+            param_prefix="audio_cue_snap",
+            on_complete=lambda: None
         )
 
         self.move_recover = MoveToPositionAction(
@@ -89,6 +103,10 @@ class PerturbOrchestratorNode(rclpyNode):
     def on_perturb_complete(self):
         self.get_logger().info("Perturbation complete. Initiating Displacement Monitor.")
         self.monitor.start()
+
+    def on_monitor_snap(self):
+        self.get_logger().info("Trial over! Threshold reached. Playing cue and resetting arm soon.")
+        self.audio_cue_snap.start()
 
     def on_monitor_complete(self):
         # Snap has fully completed! The KUKA arm is free to recoil.
