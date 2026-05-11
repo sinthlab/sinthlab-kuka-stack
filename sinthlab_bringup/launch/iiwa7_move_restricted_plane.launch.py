@@ -5,8 +5,6 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from lbr_bringup.description import LBRDescriptionMixin
-from lbr_bringup.moveit import LBRMoveGroupMixin
-from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
     
@@ -21,24 +19,8 @@ def generate_launch_description():
         robot_name=LaunchConfiguration("robot_name"),
         mode="hardware"
     )
-    
-    # 3. Initialize MoveIt Configs to supply semantic/kinematics params for `moveit_py`
-    moveit_config_builder = LBRMoveGroupMixin.moveit_configs_builder(
-        robot_name="iiwa7", package_name="iiwa7_moveit_config"
-    )
-    moveit_config = moveit_config_builder.to_moveit_configs()
-    
-    moveit_config_dict = moveit_config.to_dict()
-    
-    # We must pop robot_description so it doesn't conflict with Launch evaluation
-    if "robot_description" in moveit_config_dict:
-        moveit_config_dict.pop("robot_description")
 
-    # MoveItPy/MoveItCpp expects "planning_pipelines.pipeline_names" to be the list of pipelines
-    if "planning_pipelines" in moveit_config_dict and isinstance(moveit_config_dict["planning_pipelines"], list):
-        moveit_config_dict["planning_pipelines"] = {"pipeline_names": moveit_config_dict["planning_pipelines"]}
-
-    # 4. Bring up KUKA Hardware in Impedance/Position Mode
+    # 3. Bring up KUKA Hardware in Impedance/Position Mode
     hardware_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("lbr_bringup"), "launch", "hardware.launch.py"])
@@ -50,23 +32,15 @@ def generate_launch_description():
         }.items(),
     )
 
-    # 5. Launch the Virtual Fixture Node with MoveIt Py parameters
+    # 4. Launch the Virtual Fixture Node
     orchestrator_node = Node(
         package="sinthlab_bringup",
         executable="restricted_plane_orchestrator.py",
         name="restricted_plane_orchestrator",
         namespace=LaunchConfiguration("robot_name"),
         output="screen",
-        # MoveItPy API inside the node expects parameters at the global level by default (e.g., /robot_description).
-        # These remappings force the underlying C++ MoveIt API to resolve topics and parameters 
-        # relative to the current namespace (e.g., /lbr/robot_description), preventing timeouts.
-        remappings=[
-            ('/robot_description', 'robot_description'),
-            ('/robot_description_semantic', 'robot_description_semantic'),
-            ('/robot_description_kinematics', 'robot_description_kinematics')
-        ],
+        # We rely exclusively on python-based PyKDL inside the node using standard parameter passing.
         parameters=[
-            moveit_config_dict,
             robot_description,
             PathJoinSubstitution([
                 FindPackageShare("sinthlab_bringup"),

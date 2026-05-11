@@ -7,15 +7,16 @@ import numpy as np
 
 from rclpy.node import Node as rclpyNode
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
-from moveit.planning import MoveItPy
-from moveit.core.robot_state import RobotState
+
+# Optas for fast Kinematics and Jacobian extraction
+import optas
 
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 class MoveRestrictedOnAPlaneAction:
     """
     Action that applies mathematical virtual fixtures (boundaries)
-    by overriding the requested Cartesian pose via rapid IK through MoveItPy.
+    by overriding the requested Cartesian pose via rapid IK through Optas.
     """
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None) -> None:
         self._node = node
@@ -32,24 +33,23 @@ class MoveRestrictedOnAPlaneAction:
         self._state_sub = node.create_subscription(LBRState, state_topic, self._state_cb, 1)
         self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)
 
-        node.get_logger().info("Initializing MoveIt Python API for rapid kinematics...")
+        node.get_logger().info("Initializing Optas for rapid kinematics...")
         
-        # Pull robot_description and semantic info to manually inject into MoveItPy config_dict 
-        # so it bypasses namespace mismatch bugs between rclpy and C++ MoveItPy contexts
-        cfg = {}
-        for k in ["robot_description", "robot_description_semantic", "robot_description_kinematics"]:
-            if node.has_parameter(k):
-                cfg[k] = node.get_parameter(k).value
+        robot_description = ""
+        if node.has_parameter("robot_description"):
+            robot_description = str(node.get_parameter("robot_description").value)
 
-        try:
-            self.moveit_py = MoveItPy(node_name=node.get_name(), config_dict=cfg)
-        except TypeError:
-            self.moveit_py = MoveItPy(node_name=node.get_name())
-            
-        self.robot_model = self.moveit_py.get_robot_model()
-        self.robot_state = RobotState(self.robot_model)
+        self.robot_model = optas.RobotModel(urdf_string=robot_description)
+        
+        # Get callable Casadi functions mapping joint angles (numpy array) to 4x4 transform and Jacobian
+        self.fk_func = self.robot_model.get_global_link_transform_function(
+            self.ee_link, numpy_output=True
+        )
+        self.jacobian_func = self.robot_model.get_link_geometric_jacobian_function(
+            link=self.ee_link, base_link=self.base_link, numpy_output=True
+        )
 
-        self.last_measured_joints = np.zeros(7)
+        self.last_measured_joints = np.zeros(self.robot_model.ndof)
         
         # Load virtual fixture profile
         self.active_profile = "bounding_box"
@@ -156,9 +156,9 @@ class MoveRestrictedOnAPlaneAction:
         self.last_measured_joints = np.array(msg.measured_joint_position)
 
         # 1. Forward Kinematics: Where is the arm mathematically right now?
-        self.robot_state.set_joint_group_positions("arm", self.last_measured_joints)
-        self.robot_state.update()
-        current_pose = self.robot_state.get_global_link_transform(self.ee_link)
+        current_pose = self.fk_func(self.last_measured_joints)
+        # Optas sometimes returns (16,1) rather than (4,4) so ensure shape
+        current_pose = current_pose.reshape(4, 4)
 
         # 2. Check and Apply our Mathematical Surface boundaries
         target_pose, is_restricted = self.apply_surface_constraints(current_pose)
@@ -167,13 +167,25 @@ class MoveRestrictedOnAPlaneAction:
         
         if is_restricted:
             # 3. Inverse Kinematics: The arm crossed the wall. 
-            # Solve for the exact joint angles needed to hold the arm perfectly onto the edge of the wall.
-            success = self.robot_state.set_from_ik("arm", target_pose, self.ee_link, timeout=0.005)
-            if success:
-                cmd.joint_position = self.robot_state.get_joint_group_positions("arm").tolist()
-            else:
-                # IK Failed to find a solution on the wall. Fallback to measured to prevent jumping.
-                cmd.joint_position = msg.measured_joint_position.tolist()
+            # We use first-order Jacobian pseudo-inverse to track positional changes quickly.
+            
+            # Cartesian error vector (dx, dy, dz)
+            error_x = target_pose[0, 3] - current_pose[0, 3]
+            error_y = target_pose[1, 3] - current_pose[1, 3]
+            error_z = target_pose[2, 3] - current_pose[2, 3]
+            
+            # Build 6D twist/error vector (dx, dy, dz, rx=0, ry=0, rz=0)
+            dx = np.array([error_x, error_y, error_z, 0.0, 0.0, 0.0])
+            
+            # Get Jacobian
+            J = self.jacobian_func(self.last_measured_joints)
+            
+            # Calculate required joint delta (dq) via pseudo-inverse
+            J_pinv = np.linalg.pinv(J, rcond=1e-2)
+            dq = J_pinv @ dx
+            
+            # Apply delta to current joints
+            cmd.joint_position = (self.last_measured_joints + dq).tolist()
         else:
             # The arm is in free-space. Shadow the hand perfectly so it feels weightless (Zero displacement).
             cmd.joint_position = msg.measured_joint_position.tolist()
