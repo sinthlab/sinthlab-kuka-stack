@@ -15,6 +15,18 @@ class ApplePluckOrchestratorNode(rclpyNode):
             "apple_pluck_orchestrator",
             automatically_declare_parameters_from_overrides=True,
         )
+        
+        # Specific hack for Windows audio driver warmup when using WSL2. T
+        # he first audio play can be very delayed, which is bad for timing the experiment. 
+        # This forces the driver to wake up at the start of the node, 
+        # so that the first real audio cue is more responsive. 
+        # This is only necessary on Windows hosts using WSL2, and doesn't cause any issues on other platforms.
+        import subprocess
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "[console]::Beep(37, 10)"])
+        except Exception:
+            pass
+
         self.trial_count = 0
 
         # Initialize the state machine components

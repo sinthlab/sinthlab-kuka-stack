@@ -60,7 +60,7 @@
       - 0
       - 90
       - 0
-      joint_move_tolerance: 0.08
+      joint_move_tolerance: 0.15
       move_to_pos_v_max:
       - 40.0
       - 40.0
