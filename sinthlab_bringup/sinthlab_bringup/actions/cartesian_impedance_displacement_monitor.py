@@ -98,6 +98,12 @@ class CartesianImpedanceDisplacementMonitor:
         self._release_published = False
         self._release_reset_logged = False
         self._shutdown_requested = False
+        
+        # Single-timer shutdown delay mechanism state.
+        # Instead of spawning asynchronous node timers which can leak between trials,
+        # we iterate _shutdown_elapsed naturally inside our synchronous _step() loop.
+        self._shutting_down = False
+        self._shutdown_elapsed = 0.0
 
         # ROS interfaces owned by the monitor
         self._state_sub = node.create_subscription(LBRState, self._state_topic, self._on_state, 1)
@@ -182,12 +188,24 @@ class CartesianImpedanceDisplacementMonitor:
         self._release_reset_logged = False
         self._shutdown_requested = False
         
+        # Single-timer shutdown delay mechanism state.
+        # Instead of spawning asynchronous node timers which can leak between trials,
+        # we iterate _shutdown_elapsed naturally inside our synchronous _step() loop.
+        self._shutting_down = False
+        self._shutdown_elapsed = 0.0
+        
         self._ready = True
         self._node.get_logger().info("Displacement monitor activated for new trial.")
 
     def _step(self) -> None:
         # wait till ready callback is ready to start this action
         if not self._ready:
+            return
+
+        if self._shutting_down:
+            self._shutdown_elapsed += self._dt
+            if self._shutdown_elapsed >= self._release_shutdown_delay:
+                self._shutdown()
             return
         
         if self._baseline is None:
@@ -231,7 +249,8 @@ class CartesianImpedanceDisplacementMonitor:
             self._holding = False
             self._release_published = True
             if self._release_shutdown_delay > 0.0:
-                self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+                self._shutting_down = True
+                self._shutdown_elapsed = 0.0
             else:
                 self._shutdown()
 
@@ -268,7 +287,8 @@ class CartesianImpedanceDisplacementMonitor:
                     f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
                 )
                 if self._release_shutdown_delay > 0.0:
-                    self._release_timer = self._node.create_timer(self._release_shutdown_delay, self._shutdown)
+                    self._shutting_down = True
+                    self._shutdown_elapsed = 0.0
                 else:
                     self._shutdown()
         else:
@@ -292,6 +312,7 @@ class CartesianImpedanceDisplacementMonitor:
             return
         self._shutdown_requested = True
         self._ready = False
+        self._shutting_down = False
         self._node.get_logger().info("Displacement monitor sequence complete. Yielding control.")
         
         try:
