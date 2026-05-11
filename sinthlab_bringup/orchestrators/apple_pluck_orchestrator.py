@@ -33,13 +33,20 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self,
             param_prefix="apple_pluck_impedance_control_displacement",
-            on_complete=self.on_monitor_complete
+            on_complete=self.on_monitor_complete,
+            on_snap=self.on_monitor_snap
         )
 
         self.audio_cue = AudioCue(
             self,
             param_prefix="audio_cue_play",
             on_complete=self.on_audio_complete
+        )
+
+        self.audio_cue_snap = AudioCue(
+            self,
+            param_prefix="audio_cue_snap",
+            on_complete=lambda: None
         )
 
         self.move_recover = MoveToPositionAction(
@@ -68,6 +75,10 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_audio_complete(self):
         self.get_logger().info("Audio cue played. Initiating Displacement Monitor.")
         self.monitor.start()
+
+    def on_monitor_snap(self):
+        self.get_logger().info("Trial over! Threshold reached. Playing cue and resetting arm soon.")
+        self.audio_cue_snap.start()
 
     def on_monitor_complete(self):
         # Snap has fully completed! The KUKA arm is free to recoil.

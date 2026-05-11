@@ -34,15 +34,14 @@ class AudioCue:
     # For other OSes, this method should be modified accordingly.
     def _play_sound(self) -> None:
         try:
-            # This is a blocking call
-            subprocess.run(
+            # Popen is non-blocking
+            subprocess.Popen(
                 [
                     "powershell.exe",
                     "-NoProfile",
                     "-Command",
                     f"[console]::Beep({self._frequency},{self._duration})"
-                ],
-                check=True,
+                ]
             )
         except Exception as exc:
             self._node.get_logger().warn(f"Console beep failed: {exc}")

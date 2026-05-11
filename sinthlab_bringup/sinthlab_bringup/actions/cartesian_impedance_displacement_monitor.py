@@ -27,9 +27,10 @@ class CartesianImpedanceDisplacementMonitor:
     - Shutdown after forces stay below the configured threshold long enough.
     """
 
-    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None], on_snap: Optional[Callable[[], None]] = None) -> None:
         self._node = node
         self._on_complete = on_complete
+        self._on_snap = on_snap
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
         
         # Tracks when the action is active
@@ -48,8 +49,6 @@ class CartesianImpedanceDisplacementMonitor:
         self._force_release_threshold = float(get_required_param(node, self._param_prefix + "force_release_threshold_newton"))
         self._force_release_duration = float(get_required_param(node, self._param_prefix + "force_release_duration_sec"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, self._param_prefix + "force_release_shutdown_delay_sec")))
-        self._baseline_ready_topic = str(get_required_param(node, self._param_prefix + "baseline_ready_topic"))
-        self._hold_ready_topic = str(get_required_param(node, self._param_prefix + "hold_ready_topic"))
         self._subscriber_latch_delay_sec = float(get_required_param(node, self._param_prefix + "subscriber_latch_delay_sec"))
 
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
@@ -68,8 +67,6 @@ class CartesianImpedanceDisplacementMonitor:
                     "state_topic": self._state_topic,
                     "command_topic": self._command_topic,
                     "wrench_topic": self._wrench_topic,
-                    "baseline_ready_topic": self._baseline_ready_topic,
-                    "hold_ready_topic": self._hold_ready_topic,
                     "force_release_threshold_newton": self._force_release_threshold,
                     "force_release_duration_sec": self._force_release_duration,
                     "subscriber_latch_delay_sec": self._subscriber_latch_delay_sec,
@@ -221,6 +218,8 @@ class CartesianImpedanceDisplacementMonitor:
                 f"Snapping tension and entering recovery."
             )
             # Fire audio cue!
+            if self._on_snap is not None:
+                self._on_snap()
 
             # The exact moment the displacement crosses the threshold, the branch "Snaps".
             # We DO NOT move the commanded anchor down to the hand. Doing so causes the arm
