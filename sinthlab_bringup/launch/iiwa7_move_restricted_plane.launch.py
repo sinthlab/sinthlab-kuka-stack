@@ -57,6 +57,14 @@ def generate_launch_description():
         name="restricted_plane_orchestrator",
         namespace=LaunchConfiguration("robot_name"),
         output="screen",
+        # MoveItPy API inside the node expects parameters at the global level by default (e.g., /robot_description).
+        # These remappings force the underlying C++ MoveIt API to resolve topics and parameters 
+        # relative to the current namespace (e.g., /lbr/robot_description), preventing timeouts.
+        remappings=[
+            ('/robot_description', 'robot_description'),
+            ('/robot_description_semantic', 'robot_description_semantic'),
+            ('/robot_description_kinematics', 'robot_description_kinematics')
+        ],
         parameters=[
             moveit_config_dict,
             robot_description,

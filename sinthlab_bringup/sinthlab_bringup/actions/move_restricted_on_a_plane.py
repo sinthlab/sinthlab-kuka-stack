@@ -33,7 +33,19 @@ class MoveRestrictedOnAPlaneAction:
         self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)
 
         node.get_logger().info("Initializing MoveIt Python API for rapid kinematics...")
-        self.moveit_py = MoveItPy(node_name=node.get_name())
+        
+        # Pull robot_description and semantic info to manually inject into MoveItPy config_dict 
+        # so it bypasses namespace mismatch bugs between rclpy and C++ MoveItPy contexts
+        cfg = {}
+        for k in ["robot_description", "robot_description_semantic", "robot_description_kinematics"]:
+            if node.has_parameter(k):
+                cfg[k] = node.get_parameter(k).value
+
+        try:
+            self.moveit_py = MoveItPy(node_name=node.get_name(), config_dict=cfg)
+        except TypeError:
+            self.moveit_py = MoveItPy(node_name=node.get_name())
+            
         self.robot_model = self.moveit_py.get_robot_model()
         self.robot_state = RobotState(self.robot_model)
 
