@@ -18,3 +18,65 @@
     audio_cue_play:
       frequency_hz: 1500
       duration_ms: 1500
+    force_torque_bias_calibrator:
+      lbr_state_topic: state
+      bias_topic: force_torque_bias
+      base_link: lbr_link_0
+      end_effector_link: lbr_link_ee
+      calibration_duration_sec: 1.0
+      calibration_timeout_sec: 3.0
+      settle_duration_sec: 0.5
+      subscriber_latch_delay_sec: 1.0
+      debug_log_enabled: false
+    apple_pluck_impedance_control_displacement:
+      update_rate: 200
+      base_frame: lbr_link_0
+      ee_frame: lbr_link_ee
+      cartesian_axis: x
+      cartesian_displacement_threshold_m: 0.2
+      state_topic: state
+      command_topic: command/joint_position
+      wrench_topic: force_torque_broadcaster/wrench
+      force_release_threshold_newton: 5.0
+      force_release_duration_sec: 3.0
+      force_release_shutdown_delay_sec: 0.8
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+      subscriber_latch_delay_sec: 1.0
+    move_to_start_recover:
+      update_rate: 200
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      joint_move_tolerance: 0.15
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      start_action_needed: true
+      wait_for_physical_arrival: true
+      subscriber_latch_delay_sec: 1.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+    audio_cue_snap:
+      frequency_hz: 2000
+      duration_ms: 500
+
+    virtual_fixture_profile: "bounding_box"
+    virtual_fixtures:
+      bounding_box:
+        type: "cartesian_box"
+        z_min: 0.3
+        x_min: 0.2
+        x_max: 0.5
+      flat_table:
+        type: "cartesian_box"
+        z_min: 0.3
+      cylinder_tube:
+        type: "cylinder"
+        radius: 0.4
+        center_x: 0.0
+        center_y: 0.0
+      sine_wave:
+        type: "sinusoid"
+        amplitude: 0.1
+        spatial_freq: 20.0
+        y_offset: 0.0
+        z_min: 0.3

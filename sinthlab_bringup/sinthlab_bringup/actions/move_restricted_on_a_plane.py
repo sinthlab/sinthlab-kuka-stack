@@ -39,12 +39,31 @@ class MoveRestrictedOnAPlaneAction:
 
         self.last_measured_joints = np.zeros(7)
         
+        # Load virtual fixture profile
+        self.active_profile = "bounding_box"
+        if node.has_parameter(self._param_prefix + "virtual_fixture_profile"):
+            self.active_profile = str(node.get_parameter(self._param_prefix + "virtual_fixture_profile").value)
+            
+        self.profile_config = {}
+        prefix = self._param_prefix + f"virtual_fixtures.{self.active_profile}."
+        if node.has_parameter(prefix + "type"):
+            self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
+            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
+                if node.has_parameter(prefix + key):
+                    self.profile_config[key] = float(node.get_parameter(prefix + key).value)
+        else:
+            node.get_logger().warn(f"Could not find virtual fixture profile {self.active_profile}")
+        
     def start(self) -> None:
         if self._active:
             self._node.get_logger().warn("MoveRestrictedOnAPlaneAction is already active.")
             return
         self._active = True
         self._node.get_logger().info("Restricted Plane Action started, applying boundary IK.")
+
+    def stop(self) -> None:
+        self._active = False
+        self._node.get_logger().info("Restricted Plane Action stopped.")
 
     def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
         """
@@ -60,18 +79,51 @@ class MoveRestrictedOnAPlaneAction:
         y = transform[1, 3]
         z = transform[2, 3]
 
-        # ---- CONSTRAINT 1: Flat floor/table (Z >= 0.3 meters) ----
-        if z < 0.3:
-            z = 0.3
-            restricted = True
-
-        # ---- CONSTRAINT 2: Bounding Box (X must be between 0.2 and 0.5) ----
-        if x < 0.2:
-            x = 0.2
-            restricted = True
-        elif x > 0.5:
-            x = 0.5
-            restricted = True
+        # Apply dynamic profile constraints
+        ptype = self.profile_config["type"]
+        
+        if ptype == "cartesian_box":
+            if "z_min" in self.profile_config and z < self.profile_config["z_min"]:
+                z = self.profile_config["z_min"]
+                restricted = True
+            if "x_min" in self.profile_config and x < self.profile_config["x_min"]:
+                x = self.profile_config["x_min"]
+                restricted = True
+            if "x_max" in self.profile_config and x > self.profile_config["x_max"]:
+                x = self.profile_config["x_max"]
+                restricted = True
+        elif ptype == "cylinder":
+            cx = self.profile_config["center_x"]
+            cy = self.profile_config["center_y"]
+            r_max = self.profile_config["radius"]
+            
+            dx = x - cx
+            dy = y - cy
+            dist = np.sqrt(dx*dx + dy*dy)
+            
+            if dist > r_max:
+                scale = r_max / dist
+                x = cx + dx * scale
+                y = cy + dy * scale
+                restricted = True
+        elif ptype == "sinusoid":
+            amp = self.profile_config["amplitude"]
+            freq = self.profile_config["spatial_freq"]
+            y_off = self.profile_config["y_offset"]
+            z_m = self.profile_config["z_min"]
+            
+            # 1. Enforce floor height so we don't hit the table while tracing the wave
+            if z < z_m:
+                z = z_m
+                restricted = True
+                
+            # 2. Enforce the sinusoidal mathematical manifold on the XY plane
+            ideal_y = amp * np.sin(freq * x) + y_off
+            
+            # Snap the Y axis perfectly to the wave form for any given X
+            if not np.isclose(y, ideal_y, atol=1e-4):
+                y = ideal_y
+                restricted = True
 
         # Re-pack the XYZ back into the transformation matrix
         transform[0, 3] = x

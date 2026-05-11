@@ -4,6 +4,8 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position import MoveToPositionAction
+from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
+from sinthlab_bringup.actions.force_torque_bias import ForceTorqueBias
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
 
@@ -18,10 +20,25 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         except Exception:
             pass
 
+        self.trial_count = 0
+
         self.move_to_start = MoveToPositionAction(
             self,
             param_prefix="move_to_start",
             on_complete=self.on_move_complete
+        )
+
+        self.calibrator = ForceTorqueBias(
+            self,
+            param_prefix="force_torque_bias_calibrator",
+            on_complete=self.on_calib_complete
+        )
+
+        self.monitor = CartesianImpedanceDisplacementMonitor(
+            self,
+            param_prefix="apple_pluck_impedance_control_displacement",
+            on_complete=self.on_monitor_complete,
+            on_snap=self.on_monitor_snap
         )
 
         self.audio_cue = AudioCue(
@@ -30,27 +47,56 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             on_complete=self.on_audio_complete
         )
 
+        self.audio_cue_snap = AudioCue(
+            self,
+            param_prefix="audio_cue_snap",
+            on_complete=lambda: None
+        )
+
         self.restricted_plane = MoveRestrictedOnAPlaneAction(
             self,
             param_prefix=""
         )
-        
-        self.get_logger().info("=== RESTRICTED PLANE ORCHESTRATOR INITIALIZED ===")
-        self.get_logger().info("Starting sequential execution. The virtual fixtures will become active after the initial move to start and audio cue.")
-        self.start_sequence()
 
-    def start_sequence(self):
-        self.get_logger().info("--- STAGE 1: MOVING TO START ---")
+        self.move_recover = MoveToPositionAction(
+            self,
+            param_prefix="move_to_start_recover",
+            on_complete=self.on_recover_complete
+        )
+        
+        self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
+        self.start_trial()
+
+    def start_trial(self):
+        self.trial_count += 1
+        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
         self.move_to_start.start()
 
     def on_move_complete(self):
-        self.get_logger().info("--- STAGE 2: AUDIO CUE ---")
+        self.get_logger().info("Arm returned to start. Initiating Force-Torque Bias Calibration.")
+        self.calibrator.start()
+
+    def on_calib_complete(self, bias):
+        self.get_logger().info("Calibration complete. Sounding audio cue.")
         self.audio_cue.start()
 
     def on_audio_complete(self):
-        self.get_logger().info("--- STAGE 3: VIRTUAL FIXTURE ACTIVE ---")
-        self.get_logger().info("The bounds are now permanently enforced in a continuous control loop.")
+        self.get_logger().info("Audio cue played. Virtual fixtures and displacement monitor activated.")
         self.restricted_plane.start()
+        self.monitor.start()
+
+    def on_monitor_snap(self):
+        self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
+        self.restricted_plane.stop()
+        self.audio_cue_snap.start()
+
+    def on_monitor_complete(self):
+        self.get_logger().info("User released tension. Waiting for physical recoil before resetting.")
+        self.move_recover.start()
+
+    def on_recover_complete(self):
+        self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
+        self.start_trial()
 
 def main(args=None):
     rclpy.init(args=args)
