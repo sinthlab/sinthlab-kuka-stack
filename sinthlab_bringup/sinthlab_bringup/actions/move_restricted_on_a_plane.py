@@ -156,12 +156,15 @@ class MoveRestrictedOnAPlaneAction:
         self.last_measured_joints = np.array(msg.measured_joint_position)
 
         # 1. Forward Kinematics: Where is the arm mathematically right now?
-        current_pose = self.fk_func(self.last_measured_joints)
-        # Optas sometimes returns (16,1) rather than (4,4) so ensure shape
-        current_pose = current_pose.reshape(4, 4)
+        current_pose_flat = self.fk_func(self.last_measured_joints)
+        # CasADi matrices are column-major. We must use order='F' to reshape to 4x4 correctly!
+        current_pose = current_pose_flat.reshape((4, 4), order='F')
 
+        # We must clone the pose so the constraint application doesn't overwrite current_pose in memory
+        target_pose_input = copy.deepcopy(current_pose)
+        
         # 2. Check and Apply our Mathematical Surface boundaries
-        target_pose, is_restricted = self.apply_surface_constraints(current_pose)
+        target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
 
         cmd = LBRJointPositionCommand()
         
@@ -177,14 +180,16 @@ class MoveRestrictedOnAPlaneAction:
             # Build 6D twist/error vector (dx, dy, dz, rx=0, ry=0, rz=0)
             dx = np.array([error_x, error_y, error_z, 0.0, 0.0, 0.0])
             
-            # Get Jacobian
+            # Get Jacobian (Optas returns 6x7 matrix for 7 DOF arm)
             J = self.jacobian_func(self.last_measured_joints)
             
             # Calculate required joint delta (dq) via pseudo-inverse
+            # J_pinv @ dx converts the 6D cartesian push back into a 7D joint push
             J_pinv = np.linalg.pinv(J, rcond=1e-2)
             dq = J_pinv @ dx
             
-            # Apply delta to current joints
+            # Since this is a velocity twist applied over dt, and we are acting as a rigid spring,
+            # we just push the commanded joint position exactly dq away from the measured to clamp it to the wall.
             cmd.joint_position = (self.last_measured_joints + dq).tolist()
         else:
             # The arm is in free-space. Shadow the hand perfectly so it feels weightless (Zero displacement).
