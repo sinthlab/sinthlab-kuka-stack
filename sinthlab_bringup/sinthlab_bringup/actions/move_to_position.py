@@ -102,7 +102,10 @@ class MoveToPositionAction:
             q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
             
             # 1. Base equilibrium to start Ruckig from (avoid droop jump)
-            if not np.isnan(q_ipo).any():
+            if not self._init and self._wait_for_physical_arrival:
+                # Force initialize from exact physical pose during recovery so the recoil trajectory doesn't command an instantaneous jump
+                self._q_init = q_meas
+            elif not np.isnan(q_ipo).any():
                 self._q_init = q_ipo
             elif not np.isnan(q_cmd).any():
                 self._q_init = q_cmd
