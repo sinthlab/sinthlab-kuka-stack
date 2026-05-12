@@ -51,7 +51,6 @@ Follow [these](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr
   sudo apt update
   sudo apt upgrade
   sudo apt install ros-jazzy-desktop
-  sudo apt install ros-jazzy-moveit-py
   sudo apt install python3-pip
   ```
   
@@ -64,7 +63,7 @@ Follow [these](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr
   ```
 - Install required python package
   ```
-  pip install pyoptas ruckig --break-system-packages
+  pip install pyoptas ruckig roboticstoolbox-python --break-system-packages
   ``` 
 - Build
   ```

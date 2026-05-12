@@ -8,15 +8,17 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
-# Optas for fast Kinematics and Jacobian extraction
-import optas
+# Robotics Toolbox for intuitive Python kinematics
+import roboticstoolbox as rtb
+import tempfile
+import os
 
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 class MoveRestrictedOnAPlaneAction:
     """
     Action that applies mathematical virtual fixtures (boundaries)
-    by overriding the requested Cartesian pose via rapid IK through Optas.
+    by overriding the requested Cartesian pose via rapid IK through Robotics Toolbox.
     """
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None) -> None:
         self._node = node
@@ -33,23 +35,21 @@ class MoveRestrictedOnAPlaneAction:
         self._state_sub = node.create_subscription(LBRState, state_topic, self._state_cb, 1)
         self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)
 
-        node.get_logger().info("Initializing Optas for rapid kinematics...")
+        node.get_logger().info("Initializing Robotics Toolbox for rapid kinematics...")
         
         robot_description = ""
         if node.has_parameter("robot_description"):
             robot_description = str(node.get_parameter("robot_description").value)
-
-        self.robot_model = optas.RobotModel(urdf_string=robot_description)
         
-        # Get callable Casadi functions mapping joint angles (numpy array) to 4x4 transform and Jacobian
-        self.fk_func = self.robot_model.get_global_link_transform_function(
-            self.ee_link, numpy_output=True
-        )
-        self.jacobian_func = self.robot_model.get_link_geometric_jacobian_function(
-            link=self.ee_link, base_link=self.base_link, numpy_output=True
-        )
-
-        self.last_measured_joints = np.zeros(self.robot_model.ndof)
+        # roboticstoolbox only accept a file path and not the urdf string
+        # Write URDF to a temporary file for roboticstoolbox to parse
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.urdf', delete=False) as temp_urdf:
+            temp_urdf.write(robot_description)
+            temp_urdf_path = temp_urdf.name
+        self.robot = rtb.ERobot.URDF(temp_urdf_path)
+        os.remove(temp_urdf_path)
+        
+        self.last_measured_joints = np.zeros(self.robot.n)
         
         # Load virtual fixture profile
         self.active_profile = "bounding_box"
@@ -156,9 +156,8 @@ class MoveRestrictedOnAPlaneAction:
         self.last_measured_joints = np.array(msg.measured_joint_position)
 
         # 1. Forward Kinematics: Where is the arm mathematically right now?
-        current_pose_flat = self.fk_func(self.last_measured_joints)
-        # CasADi matrices are column-major. We must use order='F' to reshape to 4x4 correctly!
-        current_pose = current_pose_flat.reshape((4, 4), order='F')
+        # fkine returns an SE3 object, .A gives the 4x4 numpy matrix
+        current_pose = self.robot.fkine(self.last_measured_joints).A
 
         # We must clone the pose so the constraint application doesn't overwrite current_pose in memory
         target_pose_input = copy.deepcopy(current_pose)
@@ -169,28 +168,15 @@ class MoveRestrictedOnAPlaneAction:
         cmd = LBRJointPositionCommand()
         
         if is_restricted:
-            # 3. Inverse Kinematics: The arm crossed the wall. 
-            # We use first-order Jacobian pseudo-inverse to track positional changes quickly.
+            # 3. Inverse Kinematics using Robotics Toolbox Levenberg-Marquardt
+            # We seed the solver with our current joints to calculate the minimal distance push
+            ik_solution = self.robot.ikine_LM(target_pose, q0=self.last_measured_joints)
             
-            # Cartesian error vector (dx, dy, dz)
-            error_x = target_pose[0, 3] - current_pose[0, 3]
-            error_y = target_pose[1, 3] - current_pose[1, 3]
-            error_z = target_pose[2, 3] - current_pose[2, 3]
-            
-            # Build 6D twist/error vector (dx, dy, dz, rx=0, ry=0, rz=0)
-            dx = np.array([error_x, error_y, error_z, 0.0, 0.0, 0.0])
-            
-            # Get Jacobian (Optas returns 6x7 matrix for 7 DOF arm)
-            J = self.jacobian_func(self.last_measured_joints)
-            
-            # Calculate required joint delta (dq) via pseudo-inverse
-            # J_pinv @ dx converts the 6D cartesian push back into a 7D joint push
-            J_pinv = np.linalg.pinv(J, rcond=1e-2)
-            dq = J_pinv @ dx
-            
-            # Since this is a velocity twist applied over dt, and we are acting as a rigid spring,
-            # we just push the commanded joint position exactly dq away from the measured to clamp it to the wall.
-            cmd.joint_position = (self.last_measured_joints + dq).tolist()
+            if ik_solution.success:
+                cmd.joint_position = ik_solution.q.tolist()
+            else:
+                # Fallback to current joints if IK fails
+                cmd.joint_position = msg.measured_joint_position.tolist()
         else:
             # The arm is in free-space. Shadow the hand perfectly so it feels weightless (Zero displacement).
             cmd.joint_position = msg.measured_joint_position.tolist()
