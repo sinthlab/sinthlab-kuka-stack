@@ -72,6 +72,7 @@ class MoveRestrictedOnAPlaneAction:
             return
         self._active = True
         self._needs_bias_capture = True
+        self._initial_transform = None
         self._node.get_logger().info("Restricted Plane Action started, applying boundary IK.")
 
     def stop(self) -> None:
@@ -123,20 +124,21 @@ class MoveRestrictedOnAPlaneAction:
             amp = self.profile_config["amplitude"]
             freq = self.profile_config["spatial_freq"]
             y_off = self.profile_config["y_offset"]
-            z_m = self.profile_config["z_min"]
             
-            # 1. Enforce floor height so we don't hit the table while tracing the wave
-            if z < z_m:
-                z = z_m
-                restricted = True
+            # For a 1D Rail, we are ALWAYS restricting the geometry to perfectly
+            # snap onto the mathematical manifold (no thresholding)
+            restricted = True
+            
+            # 1. Lock Z to exactly the initial starting height
+            if self._initial_transform is not None:
+                z = self._initial_transform[2, 3]
                 
             # 2. Enforce the sinusoidal mathematical manifold on the XY plane
-            ideal_y = amp * np.sin(freq * x) + y_off
-            
-            # Snap the Y axis perfectly to the wave form for any given X
-            if not np.isclose(y, ideal_y, atol=1e-4):
-                y = ideal_y
-                restricted = True
+            y = amp * np.sin(freq * x) + y_off
+
+            # 3. Lock orientation completely so the end effector doesn't twist
+            if self._initial_transform is not None:
+                transform[0:3, 0:3] = self._initial_transform[0:3, 0:3]
 
         # Re-pack the XYZ back into the transformation matrix
         transform[0, 3] = x
@@ -168,7 +170,8 @@ class MoveRestrictedOnAPlaneAction:
         if getattr(self, '_needs_bias_capture', True):
             self.torque_bias = np.array(msg.external_torque)
             self._needs_bias_capture = False
-            self._node.get_logger().info(f"Captured gravity torque bias: {np.round(self.torque_bias, 2)}")
+            self._initial_transform = self.robot.fkine(self.last_commanded).A
+            self._node.get_logger().info(f"Captured gravity bias & initial pose lock: {np.round(self.torque_bias, 2)}")
 
         # ---------------------------------------------------------------------
         # ADMITTANCE FIX: Do not track `measured_joints` directly to avoid gravity droop!
@@ -180,11 +183,6 @@ class MoveRestrictedOnAPlaneAction:
         
         # Calculate push force beyond the deadband
         tau_active = np.where(np.abs(tau_ext) > deadband, np.sign(tau_ext) * (np.abs(tau_ext) - deadband), 0.0)
-
-        # Debug logging at ~1Hz (assuming 200Hz loop)
-        self._log_counter = getattr(self, '_log_counter', 0) + 1
-        if self._log_counter % 200 == 0:
-            self._node.get_logger().info(f"tau_ext: {np.round(tau_ext, 2)} | tau_active: {np.round(tau_active, 2)}")
         
         target_joints = self.last_commanded.copy()
         
