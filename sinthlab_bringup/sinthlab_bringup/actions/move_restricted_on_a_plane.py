@@ -155,12 +155,37 @@ class MoveRestrictedOnAPlaneAction:
 
         self.last_measured_joints = np.array(msg.measured_joint_position)
 
-        # 1. Forward Kinematics: Where is the arm mathematically right now?
-        # fkine returns an SE3 object, .A gives the 4x4 numpy matrix
-        current_pose = self.robot.fkine(self.last_measured_joints).A
+        # Initialize our smooth command tracker if it doesn't exist yet
+        if not hasattr(self, 'last_commanded'):
+            q_cmd = np.array(msg.commanded_joint_position)
+            if np.isnan(q_cmd).any() or np.all(q_cmd == 0):
+                self.last_commanded = self.last_measured_joints.copy()
+            else:
+                self.last_commanded = q_cmd
 
-        # We must clone the pose so the constraint application doesn't overwrite current_pose in memory
-        target_pose_input = copy.deepcopy(current_pose)
+        # ---------------------------------------------------------------------
+        # ADMITTANCE FIX: Do not track `measured_joints` directly to avoid gravity droop!
+        # Instead, only shift the commanded target if the user physically pushes with force.
+        # ---------------------------------------------------------------------
+        tau_ext = np.array(msg.external_torque)
+        deadband = 1.5  # Nm, filters out noise
+        
+        # Calculate push force beyond the deadband
+        tau_active = np.where(np.abs(tau_ext) > deadband, np.sign(tau_ext) * (np.abs(tau_ext) - deadband), 0.0)
+
+        # Debug logging at ~1Hz (assuming 200Hz loop)
+        self._log_counter = getattr(self, '_log_counter', 0) + 1
+        if self._log_counter % 200 == 0:
+            self._node.get_logger().info(f"tau_ext: {np.round(tau_ext, 2)} | tau_active: {np.round(tau_active, 2)}")
+        
+        target_joints = self.last_commanded.copy()
+        
+        # Advance the equilibrium smoothly based on human push
+        admittance_gain = 0.002
+        target_joints += tau_active * admittance_gain
+
+        # 1. Forward Kinematics to find the provisional XYZ location
+        target_pose_input = self.robot.fkine(target_joints).A
         
         # 2. Check and Apply our Mathematical Surface boundaries
         target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
@@ -168,18 +193,17 @@ class MoveRestrictedOnAPlaneAction:
         cmd = LBRJointPositionCommand()
         
         if is_restricted:
-            # 3. Inverse Kinematics using Robotics Toolbox Levenberg-Marquardt
-            # We seed the solver with our current joints to calculate the minimal distance push
-            ik_solution = self.robot.ikine_LM(target_pose, q0=self.last_measured_joints)
-            
+            # 3. Inverse Kinematics using Robotics Toolbox 
+            ik_solution = self.robot.ikine_LM(target_pose, q0=target_joints)
             if ik_solution.success:
-                cmd.joint_position = ik_solution.q.tolist()
-            else:
-                # Fallback to current joints if IK fails
-                cmd.joint_position = msg.measured_joint_position.tolist()
-        else:
-            # The arm is in free-space. Shadow the hand perfectly so it feels weightless (Zero displacement).
-            cmd.joint_position = msg.measured_joint_position.tolist()
+                target_joints = ik_solution.q
 
-        # 4. Command the spring equilibrium
+        # 4. Smooth EMA filter to glide boundaries and filter hand-pushes
+        alpha = 0.1
+        safe_q = (1.0 - alpha) * self.last_commanded + (alpha * target_joints)
+        
+        self.last_commanded = safe_q
+        cmd.joint_position = safe_q.tolist()
+
+        # 5. Command the spring equilibrium
         self._cmd_pub.publish(cmd)
