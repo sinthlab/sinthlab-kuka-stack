@@ -40,7 +40,7 @@ class MoveRestrictedOnAPlaneAction:
             robot_description = str(node.get_parameter("robot_description").value)
         
         self.robot = optas.RobotModel(urdf_string=robot_description)
-        self._fk_func = self.robot.get_global_link_transform_function(
+        self._fk_func = self.robot.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True
         )
         self._jacobian_func = self.robot.get_link_geometric_jacobian_function(
