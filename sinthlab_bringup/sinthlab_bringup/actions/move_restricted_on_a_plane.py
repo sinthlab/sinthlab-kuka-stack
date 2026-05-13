@@ -71,6 +71,7 @@ class MoveRestrictedOnAPlaneAction:
             self._node.get_logger().warn("MoveRestrictedOnAPlaneAction is already active.")
             return
         self._active = True
+        self._needs_bias_capture = True
         self._node.get_logger().info("Restricted Plane Action started, applying boundary IK.")
 
     def stop(self) -> None:
@@ -163,11 +164,18 @@ class MoveRestrictedOnAPlaneAction:
             else:
                 self.last_commanded = q_cmd
 
+        # Capture gravity / imperfect modeling torque bias on the first tick
+        if getattr(self, '_needs_bias_capture', True):
+            self.torque_bias = np.array(msg.external_torque)
+            self._needs_bias_capture = False
+            self._node.get_logger().info(f"Captured gravity torque bias: {np.round(self.torque_bias, 2)}")
+
         # ---------------------------------------------------------------------
         # ADMITTANCE FIX: Do not track `measured_joints` directly to avoid gravity droop!
         # Instead, only shift the commanded target if the user physically pushes with force.
         # ---------------------------------------------------------------------
-        tau_ext = np.array(msg.external_torque)
+        # Subtract the static bias so it doesn't perpetually trigger the deadband
+        tau_ext = np.array(msg.external_torque) - getattr(self, 'torque_bias', np.zeros(7))
         deadband = 1.5  # Nm, filters out noise
         
         # Calculate push force beyond the deadband

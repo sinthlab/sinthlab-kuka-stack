@@ -32,14 +32,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Force torque bias calibrator to zero out external torques
-    force_torque_bias_calibrator_node = Node(
-        package="sinthlab_bringup",
-        executable="force_torque_bias_calibrator.py",
-        name="force_torque_bias_calibrator",
-        namespace=LaunchConfiguration("robot_name"),
-    )
-
     # 4. Launch the Virtual Fixture Node
     orchestrator_node = Node(
         package="sinthlab_bringup",
@@ -64,7 +56,6 @@ def generate_launch_description():
             robot_name,
             ctrl,
             hardware_launch,
-            force_torque_bias_calibrator_node,
             orchestrator_node,
         ]
     )
