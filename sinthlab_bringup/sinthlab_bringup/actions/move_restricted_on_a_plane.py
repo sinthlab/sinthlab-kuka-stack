@@ -8,10 +8,8 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
-# Robotics Toolbox for intuitive Python kinematics
-import roboticstoolbox as rtb
-import tempfile
-import os
+# optas for fast kinematics
+import optas
 
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
@@ -35,21 +33,21 @@ class MoveRestrictedOnAPlaneAction:
         self._state_sub = node.create_subscription(LBRState, state_topic, self._state_cb, 1)
         self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)
 
-        node.get_logger().info("Initializing Robotics Toolbox for rapid kinematics...")
+        node.get_logger().info("Initializing optas for rapid kinematics...")
         
         robot_description = ""
         if node.has_parameter("robot_description"):
             robot_description = str(node.get_parameter("robot_description").value)
         
-        # roboticstoolbox only accept a file path and not the urdf string
-        # Write URDF to a temporary file for roboticstoolbox to parse
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.urdf', delete=False) as temp_urdf:
-            temp_urdf.write(robot_description)
-            temp_urdf_path = temp_urdf.name
-        self.robot = rtb.ERobot.URDF(temp_urdf_path)
-        os.remove(temp_urdf_path)
+        self.robot = optas.RobotModel(urdf_string=robot_description)
+        self._fk_func = self.robot.get_global_link_transform_function(
+            link=self.ee_link, base_link=self.base_link, numpy_output=True
+        )
+        self._jacobian_func = self.robot.get_link_geometric_jacobian_function(
+            link=self.ee_link, base_link=self.base_link, numpy_output=True
+        )
         
-        self.last_measured_joints = np.zeros(self.robot.n)
+        self.last_measured_joints = np.zeros(self.robot.ndof)
         
         # Load virtual fixture profile
         self.active_profile = "bounding_box"
@@ -223,7 +221,7 @@ class MoveRestrictedOnAPlaneAction:
         if getattr(self, '_needs_bias_capture', True):
             self.torque_bias = np.array(msg.external_torque)
             self._needs_bias_capture = False
-            self._initial_transform = self.robot.fkine(self.last_commanded).A
+            self._initial_transform = self._fk_func(self.last_commanded)
             self._node.get_logger().info(f"Captured gravity bias & initial pose lock: {np.round(self.torque_bias, 2)}")
 
         # ---------------------------------------------------------------------
@@ -240,7 +238,7 @@ class MoveRestrictedOnAPlaneAction:
         # ---------------------------------------------------------------------
         
         # 1. Get the spatial Jacobian (Base frame) to map physics to Cartesian
-        J = self.robot.jacob0(self.last_commanded)
+        J = self._jacobian_func(self.last_commanded)
         
         # 2. Convert joint torques into 6D Cartesian Wrench [Fx, Fy, Fz, Tx, Ty, Tz]
         # wrench = (J^T)^+ * tau (Moore-Penrose pseudo-inverse)
@@ -256,7 +254,7 @@ class MoveRestrictedOnAPlaneAction:
         # 4. Apply pure linear Cartesian Admittance based on the hand push
         cartesian_gain_linear = self.admittance_gain
         
-        current_pose = self.robot.fkine(self.last_commanded).A
+        current_pose = self._fk_func(self.last_commanded)
         target_pose_input = current_pose.copy()
         
         # Apply the linear force translations

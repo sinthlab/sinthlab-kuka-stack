@@ -59,7 +59,7 @@
       frequency_hz: 2000
       duration_ms: 500
 
-    virtual_fixture_profile: "simple_plane"
+    virtual_fixture_profile: "sine_wave"
     virtual_fixtures:
       force_deadband: 2.0
       admittance_gain: 0.0005
@@ -84,5 +84,5 @@
         amplitude: 0.1
         spatial_freq: 20.0
         pull_axis: "z"
-        osc_axis: "x"
+        osc_axis: "y"
 

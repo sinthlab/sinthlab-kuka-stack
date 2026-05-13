@@ -63,7 +63,7 @@ Follow [these](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr
   ```
 - Install required python package
   ```
-  pip install pyoptas ruckig roboticstoolbox-python --break-system-packages
+  pip install pyoptas ruckig --break-system-packages
   ``` 
 - Build
   ```
