@@ -201,37 +201,54 @@ class MoveRestrictedOnAPlaneAction:
         # ---------------------------------------------------------------------
         # Subtract the static bias so it doesn't perpetually trigger the deadband
         tau_ext = np.array(msg.external_torque) - getattr(self, 'torque_bias', np.zeros(7))
-        deadband = 1.5  # Nm, filters out noise
         
-        # Calculate push force beyond the deadband
-        tau_active = np.where(np.abs(tau_ext) > deadband, np.sign(tau_ext) * (np.abs(tau_ext) - deadband), 0.0)
+        # ---------------------------------------------------------------------
+        # PURE CARTESIAN ADMITTANCE
+        # Instead of moving joints proportionally to joint torques (which causes
+        # weird sweeping arcs and wobbles), convert the forces to Cartesian space!
+        # ---------------------------------------------------------------------
         
-        # Prevent massive spikes if the user pushes hard against a stiff robot
-        tau_active = np.clip(tau_active, -10.0, 10.0)
+        # 1. Get the spatial Jacobian (Base frame) to map physics to Cartesian
+        J = self.robot.jacob0(self.last_commanded)
         
-        # Advance the equilibrium smoothly based on human push
-        admittance_gain = 0.0003  # Lowered significantly for stiff profile stability
-        test_joints = self.last_commanded + (tau_active * admittance_gain)
+        # 2. Convert joint torques into 6D Cartesian Wrench [Fx, Fy, Fz, Tx, Ty, Tz]
+        # wrench = (J^T)^+ * tau (Moore-Penrose pseudo-inverse)
+        wrench = np.linalg.pinv(J.T) @ tau_ext
+        
+        # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
+        f_deadband = 10.0 # N
+        wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
+        
+        # Prevent runaway leaps if pushed violently
+        wrench_active = np.clip(wrench_active, -80.0, 80.0) 
+        
+        # 4. Apply pure linear Cartesian Admittance based on the hand push
+        # (This guarantees if you push DOWN, it only calculates a DOWNward intention!)
+        cartesian_gain_linear = 0.00005 # Meters per Newton per tick
+        
+        current_pose = self.robot.fkine(self.last_commanded).A
+        target_pose_input = current_pose.copy()
+        
+        # Apply the linear force translations
+        target_pose_input[0, 3] += wrench_active[0] * cartesian_gain_linear
+        target_pose_input[1, 3] += wrench_active[1] * cartesian_gain_linear
+        target_pose_input[2, 3] += wrench_active[2] * cartesian_gain_linear
 
-        # 1. Forward Kinematics to find the provisional XYZ location
-        target_pose_input = self.robot.fkine(test_joints).A
-        
-        # 2. Check and Apply our Mathematical Surface boundaries
+        # 5. Snap the intended linear push to our Mathematical Rails (Sine Wave)
         target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
 
         cmd = LBRJointPositionCommand()
         target_joints = self.last_commanded.copy()
         
-        if is_restricted:
-            # 3. Inverse Kinematics using Robotics Toolbox 
-            # ALWAYS use self.last_commanded as the seed to kill null-space ("weird joint") wobble!
+        # 6. Apply Inverse Kinematics ONLY if we are moving
+        if np.any(np.abs(wrench_active) > 0.01) or is_restricted:
+            # Note: We anchor `q0=self.last_commanded` to prevent the elbow 
+            # from shifting ("weird joint movements") in the redundant null-space
             ik_solution = self.robot.ikine_LM(target_pose, q0=self.last_commanded)
             if ik_solution.success:
                 target_joints = ik_solution.q
-        else:
-            target_joints = test_joints
 
-        # 4. Smooth EMA filter to glide boundaries and filter hand-pushes
+        # 7. Smooth EMA filter to glide boundaries and soften physics
         alpha = 0.15
         safe_q = (1.0 - alpha) * self.last_commanded + (alpha * target_joints)
         
