@@ -7,7 +7,7 @@
 
     move_to_start:
       update_rate: 200
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.01
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
       move_to_pos_a_max: 2.0
@@ -33,7 +33,7 @@
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
       cartesian_axis: z
-      cartesian_displacement_threshold_m: 0.2
+      cartesian_displacement_threshold_m: 0.5
       state_topic: state
       command_topic: command/joint_position
       wrench_topic: force_torque_broadcaster/wrench
@@ -45,7 +45,7 @@
       subscriber_latch_delay_sec: 1.0
     move_to_start_recover:
       update_rate: 200
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.15
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
       move_to_pos_a_max: 2.0
