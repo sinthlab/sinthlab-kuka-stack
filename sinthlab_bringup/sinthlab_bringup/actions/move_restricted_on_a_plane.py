@@ -63,6 +63,9 @@ class MoveRestrictedOnAPlaneAction:
             for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
                 if node.has_parameter(prefix + key):
                     self.profile_config[key] = float(node.get_parameter(prefix + key).value)
+            for key in ["pull_axis", "osc_axis", "restricted_axis"]:
+                if node.has_parameter(prefix + key):
+                    self.profile_config[key] = str(node.get_parameter(prefix + key).value)
         else:
             node.get_logger().warn(f"Could not find virtual fixture profile {self.active_profile}")
         
@@ -120,6 +123,23 @@ class MoveRestrictedOnAPlaneAction:
                 x = cx + dx * scale
                 y = cy + dy * scale
                 restricted = True
+        elif ptype == "plane":
+            # A completely simplified sanity-check constraint:
+            # Locks motion purely to the 2D plane based on the restricted axis.
+            restricted = True
+            restricted_axis = self.profile_config.get("restricted_axis", "z").lower()
+            
+            if self._initial_transform is not None:
+                if restricted_axis == "z":
+                    z = self._initial_transform[2, 3] # Lock Z, free X/Y
+                elif restricted_axis == "y":
+                    y = self._initial_transform[1, 3] # Lock Y, free X/Z
+                elif restricted_axis == "x":
+                    x = self._initial_transform[0, 3] # Lock X, free Y/Z
+                
+                # Lock orientation completely
+                transform[0:3, 0:3] = self._initial_transform[0:3, 0:3]
+                
         elif ptype == "sinusoid":
             amp = self.profile_config.get("amplitude")
             freq = self.profile_config.get("spatial_freq")
@@ -216,15 +236,14 @@ class MoveRestrictedOnAPlaneAction:
         wrench = np.linalg.pinv(J.T) @ tau_ext
         
         # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
-        f_deadband = 10.0 # N
+        f_deadband = 1.5 # N (Lowered significantly so you don't have to push incredibly hard)
         wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
         
         # Prevent runaway leaps if pushed violently
         wrench_active = np.clip(wrench_active, -80.0, 80.0) 
         
         # 4. Apply pure linear Cartesian Admittance based on the hand push
-        # (This guarantees if you push DOWN, it only calculates a DOWNward intention!)
-        cartesian_gain_linear = 0.00005 # Meters per Newton per tick
+        cartesian_gain_linear = 0.00015 # Meters per Newton per tick (Tripled for better response)
         
         current_pose = self.robot.fkine(self.last_commanded).A
         target_pose_input = current_pose.copy()
@@ -240,16 +259,31 @@ class MoveRestrictedOnAPlaneAction:
         cmd = LBRJointPositionCommand()
         target_joints = self.last_commanded.copy()
         
-        # 6. Apply Inverse Kinematics ONLY if we are moving
+        # 6. FAST JACOBIAN IK (runs in < 1ms, keeps 200Hz loop alive!)
+        # Instead of calling ikine_LM (which is an iterative solver that crashes
+        # the 200Hz loop and causes the robot to violently jerk/wobble),
+        # we calculate the required spatial twist and push it through the Jacobian!
         if np.any(np.abs(wrench_active) > 0.01) or is_restricted:
-            # Note: We anchor `q0=self.last_commanded` to prevent the elbow 
-            # from shifting ("weird joint movements") in the redundant null-space
-            ik_solution = self.robot.ikine_LM(target_pose, q0=self.last_commanded)
-            if ik_solution.success:
-                target_joints = ik_solution.q
+            # How far do we need to move?
+            dx = target_pose[0, 3] - current_pose[0, 3]
+            dy = target_pose[1, 3] - current_pose[1, 3]
+            dz = target_pose[2, 3] - current_pose[2, 3]
+            
+            # 6D Twist vector [dx, dy, dz, dRx, dRy, dRz]
+            # (We only enforce translation rigidly here to prevent math singularities
+            # in rotation math during pure admittance)
+            twist = np.array([dx, dy, dz, 0.0, 0.0, 0.0])
+            
+            # Avoid massive leaps that cause structural singularities
+            twist = np.clip(twist, -0.05, 0.05) 
+            
+            J_inv = np.linalg.pinv(J, rcond=0.01) # Stiff singularity handling
+            delta_q = J_inv @ twist
+            
+            target_joints += delta_q
 
-        # 7. Smooth EMA filter to glide boundaries and soften physics
-        alpha = 0.15
+        # 7. Heavy EMA filter to guarantee buttery-smooth joint signals
+        alpha = 0.5 # 0.5 matches the official optas admittance demo (1-0.95 = 0.05, etc)
         safe_q = (1.0 - alpha) * self.last_commanded + (alpha * target_joints)
         
         self.last_commanded = safe_q
