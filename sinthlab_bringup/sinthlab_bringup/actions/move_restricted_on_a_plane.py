@@ -206,28 +206,33 @@ class MoveRestrictedOnAPlaneAction:
         # Calculate push force beyond the deadband
         tau_active = np.where(np.abs(tau_ext) > deadband, np.sign(tau_ext) * (np.abs(tau_ext) - deadband), 0.0)
         
-        target_joints = self.last_commanded.copy()
+        # Prevent massive spikes if the user pushes hard against a stiff robot
+        tau_active = np.clip(tau_active, -10.0, 10.0)
         
         # Advance the equilibrium smoothly based on human push
-        admittance_gain = 0.002
-        target_joints += tau_active * admittance_gain
+        admittance_gain = 0.0003  # Lowered significantly for stiff profile stability
+        test_joints = self.last_commanded + (tau_active * admittance_gain)
 
         # 1. Forward Kinematics to find the provisional XYZ location
-        target_pose_input = self.robot.fkine(target_joints).A
+        target_pose_input = self.robot.fkine(test_joints).A
         
         # 2. Check and Apply our Mathematical Surface boundaries
         target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
 
         cmd = LBRJointPositionCommand()
+        target_joints = self.last_commanded.copy()
         
         if is_restricted:
             # 3. Inverse Kinematics using Robotics Toolbox 
-            ik_solution = self.robot.ikine_LM(target_pose, q0=target_joints)
+            # ALWAYS use self.last_commanded as the seed to kill null-space ("weird joint") wobble!
+            ik_solution = self.robot.ikine_LM(target_pose, q0=self.last_commanded)
             if ik_solution.success:
                 target_joints = ik_solution.q
+        else:
+            target_joints = test_joints
 
         # 4. Smooth EMA filter to glide boundaries and filter hand-pushes
-        alpha = 0.1
+        alpha = 0.15
         safe_q = (1.0 - alpha) * self.last_commanded + (alpha * target_joints)
         
         self.last_commanded = safe_q
