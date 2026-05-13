@@ -61,11 +61,11 @@
 
     virtual_fixture_profile: "simple_plane"
     virtual_fixtures:
+      force_deadband: 2.0
+      admittance_gain: 0.0005
       simple_plane:
         type: "plane"
         restricted_axis: "y" # "x", "y", or "z"
-        force_deadband: 2.0
-        admittance_gain: 0.0005
       bounding_box:
         type: "cartesian_box"
         z_min: 0.3
@@ -85,5 +85,4 @@
         spatial_freq: 20.0
         pull_axis: "z"
         osc_axis: "x"
-        force_deadband: 2.0
-        admittance_gain: 0.0005
+

@@ -56,11 +56,16 @@ class MoveRestrictedOnAPlaneAction:
         if node.has_parameter(self._param_prefix + "virtual_fixture_profile"):
             self.active_profile = str(node.get_parameter(self._param_prefix + "virtual_fixture_profile").value)
             
+        # Load High-Level Tuning Parameters
+        base_prefix = self._param_prefix + "virtual_fixtures."
+        self.force_deadband = float(get_required_param(node, base_prefix + "force_deadband"))
+        self.admittance_gain = float(get_required_param(node, base_prefix + "admittance_gain"))
+            
         self.profile_config = {}
-        prefix = self._param_prefix + f"virtual_fixtures.{self.active_profile}."
+        prefix = base_prefix + f"{self.active_profile}."
         if node.has_parameter(prefix + "type"):
             self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
-            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset", "admittance_gain", "force_deadband"]:
+            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
                 if node.has_parameter(prefix + key):
                     self.profile_config[key] = float(node.get_parameter(prefix + key).value)
             for key in ["pull_axis", "osc_axis", "restricted_axis"]:
@@ -76,6 +81,13 @@ class MoveRestrictedOnAPlaneAction:
         self._active = True
         self._needs_bias_capture = True
         self._initial_transform = None
+        
+        # CRITICAL FIX: Wipe the old commanded position from the previous trial!
+        # This forces the script to re-orient itself to the exact joint positions
+        # the arm was moved to by the recovery script, preventing velocity faults!
+        if hasattr(self, 'last_commanded'):
+            delattr(self, 'last_commanded')
+            
         self._node.get_logger().info("Restricted Plane Action started, applying boundary IK.")
 
     def stop(self) -> None:
@@ -235,14 +247,14 @@ class MoveRestrictedOnAPlaneAction:
         wrench = np.linalg.pinv(J.T) @ tau_ext
         
         # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
-        f_deadband = self.profile_config.get("force_deadband") 
+        f_deadband = self.force_deadband
         wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
         
         # Prevent runaway leaps if pushed violently
         wrench_active = np.clip(wrench_active, -80.0, 80.0) 
         
         # 4. Apply pure linear Cartesian Admittance based on the hand push
-        cartesian_gain_linear = self.profile_config.get("admittance_gain")
+        cartesian_gain_linear = self.admittance_gain
         
         current_pose = self.robot.fkine(self.last_commanded).A
         target_pose_input = current_pose.copy()
