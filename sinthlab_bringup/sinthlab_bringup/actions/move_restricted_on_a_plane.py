@@ -60,7 +60,7 @@ class MoveRestrictedOnAPlaneAction:
         prefix = self._param_prefix + f"virtual_fixtures.{self.active_profile}."
         if node.has_parameter(prefix + "type"):
             self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
-            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
+            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset", "admittance_gain", "force_deadband"]:
                 if node.has_parameter(prefix + key):
                     self.profile_config[key] = float(node.get_parameter(prefix + key).value)
             for key in ["pull_axis", "osc_axis", "restricted_axis"]:
@@ -235,14 +235,14 @@ class MoveRestrictedOnAPlaneAction:
         wrench = np.linalg.pinv(J.T) @ tau_ext
         
         # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
-        f_deadband = 0.5 # N (Extremely low so it responds to light touches)
+        f_deadband = self.profile_config.get("force_deadband") 
         wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
         
         # Prevent runaway leaps if pushed violently
         wrench_active = np.clip(wrench_active, -80.0, 80.0) 
         
         # 4. Apply pure linear Cartesian Admittance based on the hand push
-        cartesian_gain_linear = 0.0008 # Meters per Newton per tick (Massively increased for easy sliding)
+        cartesian_gain_linear = self.profile_config.get("admittance_gain")
         
         current_pose = self.robot.fkine(self.last_commanded).A
         target_pose_input = current_pose.copy()
