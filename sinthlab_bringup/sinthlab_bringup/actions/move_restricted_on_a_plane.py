@@ -124,7 +124,6 @@ class MoveRestrictedOnAPlaneAction:
                 y = cy + dy * scale
                 restricted = True
         elif ptype == "plane":
-            # A completely simplified sanity-check constraint:
             # Locks motion purely to the 2D plane based on the restricted axis.
             restricted = True
             restricted_axis = self.profile_config.get("restricted_axis", "z").lower()
@@ -236,14 +235,14 @@ class MoveRestrictedOnAPlaneAction:
         wrench = np.linalg.pinv(J.T) @ tau_ext
         
         # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
-        f_deadband = 1.5 # N (Lowered significantly so you don't have to push incredibly hard)
+        f_deadband = 0.5 # N (Extremely low so it responds to light touches)
         wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
         
         # Prevent runaway leaps if pushed violently
         wrench_active = np.clip(wrench_active, -80.0, 80.0) 
         
         # 4. Apply pure linear Cartesian Admittance based on the hand push
-        cartesian_gain_linear = 0.00015 # Meters per Newton per tick (Tripled for better response)
+        cartesian_gain_linear = 0.0008 # Meters per Newton per tick (Massively increased for easy sliding)
         
         current_pose = self.robot.fkine(self.last_commanded).A
         target_pose_input = current_pose.copy()
