@@ -10,6 +10,9 @@ from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 
 # optas for fast kinematics
 import optas
+import csv
+import time
+import os
 
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
@@ -48,6 +51,7 @@ class MoveRestrictedOnAPlaneAction:
         )
         
         self.last_measured_joints = np.zeros(self.robot.ndof)
+        self._trajectory_data = [] # Store path here
         
         # Load virtual fixture profile
         self.active_profile = "bounding_box"
@@ -79,6 +83,8 @@ class MoveRestrictedOnAPlaneAction:
         self._active = True
         self._needs_bias_capture = True
         self._initial_transform = None
+        self._trajectory_data = [] # Reset on start
+        self._trajectory_start_time = time.time()
         
         # CRITICAL FIX: Wipe the old commanded position from the previous trial!
         # This forces the script to re-orient itself to the exact joint positions
@@ -90,6 +96,24 @@ class MoveRestrictedOnAPlaneAction:
 
     def stop(self) -> None:
         self._active = False
+        
+        # Save recorded trajectory automatically on stop
+        if hasattr(self, '_trajectory_data') and len(self._trajectory_data) > 0:
+            import os, csv, time
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"robot_trajectory_{timestamp}.csv"
+            
+            save_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../analysis"))
+            os.makedirs(save_dir, exist_ok=True)
+            filepath = os.path.join(save_dir, filename)
+            
+            with open(filepath, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["time", "x", "y", "z"])
+                writer.writerows(self._trajectory_data)
+            self._node.get_logger().info(f"Saved {len(self._trajectory_data)} points to {filepath}")
+            self._trajectory_data = [] # wipe
+            
         self._node.get_logger().info("Restricted Plane Action stopped.")
 
     def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
@@ -297,6 +321,20 @@ class MoveRestrictedOnAPlaneAction:
         
         self.last_commanded = safe_q
         cmd.joint_position = safe_q.tolist()
+
+        # Record trajectory at hardware rate
+        if hasattr(self, '_trajectory_data') and hasattr(self, '_trajectory_start_time'):
+            # Record the actual end-effector state in the real world
+            real_pose = self._fk_func(self.last_measured_joints)
+            try:
+                self._trajectory_data.append([
+                    time.time() - self._trajectory_start_time,
+                    float(real_pose[0, 3]),
+                    float(real_pose[1, 3]),
+                    float(real_pose[2, 3])
+                ])
+            except Exception as e:
+                pass # fail silently if formatting glitch
 
         # 5. Command the spring equilibrium
         self._cmd_pub.publish(cmd)
