@@ -121,23 +121,45 @@ class MoveRestrictedOnAPlaneAction:
                 y = cy + dy * scale
                 restricted = True
         elif ptype == "sinusoid":
-            amp = self.profile_config["amplitude"]
-            freq = self.profile_config["spatial_freq"]
-            y_off = self.profile_config["y_offset"]
+            amp = self.profile_config.get("amplitude")
+            freq = self.profile_config.get("spatial_freq")
+            pull_axis = self.profile_config.get("pull_axis") # e.g. 'z' = pull down
+            osc_axis = self.profile_config.get("osc_axis")   # e.g. 'x' = wobbles left/right
             
             # For a 1D Rail, we are ALWAYS restricting the geometry to perfectly
             # snap onto the mathematical manifold (no thresholding)
             restricted = True
             
-            # 1. Lock Z to exactly the initial starting height
             if self._initial_transform is not None:
-                z = self._initial_transform[2, 3]
+                start_x = self._initial_transform[0, 3]
+                start_y = self._initial_transform[1, 3]
+                start_z = self._initial_transform[2, 3]
                 
-            # 2. Enforce the sinusoidal mathematical manifold on the XY plane
-            y = amp * np.sin(freq * x) + y_off
+                # Apply the sine wave dynamically based on configured axes
+                if pull_axis == "z" and osc_axis == "x":
+                    y = start_y
+                    x = start_x + amp * np.sin(freq * (z - start_z))
+                elif pull_axis == "z" and osc_axis == "y":
+                    x = start_x
+                    y = start_y + amp * np.sin(freq * (z - start_z))
+                elif pull_axis == "x" and osc_axis == "y":
+                    z = start_z
+                    y = start_y + amp * np.sin(freq * (x - start_x))
+                elif pull_axis == "x" and osc_axis == "z":
+                    y = start_y
+                    z = start_z + amp * np.sin(freq * (x - start_x))
+                elif pull_axis == "y" and osc_axis == "x":
+                    z = start_z
+                    x = start_x + amp * np.sin(freq * (y - start_y))
+                elif pull_axis == "y" and osc_axis == "z":
+                    x = start_x
+                    z = start_z + amp * np.sin(freq * (y - start_y))
+                else:
+                    # Legacy fallback
+                    z = start_z
+                    y = amp * np.sin(freq * x) + self.profile_config.get("y_offset", 0.0)
 
-            # 3. Lock orientation completely so the end effector doesn't twist
-            if self._initial_transform is not None:
+                # Lock orientation completely so the end effector doesn't twist
                 transform[0:3, 0:3] = self._initial_transform[0:3, 0:3]
 
         # Re-pack the XYZ back into the transformation matrix

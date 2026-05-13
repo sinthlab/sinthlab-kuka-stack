@@ -32,7 +32,7 @@
       update_rate: 200
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      cartesian_axis: x
+      cartesian_axis: z
       cartesian_displacement_threshold_m: 0.2
       state_topic: state
       command_topic: command/joint_position
@@ -78,5 +78,5 @@
         type: "sinusoid"
         amplitude: 0.1
         spatial_freq: 20.0
-        y_offset: 0.0
-        z_min: 0.3
+        pull_axis: "z"
+        osc_axis: "x"
