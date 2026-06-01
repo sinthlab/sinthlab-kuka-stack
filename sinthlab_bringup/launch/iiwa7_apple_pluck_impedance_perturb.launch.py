@@ -37,7 +37,7 @@ def generate_launch_description():
     robot_name = LBRDescriptionMixin.arg_robot_name()
     ctrl = DeclareLaunchArgument(
         "ctrl",
-        default_value="lbr_joint_position_command_controller",
+        default_value="cartesian_impedance_controller",
         description="Desired default controller for hardware commands via FRI.",
     )
 
@@ -50,7 +50,7 @@ def generate_launch_description():
     hardware_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
-                [FindPackageShare("lbr_bringup"), "launch", "hardware.launch.py"]
+                [FindPackageShare("sinthlab_bringup"), "launch", "custom_hardware.launch.py"]
             )
         ),
         launch_arguments={

@@ -1,11 +1,12 @@
 /**:
   ros__parameters:
     state_topic: "state"
-    command_topic: "command/joint_position"
+    command_topic: "cartesian_impedance_controller/target_frame"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
     move_to_start:
+    apple_pluck_impedance_control_displacement:
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.01
@@ -18,16 +19,6 @@
     audio_cue_play:
       frequency_hz: 1500
       duration_ms: 1500
-    force_torque_bias_calibrator:
-      lbr_state_topic: state
-      bias_topic: force_torque_bias
-      base_link: lbr_link_0
-      end_effector_link: lbr_link_ee
-      calibration_duration_sec: 1.0
-      calibration_timeout_sec: 3.0
-      settle_duration_sec: 0.5
-      subscriber_latch_delay_sec: 1.0
-      debug_log_enabled: false
     apple_pluck_impedance_control_displacement:
       update_rate: 200
       base_frame: lbr_link_0
@@ -35,7 +26,7 @@
       cartesian_axis: z
       cartesian_displacement_threshold_m: 0.5
       state_topic: state
-      command_topic: command/joint_position
+      command_topic: cartesian_impedance_controller/target_frame
       wrench_topic: force_torque_broadcaster/wrench
       force_release_threshold_newton: 5.0
       force_release_duration_sec: 3.0
@@ -44,6 +35,7 @@
       debug_log_rate_hz: 2.0
       subscriber_latch_delay_sec: 1.0
     move_to_start_recover:
+    apple_pluck_impedance_control_displacement:
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.15
@@ -61,8 +53,9 @@
 
     virtual_fixture_profile: "sine_wave"
     virtual_fixtures:
-      force_deadband: 2.0
-      admittance_gain: 0.0005
+      force_deadband: 2.0  # N: How much force before the arm yields
+      admittance_gain: 0.0005 # m/N: How fast the arm yields to force
+      filter_alpha: 0.1 # 0.0 - 1.0 (Lower = smoother/damped, Higher = responsive/jerky)
       simple_plane:
         type: "plane"
         restricted_axis: "y" # "x", "y", or "z"

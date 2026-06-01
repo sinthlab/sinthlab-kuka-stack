@@ -9,7 +9,10 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 from ruckig import InputParameter, OutputParameter, Ruckig
 
-from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
+from lbr_fri_idl.msg import LBRState
+from geometry_msgs.msg import PoseStamped
+import optas
+from scipy.spatial.transform import Rotation as R
 from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
 from sinthlab_bringup.helpers.param_logging import log_params_once
 
@@ -68,7 +71,8 @@ class MoveToPositionAction:
             )
 
         # State
-        self._cmd_topic = "command/joint_position"
+        robot_name = node.get_namespace().strip("/")
+        self._cmd_topic = f"/{robot_name}/cartesian_impedance_controller/target_frame" if robot_name else "/cartesian_impedance_controller/target_frame"
         self._subscribers_ready = False 
         self._init = False
         self._moving = False
@@ -85,7 +89,11 @@ class MoveToPositionAction:
 
         # ROS interfaces owned by the action
         self._state_sub = node.create_subscription(LBRState, "state", self._on_state, 1)
-        self._pub_joint = node.create_publisher(LBRJointPositionCommand, self._cmd_topic, 1)
+        self._pub_joint = node.create_publisher(PoseStamped, self._cmd_topic, 1)
+
+        robot_desc = str(node.get_parameter("robot_description").value) if node.has_parameter("robot_description") else ""
+        self.robot = optas.RobotModel(urdf_string=robot_desc)
+        self._fk_func = self.robot.get_link_transform_function(link="lbr_link_ee", base_link="lbr_link_0", numpy_output=True)
        
         # Small delay to allow message to flush over DDS
         self._timer = node.create_timer(self._dt, self._step)
@@ -234,16 +242,36 @@ class MoveToPositionAction:
                 self._node.get_logger().info(
                     f"Trajectory synchronization pause: controller commands lagging by {np.max(sync_err):.4f} rad. Waiting to catch up..."
                 )
-            cmd = LBRJointPositionCommand()
-            cmd.joint_position = list(self._trajectory_gen_in.current_position)
+            pose_mat = self._fk_func(np.array(self._trajectory_gen_in.current_position, dtype=float))
+            cmd = PoseStamped()
+            cmd.header.frame_id = "lbr_link_0"
+            cmd.header.stamp = self._node.get_clock().now().to_msg()
+            cmd.pose.position.x = float(pose_mat[0, 3])
+            cmd.pose.position.y = float(pose_mat[1, 3])
+            cmd.pose.position.z = float(pose_mat[2, 3])
+            quat = R.from_matrix(pose_mat[0:3, 0:3]).as_quat()
+            cmd.pose.orientation.x = float(quat[0])
+            cmd.pose.orientation.y = float(quat[1])
+            cmd.pose.orientation.z = float(quat[2])
+            cmd.pose.orientation.w = float(quat[3])
             self._pub_joint.publish(cmd)
             return
 
         # Step Trajectory generation and publish
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
         trajectory_gen_cmd = np.array(self._trajectory_gen_out.new_position, dtype=float)
-        cmd = LBRJointPositionCommand()
-        cmd.joint_position = trajectory_gen_cmd.tolist()
+        pose_mat = self._fk_func(trajectory_gen_cmd)
+        cmd = PoseStamped()
+        cmd.header.frame_id = "lbr_link_0"
+        cmd.header.stamp = self._node.get_clock().now().to_msg()
+        cmd.pose.position.x = float(pose_mat[0, 3])
+        cmd.pose.position.y = float(pose_mat[1, 3])
+        cmd.pose.position.z = float(pose_mat[2, 3])
+        quat = R.from_matrix(pose_mat[0:3, 0:3]).as_quat()
+        cmd.pose.orientation.x = float(quat[0])
+        cmd.pose.orientation.y = float(quat[1])
+        cmd.pose.orientation.z = float(quat[2])
+        cmd.pose.orientation.w = float(quat[3])
         self._pub_joint.publish(cmd)
         
         # Feed state forward for smooth next step

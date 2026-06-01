@@ -6,20 +6,20 @@ from typing import Callable, Optional
 import numpy as np
 
 from rclpy.node import Node as rclpyNode
-from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
+from lbr_fri_idl.msg import LBRState
+from geometry_msgs.msg import PoseStamped
 
 # optas for fast kinematics
 import optas
-import csv
-import time
-import os
 
 from sinthlab_bringup.helpers.common_threshold import get_required_param
+from sinthlab_bringup.actions.trajectory_recorder import TrajectoryRecorder
 
 class MoveRestrictedOnAPlaneAction:
     """
     Action that applies mathematical virtual fixtures (boundaries)
-    by overriding the requested Cartesian pose via rapid IK through Robotics Toolbox.
+    by updating a target Pose based on physical pushes, mapping it to geometric 
+    rails, and sending it to a real-time C++ CLIK controller.
     """
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None) -> None:
         self._node = node
@@ -29,12 +29,16 @@ class MoveRestrictedOnAPlaneAction:
         self._active = False
 
         state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
-        cmd_topic = str(get_required_param(node, self._param_prefix + "command_topic"))
+        
+        # Override to point directly to the CLIK controller target frame topic
+        robot_name = node.get_namespace().strip("/")
+        cmd_topic = f"/{robot_name}/kuka_clik_controller/target_frame" if robot_name else "/kuka_clik_controller/target_frame"
+        
         self.ee_link = str(get_required_param(node, self._param_prefix + "end_effector_link"))
         self.base_link = str(get_required_param(node, self._param_prefix + "base_link"))
 
         self._state_sub = node.create_subscription(LBRState, state_topic, self._state_cb, 1)
-        self._cmd_pub = node.create_publisher(LBRJointPositionCommand, cmd_topic, 1)
+        self._cmd_pub = node.create_publisher(PoseStamped, cmd_topic, 1)
 
         node.get_logger().info("Initializing optas for rapid kinematics...")
         
@@ -51,7 +55,7 @@ class MoveRestrictedOnAPlaneAction:
         )
         
         self.last_measured_joints = np.zeros(self.robot.ndof)
-        self._trajectory_data = [] # Store path here
+        self.recorder = TrajectoryRecorder() # Setup modular recorder
         
         # Load virtual fixture profile
         self.active_profile = "bounding_box"
@@ -62,6 +66,9 @@ class MoveRestrictedOnAPlaneAction:
         base_prefix = self._param_prefix + "virtual_fixtures."
         self.force_deadband = float(get_required_param(node, base_prefix + "force_deadband"))
         self.admittance_gain = float(get_required_param(node, base_prefix + "admittance_gain"))
+        self.filter_alpha = 0.5
+        if node.has_parameter(base_prefix + "filter_alpha"):
+            self.filter_alpha = float(node.get_parameter(base_prefix + "filter_alpha").value)
             
         self.profile_config = {}
         prefix = base_prefix + f"{self.active_profile}."
@@ -83,8 +90,8 @@ class MoveRestrictedOnAPlaneAction:
         self._active = True
         self._needs_bias_capture = True
         self._initial_transform = None
-        self._trajectory_data = [] # Reset on start
-        self._trajectory_start_time = time.time()
+        
+        self.recorder.start() # Start modular recorder 
         
         # CRITICAL FIX: Wipe the old commanded position from the previous trial!
         # This forces the script to re-orient itself to the exact joint positions
@@ -97,22 +104,8 @@ class MoveRestrictedOnAPlaneAction:
     def stop(self) -> None:
         self._active = False
         
-        # Save recorded trajectory automatically on stop
-        if hasattr(self, '_trajectory_data') and len(self._trajectory_data) > 0:
-            import os, csv, time
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f"robot_trajectory_{timestamp}.csv"
-            
-            save_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../analysis"))
-            os.makedirs(save_dir, exist_ok=True)
-            filepath = os.path.join(save_dir, filename)
-            
-            with open(filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(["time", "x", "y", "z"])
-                writer.writerows(self._trajectory_data)
-            self._node.get_logger().info(f"Saved {len(self._trajectory_data)} points to {filepath}")
-            self._trajectory_data = [] # wipe
+        # Save recorded trajectory automatically on stop using the modular recorder
+        self.recorder.stop_and_save(self._node.get_logger())
             
         self._node.get_logger().info("Restricted Plane Action stopped.")
 
@@ -289,52 +282,25 @@ class MoveRestrictedOnAPlaneAction:
         # 5. Snap the intended linear push to our Mathematical Rails (Sine Wave)
         target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
 
-        cmd = LBRJointPositionCommand()
-        target_joints = self.last_commanded.copy()
+        cmd = PoseStamped()
+        self._target_pose = target_pose
+
+        from scipy.spatial.transform import Rotation as R
+        cmd.header.frame_id = self.base_link
+        cmd.header.stamp = self._node.get_clock().now().to_msg()
+        cmd.pose.position.x = float(target_pose[0, 3])
+        cmd.pose.position.y = float(target_pose[1, 3])
+        cmd.pose.position.z = float(target_pose[2, 3])
         
-        # 6. FAST JACOBIAN IK (runs in < 1ms, keeps 200Hz loop alive!)
-        # Instead of calling ikine_LM (which is an iterative solver that crashes
-        # the 200Hz loop and causes the robot to violently jerk/wobble),
-        # we calculate the required spatial twist and push it through the Jacobian!
-        if np.any(np.abs(wrench_active) > 0.01) or is_restricted:
-            # How far do we need to move?
-            dx = target_pose[0, 3] - current_pose[0, 3]
-            dy = target_pose[1, 3] - current_pose[1, 3]
-            dz = target_pose[2, 3] - current_pose[2, 3]
-            
-            # 6D Twist vector [dx, dy, dz, dRx, dRy, dRz]
-            # (We only enforce translation rigidly here to prevent math singularities
-            # in rotation math during pure admittance)
-            twist = np.array([dx, dy, dz, 0.0, 0.0, 0.0])
-            
-            # Avoid massive leaps that cause structural singularities
-            twist = np.clip(twist, -0.05, 0.05) 
-            
-            J_inv = np.linalg.pinv(J, rcond=0.01) # Stiff singularity handling
-            delta_q = J_inv @ twist
-            
-            target_joints += delta_q
-
-        # 7. Heavy EMA filter to guarantee buttery-smooth joint signals
-        alpha = 0.5 # 0.5 matches the official optas admittance demo (1-0.95 = 0.05, etc)
-        safe_q = (1.0 - alpha) * self.last_commanded + (alpha * target_joints)
+        quat = R.from_matrix(target_pose[0:3, 0:3]).as_quat()
+        cmd.pose.orientation.x = float(quat[0])
+        cmd.pose.orientation.y = float(quat[1])
+        cmd.pose.orientation.z = float(quat[2])
+        cmd.pose.orientation.w = float(quat[3])
         
-        self.last_commanded = safe_q
-        cmd.joint_position = safe_q.tolist()
+        # Record Cartesian trajectory at hardware rate via modular component
+        real_pose = self._fk_func(self.last_measured_joints)
+        self.recorder.record_pose(real_pose)
 
-        # Record trajectory at hardware rate
-        if hasattr(self, '_trajectory_data') and hasattr(self, '_trajectory_start_time'):
-            # Record the actual end-effector state in the real world
-            real_pose = self._fk_func(self.last_measured_joints)
-            try:
-                self._trajectory_data.append([
-                    time.time() - self._trajectory_start_time,
-                    float(real_pose[0, 3]),
-                    float(real_pose[1, 3]),
-                    float(real_pose[2, 3])
-                ])
-            except Exception as e:
-                pass # fail silently if formatting glitch
-
-        # 5. Command the spring equilibrium
+        # 6. Command the Cartesian target directly to the C++ controller
         self._cmd_pub.publish(cmd)

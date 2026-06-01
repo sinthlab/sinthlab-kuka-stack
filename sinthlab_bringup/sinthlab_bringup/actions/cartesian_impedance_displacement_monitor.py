@@ -1,20 +1,15 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 from __future__ import annotations
 
 from typing import Callable, Optional
 
-import math
-import time
-import numpy as np
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node as rclpyNode
 from rclpy.time import Time
 import tf2_ros
-from geometry_msgs.msg import TransformStamped, WrenchStamped
-from ruckig import InputParameter, OutputParameter, Ruckig
+from geometry_msgs.msg import TransformStamped
 
-from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
 from sinthlab_bringup.helpers.param_logging import log_params_once
 
@@ -22,9 +17,9 @@ from sinthlab_bringup.helpers.param_logging import log_params_once
 class CartesianImpedanceDisplacementMonitor:
     """
     Cartesian Impedance displacement monitor for a robot already in controller-side Cartesian impedance.
-    - captures baseline EE pose in base frame.
-    - Once displacement threshold is exceeded, holds joint position and monitors wrench magnitude.
-    - Shutdown after forces stay below the configured threshold long enough.
+    - Captures baseline EE pose in base frame.
+    - Once displacement threshold is exceeded, triggers 'snap' and initiates shutdown.
+    - Relies on the Cartesian controller's natural spring physics to recoil the arm.
     """
 
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None], on_snap: Optional[Callable[[], None]] = None) -> None:
@@ -43,13 +38,7 @@ class CartesianImpedanceDisplacementMonitor:
         self._ee_frame = str(get_required_param(node, self._param_prefix + "ee_frame"))
         self._disp_axis = str(get_required_param(node, self._param_prefix + "cartesian_axis")).lower()
         self._disp_threshold_m = float(get_required_param(node, self._param_prefix + "cartesian_displacement_threshold_m"))
-        self._state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
-        self._command_topic = str(get_required_param(node, self._param_prefix + "command_topic"))
-        self._wrench_topic = str(get_required_param(node, self._param_prefix + "wrench_topic"))
-        self._force_release_threshold = float(get_required_param(node, self._param_prefix + "force_release_threshold_newton"))
-        self._force_release_duration = float(get_required_param(node, self._param_prefix + "force_release_duration_sec"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, self._param_prefix + "force_release_shutdown_delay_sec")))
-        self._subscriber_latch_delay_sec = float(get_required_param(node, self._param_prefix + "subscriber_latch_delay_sec"))
 
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
         dbg_rate = float(get_required_param(node, self._param_prefix + "debug_log_rate_hz"))
@@ -64,12 +53,7 @@ class CartesianImpedanceDisplacementMonitor:
                     "ee_frame": self._ee_frame,
                     "cartesian_axis": self._disp_axis,
                     "cartesian_displacement_threshold_m": self._disp_threshold_m,
-                    "state_topic": self._state_topic,
-                    "command_topic": self._command_topic,
-                    "wrench_topic": self._wrench_topic,
-                    "force_release_threshold_newton": self._force_release_threshold,
-                    "force_release_duration_sec": self._force_release_duration,
-                    "subscriber_latch_delay_sec": self._subscriber_latch_delay_sec,
+                    "release_shutdown_delay_sec": self._release_shutdown_delay,
                     "debug_log_enabled": self._debug_log_enabled,
                     "debug_log_rate_hz": dbg_rate,
                 },
@@ -78,38 +62,13 @@ class CartesianImpedanceDisplacementMonitor:
 
         # Runtime state
         self._baseline: Optional[TransformStamped] = None
-        self._hold_published = False
         self._stopping = False
-        self._holding = False
-        self._releasing_tension = False
-        self._release_tension_progress = 0.0
-        self._release_tension_duration = 0.3  # Safe half-second interpolation
-        self._tension_start_q: Optional[np.ndarray] = None
-        self._tension_target_q: Optional[np.ndarray] = None
-        self._ruckig = None
-        self._ruckig_in = None
-        self._ruckig_out = None
-        
-        self._hold_position: Optional[list[float]] = None
-        self._joint_position: Optional[list[float]] = None
-        self._measured_joint_position: Optional[list[float]] = None
-        self._force_magnitude: Optional[float] = None
-        self._release_elapsed = 0.0
-        self._release_published = False
-        self._release_reset_logged = False
         self._shutdown_requested = False
         
-        # Single-timer shutdown delay mechanism state.
-        # Instead of spawning asynchronous node timers which can leak between trials,
-        # we iterate _shutdown_elapsed naturally inside our synchronous _step() loop.
         self._shutting_down = False
         self._shutdown_elapsed = 0.0
 
-        # ROS interfaces owned by the monitor
-        self._state_sub = node.create_subscription(LBRState, self._state_topic, self._on_state, 1)
-        self._wrench_sub = node.create_subscription(WrenchStamped, self._wrench_topic, self._on_wrench, 10)
-        self._hold_pub = node.create_publisher(LBRJointPositionCommand, self._command_topic, 1)
-
+        # TF buffer for displacement calculation
         self._tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, node)
 
@@ -118,34 +77,8 @@ class CartesianImpedanceDisplacementMonitor:
         self._node.get_logger().info(
             f"Displacement monitor started: rate={self._update_rate}Hz, "
             f"base='{self._base_frame}', ee='{self._ee_frame}', axis='{self._disp_axis}', "
-            f"disp_thr={self._disp_threshold_m:.4f} m, hold_cmd_topic='{self._command_topic}', "
-            f"force_release_thr={self._force_release_threshold:.2f} N"
+            f"disp_thr={self._disp_threshold_m:.4f} m"
         )
-
-    # ------------------------------------------------------------------
-    def _on_state(self, msg: LBRState) -> None:
-        try:
-            q_ipo = np.array(msg.ipo_joint_position.tolist(), dtype=float)
-            q_cmd = np.array(msg.commanded_joint_position.tolist(), dtype=float)
-            q_meas = np.array(msg.measured_joint_position.tolist(), dtype=float)
-            
-            if not np.isnan(q_meas).any():
-                self._measured_joint_position = q_meas.tolist()
-
-            if not np.isnan(q_ipo).any():
-                self._joint_position = q_ipo.tolist()
-            elif not np.isnan(q_cmd).any():
-                self._joint_position = q_cmd.tolist()
-            else:
-                self._joint_position = q_meas.tolist()
-        except Exception:
-            self._joint_position = None
-
-    def _on_wrench(self, msg: WrenchStamped) -> None:
-        fx = msg.wrench.force.x
-        fy = msg.wrench.force.y
-        fz = msg.wrench.force.z
-        self._force_magnitude = math.sqrt(fx * fx + fy * fy + fz * fz)
 
     def _lookup(self) -> Optional[TransformStamped]:
         try:
@@ -178,19 +111,9 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         self._baseline = None
-        self._hold_published = False
         self._stopping = False
-        self._holding = False
-        self._hold_position = None
-        self._force_magnitude = None
-        self._release_elapsed = 0.0
-        self._release_published = False
-        self._release_reset_logged = False
         self._shutdown_requested = False
         
-        # Single-timer shutdown delay mechanism state.
-        # Instead of spawning asynchronous node timers which can leak between trials,
-        # we iterate _shutdown_elapsed naturally inside our synchronous _step() loop.
         self._shutting_down = False
         self._shutdown_elapsed = 0.0
         
@@ -198,7 +121,6 @@ class CartesianImpedanceDisplacementMonitor:
         self._node.get_logger().info("Displacement monitor activated for new trial.")
 
     def _step(self) -> None:
-        # wait till ready callback is ready to start this action
         if not self._ready:
             return
 
@@ -213,7 +135,6 @@ class CartesianImpedanceDisplacementMonitor:
             if ts is not None:
                 self._baseline = ts
                 self._node.get_logger().info("Captured baseline EE pose for displacement thresholding")
-
             return
 
         ts_now = self._lookup()
@@ -223,7 +144,7 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         disp = self._axis_disp_m(ts_now, self._baseline, self._disp_axis)
-        if self._debug_log_enabled and not self._holding and self._dbg.tick(self._dt):
+        if self._debug_log_enabled and not self._stopping and self._dbg.tick(self._dt):
             self._node.get_logger().info(
                 f"EE disp={disp:.4f} m (axis={self._disp_axis}, thr={self._disp_threshold_m:.4f} m)"
             )
@@ -235,77 +156,16 @@ class CartesianImpedanceDisplacementMonitor:
                 f"APPLE PLUCK! Threshold reached: value={disp:.4f} m >= {self._disp_threshold_m:.4f} m. "
                 f"Snapping tension and entering recovery."
             )
-            # Fire audio cue!
+            
+            # Fire audio cue or external callback
             if self._on_snap is not None:
                 self._on_snap()
 
-            # The exact moment the displacement crosses the threshold, the branch "Snaps".
-            # We DO NOT move the commanded anchor down to the hand. Doing so causes the arm
-            # to race down and fault dynamically.
-            # Instead, we simply publish release immediately. Because the commanded anchor
-            # is STILL at the top, the moment you let go, the arm will naturally and organically
-            # recoil to the top. The move_to_start_recovery node will take over merely to
-            # keep the launch file alive until the arm physically reaches the top.
-            self._holding = False
-            self._release_published = True
             if self._release_shutdown_delay > 0.0:
                 self._shutting_down = True
                 self._shutdown_elapsed = 0.0
             else:
                 self._shutdown()
-
-        if self._holding:
-            self._publish_hold()
-            self._check_force_release()
-    
-            return
-
-    def _publish_hold(self) -> None:
-        if self._hold_position is None:
-            self._hold_position = self._joint_position
-            self._node.get_logger().info("Holding position to monitor force (Legacy mode)")
-
-        if self._hold_pub is None:
-            return
-
-        cmd = LBRJointPositionCommand()
-        cmd.joint_position = self._hold_position
-        self._hold_pub.publish(cmd)
-    
-
-    def _check_force_release(self) -> None:
-        if self._force_magnitude is None:
-            return
-        if self._force_magnitude <= self._force_release_threshold:
-            self._release_elapsed += self._dt
-            self._release_reset_logged = False
-            if self._release_elapsed >= self._force_release_duration and not self._release_published:
-                self._release_published = True
-                self._holding = False
-                self._stop_hold_publish()
-                self._node.get_logger().info(
-                    f"Force below threshold (|F|={self._force_magnitude:.2f} N <= {self._force_release_threshold:.2f} N) for {self._release_elapsed:.2f}s. requesting shutdown."
-                )
-                if self._release_shutdown_delay > 0.0:
-                    self._shutting_down = True
-                    self._shutdown_elapsed = 0.0
-                else:
-                    self._shutdown()
-        else:
-            if self._release_elapsed > 0.0 and self._debug_log_enabled and not self._release_reset_logged:
-                self._node.get_logger().info(
-                    f"Force release timer reset: |F|={self._force_magnitude:.2f} N > {self._force_release_threshold:.2f} N"
-                )
-                self._release_reset_logged = True
-            self._release_elapsed = 0.0
-
-    def _stop_hold_publish(self) -> None:
-        if self._hold_pub is not None:
-            try:
-                self._node.destroy_publisher(self._hold_pub)
-            except Exception:
-                pass
-            self._hold_pub = None
 
     def _shutdown(self) -> None:
         if self._shutdown_requested:
@@ -318,4 +178,4 @@ class CartesianImpedanceDisplacementMonitor:
         try:
             self._on_complete()
         except Exception as exc:
-            self._node.get_logger().error(f"Exception during displacement monitor complete callback: {exc}") 
+            self._node.get_logger().error(f"Exception during displacement monitor complete callback: {exc}")

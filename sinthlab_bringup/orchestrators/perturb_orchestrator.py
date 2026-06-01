@@ -7,7 +7,6 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.actions.move_to_position import MoveToPositionAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
-from sinthlab_bringup.actions.force_torque_bias import ForceTorqueBias
 
 class PerturbOrchestratorNode(rclpyNode):
     def __init__(self) -> None:
@@ -29,12 +28,6 @@ class PerturbOrchestratorNode(rclpyNode):
             self,
             param_prefix="move_to_start",
             on_complete=self.on_move_complete
-        )
-        
-        self.calibrator = ForceTorqueBias(
-            self,
-            param_prefix="force_torque_bias_calibrator",
-            on_complete=self.on_calib_complete
         )
 
         self.audio_cue = AudioCue(
@@ -82,11 +75,14 @@ class PerturbOrchestratorNode(rclpyNode):
         self.move_to_start.start()
 
     def on_move_complete(self):
-        self.get_logger().info("Arm returned to start. Initiating Force-Torque Bias Calibration.")
-        self.calibrator.start()
-
-    def on_calib_complete(self, bias):
-        self.get_logger().info("Calibration complete. Sounding audio cue.")
+        self.get_logger().info("Arm returned to start. Waiting for a quiet window...")
+        self._quiet_timer = self.create_timer(2.0, self.on_quiet_window_complete)
+        
+    def on_quiet_window_complete(self):
+        if hasattr(self, '_quiet_timer') and getattr(self, '_quiet_timer') is not None:
+             self._quiet_timer.cancel()
+             self._quiet_timer = None
+        self.get_logger().info("Quiet window complete. Sounding audio cue.")
         self.audio_cue.start()
 
     def on_audio_complete(self):

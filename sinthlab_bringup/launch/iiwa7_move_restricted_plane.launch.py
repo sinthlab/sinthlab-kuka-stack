@@ -11,7 +11,7 @@ def generate_launch_description():
     # 1. Base Setup Parameters
     robot_type = DeclareLaunchArgument("robot_type", default_value="iiwa7")
     robot_name = LBRDescriptionMixin.arg_robot_name()
-    ctrl = DeclareLaunchArgument("ctrl", default_value="lbr_joint_position_command_controller")
+    ctrl = DeclareLaunchArgument("ctrl", default_value="kuka_clik_controller")
 
     # 2. Load standard Robot Description for Hardware
     robot_description = LBRDescriptionMixin.param_robot_description(
@@ -23,7 +23,7 @@ def generate_launch_description():
     # 3. Bring up KUKA Hardware in Impedance/Position Mode
     hardware_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare("lbr_bringup"), "launch", "hardware.launch.py"])
+            PathJoinSubstitution([FindPackageShare("sinthlab_bringup"), "launch", "custom_hardware.launch.py"])
         ),
         launch_arguments={
             "model": LaunchConfiguration("robot_type"),
