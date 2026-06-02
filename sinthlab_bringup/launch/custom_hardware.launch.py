@@ -14,7 +14,33 @@ from ament_index_python.packages import get_package_prefix
 
 def generate_launch_description() -> LaunchDescription:
     lbr_ros2_control_prefix = get_package_prefix("lbr_ros2_control")
-    lbr_ros2_control_lib_path = os.path.join(lbr_ros2_control_prefix, "lib", "lbr_ros2_control")
+    # lib/ contains .so plugin files; lib/lbr_ros2_control/ contains executables (different dirs)
+    lbr_ros2_control_lib_path = os.path.join(lbr_ros2_control_prefix, "lib")
+
+    # Shared substitution so both robot_state_publisher and ros2_control_node receive
+    # robot_description directly — eliminates the race where the spawner triggers
+    # estimated_wrench_interface.on_init() before ros2_control_node has received the
+    # description from the /robot_description topic, causing get_robot_description()
+    # to return an empty string and the WrenchEstimator URDF parse to throw.
+    robot_description_content = Command(
+        [
+            FindExecutable(name="xacro"),
+            " ",
+            PathSubstitution(FindPackageShare("lbr_description"))
+            / "urdf"
+            / LaunchConfiguration("model")
+            / LaunchConfiguration("model"),
+            ".xacro",
+            " robot_name:=",
+            LaunchConfiguration("robot_name"),
+            " mode:=hardware",
+            " system_config_path:=",
+            PathSubstitution(
+                FindPackageShare(LaunchConfiguration("sys_cfg_pkg"))
+            )
+            / LaunchConfiguration("sys_cfg"),
+        ]
+    )
 
     return LaunchDescription(
         [
@@ -68,27 +94,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="robot_state_publisher",
                 output="screen",
                 parameters=[
-                    {
-                        "robot_description": Command(
-                            [
-                                FindExecutable(name="xacro"),
-                                " ",
-                                PathSubstitution(FindPackageShare("lbr_description"))
-                                / "urdf"
-                                / LaunchConfiguration("model")
-                                / LaunchConfiguration("model"),
-                                ".xacro",
-                                " robot_name:=",
-                                LaunchConfiguration("robot_name"),
-                                " mode:=hardware",
-                                " system_config_path:=",
-                                PathSubstitution(
-                                    FindPackageShare(LaunchConfiguration("sys_cfg_pkg"))
-                                )
-                                / LaunchConfiguration("sys_cfg"),
-                            ]
-                        )
-                    },
+                    {"robot_description": robot_description_content},
                     {"use_sim_time": False},
                 ],
                 namespace=LaunchConfiguration("namespace"),
@@ -97,6 +103,7 @@ def generate_launch_description() -> LaunchDescription:
                 package="controller_manager",
                 executable="ros2_control_node",
                 parameters=[
+                    {"robot_description": robot_description_content},
                     {"use_sim_time": False},
                     PathSubstitution(
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
