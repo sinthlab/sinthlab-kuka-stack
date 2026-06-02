@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
     Command,
     EnvironmentVariable,
@@ -14,14 +15,16 @@ from ament_index_python.packages import get_package_prefix
 
 def generate_launch_description() -> LaunchDescription:
     lbr_ros2_control_prefix = get_package_prefix("lbr_ros2_control")
-    # lib/ contains .so plugin files; lib/lbr_ros2_control/ contains executables (different dirs)
-    lbr_ros2_control_lib_path = os.path.join(lbr_ros2_control_prefix, "lib")
+    # lbr_ros2_control installs its plugin library (liblbr_ros2_control.so) under
+    # lib/lbr_ros2_control/ (its CMakeLists uses `LIBRARY DESTINATION lib/${PROJECT_NAME}`),
+    # not the standard lib/. Point the loader at that dir so the plugin's symbols resolve.
+    lbr_ros2_control_lib_path = os.path.join(lbr_ros2_control_prefix, "lib", "lbr_ros2_control")
 
-    # Shared substitution so both robot_state_publisher and ros2_control_node receive
-    # robot_description directly — eliminates the race where the spawner triggers
-    # estimated_wrench_interface.on_init() before ros2_control_node has received the
-    # description from the /robot_description topic, causing get_robot_description()
-    # to return an empty string and the WrenchEstimator URDF parse to throw.
+    # robot_description for robot_state_publisher, which publishes it on /robot_description.
+    # The controller_manager (Jazzy) obtains the URDF by *subscribing to that topic*; it does
+    # NOT read a robot_description node parameter. estimated_wrench_interface.on_init() parses
+    # this URDF (WrenchEstimator), so it must not be spawned until the controller_manager has
+    # received it — the spawner ordering below guarantees that.
     robot_description_content = Command(
         [
             FindExecutable(name="xacro"),
@@ -40,6 +43,39 @@ def generate_launch_description() -> LaunchDescription:
             )
             / LaunchConfiguration("sys_cfg"),
         ]
+    )
+
+    # joint_state_broadcaster needs no robot_description. Its spawner exits only once the
+    # controller_manager has initialized the resource manager from the URDF (received over
+    # the /robot_description topic), so it is a reliable "robot_description is ready" signal.
+    joint_state_broadcaster_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=[
+            "joint_state_broadcaster",
+            "--controller-manager",
+            "controller_manager",
+        ],
+        namespace=LaunchConfiguration("namespace"),
+    )
+
+    # These load after the broadcaster is up. estimated_wrench_interface (and the default
+    # ctrl) need a non-empty robot_description in their on_init(); spawning them here avoids
+    # the race that caused "Failed loading controller estimated_wrench_interface".
+    robot_description_dependent_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=[
+            "estimated_wrench_interface",
+            "lbr_state_broadcaster",
+            "force_torque_broadcaster",
+            LaunchConfiguration("ctrl"),
+            "--controller-manager",
+            "controller_manager",
+        ],
+        namespace=LaunchConfiguration("namespace"),
     )
 
     return LaunchDescription(
@@ -103,7 +139,6 @@ def generate_launch_description() -> LaunchDescription:
                 package="controller_manager",
                 executable="ros2_control_node",
                 parameters=[
-                    {"robot_description": robot_description_content},
                     {"use_sim_time": False},
                     PathSubstitution(
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
@@ -112,20 +147,12 @@ def generate_launch_description() -> LaunchDescription:
                 ],
                 namespace=LaunchConfiguration("namespace"),
             ),
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                output="screen",
-                arguments=[
-                    "--controller-manager",
-                    "controller_manager",
-                    "joint_state_broadcaster",
-                    "estimated_wrench_interface",
-                    "lbr_state_broadcaster",
-                    "force_torque_broadcaster",
-                    LaunchConfiguration("ctrl"),
-                ],
-                namespace=LaunchConfiguration("namespace"),
+            joint_state_broadcaster_spawner,
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=joint_state_broadcaster_spawner,
+                    on_exit=[robot_description_dependent_spawner],
+                )
             ),
         ]
     )
