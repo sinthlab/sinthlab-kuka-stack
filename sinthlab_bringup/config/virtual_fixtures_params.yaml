@@ -1,12 +1,11 @@
 /**:
   ros__parameters:
     state_topic: "state"
-    command_topic: "cartesian_impedance_controller/target_frame"
+    command_topic: "kuka_clik_controller/target_frame"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
     move_to_start:
-    apple_pluck_impedance_control_displacement:
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.01
@@ -26,7 +25,7 @@
       cartesian_axis: z
       cartesian_displacement_threshold_m: 0.5
       state_topic: state
-      command_topic: cartesian_impedance_controller/target_frame
+      command_topic: kuka_clik_controller/target_frame
       wrench_topic: force_torque_broadcaster/wrench
       force_release_threshold_newton: 5.0
       force_release_duration_sec: 3.0
@@ -35,7 +34,6 @@
       debug_log_rate_hz: 2.0
       subscriber_latch_delay_sec: 1.0
     move_to_start_recover:
-    apple_pluck_impedance_control_displacement:
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.15

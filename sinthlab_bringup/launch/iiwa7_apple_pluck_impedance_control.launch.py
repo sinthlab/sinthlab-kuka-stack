@@ -42,7 +42,7 @@ def generate_launch_description():
 
     ctrl = DeclareLaunchArgument(
         "ctrl",
-        default_value="cartesian_impedance_controller",
+        default_value="kuka_clik_controller",
         description="Desired default controller for hardware commands via FRI.",
     )
 

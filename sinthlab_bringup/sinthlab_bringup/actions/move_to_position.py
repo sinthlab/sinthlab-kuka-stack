@@ -72,7 +72,7 @@ class MoveToPositionAction:
 
         # State
         robot_name = node.get_namespace().strip("/")
-        self._cmd_topic = f"/{robot_name}/cartesian_impedance_controller/target_frame" if robot_name else "/cartesian_impedance_controller/target_frame"
+        self._cmd_topic = f"/{robot_name}/kuka_clik_controller/target_frame" if robot_name else "/kuka_clik_controller/target_frame"
         self._subscribers_ready = False 
         self._init = False
         self._moving = False

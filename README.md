@@ -104,7 +104,7 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 Note that there are python dependencies (`pyoptas`, `ruckig`) to be installed. This step needs to be run only once, after you launch wsl.
 
 ### 1. Apple Pluck Impedance Scenario
-This scenario utilizes the `cartesian_impedance_controller` where the C++ controller acts as a pure virtual physical spring. The arm natively recoils when pushed off its commanded Cartesian anchor. 
+This scenario streams a target equilibrium pose to the `kuka_clik_controller` (IK-based position control), while the KUKA cabinet runs Cartesian impedance natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and recoils when pushed off its commanded Cartesian anchor. 
 
 **Steps to run:**
 1. Check the `update_rate` in `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
@@ -127,7 +127,7 @@ ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
 *Note: Ensure you tweak `virtual_fixtures_params.yaml` to set your desired `virtual_fixture_profile` (sine_wave, flat_table, etc).*
 
 ### 3. Apple Pluck Perturb Scenario
-This scenario builds upon the Apple Pluck physics (using the `cartesian_impedance_controller`) but introduces a sudden, programmatic Cartesian spatial shift right before the user acts, studying response to mechanical perturbation.
+This scenario builds upon the Apple Pluck physics (cabinet-side Cartesian impedance via `LbrImpedanceControlServer`, with `kuka_clik_controller` streaming the equilibrium pose) but introduces a sudden, programmatic Cartesian spatial shift right before the user acts, studying response to mechanical perturbation.
 
 **Steps to run:**
 1. Check the `update_rate` in `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
@@ -144,7 +144,7 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
 The robotics stack abstracts hard real-time physical loops from high-level orchestration, ensuring that state transitions Python do not compromise 1000Hz hardware limits.
 
 ### 1. Hardware / Real-Time Layer (C++)
-- **`cartesian_impedance_controller` (IDRA Lab)**: Solves IK, tracks joint efforts, and maintains a virtual stiffness anchor at 1000Hz.
+- **Cabinet-side Cartesian impedance (`LbrImpedanceControlServer`)**: The KUKA cabinet runs the Cartesian-impedance virtual spring at 1000Hz; ROS only streams the equilibrium pose to it.
 - **`kuka_clik_controller` (IDRA Lab)**: Pure Closed-Loop Inverse Kinematics tracker without physical elasticity, heavily used for precise constraint tracking.
 - *Message interface*: Receives `geometry_msgs/PoseStamped` tracking points.
 
