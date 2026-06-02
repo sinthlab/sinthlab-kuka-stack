@@ -100,88 +100,88 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=mock rviz:=true
 # Gazebo + MoveIt + RViz
 ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=true
 ```
-## Running applications on the Hardware
-Note that there are python dependencies to be installed. This step needs to be run only once, after you launch wsl:
+## Running Experimental Scenarios on Hardware
+Note that there are python dependencies (`pyoptas`, `ruckig`) to be installed. This step needs to be run only once, after you launch wsl.
 
-### Running the apple pluck scenario
-1. On the Laptop, Open a wsl terminal (go to powershell and type `wsl -d Ubuntu-24.04`), and then go to the root of lbr-stack project. Currently it is setup as `cd ~/lbr-stack`
-2. run `source install/setup.bash` in both the terminals. 
-*Note: If you have git pull some changes, then make sure to follow build steps to build your workspace before sourcing*
-3. From the terminal, Check the `update_rate` in file `lbr-stack\src\lbr_fri_ros2_stack\lbr_description\ros2_control\lbr_controllers.yaml` is set to `200`. If not, change the value to `200` and follow build steps to build your workspace and source as in step 2.
-4. Now run the apple pluck scenario impedance controller using command below.
-```
+### 1. Apple Pluck Impedance Scenario
+This scenario utilizes the `cartesian_impedance_controller` where the C++ controller acts as a pure virtual physical spring. The arm natively recoils when pushed off its commanded Cartesian anchor. 
+
+**Steps to run:**
+1. Check the `update_rate` in `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
+2. Run the launch file:
+```bash
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
 ```
-5. On the KUKA Smartpad, launch the LBRServer application
-6. Select:
-  - FRI send period: 10 ms
-  - IP address: 172.31.1.148
-  - FRI control mode: POSITION_CONTROL
-  - FRI client command mode: POSITION
-7. The following sequences should happen:
-  - Arm will move to its start position, if it is not in that. 
-  - once the arm reaches at the start position for experiment
-      - There will be a beep sounded
-      - the message is displayed on the screen saying `Captured baseline EE pose for displacement thresholding`
-  - Now, please try applying gentle force on end effector.
-8. You can keep on applying force till a displacement threshold is reached on End Effector (currently set on 'z' direction to to 0.2 m). Once it does, there will be another beep sounded.
-Note: you will feel the arm is "holding" the pose at that moment and message comes up on screen `Displacement threshold reached..`
-9. At that point, Arm will wait till no more force is detected on the End Effector, and then will move back to the start position.
+3. On the KUKA Smartpad, launch the LBRServer application (FRI send period: 10 ms, mode: POSITION_CONTROL).
+4. The arm moves to the start. Wait for the beep, then pull the end effector gently to trigger the 0.2m displacement threshold. A second beep plays, and the arm awaits physical recoil before restarting.
 
-### Tuning Game Plan (DEPRECATED)
+### 2. Move Restricted on a Plane Scenario
+This scenario utilizes the `kuka_clik_controller`, an exact-tracking inverse-kinematics (IK) solver with no built-in spring physics. The Python action scripts construct an instantaneous admittance engine to apply mathematical virtual fixtures (like sine waves, flat planes, bounding boxes) against user pushing torques.
 
-- Start from calm defaults. Optionally, Watch /lbr/state and /joint_states so velocity spikes or chatter are obvious.
-
-- Lower the Cartesian push first: drop dx_gains to ~0.05 and nudge it up in 0.01–0.02 steps while you feel the arm. That adjusts how aggressively the robot counters external force; small increases let you stop as soon as compliance starts to disappear. If velocities edge toward limits or motion turns jerky, back off.
-
-- Match the joint response: once dx_gains feels right, scale dq_gains to keep the joint correction in the same ballpark. Values between 0.5 and 2.0 pair well with the above dx_gains; move both together so the arm remains balanced. If the arm jitters, reduce dq_gains or accept a softer dx_gains.
-
-- Use exp_smooth as damping: keep it around 0.90–0.95 while tuning. If you still see high-frequency jitter after settling on gains, lower it toward 0.8 to smooth the wrench input. Only push above 0.97 when you need ultra-fast reactions and your sensors are quiet; higher values pass noise straight into the controller.
-
-- Iterate safely: after each tweak, move the wrist gently, note how much force is needed to deflect, and watch velocities. Log good combinations (and any that misbehave) so you can revert quickly if the arm starts chattering or feels too rigid.
-
-### Explanation and setup for apple pluck scenario
-```mermaid
-graph LR
-  subgraph "Nodes (namespace: lbr)"
-    start["move_to_start<br/>script: move_to_start.py"]
-    impedance["apple_pluck_impedance_control_displacement<br/>script: apple_pluck_impedance_control_displacement.py"]
-    recover["move_to_start_recover<br/>script: move_to_start.py"]
-    end
-
-    subgraph "Topics / Streams"
-    moveDone["lbr/move_to_start/done<br/>(Bool)"]
-    forceDone["lbr/displacement_force_release/done<br/>(Bool)"]
-    stateTopic["lbr/state<br/>(LBRState)"]
-    wrenchTopic["lbr/force_torque_broadcaster/wrench<br/>(WrenchStamped)"]
-    cmdTopic["lbr/command/joint_position<br/>(LBRJointPositionCommand)"]
-    tfbuf["tf buffer<br/>(base <-> ee frames)"]
-    end
-
-    start -->|publish| moveDone
-    start -->|publish| cmdTopic
-    impedance -->|publish| forceDone
-    impedance -->|publish hold| cmdTopic
-    recover -->|publish| moveDone
-    recover -->|publish| cmdTopic
-
-    moveDone -->|subscribe| impedance
-    forceDone -->|optional gate| start
-    stateTopic -->|subscribe| start
-    stateTopic -->|subscribe| impedance
-    wrenchTopic -->|subscribe| impedance
-    moveDone -->|subscribe| recover
-    forceDone -->|must gate| recover
-    tfbuf -->|lookup| impedance
+**Steps to run:**
+```bash
+ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
 ```
-- `lbr/move_to_start` (move_to_start.py) drives the arm to the initial pose, publishing commands on `lbr/command/joint_position` and announcing completion on `lbr/move_to_start/done`. It always listens to `lbr/state` and optionally to `lbr/displacement_force_release/done` when `start_action_needed == true`.
-- `lbr/apple_pluck_impedance_control_displacement` (apple_pluck_impedance_control_displacement.py) waits on `lbr/move_to_start/done`, then monitors displacement/force via `lbr/state`, `lbr/force_torque_broadcaster/wrench`, and `TF`. It latches completion on `lbr/displacement_force_release/done` and temporarily publishes hold commands on `lbr/command/joint_position`.
-- `lbr/move_to_start_recover` (same script as the first node) runs after the displacement node exits. With `start_action_needed == true`, it blocks on `lbr/displacement_force_release/done` before republishing the start trajectory and then shuts down the launch once `lbr/move_to_start/done` fires again.
+*Note: Ensure you tweak `virtual_fixtures_params.yaml` to set your desired `virtual_fixture_profile` (sine_wave, flat_table, etc).*
 
-**Note on default topics/states available from server**
-- `lbr/state` comes from the lbr_state_broadcaster controller (`lbr_ros2_control/LBRStateBroadcaster`) that hardware.launch.py spawns via `/controller_manager`. It wraps the real-time stream coming from the KUKA FRI driver and republishes it as an LBRState message.
-- `lbr/force_torque_broadcaster/wrench` is published by the standard ROS 2 controller force_torque_broadcaster (`force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster`), also spawned by the same launch file. It exposes the estimated wrist wrench provided by the hardware interface.
-- TF frames are produced by the robot_state_publisher node (`lbr/robot_state_publisher`), also in the same launch file. It listens to `joint_states` from the joint state broadcaster and continuously republishes the `lbr_link_*` transforms.
+---
+
+## Software Architecture
+The robotics stack abstracts hard real-time physical loops from high-level orchestration, ensuring that state transitions Python do not compromise 1000Hz hardware limits.
+
+### 1. Hardware / Real-Time Layer (C++)
+- **`cartesian_impedance_controller` (IDRA Lab)**: Solves IK, tracks joint efforts, and maintains a virtual stiffness anchor at 1000Hz.
+- **`kuka_clik_controller` (IDRA Lab)**: Pure Closed-Loop Inverse Kinematics tracker without physical elasticity, heavily used for precise constraint tracking.
+- *Message interface*: Receives `geometry_msgs/PoseStamped` tracking points.
+
+### 2. Kinematic Math Layer (Python)
+- **`optas`**: Used dynamically inside the Python action servers for rapid Forward Kinematics (FK) and analytical Jacobian conversions. This prevents singular matrix crashes when reading Cartesian poses or applying force translations.
+
+### 3. State Machine Orchestration (Python)
+The experimental flows are entirely orchestrated by high-level `rclpy` Nodes calling modular actions (`MoveToPositionAction`, `CartesianImpedanceDisplacementMonitor`, `MoveRestrictedOnAPlaneAction`):
+
+#### Fluctuation Flow: Apple Pluck 
+```mermaid
+stateDiagram-v2
+    [*] --> MoveToStart : Automated trajectory
+    MoveToStart --> QuietWindow : Wait 2.0s
+    QuietWindow --> AudioCue : Trigger audio driver
+    AudioCue --> DisplacementMonitor : Calculate tf2 offset
+    DisplacementMonitor --> Snap : User pulls > 0.2m Z-axis
+    Snap --> WaitRecoil : Wait for C++ spring to pull back
+    WaitRecoil --> MoveToStart
+```
+
+#### Fluctuation Flow: Restricted Virtual Fixtures
+```mermaid
+stateDiagram-v2
+    [*] --> MoveToStart : Rise to workspace
+    MoveToStart --> QuietWindow : Wait 2.0s
+    QuietWindow --> AudioCue
+    AudioCue --> FixtureAdmittance
+    note right of FixtureAdmittance
+      Calculates pseudo-inverse Jacobian.
+      Applies Moore-Penrose mapping from Tool Torque
+      to Admittance Shifts on Mathematical Rails.
+    end note
+    FixtureAdmittance --> SnapThreshold : Pull thresholds broken
+    SnapThreshold --> WaitRecoil
+    WaitRecoil --> MoveToStart
+```
+
+#### Fluctuation Flow: Perturb Experiment 
+```mermaid
+stateDiagram-v2
+    [*] --> MoveToStart : Automated trajectory
+    MoveToStart --> QuietWindow : Wait 2.0s
+    QuietWindow --> PerturbShift : Move sudden distance (1.5s delay)
+    PerturbShift --> AudioCue : Trigger audio driver
+    AudioCue --> DisplacementMonitor : Calculate tf2 offset
+    DisplacementMonitor --> Snap : User pulls > threshold
+    Snap --> WaitRecoil : Recoil physics
+    WaitRecoil --> MoveToStart
+```
+
 
 ## Troubleshoot 
 - if your rviz window launches but is not displaying anything or gazebo window is crashing immediately, It might be because the graphics library trying to use the graphics card which might not be set. use command ` export LIBGL_ALWAYS_SOFTWARE=1` to first set the library to use CPU, and then run the commands to launch rviz/gazebo again.
