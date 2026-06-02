@@ -1,17 +1,27 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import (
     Command,
+    EnvironmentVariable,
     FindExecutable,
     LaunchConfiguration,
     PathSubstitution,
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import os
+from ament_index_python.packages import get_package_prefix
 
 def generate_launch_description() -> LaunchDescription:
+    lbr_ros2_control_prefix = get_package_prefix("lbr_ros2_control")
+    lbr_ros2_control_lib_path = os.path.join(lbr_ros2_control_prefix, "lib", "lbr_ros2_control")
+
     return LaunchDescription(
         [
+            SetEnvironmentVariable(
+                name="LD_LIBRARY_PATH",
+                value=[EnvironmentVariable("LD_LIBRARY_PATH", default_value=""), ":", lbr_ros2_control_lib_path]
+            ),
             DeclareLaunchArgument(
                 name="model",
                 default_value="iiwa7",

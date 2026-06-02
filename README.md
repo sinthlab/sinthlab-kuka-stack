@@ -112,7 +112,7 @@ This scenario utilizes the `cartesian_impedance_controller` where the C++ contro
 ```bash
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
 ```
-3. On the KUKA Smartpad, launch the LBRServer application (FRI send period: 10 ms, mode: POSITION_CONTROL).
+3. On the KUKA Smartpad, launch the `LbrImpedanceControlServer` application (FRI send period: 10 ms).
 4. The arm moves to the start. Wait for the beep, then pull the end effector gently to trigger the 0.2m displacement threshold. A second beep plays, and the arm awaits physical recoil before restarting.
 
 ### 2. Move Restricted on a Plane Scenario
@@ -122,7 +122,21 @@ This scenario utilizes the `kuka_clik_controller`, an exact-tracking inverse-kin
 ```bash
 ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
 ```
+3. On the KUKA Smartpad, launch the `LBRServer` application (FRI send period: 10 ms, mode: POSITION_CONTROL).
+
 *Note: Ensure you tweak `virtual_fixtures_params.yaml` to set your desired `virtual_fixture_profile` (sine_wave, flat_table, etc).*
+
+### 3. Apple Pluck Perturb Scenario
+This scenario builds upon the Apple Pluck physics (using the `cartesian_impedance_controller`) but introduces a sudden, programmatic Cartesian spatial shift right before the user acts, studying response to mechanical perturbation.
+
+**Steps to run:**
+1. Check the `update_rate` in `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
+2. Run the launch file:
+```bash
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
+```
+3. On the KUKA Smartpad, launch the `LbrImpedanceControlServer` application (FRI send period: 10 ms).
+4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately 1.5 seconds prior to the readiness cue.
 
 ---
 
