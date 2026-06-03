@@ -177,7 +177,19 @@ pushed off its commanded Cartesian anchor.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
    ```
-3. On the KUKA SmartPad, launch the `LbrImpedanceControlServer` application (FRI send period: 10 ms).
+3. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens four
+   selection dialogs in sequence — choose:
+
+   | Prompt | Select |
+   |--------|--------|
+   | FRI send period [ms] | `10` |
+   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
+   | Cartesian stiffness (K diagonal) | `Medium Cartesian` |
+   | Damping ratio (D0) | `0.7 (Standard)` |
+
+   *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. The other
+   stiffness profiles (`Very Soft Z`, `Soft Z (Apple Pluck)`, `Stiff Cartesian`) and damping ratios
+   (`0.3 (Underdamped)`, `1.0 (Critically Damped)`) are available if you want to change the feel.*
 4. The arm moves to the start. Wait for the beep, then pull the end effector gently to trigger the
    0.2 m displacement threshold. A second beep plays, and the arm awaits physical recoil before
    restarting.
@@ -193,8 +205,19 @@ the user's pushing torques.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
    ```
-2. On the KUKA SmartPad, launch the `LBRServer` application (FRI send period: 10 ms, mode:
-   `POSITION_CONTROL`).
+2. On the KUKA SmartPad, start the **`LBRServer`** application. It opens four selection dialogs in
+   sequence — choose:
+
+   | Prompt | Select |
+   |--------|--------|
+   | FRI send period [ms] | `10` |
+   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
+   | FRI control mode | `POSITION_CONTROL` |
+   | FRI client command mode | `POSITION` |
+
+   *`LBRServer` also offers `JOINT_IMPEDANCE_CONTROL` / `CARTESIAN_IMPEDANCE_CONTROL` control modes
+   and `WRENCH` / `TORQUE` command modes. This scenario streams joint positions from
+   `kuka_clik_controller`, so it needs `POSITION_CONTROL` + `POSITION`.*
 
 > **Tip:** Tweak `virtual_fixtures_params.yaml` to set the desired `virtual_fixture_profile`
 > (`sine_wave`, `flat_table`, etc.).
@@ -212,7 +235,15 @@ response to mechanical perturbation.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
    ```
-3. On the KUKA SmartPad, launch the `LbrImpedanceControlServer` application (FRI send period: 10 ms).
+3. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application with the **same four
+   selections as Scenario 1**:
+
+   | Prompt | Select |
+   |--------|--------|
+   | FRI send period [ms] | `10` |
+   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
+   | Cartesian stiffness (K diagonal) | `Medium Cartesian` |
+   | Damping ratio (D0) | `0.7 (Standard)` |
 4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately
    1.5 seconds prior to the readiness cue.
 
@@ -228,30 +259,30 @@ robot state flows *back up* to the Python monitors. The compliance ("spring") li
 
 ```mermaid
 flowchart TB
-    subgraph L3["Layer 3 · Orchestration — Python / rclpy"]
-        ORCH["Orchestrator state machine<br/>(apple_pluck · perturb · restricted_plane)"]
-        ACT["Modular actions<br/>MoveToPosition · DisplacementMonitor<br/>RestrictedPlane · AudioCue"]
+    subgraph L3["Layer 3 · Orchestration (Python)"]
+        ORCH["Orchestrator<br/>state machine<br/>(apple_pluck,<br/>perturb,<br/>restricted_plane)"]
+        ACT["Modular actions:<br/>MoveToPosition<br/>DisplacementMonitor<br/>RestrictedPlane<br/>AudioCue"]
     end
-    subgraph L2["Layer 2 · Kinematics math — Python"]
-        OPTAS["optas — FK & analytical Jacobian"]
+    subgraph L2["Layer 2 · Kinematics (Python)"]
+        OPTAS["optas<br/>FK and<br/>Jacobian"]
     end
-    subgraph L1["Layer 1 · Real-time control — ros2_control (C++)"]
-        CLIK["kuka_clik_controller<br/>Cartesian target → joint position (IK)"]
-        BCAST["Broadcasters<br/>lbr_state · force_torque · estimated_wrench"]
+    subgraph L1["Layer 1 · Real-time control (C++)"]
+        CLIK["kuka_clik_controller<br/>IK: Cartesian target<br/>to joint position"]
+        BCAST["Broadcasters:<br/>lbr_state<br/>force_torque<br/>estimated_wrench"]
     end
-    subgraph CAB["KUKA Sunrise Cabinet · 1000 Hz"]
-        APP["LbrImpedanceControlServer (FRI)<br/>Cartesian impedance · POSITION cmd mode"]
+    subgraph CAB["KUKA Cabinet · 1000 Hz"]
+        APP["LbrImpedanceControlServer<br/>(FRI app)<br/>Cartesian impedance<br/>POSITION cmd mode"]
         ARM["iiwa7 arm"]
     end
 
     ORCH <--> ACT
-    ACT -. "FK / Jacobian" .-> OPTAS
-    ACT -- "PoseStamped<br/>/lbr/kuka_clik_controller/target_frame" --> CLIK
-    CLIK -- "joint position cmd (FRI)" --> APP
-    APP -- "compliant motion" --> ARM
-    ARM -- "measured joint state / torque" --> APP
-    APP -- "FRI state" --> BCAST
-    BCAST -- "LBRState · wrench<br/>(/lbr/state · /lbr/force_torque_broadcaster/wrench)" --> ACT
+    ACT -. "FK /<br/>Jacobian" .-> OPTAS
+    ACT -- "PoseStamped<br/>target_frame" --> CLIK
+    CLIK -- "joint position<br/>cmd (FRI)" --> APP
+    APP -- "compliant<br/>motion" --> ARM
+    ARM -- "measured<br/>state" --> APP
+    APP -- "FRI<br/>state" --> BCAST
+    BCAST -- "LBRState /<br/>wrench" --> ACT
 ```
 
 ### 6.2 Hardware Bring‑up Sequence
