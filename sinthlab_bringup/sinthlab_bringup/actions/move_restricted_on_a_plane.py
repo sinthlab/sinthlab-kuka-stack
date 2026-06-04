@@ -50,9 +50,6 @@ class MoveRestrictedOnAPlaneAction:
         self._fk_func = self.robot.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True
         )
-        self._jacobian_func = self.robot.get_link_geometric_jacobian_function(
-            link=self.ee_link, base_link=self.base_link, numpy_output=True
-        )
         
         self.last_measured_joints = np.zeros(self.robot.ndof)
         self.recorder = TrajectoryRecorder() # Setup modular recorder
@@ -62,13 +59,18 @@ class MoveRestrictedOnAPlaneAction:
         if node.has_parameter(self._param_prefix + "virtual_fixture_profile"):
             self.active_profile = str(node.get_parameter(self._param_prefix + "virtual_fixture_profile").value)
             
-        # Load High-Level Tuning Parameters
+        # Tuning parameters. The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer);
+        # this node streams the fixture-constrained EQUILIBRIUM (measured pose projected onto the
+        # allowed manifold). The cabinet's 1 kHz spring provides the free-motion + soft-wall feel
+        # and absorbs jerks.
         base_prefix = self._param_prefix + "virtual_fixtures."
-        self.force_deadband = float(get_required_param(node, base_prefix + "force_deadband"))
-        self.admittance_gain = float(get_required_param(node, base_prefix + "admittance_gain"))
-        self.filter_alpha = 0.5
-        if node.has_parameter(base_prefix + "filter_alpha"):
-            self.filter_alpha = float(node.get_parameter(base_prefix + "filter_alpha").value)
+
+        # Cap on how far the commanded equilibrium may move per state tick [m] — a jerk guard so a
+        # sudden push/spike can't make the target leap (clik also clamps velocity downstream).
+        self.max_target_step_m = 0.01
+        if node.has_parameter(base_prefix + "max_target_step_m"):
+            self.max_target_step_m = float(node.get_parameter(base_prefix + "max_target_step_m").value)
+        self._published_xyz = None  # last commanded equilibrium translation (for the step clamp)
             
         self.profile_config = {}
         prefix = base_prefix + f"{self.active_profile}."
@@ -88,8 +90,9 @@ class MoveRestrictedOnAPlaneAction:
             self._node.get_logger().warn("MoveRestrictedOnAPlaneAction is already active.")
             return
         self._active = True
-        self._needs_bias_capture = True
+        self._needs_init_capture = True
         self._initial_transform = None
+        self._published_xyz = None
         
         self.recorder.start() # Start modular recorder 
         
@@ -218,15 +221,20 @@ class MoveRestrictedOnAPlaneAction:
 
     def _state_cb(self, msg: LBRState):
         """
-        Runs continuously at the hardware frequency (~100-200Hz).
-        Reads measured state -> Forward Kinematics -> Constraint Check -> Inverse Kinematics -> Command.
+        Runs at the hardware/state rate (~100-200 Hz).
+
+        The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this node streams
+        the fixture-constrained *equilibrium*: the measured EE pose projected onto the allowed
+        manifold. Along allowed directions the equilibrium tracks the arm (free motion); off the
+        manifold it stays on it, so the cabinet's 1 kHz spring softly pulls the arm back (a soft
+        virtual wall) and absorbs sudden jerks. The result is step-clamped and published to CLIK.
         """
         if not self._active:
             return
 
         self.last_measured_joints = np.array(msg.measured_joint_position)
 
-        # Initialize our smooth command tracker if it doesn't exist yet
+        # Initialize the commanded anchor (used to lock the manifold origin to the start pose)
         if not hasattr(self, 'last_commanded'):
             q_cmd = np.array(msg.commanded_joint_position)
             if np.isnan(q_cmd).any() or np.all(q_cmd == 0):
@@ -234,73 +242,53 @@ class MoveRestrictedOnAPlaneAction:
             else:
                 self.last_commanded = q_cmd
 
-        # Capture gravity / imperfect modeling torque bias on the first tick
-        if getattr(self, '_needs_bias_capture', True):
-            self.torque_bias = np.array(msg.external_torque)
-            self._needs_bias_capture = False
+        # On the first tick, anchor the fixture manifold at the start pose
+        if getattr(self, '_needs_init_capture', True):
+            self._needs_init_capture = False
             self._initial_transform = self._fk_func(self.last_commanded)
-            self._node.get_logger().info(f"Captured gravity bias & initial pose lock: {np.round(self.torque_bias, 2)}")
+            self._published_xyz = self._initial_transform[0:3, 3].copy()
+            self._node.get_logger().info("Fixture anchored at start pose.")
 
-        # ---------------------------------------------------------------------
-        # ADMITTANCE FIX: Do not track `measured_joints` directly to avoid gravity droop!
-        # Instead, only shift the commanded target if the user physically pushes with force.
-        # ---------------------------------------------------------------------
-        # Subtract the static bias so it doesn't perpetually trigger the deadband
-        tau_ext = np.array(msg.external_torque) - getattr(self, 'torque_bias', np.zeros(7))
-        
-        # ---------------------------------------------------------------------
-        # PURE CARTESIAN ADMITTANCE
-        # Instead of moving joints proportionally to joint torques (which causes
-        # weird sweeping arcs and wobbles), convert the forces to Cartesian space!
-        # ---------------------------------------------------------------------
-        
-        # 1. Get the spatial Jacobian (Base frame) to map physics to Cartesian
-        J = self._jacobian_func(self.last_commanded)
-        
-        # 2. Convert joint torques into 6D Cartesian Wrench [Fx, Fy, Fz, Tx, Ty, Tz]
-        # wrench = (J^T)^+ * tau (Moore-Penrose pseudo-inverse)
-        wrench = np.linalg.pinv(J.T) @ tau_ext
-        
-        # 3. Apply a deadband on the calculated physical Push Forces (Newtons)
-        f_deadband = self.force_deadband
-        wrench_active = np.where(np.abs(wrench) > f_deadband, np.sign(wrench) * (np.abs(wrench) - f_deadband), 0.0)
-        
-        # Prevent runaway leaps if pushed violently
-        wrench_active = np.clip(wrench_active, -80.0, 80.0) 
-        
-        # 4. Apply pure linear Cartesian Admittance based on the hand push
-        cartesian_gain_linear = self.admittance_gain
-        
-        current_pose = self._fk_func(self.last_commanded)
-        target_pose_input = current_pose.copy()
-        
-        # Apply the linear force translations
-        target_pose_input[0, 3] += wrench_active[0] * cartesian_gain_linear
-        target_pose_input[1, 3] += wrench_active[1] * cartesian_gain_linear
-        target_pose_input[2, 3] += wrench_active[2] * cartesian_gain_linear
+        target_pose = self._compute_cabinet_target(msg)
 
-        # 5. Snap the intended linear push to our Mathematical Rails (Sine Wave)
-        target_pose, is_restricted = self.apply_surface_constraints(target_pose_input)
+        # Jerk guard: bound how far the commanded equilibrium may jump in one tick
+        xyz = target_pose[0:3, 3].copy()
+        if self._published_xyz is not None and self.max_target_step_m > 0.0:
+            delta = xyz - self._published_xyz
+            dist = float(np.linalg.norm(delta))
+            if dist > self.max_target_step_m:
+                xyz = self._published_xyz + delta * (self.max_target_step_m / dist)
+        self._published_xyz = xyz
+        target_pose[0:3, 3] = xyz
 
-        cmd = PoseStamped()
         self._target_pose = target_pose
+        self._publish_pose(target_pose)
 
+        # Record the real (measured) Cartesian trajectory at the state rate
+        self.recorder.record_pose(self._fk_func(self.last_measured_joints))
+
+    def _compute_cabinet_target(self, msg: LBRState) -> np.ndarray:
+        """
+        Project the *measured* EE pose onto the fixture manifold and command it as the cabinet
+        impedance equilibrium. Orientation is held at the start orientation via the cabinet's
+        rotational stiffness.
+        """
+        measured_pose = self._fk_func(self.last_measured_joints)
+        constrained_pose, _is_restricted = self.apply_surface_constraints(measured_pose)
+        constrained_pose[0:3, 0:3] = self._initial_transform[0:3, 0:3]
+        return constrained_pose
+
+    def _publish_pose(self, target_pose: np.ndarray) -> None:
         from scipy.spatial.transform import Rotation as R
+        cmd = PoseStamped()
         cmd.header.frame_id = self.base_link
         cmd.header.stamp = self._node.get_clock().now().to_msg()
         cmd.pose.position.x = float(target_pose[0, 3])
         cmd.pose.position.y = float(target_pose[1, 3])
         cmd.pose.position.z = float(target_pose[2, 3])
-        
         quat = R.from_matrix(target_pose[0:3, 0:3]).as_quat()
         cmd.pose.orientation.x = float(quat[0])
         cmd.pose.orientation.y = float(quat[1])
         cmd.pose.orientation.z = float(quat[2])
         cmd.pose.orientation.w = float(quat[3])
-        
-        # Record Cartesian trajectory at hardware rate via modular component
-        real_pose = self._fk_func(self.last_measured_joints)
-        self.recorder.record_pose(real_pose)
-
-        # 6. Command the Cartesian target directly to the C++ controller
         self._cmd_pub.publish(cmd)

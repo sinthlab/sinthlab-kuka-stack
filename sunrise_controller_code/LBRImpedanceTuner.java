@@ -27,11 +27,12 @@ public class LBRImpedanceTuner extends RoboticsAPIApplication {
 
         // 1. Prompt user for Stiffness Profile
         String[] stiffnessProfiles = {
-            "Soft Z (Apple Pluck) [1000,1000,30]", 
-            "Very Soft Z [800,800,10]", 
-            "Medium Cartesian [100,100,100]", 
-            "Stiff Cartesian [1000,1000,1000]",
-            "Anti-Droop (Soft XY, Stiff Z) [300,300,4000]"
+            "Soft Z (Apple Pluck) [1000,1000,30]",
+            "Uniform Medium (Apple Pluck) [100,100,100]",
+            "Very Soft Z [800,800,10]",
+            "Flat table (free X/Y, stiff Z) [80,80,4000]",
+            "Vertical rail (stiff X/Y, free Z) [4000,4000,80]",
+            "Stiff (firm walls) [3000,3000,3000]"
         };
         int stiffIdx = getApplicationUI().displayModalDialog(
             ApplicationDialogType.QUESTION, 
@@ -54,13 +55,14 @@ public class LBRImpedanceTuner extends RoboticsAPIApplication {
         // 3. Configure the Impedance Control Mode
         CartesianImpedanceControlMode cartImp = new CartesianImpedanceControlMode();
 
-        // Exact arrays from LbrImpedanceControlServer.java
+        // Stiffness profiles matched to LbrImpedanceControlServer.java (same order)
         double[][] stiffnessVals = {
-            { 1000.0, 1000.0, 30.0, 300.0, 300.0, 300.0 }, // Soft Z
-            { 800.0, 800.0, 10.0, 200.0, 200.0, 200.0 },   // Very Soft Z
-            { 100.0, 100.0, 100.0, 300.0, 300.0, 300.0 },  // Medium
-            { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 },// Stiff
-            { 300.0, 300.0, 4000.0, 300.0, 300.0, 300.0 }  // Anti-Droop (Soft XY, Stiff Z)
+            { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // Soft Z (Apple Pluck)
+            {  100.0,  100.0,  100.0, 300.0, 300.0, 300.0 }, // Uniform Medium (Apple Pluck)
+            {  800.0,  800.0,   10.0, 200.0, 200.0, 200.0 }, // Very Soft Z
+            {   80.0,   80.0, 4000.0, 300.0, 300.0, 300.0 }, // Flat table (free X/Y, stiff Z)
+            { 4000.0, 4000.0,   80.0, 300.0, 300.0, 300.0 }, // Vertical rail (stiff X/Y, free Z)
+            { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }  // Stiff (firm walls)
         };
         
         double[] K = stiffnessVals[stiffIdx];

@@ -1,15 +1,27 @@
 # Vendored KUKA LBR Controllers
 
-This directory contains vendored versions of the real-time ROS 2 controllers for the KUKA LBR series, originally developed by the [IDRA Lab](https://idra-lab.dii.unitn.it/).
+This directory contains vendored copies of real-time ROS 2 controllers for the KUKA LBR series,
+developed by the [IDRA Lab](https://idra-lab.dii.unitn.it/) (University of Trento).
 
 ## Included Packages
-- kuka_clik_controller (from origin kuka-prop-ctrl branch)
-- controller_base (from origin kuka-prop-ctrl branch)
-- debug_msg (shared)
+- `kuka_clik_controller`
+- `controller_base`
+- `debug_msg`
 
-## Credits and Upstream Repository
-Original Author: idra-lab (Luca Beber, Davide Nardi, et al.)
-Upstream Repository:
-- https://github.com/idra-lab/kuka_lbr_control
+## Provenance
+Vendored from **[`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller)**,
+branch **`kuka-prop-ctrl`** — that repository is embedded as the `controllers` submodule of
+[`idra-lab/kuka_lbr_control`](https://github.com/idra-lab/kuka_lbr_control).
 
-Please see the individual packages for their respective LICENSE files.
+Copied ~2026-06-01. When re-syncing from upstream, record the exact upstream commit here so the
+next update is a clean diff.
+
+## License
+The upstream repository is licensed under the **Apache License 2.0** — see [`LICENSE`](./LICENSE),
+copied verbatim from upstream and covering all packages in this directory.
+
+> Note: some upstream `package.xml` files declare a different license name (e.g. `BSD`). Those tags
+> are kept verbatim as vendored, but the repository `LICENSE` (Apache 2.0) is the governing license.
+
+## Credits
+Original authors: Luca Beber, Davide Nardi, et al. (IDRA Lab, University of Trento).

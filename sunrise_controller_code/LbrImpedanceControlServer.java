@@ -46,22 +46,34 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private CartesianImpedanceControlMode control_mode_;
 
     // COMPLIANCE PARAMETERS
+    // Per-axis Cartesian stiffness:  X,Y,Z in [N/m],  A,B,C in [Nm/rad]
     private double[] K = { 1000.0, 1000.0, 30.0, 300.0, 300.0, 300.0 };
-    private double D0 = 0.7;
+    // Per-axis damping ratio [0.1 .. 1.0]
+    private double[] D = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 };
     private double ns_stiffness = 30.0;
+    private double ns_damping = 0.7;
 
-    // UI Options for Compliance
+    // KUKA Sunrise valid ranges; every value is clamped to these (trans <= 5000 N/m, rot <= 300 Nm/rad)
+    private static final double[] K_MAX = { 5000.0, 5000.0, 5000.0, 300.0, 300.0, 300.0 };
+
+    // UI Options for Compliance. Each profile is a full per-axis {X,Y,Z,A,B,C} stiffness diagonal,
+    // so the cabinet can enforce axis-aligned virtual fixtures in hardware (e.g. a flat table =
+    // free X/Y + stiff Z).
     private String[] stiffness_profiles_ = {
-        "Soft Z (Apple Pluck)", 
-        "Very Soft Z", 
-        "Medium Cartesian", 
-        "Stiff Cartesian"
+        "Soft Z (Apple Pluck)",
+        "Uniform Medium (Apple Pluck)",
+        "Very Soft Z",
+        "Flat table (free X/Y, stiff Z)",
+        "Vertical rail (stiff X/Y, free Z)",
+        "Stiff (firm walls)"
     };
     private double[][] stiffness_vals_ = {
-        { 1000.0, 1000.0, 30.0, 300.0, 300.0, 300.0 }, // Soft Z
-        { 800.0, 800.0, 10.0, 200.0, 200.0, 200.0 },   // Very Soft Z
-        { 100.0, 100.0, 100.0, 300.0, 300.0, 300.0 },  // Medium
-        { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }// Stiff
+        { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
+        {  100.0,  100.0,  100.0, 300.0, 300.0, 300.0 }, // apple pluck: uniform medium (preferred)
+        {  800.0,  800.0,   10.0, 200.0, 200.0, 200.0 }, // apple pluck: extra-soft Z
+        {   80.0,   80.0, 4000.0, 300.0, 300.0, 300.0 }, // plane fixture: free X/Y, hard Z wall
+        { 4000.0, 4000.0,   80.0, 300.0, 300.0, 300.0 }, // rail fixture: free Z, walls in X/Y
+        { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }  // firm everywhere
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
     private double[] damping_vals_ = { 0.3, 0.7, 1.0 };
@@ -99,37 +111,38 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
                 ApplicationDialogType.QUESTION,
                 "Select Damping Ratio (D0):",
                 damping_options_);
-        D0 = damping_vals_[selectedButtonIndex];
-        getLogger().info("Damping Ratio set to: " + D0);
+        double d0 = damping_vals_[selectedButtonIndex];
+        for (int i = 0; i < 6; i++) {
+            D[i] = d0;
+        }
+        ns_damping = d0;
+        getLogger().info("Damping Ratio set to: " + d0);
 
-        // Setup the Cartesian Impedance Control Mode
+        // Setup the Cartesian Impedance Control Mode with per-axis stiffness & damping
         control_mode_ = new CartesianImpedanceControlMode();
-        
-        // Apply strictly to Cartesian Translation
-        control_mode_.parametrize(CartDOF.X).setStiffness(K[0]);
-        control_mode_.parametrize(CartDOF.Y).setStiffness(K[1]);
-        control_mode_.parametrize(CartDOF.Z).setStiffness(K[2]);
-        
-        // Apply strictly to Cartesian Rotation
-        control_mode_.parametrize(CartDOF.A).setStiffness(K[3]);
-        control_mode_.parametrize(CartDOF.B).setStiffness(K[4]);
-        control_mode_.parametrize(CartDOF.C).setStiffness(K[5]);
-
-        // Standard 0.7 Damping Ratio for smooth recovery
-        control_mode_.parametrize(CartDOF.X).setDamping(D0);
-        control_mode_.parametrize(CartDOF.Y).setDamping(D0);
-        control_mode_.parametrize(CartDOF.Z).setDamping(D0);
-        control_mode_.parametrize(CartDOF.A).setDamping(D0);
-        control_mode_.parametrize(CartDOF.B).setDamping(D0);
-        control_mode_.parametrize(CartDOF.C).setDamping(D0);
-
-        // Nullspace compliance
-        control_mode_.setNullSpaceStiffness(ns_stiffness);
-        control_mode_.setNullSpaceDamping(D0);
+        applyCartesianImpedance(control_mode_, K, D);
 
         getLogger().info("Control mode set to: Cartesian Impedance Control");
         getLogger().info("Stiffness (X, Y, Z, A, B, C): " + K[0] + ", " + K[1] + ", " + K[2] + 
                          ", " + K[3] + ", " + K[4] + ", " + K[5]);
+    }
+
+    /**
+     * Applies per-axis Cartesian stiffness and damping to the impedance control mode, clamping
+     * every value to the Sunrise-valid range. Centralising this lets the stiffness profiles be
+     * anisotropic (e.g. stiff perpendicular to a plane, soft along it) so the cabinet itself can
+     * act as a hardware virtual fixture.
+     */
+    private void applyCartesianImpedance(CartesianImpedanceControlMode mode, double[] k, double[] d) {
+        CartDOF[] dof = { CartDOF.X, CartDOF.Y, CartDOF.Z, CartDOF.A, CartDOF.B, CartDOF.C };
+        for (int i = 0; i < 6; i++) {
+            double ki = Math.max(0.0, Math.min(k[i], K_MAX[i]));
+            double di = Math.max(0.1, Math.min(d[i], 1.0));
+            mode.parametrize(dof[i]).setStiffness(ki);
+            mode.parametrize(dof[i]).setDamping(di);
+        }
+        mode.setNullSpaceStiffness(ns_stiffness);
+        mode.setNullSpaceDamping(Math.max(0.1, Math.min(ns_damping, 1.0)));
     }
 
     /**

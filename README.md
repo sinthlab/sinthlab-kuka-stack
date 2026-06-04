@@ -158,11 +158,11 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
 |---|----------|-------------|--------------------|----------------|
 | 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
-| 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LBRServer` (POSITION_CONTROL) | `kuka_clik_controller` |
+| 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
-All scenarios use FRI **POSITION** command mode: ROS sends a target pose, and the cabinet (or the
-Python admittance engine, for Scenario 2) provides the compliance.
+All scenarios use FRI **POSITION** command mode: ROS streams a target pose and the **cabinet's
+Cartesian impedance** (`LbrImpedanceControlServer`) provides the compliance.
 
 ### Scenario 1 — Apple Pluck
 This scenario streams a target equilibrium pose to the `kuka_clik_controller` (IK‑based position
@@ -184,7 +184,7 @@ pushed off its commanded Cartesian anchor.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Medium Cartesian` |
+   | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
    *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. The other
@@ -195,32 +195,47 @@ pushed off its commanded Cartesian anchor.
    restarting.
 
 ### Scenario 2 — Move Restricted on a Plane
-This scenario uses the `kuka_clik_controller`, an exact‑tracking inverse‑kinematics (IK) solver
-with no built‑in spring physics. The Python action scripts construct an instantaneous admittance
-engine to apply mathematical virtual fixtures (sine waves, flat planes, bounding boxes) against
-the user's pushing torques.
+This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
+arm moves freely *within* an allowed region and is pushed back *outside* it. By default the
+compliance runs **on the cabinet** (the same stack as Apple Pluck) — `kuka_clik_controller` streams
+a **fixture‑constrained equilibrium** pose and the cabinet's Cartesian impedance provides the
+free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also available — see the note.)
 
 **Steps to run:**
 1. Run the launch file:
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
    ```
-2. On the KUKA SmartPad, start the **`LBRServer`** application. It opens four selection dialogs in
-   sequence — choose:
+2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application (same app as Apple
+   Pluck — the cabinet supplies the compliance). It opens four selection dialogs in sequence —
+   choose:
 
    | Prompt | Select |
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | FRI control mode | `POSITION_CONTROL` |
-   | FRI client command mode | `POSITION` |
+   | Cartesian stiffness (K diagonal) | `Flat table (free X/Y, stiff Z)` (matches the plane fixture) |
+   | Damping ratio (D0) | `0.7 (Standard)` |
 
-   *`LBRServer` also offers `JOINT_IMPEDANCE_CONTROL` / `CARTESIAN_IMPEDANCE_CONTROL` control modes
-   and `WRENCH` / `TORQUE` command modes. This scenario streams joint positions from
-   `kuka_clik_controller`, so it needs `POSITION_CONTROL` + `POSITION`.*
+> **Tip:** Set `virtual_fixture_profile` (`sine_wave`, `flat_table`, etc.) in
+> `virtual_fixtures_params.yaml`. The fixture geometry defines *where* the walls are; the cabinet
+> stiffness sets *how firm* they feel.
 
-> **Tip:** Tweak `virtual_fixtures_params.yaml` to set the desired `virtual_fixture_profile`
-> (`sine_wave`, `flat_table`, etc.).
+#### How this relates to Apple Pluck — same compliance, different software role
+Both scenarios now run **cabinet Cartesian impedance at 1000 Hz**; they differ only in *what the
+software streams as the equilibrium*:
+
+| | Apple Pluck (1 & 3) | Restricted Plane (2) |
+|---|---|---|
+| Cabinet mode | `CartesianImpedanceControlMode` | `CartesianImpedanceControlMode` |
+| Compliance | cabinet spring, **1000 Hz** | cabinet spring, **1000 Hz** |
+| Software target (to `kuka_clik_controller`) | one moving target (the pluck pose) | measured pose **projected onto the fixture manifold** |
+| Feel | omnidirectional spring toward one target | free within the fixture; soft wall outside it |
+
+So the cabinet — not Python — supplies the give: the arm yields to a sudden jerk at 1 kHz, and the
+"walls" are **soft impedance walls** (the arm is gently pulled back onto the manifold), which is the
+safer behaviour for an animal subject. The software (`MoveRestrictedOnAPlaneAction`) just keeps the
+spring's equilibrium inside the allowed region.
 
 ### Scenario 3 — Apple Pluck Perturb
 This scenario builds upon the Apple Pluck physics (cabinet‑side Cartesian impedance via
@@ -242,7 +257,7 @@ response to mechanical perturbation.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Medium Cartesian` |
+   | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
    | Damping ratio (D0) | `0.7 (Standard)` |
 4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately
    1.5 seconds prior to the readiness cue.
@@ -326,7 +341,37 @@ The experimental flows are orchestrated entirely by high‑level `rclpy` nodes c
 actions (`MoveToPositionAction`, `CartesianImpedanceDisplacementMonitor`,
 `MoveRestrictedOnAPlaneAction`, `AudioCue`). The per‑scenario flows are below.
 
-### 6.4 Experiment State Flows
+### 6.4 Control rates — why a 1000 Hz spring but a 10 ms FRI period
+The cabinet's control loop and the FRI network exchange run on **two different clocks** — don't
+conflate them:
+
+| Clock | What it does | Rate |
+|-------|--------------|------|
+| **Cabinet control loop** | Computes the Cartesian‑impedance law (`F = K·(x_target − x) − D·v`) and applies joint torques. | **1 ms (1000 Hz)** — fixed by KUKA Sunrise |
+| **FRI send period** | Network packet exchange with the ROS client: ROS pushes a new **equilibrium pose** and reads back state. | **10 ms (100 Hz)** — you pick 1 / 2 / 5 / 10 ms |
+
+So selecting **10 ms does not slow the spring down.** The cabinet keeps evaluating the impedance
+physics every 1 ms against the latest equilibrium; FRI only refreshes the *target* (the spring's
+anchor) and the *feedback* 100×/second.
+
+**Between FRI packets**, the cabinet holds the last commanded equilibrium and runs the 1 kHz loop
+against it, smoothing the stepwise 10 ms updates via `joint_position_tau` (a 40 ms EMA in
+`lbr_system_config.yaml`) so the arm doesn't jerk. Because the target moves slowly (a start pose, a
+gentle pull), a 100 Hz anchor refresh is plenty — the 1 kHz loop fills in the dynamics.
+
+**Why 10 ms and not 1 ms?** The FRI send period is a hard deadline the *client* must meet; miss it
+and the session drops out of `COMMANDING_ACTIVE` and the robot stops. The client is ROS 2 on
+**WSL2 — not a real‑time OS** — over a jittery ethernet link, so reliably hitting a 1–2 ms deadline
+is impractical while 10 ms is robust. It also matches the ROS rate (`controller_manager`
+`update_rate: 100`; `lbr_controllers.yaml` = `200`) — no point sending faster than ROS produces
+commands.
+
+This decoupling is the whole reason the impedance lives **on the cabinet**: the fast,
+safety‑critical loop stays at 1 kHz on a real‑time controller, while the slow, non‑real‑time ROS
+link only streams a position target at 100 Hz. Running the impedance in ROS instead would pin the
+spring law to that ~100 Hz link — far coarser and riskier for torque control.
+
+### 6.5 Experiment State Flows
 
 **Flow 1 — Apple Pluck**
 ```mermaid
@@ -346,13 +391,13 @@ stateDiagram-v2
     [*] --> MoveToStart : Rise to workspace
     MoveToStart --> QuietWindow : Wait 2.0s
     QuietWindow --> AudioCue
-    AudioCue --> FixtureAdmittance
-    note right of FixtureAdmittance
-      Calculates pseudo-inverse Jacobian.
-      Applies Moore-Penrose mapping from tool torque
-      to admittance shifts on mathematical rails.
+    AudioCue --> FixtureConstraint
+    note right of FixtureConstraint
+      Projects the measured pose onto the
+      fixture manifold and streams it as the
+      cabinet-impedance equilibrium (soft walls).
     end note
-    FixtureAdmittance --> SnapThreshold : Pull thresholds broken
+    FixtureConstraint --> SnapThreshold : Pull thresholds broken
     SnapThreshold --> WaitRecoil
     WaitRecoil --> MoveToStart
 ```
@@ -394,7 +439,7 @@ stateDiagram-v2
 - If you use Copilot (or another AI‑assisted editor), open the codebase from the **root**
   (`~/lbr-stack` by default) so the agent can index the whole codebase including its dependencies.
 
-> **Maintainer (Navin Modi) disclosure:** for my development I have used VS Code and GitHub Copilot
+> **Maintainer (Navin Modi) disclosure:** for my development I have used VS Code and Claude / Copilot
 > agents for assisted development.
 
 ### Testing / rebuild loop
@@ -411,5 +456,13 @@ source install/setup.bash
 ## Acknowledgement
 This work is built on top of Huber et al.[^1]; all original credit for `lbr_fri_ros2_stack` goes to
 that team.
+
+The vendored controllers in [`vendored_controllers/`](vendored_controllers/) —
+`kuka_clik_controller`, `controller_base`, and `debug_msg` — are by the **IDRA Lab** (University of
+Trento), from [`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller)
+(branch `kuka-prop-ctrl`), used via
+[`idra-lab/kuka_lbr_control`](https://github.com/idra-lab/kuka_lbr_control). They are distributed
+under the Apache License 2.0 (see [`vendored_controllers/LICENSE`](vendored_controllers/LICENSE)).
+Credit to Luca Beber, Davide Nardi, et al.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software. [doi](https://doi.org/10.21105/joss.06138)

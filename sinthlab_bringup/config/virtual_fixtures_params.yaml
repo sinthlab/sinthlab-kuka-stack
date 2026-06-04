@@ -51,9 +51,9 @@
 
     virtual_fixture_profile: "sine_wave"
     virtual_fixtures:
-      force_deadband: 2.0  # N: How much force before the arm yields
-      admittance_gain: 0.0005 # m/N: How fast the arm yields to force
-      filter_alpha: 0.1 # 0.0 - 1.0 (Lower = smoother/damped, Higher = responsive/jerky)
+      # The KUKA cabinet runs Cartesian impedance (run LbrImpedanceControlServer on the SmartPad);
+      # this node streams the fixture-constrained equilibrium pose.
+      max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
       simple_plane:
         type: "plane"
         restricted_axis: "y" # "x", "y", or "z"
