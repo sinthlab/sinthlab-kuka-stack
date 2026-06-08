@@ -28,6 +28,10 @@ copied verbatim from upstream and covering all packages in this directory.
   CLIK parameters (`max_linear_velocity`, `max_angular_velocity`, `clik_dt`, `clik_it_max`,
   `clik_eps`, `clik_filter_alpha`) before reading them. Upstream read them via `get_parameter`
   without declaring, which threw `ParameterNotDeclaredException` at controller init under ROS 2 Jazzy.
+- `controller_base/src/controller_base.cpp` — `on_init()` now `auto_declare`s `command_interfaces`
+  (was commented out) and `nullspace_desired_configuration` (read in `on_configure` but never
+  declared → `ParameterNotDeclaredException`). Also dedupes the `HW_IF_POSITION` append in
+  `on_configure` so a config that already lists `position` doesn't claim that interface twice.
 
 ## Credits
 Original authors: Luca Beber, Davide Nardi, et al. (IDRA Lab, University of Trento).

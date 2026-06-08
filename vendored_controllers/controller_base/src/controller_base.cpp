@@ -65,12 +65,15 @@ ControllerBase::on_init() {
 
     auto_declare<std::vector<std::string>>("joints",
                                            std::vector<std::string>());
-    // auto_declare<std::vector<std::string>>("command_interfaces",
-    //                                        {hardware_interface::HW_IF_EFFORT});
+    auto_declare<std::vector<std::string>>("command_interfaces",
+                                           {hardware_interface::HW_IF_POSITION});
     auto_declare<std::vector<std::string>>("state_interfaces",
                                            {hardware_interface::HW_IF_POSITION,
                                             hardware_interface::HW_IF_VELOCITY,
                                             hardware_interface::HW_IF_EFFORT});
+    auto_declare<std::vector<double>>(
+        "nullspace_desired_configuration",
+        {0.0, 0.5233, 0.0, -0.7853, 0.0, 1.5707, 0.0});
     auto_declare<double>("solver.error_scale", 1.0);
     auto_declare<int>("solver.iterations", 1);
     m_initialized = true;
@@ -271,8 +274,13 @@ ControllerBase::on_configure(const rclcpp_lifecycle::State &previous_state) {
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::
         CallbackReturn::ERROR;
   }
-  // Check if kuka is been used
-  m_cmd_interface_types.push_back(hardware_interface::HW_IF_POSITION);
+  // Check if kuka is been used. POSITION must be claimed, but exactly once — the config may
+  // already list it, so only append if it isn't present (otherwise it gets claimed twice).
+  bool has_position = false;
+  for (const auto &t : m_cmd_interface_types)
+    if (t == hardware_interface::HW_IF_POSITION) has_position = true;
+  if (!has_position)
+    m_cmd_interface_types.push_back(hardware_interface::HW_IF_POSITION);
   m_configured = true;
 
   // Initialize effords to null
