@@ -42,6 +42,15 @@ class MoveToPositionAction:
         )
         self._joint_pos_target = np.radians(self._joint_pos_target_deg)
         self._joint_pos_tol = float(get_required_param(node, self._param_prefix + "joint_move_tolerance"))
+
+        # Completion is judged in Cartesian space (see _compute_move_to_pos), since kuka_clik
+        # resolves the redundancy with its own nullspace bias and the joints won't match the
+        # target. This is the EE position tolerance [m]; optional, defaults to 0.03 m.
+        self._cartesian_tol = 0.03
+        if node.has_parameter(self._param_prefix + "cartesian_move_tolerance"):
+            self._cartesian_tol = float(
+                node.get_parameter(self._param_prefix + "cartesian_move_tolerance").value
+            )
         
         if node.has_parameter(self._param_prefix + "wait_for_physical_arrival"):
             self._wait_for_physical_arrival = bool(node.get_parameter(self._param_prefix + "wait_for_physical_arrival").value)
@@ -212,51 +221,26 @@ class MoveToPositionAction:
                 self._request_shutdown()
                 return
         
-        # Check completion against the *commanded* anchor (per-joint max error)
-        # OR the *measured* physical joint positions, depending on context!
-        if self._wait_for_physical_arrival:
-            # During "recovery", we want to wait for the actual arm to recoil
-            err = self._joint_pos_target - self._q_meas_completion
-        else:
-            # During "init", we want to complete as soon as spline arrives
-            # so we don't get stuck waiting for physical perfection fighting against sagging gravity droop
-            err = self._joint_pos_target - self._q_cmd_completion
-            
-        max_err = float(np.max(np.abs(err)))
-        if max_err <= self._joint_pos_tol:
+        # Completion is judged in CARTESIAN space. kuka_clik re-solves IK with its own nullspace
+        # bias, so the robot's joints will NOT match the target joints — but the end-effector pose
+        # will. Compare the measured EE position to the target EE position. (We do NOT gate on a
+        # joint-space sync check: kuka_clik filters/clamps the target itself, and its independent
+        # redundancy resolution would make any joint-space comparison stall the motion.)
+        target_ee = self._fk_func(self._joint_pos_target)
+        meas_ee = self._fk_func(self._q_meas_completion)
+        pos_err = float(np.linalg.norm(meas_ee[0:3, 3] - target_ee[0:3, 3]))
+        if pos_err <= self._cartesian_tol:
             self._moving = False
             self._node.get_logger().info(
-                f"Move-to-position command completion check passed; holding position. rad (tol={self._joint_pos_tol:.4f} rad)"
+                f"Move-to-position reached target EE pose (pos err {pos_err:.4f} m <= {self._cartesian_tol:.4f} m); holding."
             )
             self._request_shutdown()
             return
-        
-        # Synchronize Ruckig with the controller's actual received commands
-        # If the ROS2 controller is lagging, inactive, or dropping packets, 
-        # pause the spline generation until the controller catches up.
-        sync_err = np.abs(np.array(self._trajectory_gen_in.current_position, dtype=float) - self._q_cmd_sync)
-        if np.max(sync_err) > 0.05:
-            # Controller is lagging behind our spline by more than 0.05 radians (~3 degrees)
-            # which usually means the node started prior to the hardware or controller manager activating.
-            # Pause generation and just republish the currently safe hold spline.
-            if self._debug_log_enabled and self._dbg.tick(self._dt):
-                self._node.get_logger().info(
-                    f"Trajectory synchronization pause: controller commands lagging by {np.max(sync_err):.4f} rad. Waiting to catch up..."
-                )
-            pose_mat = self._fk_func(np.array(self._trajectory_gen_in.current_position, dtype=float))
-            cmd = PoseStamped()
-            cmd.header.frame_id = "lbr_link_0"
-            cmd.header.stamp = self._node.get_clock().now().to_msg()
-            cmd.pose.position.x = float(pose_mat[0, 3])
-            cmd.pose.position.y = float(pose_mat[1, 3])
-            cmd.pose.position.z = float(pose_mat[2, 3])
-            quat = R.from_matrix(pose_mat[0:3, 0:3]).as_quat()
-            cmd.pose.orientation.x = float(quat[0])
-            cmd.pose.orientation.y = float(quat[1])
-            cmd.pose.orientation.z = float(quat[2])
-            cmd.pose.orientation.w = float(quat[3])
-            self._pub_joint.publish(cmd)
-            return
+
+        if self._debug_log_enabled and self._dbg.tick(self._dt):
+            self._node.get_logger().info(
+                f"move-to-pos: EE position error {pos_err:.4f} m (target tol {self._cartesian_tol:.4f} m)"
+            )
 
         # Step Trajectory generation and publish
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)

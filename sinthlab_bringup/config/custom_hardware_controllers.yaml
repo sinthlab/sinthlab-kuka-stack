@@ -170,8 +170,8 @@
     state_interfaces:
       - position
       - velocity
-    max_linear_velocity: 0.2
-    max_angular_velocity: 0.2
+    max_linear_velocity: 0.5
+    max_angular_velocity: 1.0
     clik_dt: 0.001
     clik_it_max: 100
     clik_eps: 1e-4
