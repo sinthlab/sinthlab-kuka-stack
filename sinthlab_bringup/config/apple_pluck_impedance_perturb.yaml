@@ -6,7 +6,7 @@
       ee_frame: lbr_link_ee
       cartesian_axis: z
       cartesian_displacement_threshold_m: 0.2
-      state_topic: state
+      state_topic: lbr_state
       command_topic: kuka_clik_controller/target_frame
       wrench_topic: force_torque_broadcaster/wrench
       force_release_threshold_newton: 5.0

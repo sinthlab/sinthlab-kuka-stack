@@ -63,7 +63,7 @@ class MoveToPositionAction:
                     "update_rate": self._update_rate,
                     "initial_joint_position": self._joint_pos_target.tolist(),
                     "joint_move_tolerance": self._joint_pos_tol,
-                    "move_to_pos_v_max": self._v_max_param.tolist(),
+                    "move_to_pos_v_max": self._v_max_param,
                     "move_to_pos_a_max": self._a_max_param,
                     "move_to_pos_j_max": self._j_max_param,
                 },
@@ -88,7 +88,8 @@ class MoveToPositionAction:
         self._trajectory_gen_out: Optional[OutputParameter] = None
 
         # ROS interfaces owned by the action
-        self._state_sub = node.create_subscription(LBRState, "state", self._on_state, 1)
+        # The lbr_state_broadcaster publishes LBRState on '<ns>/lbr_state' (not 'state').
+        self._state_sub = node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
         self._pub_joint = node.create_publisher(PoseStamped, self._cmd_topic, 1)
 
         robot_desc = str(node.get_parameter("robot_description").value) if node.has_parameter("robot_description") else ""
