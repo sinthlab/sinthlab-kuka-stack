@@ -173,11 +173,7 @@ pushed off its commanded Cartesian anchor.
 **Steps to run:**
 1. Check that `update_rate` in
    `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
-2. Run the launch file:
-   ```bash
-   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
-   ```
-3. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens four
+2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens four
    selection dialogs in sequence — choose:
 
    | Prompt | Select |
@@ -190,6 +186,12 @@ pushed off its commanded Cartesian anchor.
    *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. The other
    stiffness profiles (`Very Soft Z`, `Soft Z (Apple Pluck)`, `Stiff Cartesian`) and damping ratios
    (`0.3 (Underdamped)`, `1.0 (Critically Damped)`) are available if you want to change the feel.*
+   The app then waits (~60 s) for the ROS client to connect.
+3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
+   (nothing happens until you run this):
+   ```bash
+   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
+   ```
 4. The arm moves to the start. Wait for the beep, then pull the end effector gently to trigger the
    0.2 m displacement threshold. A second beep plays, and the arm awaits physical recoil before
    restarting.
@@ -202,11 +204,7 @@ a **fixture‑constrained equilibrium** pose and the cabinet's Cartesian impedan
 free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also available — see the note.)
 
 **Steps to run:**
-1. Run the launch file:
-   ```bash
-   ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
-   ```
-2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application (same app as Apple
+1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application (same app as Apple
    Pluck — the cabinet supplies the compliance). It opens four selection dialogs in sequence —
    choose:
 
@@ -216,6 +214,14 @@ free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also availa
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | `Flat table (free X/Y, stiff Z)` (matches the plane fixture) |
    | Damping ratio (D0) | `0.7 (Standard)` |
+
+   The app then waits (~60 s) for the ROS client to connect.
+2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
+   ```bash
+   ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
+   ```
+3. The arm rises to the workspace; push it to feel free motion within the fixture and the soft wall
+   at its boundary.
 
 > **Tip:** Set `virtual_fixture_profile` (`sine_wave`, `flat_table`, etc.) in
 > `virtual_fixtures_params.yaml`. The fixture geometry defines *where* the walls are; the cabinet
@@ -246,11 +252,7 @@ response to mechanical perturbation.
 **Steps to run:**
 1. Check that `update_rate` in
    `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
-2. Run the launch file:
-   ```bash
-   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
-   ```
-3. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application with the **same four
+2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application with the **same four
    selections as Scenario 1**:
 
    | Prompt | Select |
@@ -259,6 +261,12 @@ response to mechanical perturbation.
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
    | Damping ratio (D0) | `0.7 (Standard)` |
+
+   The app then waits (~60 s) for the ROS client to connect.
+3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
+   ```bash
+   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
+   ```
 4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately
    1.5 seconds prior to the readiness cue.
 

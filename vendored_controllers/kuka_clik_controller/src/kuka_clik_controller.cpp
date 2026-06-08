@@ -11,6 +11,15 @@ KukaClikController::on_init() {
                  CallbackReturn::SUCCESS) {
     return ret;
   }
+  // ControllerBase::on_init() does not declare these CLIK-specific parameters,
+  // so declare them here before reading (YAML overrides still take effect).
+  auto_declare<double>("max_linear_velocity", 0.2);
+  auto_declare<double>("max_angular_velocity", 0.2);
+  auto_declare<double>("clik_dt", 0.001);
+  auto_declare<int>("clik_it_max", 100);
+  auto_declare<double>("clik_eps", 1e-4);
+  auto_declare<double>("clik_filter_alpha", 0.99);
+
   m_max_linear_velocity =
       get_node()->get_parameter("max_linear_velocity").as_double();
   m_max_angular_velocity =

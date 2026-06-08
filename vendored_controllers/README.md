@@ -23,5 +23,11 @@ copied verbatim from upstream and covering all packages in this directory.
 > Note: some upstream `package.xml` files declare a different license name (e.g. `BSD`). Those tags
 > are kept verbatim as vendored, but the repository `LICENSE` (Apache 2.0) is the governing license.
 
+## Local modifications (re-apply if re-vendoring)
+- `kuka_clik_controller/src/kuka_clik_controller.cpp` — `on_init()` now `auto_declare`s the six
+  CLIK parameters (`max_linear_velocity`, `max_angular_velocity`, `clik_dt`, `clik_it_max`,
+  `clik_eps`, `clik_filter_alpha`) before reading them. Upstream read them via `get_parameter`
+  without declaring, which threw `ParameterNotDeclaredException` at controller init under ROS 2 Jazzy.
+
 ## Credits
 Original authors: Luca Beber, Davide Nardi, et al. (IDRA Lab, University of Trento).
