@@ -1,7 +1,10 @@
 /**:
   ros__parameters:
+    # Restricted-plane uses kuka_clik_controller (cartesian) — move_to_start/recover default to
+    # cartesian command_mode (no command_mode key here), and MoveRestrictedOnAPlaneAction streams
+    # the fixture-constrained equilibrium pose. The cabinet (LbrImpedanceControlServer) provides
+    # the compliance.
     state_topic: "lbr_state"
-    command_topic: "kuka_clik_controller/target_frame"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
@@ -9,9 +12,9 @@
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.01
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
 
@@ -24,31 +27,24 @@
       ee_frame: lbr_link_ee
       cartesian_axis: z
       cartesian_displacement_threshold_m: 0.5
-      state_topic: lbr_state
-      command_topic: kuka_clik_controller/target_frame
-      wrench_topic: force_torque_broadcaster/wrench
-      force_release_threshold_newton: 5.0
-      force_release_duration_sec: 3.0
       force_release_shutdown_delay_sec: 0.8
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
-      subscriber_latch_delay_sec: 1.0
     move_to_start_recover:
       update_rate: 200
       target_joint_position: [0.0, 30.0, 0.0, -45.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.15
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      start_action_needed: true
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       wait_for_physical_arrival: true
-      subscriber_latch_delay_sec: 1.0
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     audio_cue_snap:
       frequency_hz: 2000
       duration_ms: 500
 
+    # Selects which fixture geometry below is active; switch this to change the constraint.
     virtual_fixture_profile: "sine_wave"
     virtual_fixtures:
       # The KUKA cabinet runs Cartesian impedance (run LbrImpedanceControlServer on the SmartPad);
@@ -76,4 +72,3 @@
         spatial_freq: 20.0
         pull_axis: "z"
         osc_axis: "y"
-

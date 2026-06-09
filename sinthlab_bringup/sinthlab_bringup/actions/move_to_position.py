@@ -9,7 +9,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 from ruckig import InputParameter, OutputParameter, Ruckig
 
-from lbr_fri_idl.msg import LBRState
+from lbr_fri_idl.msg import LBRState, LBRJointPositionCommand
 from geometry_msgs.msg import PoseStamped
 import optas
 from scipy.spatial.transform import Rotation as R
@@ -81,7 +81,21 @@ class MoveToPositionAction:
 
         # State
         robot_name = node.get_namespace().strip("/")
-        self._cmd_topic = f"/{robot_name}/kuka_clik_controller/target_frame" if robot_name else "/kuka_clik_controller/target_frame"
+        ns = f"/{robot_name}" if robot_name else ""
+
+        # How the joint setpoint is sent:
+        #   "joint"     -> LBRJointPositionCommand to LBRJointPositionCommandController; joint
+        #                  positions go straight to the FRI position command (exact, no IK).
+        #                  Used by apple-pluck / perturb.
+        #   "cartesian" -> PoseStamped (FK of the spline) to kuka_clik_controller, which re-solves
+        #                  IK. Used by the virtual-fixtures (restricted-plane) scenario.
+        self._cmd_mode = "cartesian"
+        if node.has_parameter("command_mode"):
+            self._cmd_mode = str(node.get_parameter("command_mode").value).strip().lower()
+        self._cmd_topic = (
+            f"{ns}/command/lbr_joint_position_command" if self._cmd_mode == "joint"
+            else f"{ns}/kuka_clik_controller/target_frame"
+        )
         self._subscribers_ready = False 
         self._init = False
         self._moving = False
@@ -99,7 +113,10 @@ class MoveToPositionAction:
         # ROS interfaces owned by the action
         # The lbr_state_broadcaster publishes LBRState on '<ns>/lbr_state' (not 'state').
         self._state_sub = node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
-        self._pub_joint = node.create_publisher(PoseStamped, self._cmd_topic, 1)
+        if self._cmd_mode == "joint":
+            self._pub_joint = node.create_publisher(LBRJointPositionCommand, self._cmd_topic, 1)
+        else:
+            self._pub_joint = node.create_publisher(PoseStamped, self._cmd_topic, 1)
 
         robot_desc = str(node.get_parameter("robot_description").value) if node.has_parameter("robot_description") else ""
         self.robot = optas.RobotModel(urdf_string=robot_desc)
@@ -221,31 +238,60 @@ class MoveToPositionAction:
                 self._request_shutdown()
                 return
         
-        # Completion is judged in CARTESIAN space. kuka_clik re-solves IK with its own nullspace
-        # bias, so the robot's joints will NOT match the target joints — but the end-effector pose
-        # will. Compare the measured EE position to the target EE position. (We do NOT gate on a
-        # joint-space sync check: kuka_clik filters/clamps the target itself, and its independent
-        # redundancy resolution would make any joint-space comparison stall the motion.)
+        # Completion (mode-aware)
+        if self._completion_reached():
+            self._moving = False
+            self._request_shutdown()
+            return
+
+        # Step the joint trajectory and publish the next setpoint (mode-aware)
+        _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
+        self._publish_setpoint(np.array(self._trajectory_gen_out.new_position, dtype=float))
+        
+        # Feed state forward for smooth next step
+        self._trajectory_gen_in.current_position = self._trajectory_gen_out.new_position
+        self._trajectory_gen_in.current_velocity = self._trajectory_gen_out.new_velocity
+        self._trajectory_gen_in.current_acceleration = self._trajectory_gen_out.new_acceleration
+
+    def _completion_reached(self) -> bool:
+        """Joint mode: judge in joint space (the controller commands exactly these joints).
+        Cartesian mode: kuka_clik re-solves IK (its own nullspace), so judge the EE position."""
+        if self._cmd_mode == "joint":
+            ref = self._q_meas_completion if self._wait_for_physical_arrival else self._q_cmd_completion
+            max_err = float(np.max(np.abs(self._joint_pos_target - ref)))
+            if max_err <= self._joint_pos_tol:
+                self._node.get_logger().info(
+                    f"Move-to-position reached target joints (max err {max_err:.4f} rad <= {self._joint_pos_tol:.4f} rad); holding."
+                )
+                return True
+            if self._debug_log_enabled and self._dbg.tick(self._dt):
+                self._node.get_logger().info(
+                    f"move-to-pos: joint max err {max_err:.4f} rad (tol {self._joint_pos_tol:.4f} rad)"
+                )
+            return False
+
         target_ee = self._fk_func(self._joint_pos_target)
         meas_ee = self._fk_func(self._q_meas_completion)
         pos_err = float(np.linalg.norm(meas_ee[0:3, 3] - target_ee[0:3, 3]))
         if pos_err <= self._cartesian_tol:
-            self._moving = False
             self._node.get_logger().info(
                 f"Move-to-position reached target EE pose (pos err {pos_err:.4f} m <= {self._cartesian_tol:.4f} m); holding."
             )
-            self._request_shutdown()
-            return
-
+            return True
         if self._debug_log_enabled and self._dbg.tick(self._dt):
             self._node.get_logger().info(
-                f"move-to-pos: EE position error {pos_err:.4f} m (target tol {self._cartesian_tol:.4f} m)"
+                f"move-to-pos: EE position error {pos_err:.4f} m (tol {self._cartesian_tol:.4f} m)"
             )
+        return False
 
-        # Step Trajectory generation and publish
-        _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
-        trajectory_gen_cmd = np.array(self._trajectory_gen_out.new_position, dtype=float)
-        pose_mat = self._fk_func(trajectory_gen_cmd)
+    def _publish_setpoint(self, joint_positions: np.ndarray) -> None:
+        """Publish the next joint setpoint in the configured command mode."""
+        if self._cmd_mode == "joint":
+            cmd = LBRJointPositionCommand()
+            cmd.joint_position = [float(q) for q in joint_positions]
+            self._pub_joint.publish(cmd)
+            return
+        pose_mat = self._fk_func(joint_positions)
         cmd = PoseStamped()
         cmd.header.frame_id = "lbr_link_0"
         cmd.header.stamp = self._node.get_clock().now().to_msg()
@@ -258,11 +304,6 @@ class MoveToPositionAction:
         cmd.pose.orientation.z = float(quat[2])
         cmd.pose.orientation.w = float(quat[3])
         self._pub_joint.publish(cmd)
-        
-        # Feed state forward for smooth next step
-        self._trajectory_gen_in.current_position = self._trajectory_gen_out.new_position
-        self._trajectory_gen_in.current_velocity = self._trajectory_gen_out.new_velocity
-        self._trajectory_gen_in.current_acceleration = self._trajectory_gen_out.new_acceleration
 
     def _prepare_ruckig(self, trajectory_gen_now: np.ndarray) -> None:
         dofs = 7

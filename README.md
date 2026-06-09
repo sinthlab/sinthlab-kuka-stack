@@ -6,8 +6,10 @@ high‑level experiment orchestration, motion actions, and the KUKA Sunrise (FRI
 needed to drive the arm.
 
 In every hardware scenario the **Cartesian compliance ("spring") runs on the KUKA cabinet at
-1000 Hz**, while ROS 2 streams a moving target pose to it through the `kuka_clik_controller`.
-Python state machines sequence each trial (move → cue → monitor displacement → recoil → repeat).
+1000 Hz**. Apple-pluck / perturb stream **joint** setpoints to it via
+`LBRJointPositionCommandController`; the restricted-plane scenario streams **Cartesian** poses via
+`kuka_clik_controller`. Python state machines sequence each trial
+(move → cue → monitor displacement → recoil → repeat).
 
 ## Table of Contents
 - [1. Hardware Setup (KUKA Arm)](#1-hardware-setup-kuka-arm)
@@ -157,18 +159,18 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 ### Scenario quick reference
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
 |---|----------|-------------|--------------------|----------------|
-| 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
-| 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 
 All scenarios use FRI **POSITION** command mode: ROS streams a target pose and the **cabinet's
 Cartesian impedance** (`LbrImpedanceControlServer`) provides the compliance.
 
 ### Scenario 1 — Apple Pluck
-This scenario streams a target equilibrium pose to the `kuka_clik_controller` (IK‑based position
-control), while the KUKA cabinet runs Cartesian impedance natively via the
-`LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and recoils when
-pushed off its commanded Cartesian anchor.
+This scenario streams **joint** setpoints to the `LBRJointPositionCommandController` (joint positions
+go straight to the FRI position command — no IK), while the KUKA cabinet runs Cartesian impedance
+natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
+recoils when pushed off its commanded anchor.
 
 **Steps to run:**
 1. Check that `update_rate` in
@@ -199,9 +201,10 @@ pushed off its commanded Cartesian anchor.
 ### Scenario 2 — Move Restricted on a Plane
 This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
 arm moves freely *within* an allowed region and is pushed back *outside* it. By default the
-compliance runs **on the cabinet** (the same stack as Apple Pluck) — `kuka_clik_controller` streams
-a **fixture‑constrained equilibrium** pose and the cabinet's Cartesian impedance provides the
-free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also available — see the note.)
+compliance runs **on the cabinet** (same `LbrImpedanceControlServer` app as Apple Pluck) —
+`kuka_clik_controller` streams a **fixture‑constrained equilibrium** pose and the cabinet's Cartesian
+impedance provides the free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also
+available — see the note.)
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application (same app as Apple
@@ -227,16 +230,16 @@ free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also availa
 > `virtual_fixtures_params.yaml`. The fixture geometry defines *where* the walls are; the cabinet
 > stiffness sets *how firm* they feel.
 
-#### How this relates to Apple Pluck — same compliance, different software role
-Both scenarios now run **cabinet Cartesian impedance at 1000 Hz**; they differ only in *what the
-software streams as the equilibrium*:
+#### How this relates to Apple Pluck — same cabinet compliance, different ROS controller
+Both scenarios run the **same cabinet Cartesian impedance at 1000 Hz** (`LbrImpedanceControlServer`);
+they differ in the ROS controller and what it streams:
 
 | | Apple Pluck (1 & 3) | Restricted Plane (2) |
 |---|---|---|
-| Cabinet mode | `CartesianImpedanceControlMode` | `CartesianImpedanceControlMode` |
-| Compliance | cabinet spring, **1000 Hz** | cabinet spring, **1000 Hz** |
-| Software target (to `kuka_clik_controller`) | one moving target (the pluck pose) | measured pose **projected onto the fixture manifold** |
-| Feel | omnidirectional spring toward one target | free within the fixture; soft wall outside it |
+| Cabinet (SmartPad) | `LbrImpedanceControlServer`, 1000 Hz | `LbrImpedanceControlServer`, 1000 Hz |
+| ROS controller | `LBRJointPositionCommandController` | `kuka_clik_controller` |
+| ROS streams | **joint** positions (the start config) | a **Cartesian** pose projected onto the fixture manifold |
+| Feel | omnidirectional spring toward one pose | free within the fixture; soft wall outside it |
 
 So the cabinet — not Python — supplies the give: the arm yields to a sudden jerk at 1 kHz, and the
 "walls" are **soft impedance walls** (the arm is gently pulled back onto the manifold), which is the
@@ -245,7 +248,7 @@ spring's equilibrium inside the allowed region.
 
 ### Scenario 3 — Apple Pluck Perturb
 This scenario builds upon the Apple Pluck physics (cabinet‑side Cartesian impedance via
-`LbrImpedanceControlServer`, with `kuka_clik_controller` streaming the equilibrium pose) but
+`LbrImpedanceControlServer`, with `LBRJointPositionCommandController` streaming the joint setpoints) but
 introduces a sudden, programmatic Cartesian spatial shift right before the user acts, to study the
 response to mechanical perturbation.
 
@@ -277,8 +280,10 @@ The stack separates **hard real‑time physical loops** from **high‑level orch
 Python state transitions never compromise the 1000 Hz hardware control loops.
 
 ### 6.1 System Overview — data flow
-The orchestrator sends Cartesian target poses *down* to the cabinet through `kuka_clik_controller`;
-robot state flows *back up* to the Python monitors. The compliance ("spring") lives on the cabinet.
+Apple‑pluck / perturb send **joint** setpoints to the cabinet via `LBRJointPositionCommandController`;
+restricted‑plane sends **Cartesian** poses via `kuka_clik_controller`. Either path becomes a joint
+**position command** over FRI, and the **cabinet's Cartesian impedance provides the compliance**;
+robot state flows *back up* to the Python monitors.
 
 ```mermaid
 flowchart TB
@@ -290,7 +295,8 @@ flowchart TB
         OPTAS["optas<br/>FK and<br/>Jacobian"]
     end
     subgraph L1["Layer 1 · Real-time control (C++)"]
-        CLIK["kuka_clik_controller<br/>IK: Cartesian target<br/>to joint position"]
+        JPC["LBRJointPositionCommandController<br/>joint positions → FRI<br/>(apple-pluck / perturb)"]
+        CLIK["kuka_clik_controller<br/>Cartesian target → IK → joints<br/>(restricted-plane)"]
         BCAST["Broadcasters:<br/>lbr_state<br/>force_torque<br/>estimated_wrench"]
     end
     subgraph CAB["KUKA Cabinet · 1000 Hz"]
@@ -300,7 +306,9 @@ flowchart TB
 
     ORCH <--> ACT
     ACT -. "FK /<br/>Jacobian" .-> OPTAS
-    ACT -- "PoseStamped<br/>target_frame" --> CLIK
+    ACT -- "LBRJointPositionCommand<br/>(joint mode)" --> JPC
+    ACT -- "PoseStamped<br/>(cartesian mode)" --> CLIK
+    JPC -- "joint position<br/>cmd (FRI)" --> APP
     CLIK -- "joint position<br/>cmd (FRI)" --> APP
     APP -- "compliant<br/>motion" --> ARM
     ARM -- "measured<br/>state" --> APP
@@ -326,18 +334,21 @@ sequenceDiagram
     CAB-->>CM: FRI session established (COMMANDING_ACTIVE)
     CM->>CM: spawn joint_state_broadcaster
     Note over CM: only after it activates (URDF received)
-    CM->>CM: spawn estimated_wrench · lbr_state · force_torque · kuka_clik_controller
+    CM->>CM: spawn estimated_wrench · lbr_state · force_torque · lbr_joint_position_command_controller
+    Note over CM: restricted-plane spawns kuka_clik_controller instead
     ROS-->>Op: Orchestrator starts trial — arm moves to start pose
 ```
 
 ### 6.3 Layers
 **Layer 1 — Real‑time control (C++ / ros2_control)**
 - **Cabinet‑side Cartesian impedance (`LbrImpedanceControlServer`):** the KUKA cabinet runs the
-  Cartesian‑impedance virtual spring at 1000 Hz; ROS only streams the equilibrium pose to it.
-- **`kuka_clik_controller` (IDRA Lab):** a pure Closed‑Loop Inverse Kinematics tracker (no built‑in
-  elasticity), used to convert a Cartesian target into joint‑position commands.
-- *Message interface:* receives `geometry_msgs/PoseStamped` target points on
-  `…/kuka_clik_controller/target_frame`.
+  Cartesian‑impedance virtual spring at 1000 Hz; ROS only streams the equilibrium to it.
+- **`LBRJointPositionCommandController` (lbr_ros2_control):** the **apple‑pluck / perturb** controller
+  — forwards joint positions straight to the FRI position command (no IK). Typed message
+  `lbr_fri_idl/LBRJointPositionCommand` on `…/command/lbr_joint_position_command`.
+- **`kuka_clik_controller` (IDRA Lab):** the **restricted‑plane** controller — a Closed‑Loop IK
+  tracker that converts a Cartesian target into joint commands. Message `geometry_msgs/PoseStamped`
+  on `…/kuka_clik_controller/target_frame`.
 
 **Layer 2 — Kinematics math (Python)**
 - **`optas`:** used inside the Python actions for fast Forward Kinematics (FK) and analytical
@@ -356,7 +367,7 @@ conflate them:
 | Clock | What it does | Rate |
 |-------|--------------|------|
 | **Cabinet control loop** | Computes the Cartesian‑impedance law (`F = K·(x_target − x) − D·v`) and applies joint torques. | **1 ms (1000 Hz)** — fixed by KUKA Sunrise |
-| **FRI send period** | Network packet exchange with the ROS client: ROS pushes a new **equilibrium pose** and reads back state. | **10 ms (100 Hz)** — you pick 1 / 2 / 5 / 10 ms |
+| **FRI send period** | Network packet exchange with the ROS client: ROS pushes a new **equilibrium** (joint positions for apple‑pluck, a Cartesian pose for restricted‑plane) and reads back state. | **10 ms (100 Hz)** — you pick 1 / 2 / 5 / 10 ms |
 
 So selecting **10 ms does not slow the spring down.** The cabinet keeps evaluating the impedance
 physics every 1 ms against the latest equilibrium; FRI only refreshes the *target* (the spring's

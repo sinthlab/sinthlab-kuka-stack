@@ -7,6 +7,7 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.actions.move_to_position import MoveToPositionAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 class PerturbOrchestratorNode(rclpyNode):
     def __init__(self) -> None:
@@ -61,9 +62,8 @@ class PerturbOrchestratorNode(rclpyNode):
             on_complete=self.on_recover_complete
         )
 
-        # Perturbation specific variables
-        import time
-        self._start_delay_sec = 1.5
+        # Delay after the audio cue before the perturbation move begins [s] (from config).
+        self._start_delay_sec = float(get_required_param(self, "perturb_start.start_delay_sec"))
 
         # Kick off Trial 1!
         self.get_logger().info("=== AUTOMATED MULTI-TRIAL PERTURB EXPERIMENT INITIALIZED ===")

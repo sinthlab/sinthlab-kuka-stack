@@ -1,20 +1,17 @@
 /**:
   ros__parameters:
+    # Perturb drives a joint position controller (LBRJointPositionCommandController); the cabinet
+    # (LbrImpedanceControlServer) provides the compliance.
+    command_mode: joint
     apple_pluck_impedance_control_displacement:
       update_rate: 200
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
       cartesian_axis: z
       cartesian_displacement_threshold_m: 0.2
-      state_topic: lbr_state
-      command_topic: kuka_clik_controller/target_frame
-      wrench_topic: force_torque_broadcaster/wrench
-      force_release_threshold_newton: 5.0
-      force_release_duration_sec: 3.0
       force_release_shutdown_delay_sec: 0.8
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
-      subscriber_latch_delay_sec: 1.0
     move_to_start:
       update_rate: 200
       target_joint_position:
@@ -26,7 +23,7 @@
       - 90.0
       - 0.0
       joint_move_tolerance: 0.01
-      move_to_pos_v_max:
+      move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
       - 40.0
       - 40.0
@@ -34,14 +31,14 @@
       - 40.0
       - 40.0
       - 40.0
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      start_action_needed: false
-      subscriber_latch_delay_sec: 1.0
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     perturb_start:
       update_rate: 200
+      # Perturbation target posture. The delta vs. move_to_start is the perturbation
+      # (currently +15 deg on A1 -> lateral base sweep).
       target_joint_position:
       - 15.0
       - 10.0
@@ -51,7 +48,7 @@
       - 90.0
       - 0.0
       joint_move_tolerance: 0.01
-      move_to_pos_v_max:
+      move_to_pos_v_max:  # peak joint speed [deg/s]; raise a/j_max below for a snappier perturbation
       - 40.0
       - 40.0
       - 40.0
@@ -59,10 +56,9 @@
       - 40.0
       - 40.0
       - 40.0
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      start_delay_sec: 1.5
-      subscriber_latch_delay_sec: 1.0
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      start_delay_sec: 1.5  # delay after the audio cue before the perturbation move begins [s]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     move_to_start_recover:
@@ -76,7 +72,7 @@
       - 90.0
       - 0.0
       joint_move_tolerance: 0.15
-      move_to_pos_v_max:
+      move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
       - 40.0
       - 40.0
@@ -84,11 +80,9 @@
       - 40.0
       - 40.0
       - 40.0
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      start_action_needed: true
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       wait_for_physical_arrival: true
-      subscriber_latch_delay_sec: 1.0
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     audio_cue_play:

@@ -42,7 +42,7 @@ def generate_launch_description():
 
     ctrl = DeclareLaunchArgument(
         "ctrl",
-        default_value="kuka_clik_controller",
+        default_value="lbr_joint_position_command_controller",
         description="Desired default controller for hardware commands via FRI.",
     )
 
