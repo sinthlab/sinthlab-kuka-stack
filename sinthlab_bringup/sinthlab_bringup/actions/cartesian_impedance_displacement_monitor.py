@@ -22,10 +22,12 @@ class CartesianImpedanceDisplacementMonitor:
     - Relies on the Cartesian controller's natural spring physics to recoil the arm.
     """
 
-    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None], on_snap: Optional[Callable[[], None]] = None) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None], on_snap: Optional[Callable[[], None]] = None, on_armed: Optional[Callable[[], None]] = None) -> None:
         self._node = node
         self._on_complete = on_complete
         self._on_snap = on_snap
+        # Fired once when the baseline is locked (settle done) — i.e. "monitoring is live, pull now".
+        self._on_armed = on_armed
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
         
         # Tracks when the action is active
@@ -153,6 +155,8 @@ class CartesianImpedanceDisplacementMonitor:
                     f"Captured baseline EE pose for displacement thresholding "
                     f"(after {self._settle_elapsed:.2f}s settle)"
                 )
+                if self._on_armed is not None:
+                    self._on_armed()  # baseline locked -> signal "pull now"
             return
 
         ts_now = self._lookup()

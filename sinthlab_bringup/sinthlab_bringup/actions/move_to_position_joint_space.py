@@ -36,18 +36,28 @@ class MoveToPositionJointSpace(MoveActionBase):
         self._pub.publish(cmd)
 
     def _completion_reached(self) -> bool:
-        # The controller commands exactly these joints, so judge in joint space.
-        ref = self._q_meas_completion if self._wait_for_physical_arrival else self._q_cmd_completion
-        max_err = float(np.max(np.abs(self._joint_pos_target - ref)))
-        if max_err <= self._joint_pos_tol:
+        # Judge in joint space (the controller commands exactly these joints). ALWAYS require the
+        # commanded trajectory to have reached the target, so a move can't "finish" before Ruckig has
+        # ramped the equilibrium there. When wait_for_physical_arrival is set (e.g. recover), also
+        # require the measured arm to have arrived. (Checking measured alone let recover complete
+        # early when the arm sprang back near the target before the ramp finished — leaving the
+        # equilibrium parked at the perturbed pose.)
+        cmd_err = float(np.max(np.abs(self._joint_pos_target - self._q_cmd_completion)))
+        meas_err = float(np.max(np.abs(self._joint_pos_target - self._q_meas_completion)))
+        if self._wait_for_physical_arrival:
+            reached = (cmd_err <= self._joint_pos_tol) and (meas_err <= self._joint_pos_tol)
+        else:
+            reached = cmd_err <= self._joint_pos_tol
+        if reached:
             self._node.get_logger().info(
                 f"{type(self).__name__} reached target joints "
-                f"(max err {max_err:.4f} rad <= {self._joint_pos_tol:.4f} rad); holding."
+                f"(cmd err {cmd_err:.4f}, meas err {meas_err:.4f} <= {self._joint_pos_tol:.4f} rad); holding."
             )
             return True
         if self._debug_log_enabled and self._dbg.tick(self._dt):
             self._node.get_logger().info(
-                f"{type(self).__name__}: joint max err {max_err:.4f} rad (tol {self._joint_pos_tol:.4f} rad)"
+                f"{type(self).__name__}: cmd err {cmd_err:.4f}, meas err {meas_err:.4f} "
+                f"(tol {self._joint_pos_tol:.4f} rad)"
             )
         return False
 

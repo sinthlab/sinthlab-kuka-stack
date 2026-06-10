@@ -86,9 +86,12 @@
       wait_for_physical_arrival: true
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
-    audio_cue_play:
+    audio_cue_play:          # attention cue at trial start (before the perturbation)
       frequency_hz: 1500
       duration_ms: 1500
+    audio_cue_pull:          # "start pulling" cue — sounds once the monitor baseline locks
+      frequency_hz: 2500
+      duration_ms: 400
     audio_cue_snap:
       frequency_hz: 2000
       duration_ms: 500

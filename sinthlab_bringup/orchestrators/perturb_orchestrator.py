@@ -50,6 +50,12 @@ class PerturbOrchestratorNode(rclpyNode):
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self, param_prefix="apple_pluck_impedance_control_displacement",
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
+            on_armed=self.on_monitor_armed,
+        )
+        # "Pull now" cue — sounds when the monitor locks its baseline (post-perturbation, settled),
+        # telling the operator the perturbation is done and it's time to pull the end effector.
+        self.audio_cue_pull = AudioCue(
+            self, param_prefix="audio_cue_pull", on_complete=lambda: None
         )
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
@@ -85,6 +91,11 @@ class PerturbOrchestratorNode(rclpyNode):
     def on_perturb_complete(self):
         self.get_logger().info("Perturbation complete. Initiating Displacement Monitor.")
         self.monitor.start()
+
+    def on_monitor_armed(self):
+        # Baseline locked after the post-perturbation settle — cue the operator to start pulling.
+        self.get_logger().info("Monitor armed. Cue: start pulling the end effector.")
+        self.audio_cue_pull.start()
 
     def on_monitor_snap(self):
         self.get_logger().info("Trial over! Threshold reached. Playing cue and resetting arm soon.")
