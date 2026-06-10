@@ -39,6 +39,13 @@ class CartesianImpedanceDisplacementMonitor:
         self._disp_axis = str(get_required_param(node, self._param_prefix + "cartesian_axis")).lower()
         self._disp_threshold_m = float(get_required_param(node, self._param_prefix + "cartesian_displacement_threshold_m"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, self._param_prefix + "force_release_shutdown_delay_sec")))
+        # Settle time to wait after start() before locking the baseline, so the "initial position"
+        # is the SETTLED pose. For the perturbation experiment this guarantees the baseline is the
+        # post-perturbation rest pose (the physical/tf arm lags the commanded anchor under
+        # impedance). Optional; defaults to 0.0 (apple-pluck already settles via its quiet window).
+        self._baseline_settle_sec = 0.0
+        if node.has_parameter(self._param_prefix + "baseline_settle_sec"):
+            self._baseline_settle_sec = max(0.0, float(node.get_parameter(self._param_prefix + "baseline_settle_sec").value))
 
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
         dbg_rate = float(get_required_param(node, self._param_prefix + "debug_log_rate_hz"))
@@ -54,6 +61,7 @@ class CartesianImpedanceDisplacementMonitor:
                     "cartesian_axis": self._disp_axis,
                     "cartesian_displacement_threshold_m": self._disp_threshold_m,
                     "release_shutdown_delay_sec": self._release_shutdown_delay,
+                    "baseline_settle_sec": self._baseline_settle_sec,
                     "debug_log_enabled": self._debug_log_enabled,
                     "debug_log_rate_hz": dbg_rate,
                 },
@@ -62,9 +70,10 @@ class CartesianImpedanceDisplacementMonitor:
 
         # Runtime state
         self._baseline: Optional[TransformStamped] = None
+        self._settle_elapsed = 0.0
         self._stopping = False
         self._shutdown_requested = False
-        
+
         self._shutting_down = False
         self._shutdown_elapsed = 0.0
 
@@ -111,12 +120,13 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         self._baseline = None
+        self._settle_elapsed = 0.0
         self._stopping = False
         self._shutdown_requested = False
-        
+
         self._shutting_down = False
         self._shutdown_elapsed = 0.0
-        
+
         self._ready = True
         self._node.get_logger().info("Displacement monitor activated for new trial.")
 
@@ -131,10 +141,18 @@ class CartesianImpedanceDisplacementMonitor:
             return
         
         if self._baseline is None:
+            # Wait for the arm to settle before locking the baseline, so the "initial position"
+            # is the settled (post-perturbation) rest pose rather than a still-moving one.
+            if self._settle_elapsed < self._baseline_settle_sec:
+                self._settle_elapsed += self._dt
+                return
             ts = self._lookup()
             if ts is not None:
                 self._baseline = ts
-                self._node.get_logger().info("Captured baseline EE pose for displacement thresholding")
+                self._node.get_logger().info(
+                    f"Captured baseline EE pose for displacement thresholding "
+                    f"(after {self._settle_elapsed:.2f}s settle)"
+                )
             return
 
         ts_now = self._lookup()

@@ -316,7 +316,47 @@ flowchart TB
     BCAST -- "LBRState /<br/>wrench" --> ACT
 ```
 
-### 6.2 Hardware Bring‑up Sequence
+### 6.2 Composition — the launch brings up hardware, the orchestrator runs the experiment
+The codebase keeps a hard line between **hardware bring‑up** and **experiment logic**, and that line
+*is* the launch ↔ orchestrator boundary:
+
+```mermaid
+flowchart LR
+    L["iiwa7_*.launch.py<br/>(thin per-experiment wrapper)"] --> B["experiment_base.launch.py<br/>(shared)"]
+    B --> HW["custom_hardware.launch.py<br/>FRI client · ros2_control · broadcasters"]
+    B --> O["orchestrator node<br/>ROS-side trial state machine"]
+    O --> A["actions:<br/>MoveToPosition* · PerturbInitialPosition<br/>DisplacementMonitor · AudioCue · WaitAction · RestrictedPlane"]
+```
+
+- **Launch files own the hardware.** Every experiment launch is a *thin wrapper* (~25 lines) over one
+  shared [`experiment_base.launch.py`](sinthlab_bringup/launch/experiment_base.launch.py), which does
+  the identical hardware setup for every experiment: build the `robot_description`, include
+  `custom_hardware.launch.py` (FRI client + `ros2_control` + broadcasters), and start the
+  orchestrator. A wrapper supplies only the three things that differ — the **config YAML**, the
+  **orchestrator** to run, and the **controller** (`lbr_joint_position_command_controller` for
+  apple‑pluck / perturb, `kuka_clik_controller` for restricted‑plane).
+
+- **The orchestrator owns the ROS side.** Each experiment has exactly one orchestrator node (1:1 with
+  its launch) that builds the experiment's **trial state machine**. The three orchestrators are kept
+  **independent** (no shared base) so each reads top‑to‑bottom as one self‑contained experiment.
+
+- **Orchestrators are composed only of actions.** An orchestrator holds no inline robot logic; it is a
+  wiring of reusable **action** objects, each with a uniform `start()` → `on_complete` shape, chained
+  by callbacks. Changing a step means swapping an action, not rewriting the node:
+
+  | Action | Responsibility |
+  |--------|----------------|
+  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd, no IK) |
+  | `MoveToPositionCartesianSpace` | drive to a target via `kuka_clik_controller` (Cartesian → IK) |
+  | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
+  | `MoveRestrictedOnAPlaneAction` | stream the fixture‑constrained equilibrium pose |
+  | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → recover |
+  | `AudioCue` / `WaitAction` | play a tone cue / one‑shot delay |
+
+  A trial is then literally a chain of actions — e.g. apple‑pluck:
+  `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
+
+### 6.3 Hardware Bring‑up Sequence
 Controllers are spawned in a deliberate order: `joint_state_broadcaster` first (it needs no URDF
 and proves the controller_manager has received the robot description), then the controllers that
 parse the URDF in `on_init()`.
@@ -339,7 +379,7 @@ sequenceDiagram
     ROS-->>Op: Orchestrator starts trial — arm moves to start pose
 ```
 
-### 6.3 Layers
+### 6.4 Layers
 **Layer 1 — Real‑time control (C++ / ros2_control)**
 - **Cabinet‑side Cartesian impedance (`LbrImpedanceControlServer`):** the KUKA cabinet runs the
   Cartesian‑impedance virtual spring at 1000 Hz; ROS only streams the equilibrium to it.
@@ -356,11 +396,12 @@ sequenceDiagram
   forces.
 
 **Layer 3 — State‑machine orchestration (Python)**
-The experimental flows are orchestrated entirely by high‑level `rclpy` nodes calling modular
-actions (`MoveToPositionAction`, `CartesianImpedanceDisplacementMonitor`,
-`MoveRestrictedOnAPlaneAction`, `AudioCue`). The per‑scenario flows are below.
+The experimental flows are orchestrated by high‑level `rclpy` nodes (one per experiment), each
+composed entirely of the modular actions catalogued in §6.2 — `MoveToPositionJointSpace` /
+`MoveToPositionCartesianSpace`, `PerturbInitialPosition`, `CartesianImpedanceDisplacementMonitor`,
+`MoveRestrictedOnAPlaneAction`, `AudioCue`, `WaitAction`. The per‑scenario flows are below.
 
-### 6.4 Control rates — why a 1000 Hz spring but a 10 ms FRI period
+### 6.5 Control rates — why a 1000 Hz spring but a 10 ms FRI period
 The cabinet's control loop and the FRI network exchange run on **two different clocks** — don't
 conflate them:
 
@@ -390,7 +431,7 @@ safety‑critical loop stays at 1 kHz on a real‑time controller, while the slo
 link only streams a position target at 100 Hz. Running the impedance in ROS instead would pin the
 spring law to that ~100 Hz link — far coarser and riskier for torque control.
 
-### 6.5 Experiment State Flows
+### 6.6 Experiment State Flows
 
 **Flow 1 — Apple Pluck**
 ```mermaid

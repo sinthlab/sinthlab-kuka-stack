@@ -1,61 +1,27 @@
+"""Restricted-plane (virtual fixtures) experiment. Thin wrapper over experiment_base.launch.py."""
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch.actions import IncludeLaunchDescription
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from lbr_bringup.description import LBRDescriptionMixin
+
 
 def generate_launch_description():
-    
-    # 1. Base Setup Parameters
-    robot_type = DeclareLaunchArgument("robot_type", default_value="iiwa7")
-    robot_name = LBRDescriptionMixin.arg_robot_name()
-    ctrl = DeclareLaunchArgument("ctrl", default_value="kuka_clik_controller")
-
-    # 2. Load standard Robot Description for Hardware
-    robot_description = LBRDescriptionMixin.param_robot_description(
-        model=LaunchConfiguration("robot_type"),
-        robot_name=LaunchConfiguration("robot_name"),
-        mode="hardware"
-    )
-
-    # 3. Bring up KUKA Hardware in Impedance/Position Mode
-    hardware_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare("sinthlab_bringup"), "launch", "custom_hardware.launch.py"])
-        ),
-        launch_arguments={
-            "model": LaunchConfiguration("robot_type"),
-            "robot_name": LaunchConfiguration("robot_name"),
-            "ctrl": LaunchConfiguration("ctrl"),
-        }.items(),
-    )
-
-    # 4. Launch the Virtual Fixture Node
-    orchestrator_node = Node(
-        package="sinthlab_bringup",
-        executable="restricted_plane_orchestrator.py",
-        name="restricted_plane_orchestrator",
-        namespace=LaunchConfiguration("robot_name"),
-        output="screen",
-        # We rely exclusively on python-based PyKDL inside the node using standard parameter passing.
-        parameters=[
-            robot_description,
-            PathJoinSubstitution([
-                FindPackageShare("sinthlab_bringup"),
-                "config",
-                "virtual_fixtures_params.yaml"
-            ])
-        ],
-    )
-
     return LaunchDescription(
         [
-            robot_type,
-            robot_name,
-            ctrl,
-            hardware_launch,
-            orchestrator_node,
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution(
+                        [FindPackageShare("sinthlab_bringup"), "launch", "experiment_base.launch.py"]
+                    )
+                ),
+                launch_arguments={
+                    "params_file": PathJoinSubstitution(
+                        [FindPackageShare("sinthlab_bringup"), "config", "virtual_fixtures_params.yaml"]
+                    ),
+                    "orchestrator": "restricted_plane_orchestrator.py",
+                    "ctrl": "kuka_clik_controller",
+                }.items(),
+            ),
         ]
     )

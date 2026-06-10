@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Callable
+from typing import Callable, Optional
 
 from rclpy.node import Node as rclpyNode
 import rclpy
@@ -12,6 +12,19 @@ from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 class AudioCue:
     """Plays a single audio cue when start() is called."""
+
+    @staticmethod
+    def warmup(node: Optional[rclpyNode] = None) -> None:
+        """Wake the Windows/WSL2 audio driver once at startup so the first real cue isn't delayed.
+
+        One-shot side effect (a near-inaudible 37 Hz / 10 ms beep); safe no-op on non-WSL2 hosts.
+        Orchestrators call this once in __init__ instead of issuing the subprocess inline.
+        """
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "[console]::Beep(37, 10)"])
+        except Exception:
+            if node is not None:
+                node.get_logger().debug("Audio warmup beep failed (non-WSL2 host?).")
 
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None]) -> None:
         self._node = node

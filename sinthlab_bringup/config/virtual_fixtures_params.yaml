@@ -1,8 +1,8 @@
 /**:
   ros__parameters:
-    # Restricted-plane uses kuka_clik_controller (cartesian) — move_to_start/recover default to
-    # cartesian command_mode (no command_mode key here), and MoveRestrictedOnAPlaneAction streams
-    # the fixture-constrained equilibrium pose. The cabinet (LbrImpedanceControlServer) provides
+    # Restricted-plane uses kuka_clik_controller (cartesian): move_to_start/recover use the
+    # MoveToPositionCartesianSpace action, and MoveRestrictedOnAPlaneAction streams the
+    # fixture-constrained equilibrium pose. The cabinet (LbrImpedanceControlServer) provides
     # the compliance.
     state_topic: "lbr_state"
     base_link: "lbr_link_0"

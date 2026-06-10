@@ -1,9 +1,7 @@
 /**:
   ros__parameters:
-    # Apple-pluck drives a joint position controller (LBRJointPositionCommandController); the
-    # cabinet (LbrImpedanceControlServer) provides the compliance. "cartesian" would instead
-    # publish poses to kuka_clik_controller (used by the restricted-plane scenario).
-    command_mode: joint
+    # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
+    # MoveToPositionJointSpace action; the cabinet (LbrImpedanceControlServer) provides compliance.
     apple_pluck_impedance_control_displacement:
       update_rate: 200
       base_frame: lbr_link_0
