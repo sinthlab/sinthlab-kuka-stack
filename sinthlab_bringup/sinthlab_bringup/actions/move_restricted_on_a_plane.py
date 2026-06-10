@@ -73,6 +73,7 @@ class MoveRestrictedOnAPlaneAction:
         self._published_xyz = None  # last commanded equilibrium translation (for the step clamp)
             
         self.profile_config = {}
+        self._maze_corridors = []  # (a_min, a_max, b_min, b_max) rectangles for the "maze" profile
         prefix = base_prefix + f"{self.active_profile}."
         if node.has_parameter(prefix + "type"):
             self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
@@ -82,6 +83,23 @@ class MoveRestrictedOnAPlaneAction:
             for key in ["pull_axis", "osc_axis", "restricted_axis"]:
                 if node.has_parameter(prefix + key):
                     self.profile_config[key] = str(node.get_parameter(prefix + key).value)
+            if self.profile_config["type"] == "maze":
+                # Corridors = parallel double arrays of axis-aligned rectangles in the two in-plane
+                # axes (a, b = the non-restricted axes). The arm is free inside any corridor and
+                # softly clamped to the nearest corridor edge outside them (soft walls via impedance).
+                amn = list(node.get_parameter(prefix + "corridor_a_min").value) if node.has_parameter(prefix + "corridor_a_min") else []
+                amx = list(node.get_parameter(prefix + "corridor_a_max").value) if node.has_parameter(prefix + "corridor_a_max") else []
+                bmn = list(node.get_parameter(prefix + "corridor_b_min").value) if node.has_parameter(prefix + "corridor_b_min") else []
+                bmx = list(node.get_parameter(prefix + "corridor_b_max").value) if node.has_parameter(prefix + "corridor_b_max") else []
+                if len(amn) == 0 or not (len(amn) == len(amx) == len(bmn) == len(bmx)):
+                    node.get_logger().error(
+                        "maze profile needs equal-length, non-empty corridor_a_min/a_max/b_min/b_max arrays"
+                    )
+                else:
+                    self._maze_corridors = [
+                        (float(amn[i]), float(amx[i]), float(bmn[i]), float(bmx[i])) for i in range(len(amn))
+                    ]
+                    node.get_logger().info(f"Maze fixture loaded with {len(self._maze_corridors)} corridors.")
         else:
             node.get_logger().warn(f"Could not find virtual fixture profile {self.active_profile}")
         
@@ -211,6 +229,25 @@ class MoveRestrictedOnAPlaneAction:
                 # Lock orientation completely so the end effector doesn't twist
                 transform[0:3, 0:3] = self._initial_transform[0:3, 0:3]
 
+        elif ptype == "maze":
+            # Planar maze: lock the out-of-plane axis + orientation to the start pose, and clamp the
+            # in-plane (a, b) point to the union of corridor rectangles. The cabinet's Cartesian
+            # stiffness turns "outside a corridor" into a soft (or, with a stiff profile, firm) wall.
+            restricted = True
+            if self._initial_transform is not None:
+                locked = self.profile_config.get("restricted_axis", "z").lower()
+                if locked == "x":
+                    x = self._initial_transform[0, 3]
+                    y, z = self._project_to_corridors(y, z)
+                elif locked == "y":
+                    y = self._initial_transform[1, 3]
+                    x, z = self._project_to_corridors(x, z)
+                else:  # "z" (default): maze lives in the X-Y plane
+                    z = self._initial_transform[2, 3]
+                    x, y = self._project_to_corridors(x, y)
+                # Lock orientation so the end effector doesn't twist
+                transform[0:3, 0:3] = self._initial_transform[0:3, 0:3]
+
         # Re-pack the XYZ back into the transformation matrix
         transform[0, 3] = x
         transform[1, 3] = y
@@ -218,6 +255,28 @@ class MoveRestrictedOnAPlaneAction:
 
         return transform, restricted
 
+    def _project_to_corridors(self, pa: float, pb: float) -> tuple[float, float]:
+        """Project an in-plane point onto the union of allowed corridor rectangles.
+
+        Inside any corridor -> returned unchanged (free motion). Outside all corridors -> clamped to
+        the nearest corridor's boundary; the cabinet impedance then pulls the arm back (a wall).
+        """
+        corridors = self._maze_corridors
+        if not corridors:
+            return pa, pb
+        for (amn, amx, bmn, bmx) in corridors:
+            if amn <= pa <= amx and bmn <= pb <= bmx:
+                return pa, pb  # inside a corridor: free motion
+        best = (pa, pb)
+        best_d = float("inf")
+        for (amn, amx, bmn, bmx) in corridors:
+            ca = min(max(pa, amn), amx)
+            cb = min(max(pb, bmn), bmx)
+            d = (pa - ca) ** 2 + (pb - cb) ** 2
+            if d < best_d:
+                best_d = d
+                best = (ca, cb)
+        return best
 
     def _state_cb(self, msg: LBRState):
         """

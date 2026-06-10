@@ -12,6 +12,7 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   orchestrators/apple_pluck_orchestrator.py
   orchestrators/perturb_orchestrator.py
   orchestrators/restricted_plane_orchestrator.py
+  orchestrators/maze_orchestrator.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})

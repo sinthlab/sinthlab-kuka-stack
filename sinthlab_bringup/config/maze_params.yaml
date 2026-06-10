@@ -1,0 +1,90 @@
+/**:
+  ros__parameters:
+    # Maze uses kuka_clik_controller (cartesian): move_to_start/recover use MoveToPositionCartesianSpace,
+    # and MoveRestrictedOnAPlaneAction streams the corridor-constrained equilibrium pose. The cabinet
+    # (LbrImpedanceControlServer) provides the walls — select a STIFF in-plane profile on the SmartPad
+    # so the maze walls are firm and the path is strictly followed.
+    #
+    # NOTE: all positions below are PLACEHOLDERS in metres / base frame (lbr_link_0). Calibrate them on
+    # the real arm: jog the EE to the maze corners and read /lbr/lbr_state (or tf) to fill in real values.
+    state_topic: "lbr_state"
+    base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+
+    # Whole-experiment timeout [s]; on expiry the arm waits for release then returns to start.
+    timeout_sec: 60.0
+
+    move_to_start:
+      update_rate: 200
+      # Posture that places the EE at the maze ENTRANCE (anchors the plane z + orientation). Tune!
+      target_joint_position: [0.0, 30.0, 0.0, -60.0, 0.0, 90.0, 0.0]
+      joint_move_tolerance: 0.01
+      cartesian_move_tolerance: 0.03   # EE position tolerance [m] (clik completion)
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # [rad/s^2]
+      move_to_pos_j_max: 5.0  # [rad/s^3]
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+    move_to_start_recover:
+      update_rate: 200
+      target_joint_position: [0.0, 30.0, 0.0, -60.0, 0.0, 90.0, 0.0]
+      joint_move_tolerance: 0.15
+      cartesian_move_tolerance: 0.05
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
+    # Audio cues
+    audio_cue_play:                 # "go" cue at trial start
+      frequency_hz: 1500
+      duration_ms: 1500
+    audio_cue_reward:               # reward at each checkpoint
+      frequency_hz: 1800
+      duration_ms: 300
+    audio_cue_goal:                 # maze solved
+      frequency_hz: 2200
+      duration_ms: 600
+    audio_cue_timeout:              # timed out
+      frequency_hz: 800
+      duration_ms: 800
+
+    # Checkpoints (any order, reward once each) + goal. 3D spheres in base frame; z ~ plane height.
+    checkpoint_monitor:
+      update_rate: 100
+      base_frame: lbr_link_0
+      ee_frame: lbr_link_ee
+      checkpoint_x: [0.55, 0.62]
+      checkpoint_y: [0.00, 0.15]
+      checkpoint_z: [0.30, 0.30]
+      checkpoint_radius: [0.03, 0.03]
+      goal_x: 0.60
+      goal_y: 0.28
+      goal_z: 0.30
+      goal_radius: 0.03
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
+    # Wait for the operator to let go (external force ~ 0) before recovering to start.
+    force_release:
+      update_rate: 100
+      release_force_threshold_newton: 3.0
+      release_duration_sec: 1.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
+    # Maze geometry: corridors are axis-aligned rectangles in the in-plane axes (a, b). With
+    # restricted_axis "z" the plane is X-Y, so a = X, b = Y and z is locked to the start height.
+    # The arm is free inside any corridor and clamped to the nearest corridor edge outside them.
+    # Example below is an L-shape (along +X, then up in +Y). Tessellate any maze into rectangles.
+    virtual_fixture_profile: "maze"
+    virtual_fixtures:
+      max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
+      maze:
+        type: "maze"
+        restricted_axis: "z"          # plane = X-Y; z locked to the start pose
+        corridor_a_min: [0.35, 0.55]  # X min of each corridor
+        corridor_a_max: [0.65, 0.65]  # X max
+        corridor_b_min: [-0.05, 0.05] # Y min
+        corridor_b_max: [0.05, 0.30]  # Y max
