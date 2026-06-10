@@ -10,6 +10,7 @@ import javax.inject.Inject;
 import com.kuka.roboticsAPI.applicationModel.RoboticsAPIApplication;
 import com.kuka.roboticsAPI.deviceModel.LBR;
 import com.kuka.roboticsAPI.geometricModel.CartDOF;
+import com.kuka.roboticsAPI.geometricModel.Tool;
 import com.kuka.roboticsAPI.uiModel.ApplicationDialogType;
 import com.kuka.roboticsAPI.uiModel.IApplicationUI;
 import com.kuka.roboticsAPI.motionModel.controlModeModel.CartesianImpedanceControlMode;
@@ -33,6 +34,16 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private LBR lbr_;
     @Inject
     private IApplicationUI applicationUi;
+
+    // End-effector tool template name — MUST match the tool defined in RoboticsAPI.data.xml.
+    // Attaching it lets the cabinet gravity-compensate the payload so compliant control modes can
+    // activate (otherwise the EE weight reads as external torque and StateGuard aborts).
+    // IMPORTANT: the tool's loadData (in RoboticsAPI.data.xml) MUST match what is physically mounted:
+    //   - bare flange -> loadData mass = 0  (attaching a zero-load tool is a safe no-op)
+    //   - EE mounted  -> fill mass + COM (SmartPad "Determine", or enter manually) and re-sync.
+    // The Java does not change between those cases — only the tool's loadData does.
+    private static final String EE_TOOL_TEMPLATE = "SinthLabIiwa7EE";
+    private Tool ee_tool_;
 
     // FRI Networking Parameters
     private String client_name_;
@@ -188,6 +199,13 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
 
     @Override
     public void initialize() {
+        // Attach the end-effector tool so the controller accounts for its load in gravity
+        // compensation. With loadData=0 in the template this is equivalent to a bare flange (safe);
+        // once the EE is mounted and its loadData is filled + re-synced, the same call compensates it.
+        ee_tool_ = getApplicationData().createFromTemplate(EE_TOOL_TEMPLATE);
+        ee_tool_.attachTo(lbr_.getFlange());
+        getLogger().info("Attached tool template '" + EE_TOOL_TEMPLATE + "' to the flange.");
+
         request_user_config();
         configure_fri();
     }

@@ -73,6 +73,47 @@ In every hardware scenario the **Cartesian compliance ("spring") runs on the KUK
 Follow [these steps](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr_fri_ros2_stack/doc/hardware_setup.html#install-applications-to-the-robot)
 to install the application to the robot.
 
+### Tool Load Data (payload calibration)
+The cabinet must know the end‑effector's mass, or the compliant control modes (Cartesian / joint
+impedance) refuse to activate. With an uncalibrated tool the experiment launch aborts with:
+```
+[lbr_fri_ros2::StateGuard]: External torque not in limits for joint lbr_A2. Measured: 2.4 Nm, limit: 2 Nm
+... External torque limits exceeded. Perform load data calibration!
+```
+The iiwa has **no SmartPad "load data determination" wizard** like the KR robots — you define a
+**tool** in Sunrise Workbench, then run the built‑in **Determine** routine on the SmartPad
+(Sunrise OS ≥ 1.16; ours is 1.17).
+
+1. **Define the tool** in Sunrise Workbench — open the project's `RoboticsAPI.data.xml` and add a
+   tool under `objectTemplates`. Keep the TCP at the flange (all‑zero transform) so the FRI control
+   point stays aligned with the ROS `lbr_link_ee`, and leave `loadData` at zero (Determine fills it):
+   ```xml
+   <objectTemplates>
+     <toolTemplate class="" defaultMotionFrameRef="/SinthLabIiwa7EE_link_ee" name="SinthLabIiwa7EE">
+       <frames>
+         <frame name="SinthLabIiwa7EE_link_ee">
+           <transformation a="0.0" b="0.0" c="0.0" x="0.0" y="0.0" z="0.0"/>
+         </frame>
+       </frames>
+       <loadData cogA="0.0" cogB="0.0" cogC="0.0" cogX="0.0" cogY="0.0" cogZ="0.0"
+                 inertiaX="0.0" inertiaY="0.0" inertiaZ="0.0" mass="0.0"/>
+     </toolTemplate>
+   </objectTemplates>
+   ```
+   `defaultMotionFrameRef` must match the frame name exactly. **Synchronize** the project to the controller.
+2. **Determine the load** on the SmartPad: **Main Menu → Start‑up → Tool/Base Management →
+   `SinthLabIiwa7EE` → Edit → Load Data → Determine**. Be in **T1**, **disconnect the tool's cables**
+   (the arm swings the tool through joints A5/A6/A7), and keep the swing space clear.
+3. **Attach the tool in the FRI app** so the cabinet actually compensates it: in
+   `sunrise_controller_code/LbrImpedanceControlServer.java`, create the tool
+   (`createFromTemplate("SinthLabIiwa7EE")`), `attachTo(lbr_.getFlange())`, and move the **tool**
+   instead of the bare flange. Without this the guard still trips even after Determine.
+
+> Determine writes the mass / COM to the controller's copy of the tool — copy the values back into
+> `RoboticsAPI.data.xml` if you want the project/repo to retain them. Re‑run after any change to the
+> end‑effector. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
+> set it to match if the arm is mounted otherwise.
+
 ---
 
 ## 3. Building the Stack

@@ -8,6 +8,7 @@ from sinthlab_bringup.actions.perturb_initial_position import PerturbInitialPosi
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 
@@ -60,6 +61,9 @@ class PerturbOrchestratorNode(rclpyNode):
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
         )
+        # At threshold, freeze the equilibrium on the arm's current pose so it stops pulling back
+        # but stays supported (not limp). Held for the dwell, then recover.
+        self.freeze_hold = FreezeAtPoseAction(self)
         self.move_recover = MoveToPositionJointSpace(
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
@@ -98,12 +102,14 @@ class PerturbOrchestratorNode(rclpyNode):
         self.audio_cue_pull.start()
 
     def on_monitor_snap(self):
-        self.get_logger().info("Trial over! Threshold reached. Playing cue and resetting arm soon.")
+        self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")
         self.audio_cue_snap.start()
+        self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
 
     def on_monitor_complete(self):
-        # Snap has fully completed! The KUKA arm is free to recoil.
-        self.get_logger().info("Apple plucked! Waiting for physical recoil.")
+        # Dwell elapsed: stop holding and return to start for the next trial.
+        self.get_logger().info("Perturbation trial done. Returning to start.")
+        self.freeze_hold.stop()
         self.move_recover.start()
 
     def on_recover_complete(self):

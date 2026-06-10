@@ -7,7 +7,7 @@ from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPosition
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
-from sinthlab_bringup.actions.spring_release import SpringReleaseAction
+from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
 
 
 class ApplePluckOrchestratorNode(rclpyNode):
@@ -42,9 +42,10 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, param_prefix="apple_pluck_impedance_control_displacement",
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
         )
-        # At threshold, release the cabinet spring so the arm "gives" (apple breaks off) instead of
-        # pulling back. The give lasts the monitor's force_release_shutdown_delay_sec, then recover.
-        self.spring_release = SpringReleaseAction(self)
+        # At threshold, freeze the equilibrium on the arm's current pose so it stops pulling back
+        # (the "give") but stays supported — NOT limp. Held for the monitor's
+        # force_release_shutdown_delay_sec, then recover.
+        self.freeze_hold = FreezeAtPoseAction(self)
         self.move_recover = MoveToPositionJointSpace(
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
@@ -70,14 +71,14 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.monitor.start()
 
     def on_monitor_snap(self):
-        self.get_logger().info("Threshold reached — releasing spring (apple breaks off).")
+        self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")
         self.audio_cue_snap.start()
-        self.spring_release.start()  # spring goes slack; arm gives in for the dwell window
+        self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
 
     def on_monitor_complete(self):
-        # Dwell elapsed: stop the release and return to start for the next trial.
+        # Dwell elapsed: stop holding and return to start for the next trial.
         self.get_logger().info("Apple plucked! Returning to start.")
-        self.spring_release.stop()
+        self.freeze_hold.stop()
         self.move_recover.start()
 
     def on_recover_complete(self):
