@@ -144,11 +144,26 @@ The iiwa has **no SmartPad "load data determination" wizard** like the KR robots
    vcs import src --input https://raw.githubusercontent.com/sinthlab/sinthlab-kuka-stack/main/sinthlab_lbr_stack.repos
    rosdep install --from-paths src -i -r -y
    ```
-3. Install the required Python packages (only needed once per WSL session install):
+3. **(Hardware only, one-time)** Raise the FRI external-torque limit. A recent `lbr_fri_ros2` update
+   added a safety check on the *external joint torque at activation of compliant control modes*. On a
+   floor-mounted iiwa7 this trips (~2.4 Nm on A2 vs. the 2 Nm default) at the extended apple-pluck
+   start posture **even with no payload** — it's a gravity-model / mastering margin amplified by A2's
+   moment, not a real load. Edit the upstream config
+   `src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_system_config.yaml` and raise the limit
+   (keep the check enabled):
+   ```yaml
+   state_guard:
+     external_torque_safety_check: true
+     external_torque_limit: 4.0   # raised from the default 2.0
+   ```
+   Skip this for mock/sim. The proper long-term fix is calibrating the mounted tool's load data (see
+   §2 “Tool Load Data”) so the residual stays under the default — raising the limit is the stopgap
+   while the flange is load-free.
+4. Install the required Python packages (only needed once per WSL session install):
    ```bash
    pip install pyoptas ruckig --break-system-packages
    ```
-4. Build:
+5. Build:
    ```bash
    colcon build --symlink-install
    ```
