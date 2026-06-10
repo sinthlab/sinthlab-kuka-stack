@@ -39,6 +39,10 @@ class FreezeAtPoseAction:
         self._q_frozen: Optional[np.ndarray] = None  # pose captured ONCE at threshold, held thereafter
         self._q0: Optional[np.ndarray] = None        # equilibrium held at threshold (ramp start)
 
+        # Drives _step at update_rate; it no-ops until start() sets _active. (Without this the
+        # action never publishes and you keep feeling the full spring pull.)
+        self._timer = node.create_timer(self._dt, self._step)
+
     def start(self) -> None:
         self._active = True
         self._t = 0.0
