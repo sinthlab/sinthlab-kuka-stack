@@ -102,13 +102,14 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 name="sys_cfg_pkg",
-                default_value="lbr_description",
-                description="Package containing the lbr_system_config.yaml file for FRI configurations.",
+                default_value="sinthlab_bringup",
+                description="Package containing the FRI system-config YAML. Defaults to our in-repo "
+                            "override (raised external_torque_limit); use lbr_description for upstream.",
             ),
             DeclareLaunchArgument(
                 name="sys_cfg",
-                default_value="ros2_control/lbr_system_config.yaml",
-                description="The relative path from sys_cfg_pkg to the lbr_system_config.yaml file.",
+                default_value="config/iiwa7_system_config.yaml",
+                description="Relative path from sys_cfg_pkg to the FRI system-config YAML.",
             ),
             DeclareLaunchArgument(
                 name="ctrl_cfg_pkg",
