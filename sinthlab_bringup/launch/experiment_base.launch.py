@@ -1,6 +1,6 @@
 """Shared base launch for all sinthlab experiments.
 
-Brings up the KUKA hardware (FRI position mode + controllers via custom_hardware.launch.py) and
+Brings up the KUKA hardware (FRI position mode + controllers via iiwa7_hardware.launch.py) and
 starts the experiment's orchestrator node. The three experiment launches are thin wrappers that
 include this and pass three arguments:
 
@@ -49,7 +49,7 @@ def generate_launch_description():
     hardware_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
-                [FindPackageShare("sinthlab_bringup"), "launch", "custom_hardware.launch.py"]
+                [FindPackageShare("sinthlab_bringup"), "launch", "iiwa7_hardware.launch.py"]
             )
         ),
         launch_arguments={

@@ -323,7 +323,7 @@ The codebase keeps a hard line between **hardware bring‑up** and **experiment 
 ```mermaid
 flowchart LR
     L["iiwa7_*.launch.py<br/>(thin per-experiment wrapper)"] --> B["experiment_base.launch.py<br/>(shared)"]
-    B --> HW["custom_hardware.launch.py<br/>FRI client · ros2_control · broadcasters"]
+    B --> HW["iiwa7_hardware.launch.py<br/>FRI client · ros2_control · broadcasters"]
     B --> O["orchestrator node<br/>ROS-side trial state machine"]
     O --> A["actions:<br/>MoveToPosition* · PerturbInitialPosition<br/>DisplacementMonitor · AudioCue · WaitAction · RestrictedPlane"]
 ```
@@ -331,7 +331,7 @@ flowchart LR
 - **Launch files own the hardware.** Every experiment launch is a *thin wrapper* (~25 lines) over one
   shared [`experiment_base.launch.py`](sinthlab_bringup/launch/experiment_base.launch.py), which does
   the identical hardware setup for every experiment: build the `robot_description`, include
-  `custom_hardware.launch.py` (FRI client + `ros2_control` + broadcasters), and start the
+  `iiwa7_hardware.launch.py` (FRI client + `ros2_control` + broadcasters), and start the
   orchestrator. A wrapper supplies only the three things that differ — the **config YAML**, the
   **orchestrator** to run, and the **controller** (`lbr_joint_position_command_controller` for
   apple‑pluck / perturb, `kuka_clik_controller` for restricted‑plane).

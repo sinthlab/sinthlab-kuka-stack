@@ -117,7 +117,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 name="ctrl_cfg",
-                default_value="config/custom_hardware_controllers.yaml",
+                default_value="config/iiwa7_hardware_controllers.yaml",
                 description="Relative path from ctrl_cfg_pkg to the controllers.",
             ),
             DeclareLaunchArgument(
