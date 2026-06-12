@@ -11,7 +11,7 @@ include this and pass three arguments:
 Not meant to be run directly (params_file and orchestrator are required).
 """
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -37,6 +37,15 @@ def generate_launch_description():
         "ctrl",
         default_value="lbr_joint_position_command_controller",
         description="Default controller spawned via FRI for hardware commands.",
+    )
+    # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
+    # ACTIVE before the first move streams setpoints. The CLIK (restricted-plane) controller resets
+    # its target to the current pose on activation, so an orchestrator that starts streaming before
+    # activation races that reset; this delay avoids it. Joint-position experiments can leave it 0.
+    startup_delay = DeclareLaunchArgument(
+        "startup_delay",
+        default_value="0.0",
+        description="Seconds to delay the orchestrator so controllers are active first.",
     )
 
     robot_description = LBRDescriptionMixin.param_robot_description(
@@ -71,6 +80,11 @@ def generate_launch_description():
             robot_description,
         ],
     )
+    # Hold the orchestrator back by `startup_delay` s so the controller is active before it streams.
+    delayed_orchestrator = TimerAction(
+        period=LaunchConfiguration("startup_delay"),
+        actions=[orchestrator_node],
+    )
 
     return LaunchDescription(
         [
@@ -79,7 +93,8 @@ def generate_launch_description():
             robot_type,
             robot_name,
             ctrl,
+            startup_delay,
             hardware_launch,
-            orchestrator_node,
+            delayed_orchestrator,
         ]
     )

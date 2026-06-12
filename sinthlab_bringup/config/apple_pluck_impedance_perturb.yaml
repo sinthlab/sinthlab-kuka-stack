@@ -15,9 +15,16 @@
       force_release_shutdown_delay_sec: 0.8
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
+    # move_to_start and move_to_start_recover share the same home pose ON PURPOSE but differ in how
+    # completion is judged (so they are NOT redundant copies):
+    #   move_to_start        -> tight tol, commanded-only: finishes as soon as the COMMANDED anchor is
+    #                           home (fast, precise/repeatable origin for the polar perturbation).
+    #   move_to_start_recover -> looser tol + wait_for_physical_arrival: waits for the MEASURED arm to
+    #                           physically return (so the next trial can't start at the perturbed pose).
+    # If you edit the home pose, change it in BOTH blocks.
     move_to_start:
       update_rate: 200
-      target_joint_position:
+      target_joint_position:  # home pose [deg] (keep in sync with move_to_start_recover)
       - 0.0
       - 10.0
       - 0.0
@@ -25,7 +32,7 @@
       - 0.0
       - 90.0
       - 0.0
-      joint_move_tolerance: 0.01
+      joint_move_tolerance: 0.01  # tight: commanded anchor must be home -> consistent perturbation origin
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
       - 40.0
@@ -62,9 +69,9 @@
       start_delay_sec: 1.5  # delay after the audio cue before the perturbation move begins [s]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
-    move_to_start_recover:
+    move_to_start_recover:  # same home as move_to_start, but waits for the PHYSICAL arm to return
       update_rate: 200
-      target_joint_position:
+      target_joint_position:  # home pose [deg] (keep in sync with move_to_start)
       - 0.0
       - 10.0
       - 0.0
@@ -72,7 +79,7 @@
       - 0.0
       - 90.0
       - 0.0
-      joint_move_tolerance: 0.15
+      joint_move_tolerance: 0.15  # looser: the measured arm under impedance won't hit 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
       - 40.0
@@ -83,15 +90,12 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      wait_for_physical_arrival: true
+      wait_for_physical_arrival: true  # wait for the MEASURED arm home, so the next trial can't start perturbed
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
-    audio_cue_play:          # attention cue at trial start (before the perturbation)
+    audio_cue_play:          # trial-start cue: monkey begins reaching, before the perturbation
       frequency_hz: 1500
       duration_ms: 1500
-    audio_cue_pull:          # "start pulling" cue — sounds once the monitor baseline locks
-      frequency_hz: 2500
-      duration_ms: 400
-    audio_cue_snap:
+    audio_cue_snap:          # threshold-reached cue (pull success). (The post-perturbation "pull" cue was removed.)
       frequency_hz: 2000
       duration_ms: 500

@@ -21,6 +21,9 @@ def generate_launch_description():
                     ),
                     "orchestrator": "restricted_plane_orchestrator.py",
                     "ctrl": "kuka_clik_controller",
+                    # Let kuka_clik_controller finish activating (it resets its target to the current
+                    # pose on_activate) before the orchestrator starts streaming target_frame.
+                    "startup_delay": "6.0",
                 }.items(),
             ),
         ]

@@ -15,8 +15,12 @@ from sinthlab_bringup.helpers.common_threshold import get_required_param
 class PerturbOrchestratorNode(rclpyNode):
     """Perturbation trial loop, composed entirely of actions:
 
-    move_to_start -> quiet_window -> audio_cue -> perturb_delay -> perturb -> monitor
-    -> (snap cue) -> move_recover -> repeat.
+    move_to_start -> quiet_window -> audio_cue (trial-start cue) -> perturb_delay -> perturb
+    -> monitor -> (threshold) snap cue + freeze_at_pose -> move_recover -> repeat.
+
+    Two cues only: one at trial start (the monkey begins reaching; the perturbation then displaces
+    the equilibrium) and one when the pull reaches threshold. The post-perturbation "pull" cue that
+    used to sound when the monitor armed is deliberately removed.
     """
 
     def __init__(self) -> None:
@@ -53,11 +57,7 @@ class PerturbOrchestratorNode(rclpyNode):
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
             on_armed=self.on_monitor_armed,
         )
-        # "Pull now" cue — sounds when the monitor locks its baseline (post-perturbation, settled),
-        # telling the operator the perturbation is done and it's time to pull the end effector.
-        self.audio_cue_pull = AudioCue(
-            self, param_prefix="audio_cue_pull", on_complete=lambda: None
-        )
+        # Cue when the pull reaches threshold (perturbation success).
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
         )
@@ -97,12 +97,12 @@ class PerturbOrchestratorNode(rclpyNode):
         self.monitor.start()
 
     def on_monitor_armed(self):
-        # Baseline locked after the post-perturbation settle — cue the operator to start pulling.
-        self.get_logger().info("Monitor armed. Cue: start pulling the end effector.")
-        self.audio_cue_pull.start()
+        # Baseline locked after the post-perturbation settle. No cue here — the monkey is already
+        # reaching (cued once at trial start); we just begin watching for the pull.
+        self.get_logger().info("Monitor armed (baseline locked). Watching for the pull.")
 
     def on_monitor_snap(self):
-        self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")
+        self.get_logger().info("Threshold reached — snap cue + freezing the arm at its current pose (pull released).")
         self.audio_cue_snap.start()
         self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
 
