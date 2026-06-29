@@ -20,7 +20,10 @@ def generate_launch_description():
                         [FindPackageShare("sinthlab_bringup"), "config", "maze_params.yaml"]
                     ),
                     "orchestrator": "maze_orchestrator.py",
-                    "ctrl": "kuka_clik_controller",
+                    # Joint controller active for the exact-posture start/recover moves; CLIK loaded
+                    # inactive and switched in by the orchestrator for the corridor fixtures.
+                    "ctrl": "lbr_joint_position_command_controller",
+                    "extra_inactive_ctrl": "kuka_clik_controller",
                 }.items(),
             ),
         ]

@@ -14,7 +14,6 @@ forward-kinematics handle. Concrete subclasses provide ONLY the parts that actua
 
 Concrete classes (one focused file each):
   * ``MoveToPositionJointSpace``     - move_to_position_joint_space.py
-  * ``MoveToPositionCartesianSpace`` - move_to_position_cartesian_space.py
   * ``PerturbInitialPosition``       - perturb_initial_position.py
 """
 from __future__ import annotations

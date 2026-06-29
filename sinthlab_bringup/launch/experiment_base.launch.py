@@ -37,7 +37,14 @@ def generate_launch_description():
     ctrl = DeclareLaunchArgument(
         "ctrl",
         default_value="lbr_joint_position_command_controller",
-        description="Default controller spawned via FRI for hardware commands.",
+        description="Controller spawned ACTIVE for hardware commands.",
+    )
+    # Optional second controller spawned INACTIVE (the restricted-plane/maze experiments set this to
+    # the CLIK; their orchestrator switches to it for the fixture phase and back for the moves).
+    extra_inactive_ctrl = DeclareLaunchArgument(
+        "extra_inactive_ctrl",
+        default_value="",
+        description="Optional second controller spawned inactive (e.g. kuka_clik_controller).",
     )
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
     # ACTIVE before the first move streams setpoints (the CLIK resets its target to the current
@@ -65,6 +72,7 @@ def generate_launch_description():
             "model": LaunchConfiguration("robot_type"),
             "robot_name": LaunchConfiguration("robot_name"),
             "ctrl": LaunchConfiguration("ctrl"),
+            "extra_inactive_ctrl": LaunchConfiguration("extra_inactive_ctrl"),
         }.items(),
     )
 
@@ -93,6 +101,7 @@ def generate_launch_description():
             robot_type,
             robot_name,
             ctrl,
+            extra_inactive_ctrl,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

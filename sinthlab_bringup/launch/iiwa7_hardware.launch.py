@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
     Command,
@@ -7,6 +8,7 @@ from launch.substitutions import (
     FindExecutable,
     LaunchConfiguration,
     PathSubstitution,
+    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -78,6 +80,25 @@ def generate_launch_description() -> LaunchDescription:
         namespace=LaunchConfiguration("namespace"),
     )
 
+    # Optionally load a second controller in the INACTIVE state (configured, not running). The
+    # restricted-plane / maze experiments use this for the CLIK: the joint controller (ctrl) is
+    # active for the start/recover moves, then the orchestrator switches to this one for the fixture.
+    inactive_ctrl_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=[
+            LaunchConfiguration("extra_inactive_ctrl"),
+            "--inactive",
+            "--controller-manager",
+            "controller_manager",
+        ],
+        namespace=LaunchConfiguration("namespace"),
+        condition=IfCondition(
+            PythonExpression(["'", LaunchConfiguration("extra_inactive_ctrl"), "' != ''"])
+        ),
+    )
+
     return LaunchDescription(
         [
             SetEnvironmentVariable(
@@ -123,7 +144,13 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 name="ctrl",
                 default_value="kuka_clik_controller",
-                description="Desired default controller. Must be defined in the ctrl_cfg.",
+                description="Desired default controller (spawned ACTIVE). Must be defined in the ctrl_cfg.",
+            ),
+            DeclareLaunchArgument(
+                name="extra_inactive_ctrl",
+                default_value="",
+                description="Optional second controller spawned INACTIVE (e.g. the CLIK for the "
+                "restricted-plane/maze experiments; the orchestrator switches to it for the fixture).",
             ),
             Node(
                 package="robot_state_publisher",
@@ -151,7 +178,7 @@ def generate_launch_description() -> LaunchDescription:
             RegisterEventHandler(
                 event_handler=OnProcessExit(
                     target_action=joint_state_broadcaster_spawner,
-                    on_exit=[robot_description_dependent_spawner],
+                    on_exit=[robot_description_dependent_spawner, inactive_ctrl_spawner],
                 )
             ),
         ]

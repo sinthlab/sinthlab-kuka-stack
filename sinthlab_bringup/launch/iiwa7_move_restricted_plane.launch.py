@@ -20,10 +20,10 @@ def generate_launch_description():
                         [FindPackageShare("sinthlab_bringup"), "config", "virtual_fixtures_params.yaml"]
                     ),
                     "orchestrator": "restricted_plane_orchestrator.py",
-                    "ctrl": "kuka_clik_controller",
-                    # Let kuka_clik_controller finish activating (it resets its target to the current
-                    # pose on_activate) before the orchestrator starts streaming target_frame.
-                    "startup_delay": "6.0",
+                    # Joint controller active for the exact-posture start/recover moves; CLIK loaded
+                    # inactive and switched in by the orchestrator for the fixture phase.
+                    "ctrl": "lbr_joint_position_command_controller",
+                    "extra_inactive_ctrl": "kuka_clik_controller",
                 }.items(),
             ),
         ]
