@@ -5,7 +5,13 @@ From the arm's current configuration, drive to an absolute target joint configur
 (``target_joint_position``): Ruckig still plans a joint spline, but each sample is published as
 the FK ``PoseStamped`` on the CLIK controller's ``target_frame``, which re-solves IK with its own
 nullspace bias. Because CLIK won't reproduce the exact joints, completion is judged on the EE
-**position** (``cartesian_move_tolerance``, default 0.03 m). Used by the restricted-plane scenario.
+**position** (``cartesian_move_tolerance``, default 0.03 m).
+
+Completion uses the **commanded** EE pose, NOT the measured one: under the cabinet's Cartesian
+impedance the physical arm sags below the commanded equilibrium, so the measured EE would never
+reach the target and the move would hang forever (no quiet window, no start cue). The commanded
+equilibrium (FRI commanded joints -> FK) does reach the target, so we key completion off that.
+Used by the restricted-plane scenario.
 """
 from __future__ import annotations
 
@@ -47,18 +53,23 @@ class MoveToPositionCartesianSpace(MoveActionBase):
         self._pub.publish(cmd)
 
     def _completion_reached(self) -> bool:
+        # Judge on the COMMANDED equilibrium (FRI commanded joints), not the measured arm: under
+        # Cartesian impedance the measured EE sags below the equilibrium and would never reach the
+        # target, hanging the move. The commanded EE does reach it once Ruckig finishes streaming.
         target_ee = np.asarray(self._fk_func(self._joint_pos_target), dtype=float)
-        meas_ee = np.asarray(self._fk_func(self._q_meas_completion), dtype=float)
-        pos_err = float(np.linalg.norm(meas_ee[0:3, 3] - target_ee[0:3, 3]))
+        cmd_ee = np.asarray(self._fk_func(self._q_cmd_completion), dtype=float)
+        pos_err = float(np.linalg.norm(cmd_ee[0:3, 3] - target_ee[0:3, 3]))
         if pos_err <= self._cartesian_tol:
+            meas_ee = np.asarray(self._fk_func(self._q_meas_completion), dtype=float)
+            meas_err = float(np.linalg.norm(meas_ee[0:3, 3] - target_ee[0:3, 3]))
             self._node.get_logger().info(
                 f"{type(self).__name__} reached target EE pose "
-                f"(pos err {pos_err:.4f} m <= {self._cartesian_tol:.4f} m); holding."
+                f"(cmd err {pos_err:.4f} m <= {self._cartesian_tol:.4f} m; measured {meas_err:.4f} m incl. droop); holding."
             )
             return True
         if self._debug_log_enabled and self._dbg.tick(self._dt):
             self._node.get_logger().info(
-                f"{type(self).__name__}: EE position error {pos_err:.4f} m (tol {self._cartesian_tol:.4f} m)"
+                f"{type(self).__name__}: commanded EE error {pos_err:.4f} m (tol {self._cartesian_tol:.4f} m)"
             )
         return False
 

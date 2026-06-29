@@ -33,15 +33,19 @@
 
 part = "assembly"; // [assembly, base, cover, apple_core_base, adj_shaft, apple_ball, apple, apple_section, section, electronics_mock, casing]
 
-/* [Robot media flange (electric) — VERIFY vs iiwa7 datasheet] */
-flange_bolt_n      = 8;     // media flange electric: 8 mounting screws
-flange_pcd         = 63;    // bolt pitch-circle diameter [mm]   (VERIFY)
-flange_bolt_clear  = 4.5;   // screw clearance hole (e.g. M4) [mm] (VERIFY size)
-flange_cbore_d     = 8.5;   // counterbore for screw head [mm]
-flange_cbore_h     = 4.5;   // counterbore depth [mm]
-flange_first_angle = 22.5;  // angle of the first hole [deg]      (VERIFY)
-flange_center_d    = 31.6;  // central centering-boss recess Ø [mm] (VERIFY)
+/* [Robot media flange — DIN ISO 9409-1-50-7-M6 (iiwa7 media-flange-electric)] */
+// The flange has 8 holes: SEVEN are M6 fixing threads (the "7" in ...-7-M6) + ONE locating/dowel pin
+// hole for orientation. We cut all 8 as Ø6.6 clearance (7 take M6 screws; the 8th slips over the pin).
+flange_bolt_n      = 8;     // 8 holes total = 7x M6 fixing + 1 locating pin
+flange_pcd         = 50;    // bolt pitch-circle diameter [mm] (the "50")  (VERIFY by measuring)
+flange_bolt_clear  = 6.6;   // M6 clearance hole, normal fit [mm] (also clears the ~Ø6 locating pin)
+flange_cbore_d     = 11.0;  // counterbore Ø for an M6 socket-head cap screw (head Ø10) [mm]
+flange_cbore_h     = 6.5;   // counterbore depth (M6 SHCS head ~6 mm) [mm]
+flange_first_angle = 22.5;  // first-hole angle [deg] — VERIFY clocking vs the flange's keyed orientation
+flange_center_d    = 31.6;  // ISO 9409-1-50 centering recess Ø [mm] (fits the ~Ø31.5 locating boss — VERIFY)
 flange_center_h    = 4.0;   // recess depth [mm]
+// NOTE: holes are placed evenly (8 -> 45 deg apart). Confirm against the real flange — which position
+// is the pin, the exact spacing, and the pin Ø (tighten that one hole if you want precise keying).
 
 /* [Central cabling] */
 cable_bore_d   = 16;   // central pass-through for the media-flange bundle [mm]

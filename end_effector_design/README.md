@@ -25,9 +25,9 @@ version-controlled.
 The apple is three printed parts that stack on the cover; the **base** is the electronics hub:
 
 ```
-[ iiwa7 media flange (electric) ]   8× mounting screws · 24 V + data bundle
+[ iiwa7 media flange (electric) ]   7× M6 (ISO 9409-1-50-7-M6) · 24 V + data bundle
         │  cable bundle THROUGH the base centre
-  (1) BASE HUB        (Ø170) 8-hole flange mount + central cable bore; FIVE board pockets:
+  (1) BASE HUB        (Ø170) 7×M6 flange mount (Ø50) + central cable bore; FIVE board pockets:
         ├─ Metro M4 AirLift (4000)         ┐ three big boards at 0°/90°/180°,
         ├─ PSM-B05 24 V→5 V converter      │ long side tangential, tucked to centre
         ├─ Optocoupler (your board ≤70×34) ┘ (12 o'clock, pushed out past the others)
@@ -137,10 +137,12 @@ openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effe
 > seconds. Use F5 preview / `part="apple_section"` to check geometry without the wait.
 
 ## ⚠️ Verify before printing
-- **Flange interface (`flange_*`):** the 8-hole pattern, **PCD**, **screw size**, counterbore, the
-  **first-hole angle**, and the **centering-boss recess** are *nominal*. Confirm against the **iiwa7
-  media-flange-electric** datasheet, then print a **thin fit-test ring** (reduce `base_h`) to check the
-  bolt pattern + centering before printing the full hub.
+- **Flange interface (`flange_*`):** set to **DIN ISO 9409-1-50-7-M6** — Ø50 bolt circle, **7 × M6**,
+  Ø31.6 centering recess. Still confirm against your flange: the **exact hole spacing** (the 7 holes
+  are placed evenly; verify they aren't keyed/indexed), the **centering-boss Ø**, and the **M6 tap
+  depth** (drives screw length). Print a **thin fit-test ring** (reduce `base_h`) to check the bolt
+  pattern + centering before the full hub. NOTE: the flange-mount counterbore side / screw length
+  still need finalizing for the as-built mounting direction (heads accessible from inside the base).
 - **Board fit:** the real Metro M4 (72 × 54) + PSM-B05 (63 × 53) drive the Ø165 base; use
   `part="electronics_mock"` to check overlaps and adjust `*_radius` / `*_angle`.
 - **Shaft fit / strength:** the boss bore is `adj_shaft_d + adj_fit_clear`; print a short fit-test and
