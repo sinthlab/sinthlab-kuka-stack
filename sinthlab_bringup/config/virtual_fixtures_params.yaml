@@ -10,10 +10,13 @@
 
     move_to_start:
       update_rate: 200
-      # A1-A4 match apple-pluck/perturb [0,10,0,-80]; A5=90, A6=-90 roll the wrist so the TOOL points
-      # along world -Y (apple-pluck points down -Z). A5 MUST change to point sideways — with A5=0 the
-      # wrist is locked in the vertical X-Z plane. EE ~ (0.469, -0.126, 0.734) m, tool-Z = (0,-1,0).
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 90.0, -90.0, 0.0]
+      # Matches the apple-pluck/perturb start exactly (tool points down -Z).
+      # >>> SYNC: this goes through the CLIK, which only matches the EE *pose* and resolves the
+      #     redundant arm posture toward kuka_clik_controller's nullspace_desired_configuration.
+      #     If you change target_joint_position below, copy the SAME degrees array into
+      #     nullspace_desired_configuration in config/iiwa7_hardware_controllers.yaml, or the arm
+      #     reaches the right tool pose in a weird posture.
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
       joint_move_tolerance: 0.01
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -35,7 +38,7 @@
       debug_log_rate_hz: 2.0
     move_to_start_recover:
       update_rate: 200
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 90.0, -90.0, 0.0]  # same start pose (tool -> -Y)
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # same start pose as move_to_start
       joint_move_tolerance: 0.15
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]

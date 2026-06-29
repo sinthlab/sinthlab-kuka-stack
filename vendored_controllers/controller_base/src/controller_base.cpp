@@ -71,9 +71,11 @@ ControllerBase::on_init() {
                                            {hardware_interface::HW_IF_POSITION,
                                             hardware_interface::HW_IF_VELOCITY,
                                             hardware_interface::HW_IF_EFFORT});
+    // In DEGREES (same units as the experiment's move_to_start target_joint_position) — converted
+    // to radians when read (see on_configure). Default = the apple-pluck/perturb start pose.
     auto_declare<std::vector<double>>(
         "nullspace_desired_configuration",
-        {0.0, 0.5233, 0.0, -0.7853, 0.0, 1.5707, 0.0});
+        {0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0});
     auto_declare<double>("solver.error_scale", 1.0);
     auto_declare<int>("solver.iterations", 1);
     m_initialized = true;
@@ -196,6 +198,8 @@ ControllerBase::on_configure(const rclcpp_lifecycle::State &previous_state) {
   // Parse joint limits
   m_upper_pos_limits.resize(m_joint_number);
   m_lower_pos_limits.resize(m_joint_number);
+  // nullspace_desired_configuration is given in DEGREES (to match move_to_start); convert to rad.
+  const double k_deg2rad = 0.017453292519943295;  // pi / 180
   std::vector<double> q_ns =
       get_node()
           ->get_parameter("nullspace_desired_configuration")
@@ -231,7 +235,7 @@ ControllerBase::on_configure(const rclcpp_lifecycle::State &previous_state) {
       m_joint_effort_limits(i) =
           robot_model.getJoint(m_joint_names[i])->limits->effort;
     }
-    m_q_ns(i) = q_ns[i];
+    m_q_ns(i) = q_ns[i] * k_deg2rad;  // deg -> rad
     // print limits
     RCLCPP_INFO_STREAM(get_node()->get_logger(),
                        "Joint " << m_joint_names[i] << ": "

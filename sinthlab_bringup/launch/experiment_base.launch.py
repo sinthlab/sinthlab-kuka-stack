@@ -2,11 +2,12 @@
 
 Brings up the KUKA hardware (FRI position mode + controllers via iiwa7_hardware.launch.py) and
 starts the experiment's orchestrator node. The three experiment launches are thin wrappers that
-include this and pass three arguments:
+include this and pass:
 
   * params_file  - the experiment parameter YAML (loaded onto the orchestrator)
   * orchestrator - the orchestrator executable (e.g. apple_pluck_orchestrator.py)
   * ctrl         - the controller spawned via FRI (joint-position for apple/perturb, clik for restricted)
+  * startup_delay- optional seconds to hold the orchestrator back so the controller is active first
 
 Not meant to be run directly (params_file and orchestrator are required).
 """
@@ -39,9 +40,8 @@ def generate_launch_description():
         description="Default controller spawned via FRI for hardware commands.",
     )
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
-    # ACTIVE before the first move streams setpoints. The CLIK (restricted-plane) controller resets
-    # its target to the current pose on activation, so an orchestrator that starts streaming before
-    # activation races that reset; this delay avoids it. Joint-position experiments can leave it 0.
+    # ACTIVE before the first move streams setpoints (the CLIK resets its target to the current
+    # pose on activation). Joint-position experiments can leave it 0.
     startup_delay = DeclareLaunchArgument(
         "startup_delay",
         default_value="0.0",

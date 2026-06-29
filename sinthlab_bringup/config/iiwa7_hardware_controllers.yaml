@@ -84,3 +84,8 @@
     clik_it_max: 100
     clik_eps: 1e-4
     clik_filter_alpha: 0.99
+    # Redundancy posture the CLIK biases toward, in DEGREES (controller_base converts to rad).
+    # >>> MUST equal the restricted-plane move_to_start.target_joint_position
+    #     (sinthlab_bringup/config/virtual_fixtures_params.yaml). If you change that start pose,
+    #     change this too — otherwise the CLIK reaches the right tool pose in a weird arm posture.
+    nullspace_desired_configuration: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
