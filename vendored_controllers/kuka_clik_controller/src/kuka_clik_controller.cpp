@@ -245,7 +245,13 @@ void KukaClikController::computeTargetConfiguration() {
   KDL::Jacobian J(Base::m_joint_number);
 
   KDL::JntArray q_clik(Base::m_joint_number);
-  q_clik.data = Base::m_joint_positions.data;
+  // Seed from the last COMMANDED equilibrium, NOT the measured arm. The cabinet's Cartesian
+  // impedance is a spring between this commanded equilibrium and the measured pose. Seeding from
+  // the measured pose makes the CLIK chase the arm -> the equilibrium collapses onto wherever the
+  // arm is -> near-zero spring error -> the arm feels free even with a stiff profile. Holding the
+  // commanded equilibrium keeps constrained axes firm (the fixture's walls) while a free axis still
+  // tracks (its target IS the measured pose, so the equilibrium follows it there).
+  q_clik.data = m_target_joint_position;
 
   ctrl::VectorND q_kdl(Base::m_joint_number);
 
