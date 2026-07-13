@@ -126,7 +126,6 @@ KukaClikController::on_activate(const rclcpp_lifecycle::State &previous_state) {
                                        << m_current_frame.p.y() << ", "
                                        << m_current_frame.p.z() << ", " << roll
                                        << ", " << pitch << ", " << yaw);
-  m_last_time = get_node()->get_clock()->now().seconds();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::
       CallbackReturn::SUCCESS;
@@ -154,7 +153,7 @@ KukaClikController::update(const rclcpp::Time &time,
   // Update joint states
   Base::updateJointStates();
 
-  filterTargetFrame();
+  filterTargetFrame(period.seconds());
 
   computeTargetConfiguration();
 
@@ -163,24 +162,23 @@ KukaClikController::update(const rclcpp::Time &time,
   return controller_interface::return_type::OK;
 }
 
-void KukaClikController::filterTargetFrame() {
+void KukaClikController::filterTargetFrame(const double &dt) {
+  if (dt <= 0.0) {
+    return;
+  }
   if (KDL::Equal(m_target_frame, m_filtered_frame, 1e-3)) {
     return;
   }
-  // Compute the time since the last update
-  const double current_time = get_node()->get_clock()->now().seconds();
-  double dt = current_time - m_last_time;
-  m_last_time = current_time;
 
-  // Compute the linear and angular velocity of the target frame
+  // dt is the controller period, NOT the wall-clock gap since this last ran past the deadband above.
+  // Those differ: while the equilibrium sits on its target the deadband skips whole cycles, so a
+  // "time since last filter run" would span that idle stretch. The twist below is a delta/dt, so an
+  // inflated dt under-estimates it, the clamps never bite, and `p += vel * dt` then hands the full
+  // step through in one cycle -- the rate limit silently disappears exactly when the target starts
+  // moving again.
   KDL::Twist target_twist;
   target_twist.vel = (m_target_frame.p - m_filtered_frame.p) / dt;
-
-  KDL::Rotation rot_diff = m_filtered_frame.M.Inverse() * m_target_frame.M;
-  double angle;
-  KDL::Vector axis;
-  KDL::Vector rot_vec = rot_diff.GetRot();
-  target_twist.rot = rot_vec / dt;
+  target_twist.rot = (m_filtered_frame.M.Inverse() * m_target_frame.M).GetRot() / dt;
 
   // Clamp the linear and angular velocity
   target_twist.vel.x(std::clamp(target_twist.vel.x(), -m_max_linear_velocity,
@@ -198,9 +196,9 @@ void KukaClikController::filterTargetFrame() {
 
   // Integrate the twist to get the new target frame
   m_filtered_frame.p += target_twist.vel * dt;
-  angle = target_twist.rot.Norm() * dt;
+  const double angle = target_twist.rot.Norm() * dt;
   if (angle > 1e-6) { // avoid divide-by-zero
-    KDL::Vector axis = target_twist.rot / target_twist.rot.Norm();
+    const KDL::Vector axis = target_twist.rot / target_twist.rot.Norm();
     m_filtered_frame.M = m_filtered_frame.M * KDL::Rotation::Rot(axis, angle);
   }
 }

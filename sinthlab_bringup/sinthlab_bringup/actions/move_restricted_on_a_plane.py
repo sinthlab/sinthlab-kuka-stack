@@ -54,11 +54,15 @@ class MoveRestrictedOnAPlaneAction:
         self.last_measured_joints = np.zeros(self.robot.ndof)
         self.recorder = TrajectoryRecorder() # Setup modular recorder
         
-        # Load virtual fixture profile
-        self.active_profile = "bounding_box"
-        if node.has_parameter(self._param_prefix + "virtual_fixture_profile"):
-            self.active_profile = str(node.get_parameter(self._param_prefix + "virtual_fixture_profile").value)
-            
+        # Which fixture geometry is active. Required, never defaulted: every failure to load a fixture
+        # degrades into "publish the measured pose unchanged", i.e. equilibrium == arm -> zero spring
+        # deflection -> the arm feels like plain admittance in every direction no matter how stiff the
+        # cabinet profile is. That is indistinguishable from a working-but-unconstrained fixture, so it
+        # has to be an error, not a warning.
+        self.active_profile = str(
+            get_required_param(node, self._param_prefix + "virtual_fixture_profile")
+        )
+
         # Tuning parameters. The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer);
         # this node streams the fixture-constrained EQUILIBRIUM (measured pose projected onto the
         # allowed manifold). The cabinet's 1 kHz spring provides the free-motion + soft-wall feel
@@ -75,33 +79,43 @@ class MoveRestrictedOnAPlaneAction:
         self.profile_config = {}
         self._maze_corridors = []  # (a_min, a_max, b_min, b_max) rectangles for the "maze" profile
         prefix = base_prefix + f"{self.active_profile}."
-        if node.has_parameter(prefix + "type"):
-            self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
-            for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
-                if node.has_parameter(prefix + key):
-                    self.profile_config[key] = float(node.get_parameter(prefix + key).value)
-            for key in ["pull_axis", "osc_axis", "restricted_axis"]:
-                if node.has_parameter(prefix + key):
-                    self.profile_config[key] = str(node.get_parameter(prefix + key).value)
-            if self.profile_config["type"] == "maze":
-                # Corridors = parallel double arrays of axis-aligned rectangles in the two in-plane
-                # axes (a, b = the non-restricted axes). The arm is free inside any corridor and
-                # softly clamped to the nearest corridor edge outside them (soft walls via impedance).
-                amn = list(node.get_parameter(prefix + "corridor_a_min").value) if node.has_parameter(prefix + "corridor_a_min") else []
-                amx = list(node.get_parameter(prefix + "corridor_a_max").value) if node.has_parameter(prefix + "corridor_a_max") else []
-                bmn = list(node.get_parameter(prefix + "corridor_b_min").value) if node.has_parameter(prefix + "corridor_b_min") else []
-                bmx = list(node.get_parameter(prefix + "corridor_b_max").value) if node.has_parameter(prefix + "corridor_b_max") else []
-                if len(amn) == 0 or not (len(amn) == len(amx) == len(bmn) == len(bmx)):
-                    node.get_logger().error(
-                        "maze profile needs equal-length, non-empty corridor_a_min/a_max/b_min/b_max arrays"
-                    )
-                else:
-                    self._maze_corridors = [
-                        (float(amn[i]), float(amx[i]), float(bmn[i]), float(bmx[i])) for i in range(len(amn))
-                    ]
-                    node.get_logger().info(f"Maze fixture loaded with {len(self._maze_corridors)} corridors.")
-        else:
-            node.get_logger().warn(f"Could not find virtual fixture profile {self.active_profile}")
+        if not node.has_parameter(prefix + "type"):
+            raise ValueError(
+                f"virtual_fixture_profile '{self.active_profile}' has no parameters under "
+                f"'{base_prefix}{self.active_profile}'. Check that the params YAML actually installed "
+                f"(a stale install/ share/ copy is the usual cause)."
+            )
+        self.profile_config["type"] = str(node.get_parameter(prefix + "type").value)
+        for key in ["z_min", "x_min", "x_max", "radius", "center_x", "center_y", "amplitude", "spatial_freq", "y_offset"]:
+            if node.has_parameter(prefix + key):
+                self.profile_config[key] = float(node.get_parameter(prefix + key).value)
+        for key in ["pull_axis", "osc_axis", "restricted_axis"]:
+            if node.has_parameter(prefix + key):
+                self.profile_config[key] = str(node.get_parameter(prefix + key).value)
+        if self.profile_config["type"] == "maze":
+            # Corridors = parallel double arrays of axis-aligned rectangles in the two in-plane
+            # axes (a, b = the non-restricted axes). The arm is free inside any corridor and
+            # softly clamped to the nearest corridor edge outside them (soft walls via impedance).
+            amn = list(node.get_parameter(prefix + "corridor_a_min").value) if node.has_parameter(prefix + "corridor_a_min") else []
+            amx = list(node.get_parameter(prefix + "corridor_a_max").value) if node.has_parameter(prefix + "corridor_a_max") else []
+            bmn = list(node.get_parameter(prefix + "corridor_b_min").value) if node.has_parameter(prefix + "corridor_b_min") else []
+            bmx = list(node.get_parameter(prefix + "corridor_b_max").value) if node.has_parameter(prefix + "corridor_b_max") else []
+            if len(amn) == 0 or not (len(amn) == len(amx) == len(bmn) == len(bmx)):
+                # Empty corridors => _project_to_corridors passes the point straight through => the same
+                # silent no-fixture failure as a missing profile. Refuse to run.
+                raise ValueError(
+                    "maze profile needs equal-length, non-empty corridor_a_min/a_max/b_min/b_max arrays"
+                )
+            self._maze_corridors = [
+                (float(amn[i]), float(amx[i]), float(bmn[i]), float(bmx[i])) for i in range(len(amn))
+            ]
+
+        # Log what is actually enforcing the constraint. Without this you cannot tell a live fixture
+        # from a no-op one by feel alone -- both just look like a compliant arm until you hit a wall.
+        node.get_logger().info(
+            f"Virtual fixture ACTIVE: profile='{self.active_profile}' config={self.profile_config}"
+            + (f" corridors={len(self._maze_corridors)}" if self._maze_corridors else "")
+        )
         
     def start(self) -> None:
         if self._active:

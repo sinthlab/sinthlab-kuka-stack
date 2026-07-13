@@ -73,8 +73,23 @@
         center_x: 0.0
         center_y: 0.0
       sine_wave:
-        type: "sinusoid"
-        amplitude: 0.1
-        spatial_freq: 20.0
+        # Rail: y = start_y + amplitude * sin(spatial_freq * (z - start_z)). The operator pulls along
+        # z (free: the equilibrium tracks measured z); x is pinned and y is dragged onto the rail.
+        #
+        # Size these by the rail's SLOPE, not by amplitude alone. max|dy/dz| = amplitude*spatial_freq
+        # is how many cm sideways the fixture demands per cm of pull; the force the operator fights is
+        # K_y * (off-rail error), and the worst-case error (pull straight down, ignore the rail) is
+        # just `amplitude`. So amplitude is a direct force knob: at K_y = 3000 N/m ("Stiff"), every cm
+        # of amplitude costs 30 N.
+        #
+        # Old values (0.1 / 20.0) gave slope 2.0 (a 63 deg rail) and a 10 cm worst-case error = 300 N
+        # at the "Stiff" profile -- it would have slammed the arm sideways and tripped the cabinet.
+        # These give slope 0.36 (a 20 deg rail), a 0.52 m period (quarter-period = 13 cm of pull, so
+        # one clean S-curve over a ~20 cm stroke), and a 3 cm worst case = 30 N at K_y = 1000 N/m.
+        # Pair with a cabinet profile whose X/Y stiffness is ~1000 N/m -- "Soft Z (Apple Pluck)"
+        # {1000, 1000, 30} is the right shape for this (stiff X/Y walls, free pull). "Stiff (firm
+        # walls)" (3000) and "Vertical rail" (4000) make the same 3 cm error cost 90-120 N.
+        amplitude: 0.03
+        spatial_freq: 12.0
         pull_axis: "z"
         osc_axis: "y"

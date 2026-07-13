@@ -49,7 +49,7 @@ private:
   void
   targetFrameCallback(const geometry_msgs::msg::PoseStamped::SharedPtr target);
   ctrl::Vector6D computeMotionError();
-  void filterTargetFrame();
+  void filterTargetFrame(const double &dt);
 
 #if LOGGING
   void stateCallback(const lbr_fri_idl::msg::LBRState::SharedPtr state);
@@ -74,7 +74,6 @@ private:
   double m_max_angular_velocity;
   bool m_received_target_frame = false;
 
-  double m_last_time;
   // CLIK parameters
   double m_click_dt = 0.05;
   int m_click_it_max_ = 50;
