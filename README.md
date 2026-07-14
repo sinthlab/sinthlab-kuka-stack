@@ -218,6 +218,7 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 | 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
+| 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 All scenarios use FRI **POSITION** command mode: ROS streams a target pose and the **cabinet's
 Cartesian impedance** (`LbrImpedanceControlServer`) provides the compliance.
@@ -271,7 +272,7 @@ available — see the note.)
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Flat table (free X/Y, stiff Z)` (matches the plane fixture) |
+   | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
    The app then waits (~60 s) for the ROS client to connect.
@@ -279,12 +280,20 @@ available — see the note.)
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
    ```
-3. The arm rises to the workspace; push it to feel free motion within the fixture and the soft wall
-   at its boundary.
+3. The arm rises to the workspace; pull it and feel it held onto the sine rail — free along the pull
+   axis, walled in the other two.
 
-> **Tip:** Set `virtual_fixture_profile` (`sine_wave`, `flat_table`, etc.) in
+> **Pick a UNIFORM stiffness profile, not a "soft on the pull axis" one.** The fixture frees the pull
+> axis *itself* — it streams an equilibrium that tracks the measured pose on that axis, so the spring
+> error there is zero and the force is zero no matter how stiff K is. Softening the cabinet's Z buys
+> nothing the fixture isn't already doing, and it is what lets an uncompensated tool load **sag** the
+> arm (at 80 N/m, 10 N of payload = 125 mm of droop). Uniform 1000 N/m holds the tool to ~10 mm while
+> keeping the walls fightable.
+>
+> **Tip:** Set `virtual_fixture_profile` (`sine_wave`, `flat_table`, …) in
 > `virtual_fixtures_params.yaml`. The fixture geometry defines *where* the walls are; the cabinet
-> stiffness sets *how firm* they feel.
+> stiffness sets *how firm* they feel. For the sine rail, size the **wavelength against the pull
+> stroke** — below ~1 period over the stroke it reads as a straight lean, not an oscillation.
 
 #### How this relates to Apple Pluck — same cabinet compliance, different ROS controller
 Both scenarios run the **same cabinet Cartesian impedance at 1000 Hz** (`LbrImpedanceControlServer`);
@@ -328,6 +337,75 @@ response to mechanical perturbation.
    ```
 4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately
    1.5 seconds prior to the readiness cue.
+
+### Scenario 4 — Maze
+The operator (or animal) drives the compliant arm through a **corridor maze** lying in the horizontal
+**X‑Y plane**. It reuses the same fixture engine as Scenario 2 (`MoveRestrictedOnAPlaneAction` with the
+`maze` profile): the arm is **free inside any corridor** and clamped to the nearest corridor edge
+outside them all, so the cabinet's Cartesian stiffness turns "outside a corridor" into a wall. Hitting a
+checkpoint plays a reward cue (**any order, once each**); reaching the goal — or timing out — stops the
+fixtures, waits for the operator to let go, and resets to the start.
+
+**The maze is the only scenario whose tool points along +X** (horizontal, out from the base) instead of
+straight down. That is what lets the apple face the subject while the arm is dragged around a horizontal
+plane.
+
+#### What you should expect to see
+
+```
+ Y (m)
+ +0.20  ┌──────────────────────────────────────┐
+        │ ★ GOAL             C4  return leg  ② │   ② checkpoint 2  (0.68, +0.16)
+ +0.12  └──────────────────────────┐           │
+                                   │    C3     │
+                                   │  up leg   │
+ +0.04  ┌──────────────────────────┤           │
+        │ ▶ START    C1  entrance  │         ① │   ① checkpoint 1  (0.68,  0.00)
+ -0.04  └────────┬─────────┬───────┴───────────┘
+                 │   C2    │
+                 │ DEAD END│                       C2 branches off C1 and goes nowhere
+ -0.20           └─────────┘
+        0.52    0.58     0.64  0.66        0.72   ──► X (m)
+
+   plane: z = 0.500 m (locked)        tool axis: +X (held)
+   path:  ▶START(0.54, 0.00) ─+X→ ①(0.68, 0.00) ─+Y→ ②(0.68, 0.16) ─−X→ ★GOAL(0.55, 0.16)
+```
+
+The arm starts at ▶, free to slide anywhere **inside** the corridors and firmly walled at their edges.
+The straight-ahead route through `C1` leads to the goal; `C2` is a **dead end** — the wrong turn.
+
+**Steps to run:**
+1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application:
+
+   | Prompt | Select |
+   |--------|--------|
+   | FRI send period [ms] | `10` |
+   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
+   | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** (firmer walls: `Stiff (firm walls)`) |
+   | Damping ratio (D0) | `0.7 (Standard)` |
+
+2. **Launch:**
+   ```bash
+   ros2 launch sinthlab_bringup iiwa7_maze.launch.py
+   ```
+3. The arm moves to ▶START with the tool horizontal, waits a quiet window, plays the go cue, and the
+   corridors go live. Drive it to the goal (or let the 60 s timeout expire).
+
+> **The geometry is IK-solved, not guessed.** Holding the tool along +X costs reach: the arm can only
+> work in **X ∈ [0.50, 0.75], Y ∈ [±0.25]** at z = 0.50 (below X ≈ 0.50 the wrist folds back and the pose
+> becomes unreachable). Every corridor corner was checked to be reachable *while holding that
+> orientation* — the fixture locks orientation, so a corner the arm can only reach by twisting the tool
+> is unusable. **Re-run that check if you move the maze.**
+>
+> **Editing the maze:** corridors are axis-aligned rectangles in `maze_params.yaml`
+> (`corridor_a_min/a_max/b_min/b_max`, where `a = X` and `b = Y`). Tessellate any maze into rectangles;
+> they must overlap to be connected. The start must lie *inside* a corridor, and the checkpoint/goal `z`
+> must equal the plane height.
+>
+> **CLIK redundancy posture.** The maze uses its own `config/clik_nullspace_maze.yaml`, because the CLIK
+> matches only the EE *pose* and resolves the arm's 7th DOF toward that posture — sharing the tool-down
+> default would hold the right horizontal tool pose in a completely wrong arm shape. Keep it in sync with
+> `move_to_start.target_joint_position`.
 
 ---
 

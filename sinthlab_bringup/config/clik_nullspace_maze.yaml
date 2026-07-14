@@ -1,0 +1,13 @@
+/**/kuka_clik_controller:
+  ros__parameters:
+    # CLIK redundancy posture for the MAZE, in DEGREES (controller_base converts to rad).
+    #
+    # The maze is the only experiment whose tool points along +X (horizontal, out from the base) rather
+    # than down. Sharing the default tool-down posture would bias the CLIK's redundancy resolution toward
+    # a completely different arm shape while it held the horizontal tool pose — the classic "right pose,
+    # wrong posture" failure the SYNC notes warn about. Hence its own overlay.
+    #
+    #   >>> SYNC with move_to_start.target_joint_position in config/maze_params.yaml.
+    # Solved by IK: EE at (0.540, 0.000, 0.500) m in lbr_link_0, tool axis exactly +X, arm planar
+    # (A1=A3=A5=A7=0) so the start posture is deterministic and faces straight forward.
+    nullspace_desired_configuration: [0.0, 12.6, 0.0, -112.6, 0.0, -35.2, 0.0]

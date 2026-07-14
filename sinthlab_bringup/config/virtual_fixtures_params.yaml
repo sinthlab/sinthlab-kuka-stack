@@ -77,12 +77,24 @@
         # Rail: y = start_y + amplitude * sin(spatial_freq * (z - start_z)). The operator pulls along
         # z (free: the equilibrium tracks measured z); x is pinned and y is dragged onto the rail.
         #
-        # Size these by the rail's SLOPE, not by amplitude alone. max|dy/dz| = amplitude*spatial_freq
-        # is how many cm sideways the fixture demands per cm of pull; the force the operator fights is
-        # K_y * (off-rail error), and the worst-case error (pull straight down, ignore the rail) is
-        # just `amplitude`. So amplitude is a direct force knob: at K_y = 3000 N/m ("Stiff"), every cm
-        # of amplitude costs 30 N
-        amplitude: 0.03
-        spatial_freq: 12.0
+        # SIZE THE WAVELENGTH AGAINST THE PULL STROKE or there is no sinusoid to feel. The operator only
+        # ever traverses `stroke` metres of the wave, so what they experience is
+        # stroke / (2*pi/spatial_freq) periods of it. Below ~1 period it reads as a straight lean:
+        #
+        #   0.03 / 12.0 -> 52 cm wavelength -> 0.38 periods over a 20 cm pull: ONE shallow 3 cm bulge
+        #                                      that never comes back. Felt as "it just went straight."
+        #   0.04 / 30.0 -> 21 cm wavelength -> 0.95 periods over a 20 cm pull: -4 cm, back through 0,
+        #                                      +4 cm. An actual there-and-back wave.
+        #
+        # FORCE is set by AMPLITUDE, not by wavelength. Pulling straight down and ignoring the rail puts
+        # you at most `amplitude` off it, so the worst case is K_y * amplitude = 40 N at 1000 N/m. The
+        # steeper slope (amplitude*spatial_freq = 1.2, a 50 deg rail) costs no extra force — it only
+        # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull, so the CLIK's
+        # max_linear_velocity must exceed it or the rail gets rate-limited flat (see that param).
+        # Pair with the "Rail guide (uniform 1000)" cabinet profile.
+        # History: the original 0.1 / 20.0 was slope 2.0 (63 deg) and a 10 cm error = 300 N at "Stiff" —
+        # it would have slammed the arm sideways and tripped the cabinet.
+        amplitude: 0.04
+        spatial_freq: 30.0
         pull_axis: "z"
         osc_axis: "y"

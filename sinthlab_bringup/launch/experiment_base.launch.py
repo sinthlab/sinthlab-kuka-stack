@@ -46,6 +46,14 @@ def generate_launch_description():
         default_value="",
         description="Optional second controller spawned inactive (e.g. kuka_clik_controller).",
     )
+    # The CLIK matches only the EE pose and resolves the arm's redundant 7th DOF toward this posture, so
+    # it must equal THIS experiment's move_to_start. The maze starts with the tool along +X; every other
+    # experiment starts tool-down, hence the default.
+    clik_nullspace_cfg = DeclareLaunchArgument(
+        "clik_nullspace_cfg",
+        default_value="config/clik_nullspace_default.yaml",
+        description="Per-experiment CLIK redundancy posture (overrides the shared controllers YAML).",
+    )
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
     # ACTIVE before the first move streams setpoints (the CLIK resets its target to the current
     # pose on activation). Joint-position experiments can leave it 0.
@@ -73,6 +81,7 @@ def generate_launch_description():
             "robot_name": LaunchConfiguration("robot_name"),
             "ctrl": LaunchConfiguration("ctrl"),
             "extra_inactive_ctrl": LaunchConfiguration("extra_inactive_ctrl"),
+            "clik_nullspace_cfg": LaunchConfiguration("clik_nullspace_cfg"),
         }.items(),
     )
 
@@ -102,6 +111,7 @@ def generate_launch_description():
             robot_name,
             ctrl,
             extra_inactive_ctrl,
+            clik_nullspace_cfg,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

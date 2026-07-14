@@ -24,6 +24,9 @@ def generate_launch_description():
                     # inactive and switched in by the orchestrator for the corridor fixtures.
                     "ctrl": "lbr_joint_position_command_controller",
                     "extra_inactive_ctrl": "kuka_clik_controller",
+                    # The maze is the ONLY experiment whose tool points along +X, so the CLIK must
+                    # resolve the arm's redundancy toward the maze start posture, not the tool-down one.
+                    "clik_nullspace_cfg": "config/clik_nullspace_maze.yaml",
                 }.items(),
             ),
         ]

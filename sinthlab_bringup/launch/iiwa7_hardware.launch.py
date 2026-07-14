@@ -142,6 +142,14 @@ def generate_launch_description() -> LaunchDescription:
                 description="Relative path from ctrl_cfg_pkg to the controllers.",
             ),
             DeclareLaunchArgument(
+                name="clik_nullspace_cfg",
+                default_value="config/clik_nullspace_default.yaml",
+                description="Per-experiment CLIK redundancy posture. Loaded AFTER ctrl_cfg so it "
+                "overrides it. The CLIK matches only the EE pose and resolves the 7th DOF toward this "
+                "configuration, so it must equal the experiment's move_to_start posture — the maze "
+                "(tool along +X) needs a different one from the tool-down experiments.",
+            ),
+            DeclareLaunchArgument(
                 name="ctrl",
                 default_value="kuka_clik_controller",
                 description="Desired default controller (spawned ACTIVE). Must be defined in the ctrl_cfg.",
@@ -171,6 +179,11 @@ def generate_launch_description() -> LaunchDescription:
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
                     )
                     / LaunchConfiguration("ctrl_cfg"),
+                    # Loaded LAST so it wins: the experiment's CLIK redundancy posture.
+                    PathSubstitution(
+                        FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
+                    )
+                    / LaunchConfiguration("clik_nullspace_cfg"),
                 ],
                 namespace=LaunchConfiguration("namespace"),
             ),
