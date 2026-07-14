@@ -1,3 +1,4 @@
+#include <cmath>
 #include <fstream>
 #include <kuka_clik_controller/kuka_clik_controller.h>
 namespace kuka_clik_controller {
@@ -109,15 +110,31 @@ KukaClikController::on_activate(const rclcpp_lifecycle::State &previous_state) {
   // Update joint states
   Base::updateJointStates();
 
-  // Compute the forward kinematics
-  Base::m_fk_solver->JntToCart(Base::m_joint_positions, m_current_frame);
+  // Anchor the equilibrium on the last COMMANDED joint position, not the measured one. Under Cartesian
+  // impedance the measured pose is the commanded equilibrium PLUS the spring deflection (payload sag,
+  // any contact force) -- it is *supposed* to differ. Seeding from it adopts that deflection as the new
+  // equilibrium, so the arm immediately sags again from there: a visible extra drop at every
+  // joint -> CLIK handoff, and one that grows as the pull-axis stiffness is lowered. The command
+  // interfaces still hold the previous controller's last setpoint, i.e. the posture we were driven to.
+  KDL::JntArray q_seed(Base::m_joint_number);
+  ctrl::VectorND q_cmd;
+  if (Base::readJointCmds(q_cmd)) {
+    q_seed.data = q_cmd;
+  } else {
+    // Cold start: nothing has commanded the arm yet, so the measured pose is the only reference.
+    RCLCPP_WARN(get_node()->get_logger(),
+                "No valid joint position command to seed from; anchoring on the measured pose.");
+    q_seed.data = Base::m_joint_positions.data;
+  }
+  m_target_joint_position = q_seed.data;
+
+  // Compute the forward kinematics of the seed: that pose is the equilibrium we hold
+  Base::m_fk_solver->JntToCart(q_seed, m_current_frame);
 
   // Set the target frame to the current frame
   m_target_frame = m_filtered_frame = m_current_frame;
 
   RCLCPP_INFO(get_node()->get_logger(), "Finished Impedance on_activate");
-
-  m_target_joint_position = Base::m_joint_positions.data;
 
   double roll, pitch, yaw;
   m_current_frame.M.GetRPY(roll, pitch, yaw);

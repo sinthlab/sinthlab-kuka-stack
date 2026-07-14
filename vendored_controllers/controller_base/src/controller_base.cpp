@@ -390,6 +390,18 @@ void ControllerBase::writeJointCmds(ctrl::VectorND &target_joint_positions) {
   }
 }
 
+bool ControllerBase::readJointCmds(ctrl::VectorND &joint_position_commands) {
+  joint_position_commands.resize(m_joint_number);
+  for (size_t i = 0; i < m_joint_number; ++i) {
+    const std::optional<double> q = m_joint_cmd_pos_handles[i].get().get_optional();
+    if (!q.has_value() || !std::isfinite(q.value())) {
+      return false;
+    }
+    joint_position_commands(i) = q.value();
+  }
+  return true;
+}
+
 ctrl::Vector6D ControllerBase::displayInBaseLink(const ctrl::Vector6D &vector,
                                                  const std::string &from) {
   // Adjust format

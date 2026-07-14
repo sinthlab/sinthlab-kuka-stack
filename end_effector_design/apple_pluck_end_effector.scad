@@ -7,14 +7,18 @@
 //  v0.6: the EXTENSION is gone — the apple core base bolts straight to the cover —
 //  and the apple rides on a HEIGHT-ADJUSTABLE shaft (detent pin). Stack:
 //
-//        [ iiwa7 media flange (electric) ]   8x screws, 24V + data
-//                 |  cable bundle THROUGH the base centre
-//        (1) BASE HUB    8-hole flange mount + central cable bore; FOUR board pockets
-//              ├─ Metro M4 AirLift (4000)        ┐ tucked toward the centre,
-//              ├─ PSM-B05 24V->5V converter      │ long side tangential
-//              ├─ Pixel Shifter (6066)           │ (small breakouts in the ±90° gaps)
-//              ├─ DRV2605L ERM/LRA driver (2305) ┘
-//              └─ wire channels linking bore <-> converter <-> board <-> centre riser
+//        [ iiwa7 media flange (electric) ]   8x M6 on a Ø51 pitch circle, 24V + data
+//        (0) FLANGE PLATE  thick adapter disc: takes the 8x M6 (heads buried flush) + the Ø30 cable bore.
+//                          The base bolts onto ITS top face with 4x M3 — so the M6 can be driven with the
+//                          plate bare, and the printed base never carries the M6 clamp load.
+//                 |  cable bundle THROUGH the Ø30 base centre
+//        (1) BASE HUB    central Ø30 bore + hub wire ports; FIVE flat-floored board pockets.
+//              ├─ Metro M4 AirLift + power adapter   92 x 50  ┐  ALL VELCRO'D — no screw bosses.
+//              ├─ Tobsun 24V->5V converter           60 x 55  │  Packed Cartesian (not on a bolt
+//              ├─ Optocoupler board                  95 x 75  │  circle): it is the 95x75 opto that
+//              ├─ Level shifter (ring data)          26 x 18  │  forces the Ø225 base.
+//              ├─ DRV2605L haptic driver             26 x 18  ┘
+//              └─ hub ports + wire channels linking bore <-> converter <-> board <-> centre riser
 //        (2) COVER       closes the pockets · seats the NeoPixel ring in a groove on its TOP
 //                        (opaque, same material as the base) · 4x M3 down to the base
 //                 ▼ BOLTED FLANGE: apple CORE BASE screws down into the cover (3x M3 + spigot)
@@ -32,29 +36,57 @@
 //     openscad -D 'part="base"'  -o base.stl  apple_pluck_end_effector.scad
 // =====================================================================
 
-part = "assembly"; // [assembly, base, cover, apple_core_base, adj_shaft, apple_ball, apple_cap, apple, apple_section, section, electronics_mock, casing]
+part = "assembly"; // [assembly, flange_plate, base, cover, apple_core_base, adj_shaft, apple_ball, apple_cap, apple, apple_section, section, electronics_mock, casing]
 
-/* [Robot media flange — MEASURED off the flange: Ø62 bolt circle, 8x M6, Ø34 central electric bore] */
-// Mating pattern: 8 x M6 (Ø6) fixing holes on a Ø62 bolt circle ("ee circle"), a Ø34 central electric
-// opening ("inside electric"), and the mounting ring between them is 14 mm wide ((62-34)/2). The base
-// bottom mates on that Ø34..Ø62 ring.
+/* [Robot media flange — MEASURED: 8x M6 on a Ø51 bolt circle, Ø34 central electric bore]
+    THE ONE NUMBER THAT MUST MATCH THE ROBOT IS THE PITCH CIRCLE: 51 mm, centre-to-centre across two
+    diametrically opposite holes (measured directly). Do NOT set it from an outer-edge span: that span is
+    (pitch circle + hole Ø), and the plate's hole is deliberately BIGGER than the flange's, so the two
+    spans differ by the clearance and are not comparable.
+
+      on the ROBOT : pcd 51 + Ø6 tapped hole      -> outer-edge span 57  (what you measure on the arm)
+      on the PLATE : pcd 51 + Ø7 clearance hole   -> outer-edge span 58  (0.5 mm of radial slop per side)
+      plate TOP    : pcd 51 + Ø11 head well       -> outer-edge span 62  <-- NOT the bolt hole. This is
+                     the counterbore the M6 cap head drops into, 10 mm above the mating face. Measuring
+                     the plate from the top hits THIS, which is why it reads 62.
+
+    History: Ø62 pcd (span 68.6, measured ~70) did not bolt on; Ø50.4 came from wrongly subtracting the
+    plate's Ø6.6 clearance instead of the flange's Ø6 thread. */
 flange_bolt_n      = 8;     // 8 x M6 fixing holes on the bolt circle
-flange_pcd         = 62;    // bolt pitch-circle diameter [mm] ("ee circle")
-flange_bolt_clear  = 6.6;   // M6 clearance hole, normal fit [mm]
+flange_pcd         = 51.0;  // bolt pitch-circle diameter [mm] — MEASURED centre-to-centre
+flange_bolt_clear  = 7.0;   // M6 clearance hole, ISO 273 COARSE fit [mm]. Coarse on purpose: it absorbs
+                            // the ±0.5 mm uncertainty in the measured pcd AND the fact that FDM holes
+                            // print 0.2-0.4 mm undersize (a Ø6.6 hole prints ~6.3 and binds on an M6).
+                            // The Ø12 steel washer under the head covers a Ø7 hole with room to spare.
 flange_cbore_d     = 11.0;  // head-access well Ø for an M6 cap/cheese head (head Ø10) [mm]
 flange_mount_t     = 8.0;   // mounting-wall thickness under the M6 head [mm] — the bolt spans THIS (+ the
                             // washer) then threads into the flange, so a short M6x16 reaches (~6.4 mm bite).
-                            // Head recesses into and drives from the TOP, down the Ø11 access well.
 flange_washer_d    = 13.0;  // washer-seat Ø under the head [mm] — clears a steel M6 flat washer (OD ~12)
 flange_washer_t    = 2.0;   // washer-seat depth [mm] (M6 washer ~1.6 thick); spreads bolt torque on the wall
+flange_head_h      = 6.0;   // M6 cap-head height [mm] — buried in the plate so its top face stays flat
 flange_first_angle = 22.5;  // first-hole angle [deg] — VERIFY clocking vs the flange
 flange_center_d    = 34.0;  // central electric opening Ø [mm] ("inside electric"; clears the connector)
-flange_center_h    = 6.0;   // opening/recess depth into the base [mm] — VERIFY the connector protrusion
-// The Ø34 opening is a 6 mm recess at the flange face (kept below the board pockets, so the tucked
-// boards are unaffected); the Ø16 cable bore continues up the centre for the apple wiring.
+flange_center_h    = 6.0;   // opening/recess depth into the plate bottom [mm] — VERIFY connector protrusion
+
+/* [(0) FLANGE PLATE — thick adapter disc: bolts to the robot, the base bolts onto IT]
+    Split out of the base so the 8x M6 can be driven with the plate bare (heads recess flush into its top
+    face), and so the printed base never carries the M6 clamp load. Assembly order: plate -> robot, base
+    -> plate, THEN populate the electronics. */
+plate_d        = 110;  // adapter plate Ø [mm] (covers the M6 pattern + the base's M3 bolt circle)
+plate_t        = 16;   // plate thickness [mm] = mount wall 8 + washer seat 2 + M6 head 6 (head sits flush)
+plate_screw_n  = 4;    // M3 screws holding the base down onto the plate
+plate_screw_bcd = 80;  // their bolt-circle Ø [mm] (clear of the M6 washer seats, well inside the plate rim)
+plate_screw_a0 = 45;   // first-screw angle [deg]
+plate_screw_depth = 6; // M3 insert bore depth into the plate top [mm] (takes a 4 mm insert)
+plate_head_z   = 5;    // M3 head seat height above the base bottom [mm] — the screw spans 5 mm of base
+                       // floor, so M3x10 = 5 (base) + 5 (into the plate insert). An access well is bored
+                       // straight up from the head to the base top, so the screws are reachable from
+                       // inside the open compartment (before the boards are velcro'd down).
 
 /* [Central cabling] */
-cable_bore_d   = 16;   // central pass-through for the media-flange bundle [mm]
+cable_bore_d   = 30;   // BASE central pass-through for the media-flange bundle [mm] (power/data out of the robot)
+apple_bore_d   = 16;   // COVER + apple-core central bore [mm] (only the apple's own wiring runs up here,
+                       // so it stays small — a Ø30 bore here would swallow the Ø24 centring spigot)
 
 /* [Standard fastener — ONE M3 spec used for EVERYTHING except the M6 robot flange] */
 // The whole tool uses just two thread sizes: M6 at the robot flange (fixed by the flange), and M3
@@ -67,11 +99,24 @@ m3_insert  = 4.6;  // M3 heat-set INSERT bore [mm] (Bambu M3x5x4: M3, 5.0 mm OD,
 m3_cbore   = 6.5;  // M3 cap/cheese-head counterbore Ø [mm] (clears the Ø5.5 head)
 m3_cbore_h = 3.0;  // M3 counterbore depth [mm] (>= head height, so the head sits recessed)
 
-/* [Base electronics hub] */
-base_d     = 170;   // base outer Ø [mm]  (three big boards at 0/90/180, two breakouts in the 270 quadrant)
+/* [Base electronics hub]
+    Ø225 is set by the optocoupler (95 x 75). Its pocket must clear the central bore (r = 18) and still
+    fit inside the rim, so its far corners land at r = sqrt((18+77)^2 + 48.5^2) = 106.7 -> Ø225 leaves
+    2.8 mm of margin. It does NOT fit on the old Ø170 base in any orientation: the usable radial band
+    there was only (85-3) - 18 = 64 mm against the 75 mm the board needs. */
+base_d     = 225;   // base outer Ø [mm]
 base_h     = 30;    // base height = compartment depth [mm]
-base_floor = 5;     // floor thickness above the flange face [mm]
+base_floor = 8;     // floor thickness [mm] — the DEEPEST pocket (converter, 22) sets this: 30 - 22 = 8
 base_wall  = 3;     // structural wall / bridge thickness [mm]
+hub_wall   = 3;     // material between the central bore and the nearest board pocket [mm]
+pocket_clear = 1.0; // pocket oversize per side [mm] (drop-in locating recess; boards are velcro'd, not screwed)
+
+/* [Wire distribution through the central hub]
+    The flange bundle arrives up the Ø30 bore; these radial ports let it be fanned out of the hub in any
+    direction (and let the Metro reach the other boards) instead of only through the point-to-point
+    channels below. */
+hub_port_n = 8;     // radial wire ports around the central bore
+hub_port_d = 6;     // port Ø [mm]
 
 /* [NeoPixel ring — Adafruit 2874, 60x5050 RGBW (buy 4x QUARTER-rings) — groove on the COVER TOP  https://www.adafruit.com/product/2874] */
 // Product 2874 is ONE QUARTER of a 60-LED ring (15 LEDs, ~4500K natural-white RGBW). Buy FOUR and
@@ -86,39 +131,45 @@ ring_wire_d    = 6.0;   // lead pass-through under the groove, one per quarter j
 /* [Cover plate] */
 cover_plate_t  = 6.0;   // cover thickness [mm] — opaque (same material as base); top ring groove + 4x M3
 
-/* [Control board — Adafruit Metro M4 Express AirLift Lite (4000) https://www.adafruit.com/product/4000] */
-board_l        = 72.0;  // PCB length [mm] (Arduino Metro footprint; board overall 72 x 54 x 15)
-board_w        = 54.0;  // PCB width  [mm]
-board_clear_h  = 16;    // tallest-component clearance above the PCB [mm] (overall ht ~15)
-board_standoff = 6;     // standoff post height under the board [mm] (tall enough to seat a 5 mm M3 insert)
-board_screw_d  = m3_insert;  // M3 heat-set insert into the printed standoffs -- VERIFY: real Metro/Arduino holes are NOT symmetric; set standoff XY to the footprint
-board_angle    = 0;     // angular position of the board compartment [deg]
-board_radius   = 40;    // compartment centre radius [mm] (tucked toward centre; long side tangential)
+/* [BOARD LAYOUT — Cartesian, velcro-mounted]
+    NO screw bosses anywhere: every board is stuck down on hook-and-loop, so each pocket is just a
+    shallow locating recess with a flat floor. `*_pos` = pocket centre [x,y]; `*_rot` = 0 puts the LONG
+    side along x, 90 puts it along y. `*_clear` = pocket DEPTH below the base top = velcro (~2) + PCB +
+    tallest component. Layout is packed Cartesian (not on a bolt circle) because three large rectangles
+    reaching in toward a central bore cannot be spaced angularly: their combined angular width at the hub
+    exceeds 360°. Verified: no overlaps, all corners inside r=109.5, all clear of the Ø30 bore. */
+velcro_t       = 2;     // hook-and-loop pad thickness under every board [mm] (included in each *_clear)
 
-/* [DC-DC converter — PSM-B05-1224-05, 12/24V->5V 5A 25W, IP68 potted block] */
-conv_l         = 63;    // [mm]
-conv_w         = 53;    // [mm]
-conv_clear_h   = 20;    // [mm]
-conv_angle     = 180;   // angular position of the converter compartment [deg]
-conv_radius    = 40;    // compartment centre radius [mm] (tucked toward centre; long side tangential)
+// Control board — Adafruit Metro M4 Express AirLift Lite (4000), + its power adapter
+board_l        = 92.0;  board_w = 50.0;   // footprint [mm]
+board_clear_h  = 19;    // pocket depth [mm] (velcro 2 + PCB + ~15 tall components)
+board_pos      = [32.0, -44.0];  board_rot = 0;
 
-/* [Optocoupler board — buy one that fits this pocket: footprint <= opto_l x opto_w] */
-opto_l         = 70.0;  // [mm] tangential (side-to-side) — MAX board length that fits the 12 o'clock slot
-opto_w         = 34.0;  // [mm] radial (in-out) — MAX board width (limited by the Metro/converter reach + base edge)
-opto_clear     = 16;    // tallest-component clearance above the PCB [mm]
-opto_angle     = 90;    // angular position [deg] (12 o'clock, between the Metro at 0 and converter at 180)
-opto_radius    = 55;    // compartment centre radius [mm] (pushed out so it clears the two big boards)
+// DC-DC converter — Tobsun 24V->5V potted block
+conv_l         = 60.0;  conv_w = 55.0;    // footprint [mm]
+conv_clear_h   = 22;    // pocket depth [mm] — the DEEPEST pocket; it sets base_floor (30 - 22 = 8)
+conv_pos       = [47.0, 44.5];   conv_rot = 0;
 
-/* [Small breakouts — pockets in the 270 quadrant (the gap left by the three big boards)] */
-shifter_l      = 25.5; shifter_w = 15.0; shifter_h = 10.2;  // Adafruit Pixel Shifter (6066): NeoPixel 3.3->5V data line
-shifter_angle  = 250;  shifter_radius = 45;  shifter_clear = 12;   // pocket placement [deg/mm] + component clearance
-haptic_drv_l   = 25.8; haptic_drv_w = 17.8; haptic_drv_h = 4.6;  // Adafruit DRV2605L (2305): ERM/LRA actuator driver (I2C)
-haptic_angle   = 290;  haptic_radius  = 45;  haptic_clear  = 10;   // pocket placement [deg/mm] + component clearance
+// Optocoupler board — the big one; it is what forces the Ø225 base
+opto_l         = 95.0;  opto_w = 75.0;    // footprint [mm]
+opto_clear     = 18;    // pocket depth [mm]
+opto_pos       = [-56.5, 0.0];   opto_rot = 90;   // long side RADIAL-ish (along y), tucked to the -x side
+
+// Level shifter (NeoPixel 3.3->5V data line)
+shifter_l      = 26.0; shifter_w = 18.0; shifter_h = 10.2;
+shifter_clear  = 12;    // pocket depth [mm]
+shifter_pos    = [-46.0, 62.0];  shifter_rot = 0;
+
+// Haptic driver — DRV2605L, drives the ERM in the apple
+haptic_drv_l   = 26.0; haptic_drv_w = 18.0; haptic_drv_h = 4.6;
+haptic_clear   = 9;     // pocket depth [mm]
+haptic_pos     = [-46.0, -62.0]; haptic_rot = 0;
 
 /* [Base <-> cover fastening screws] */
 cover_screw_n       = 4;     // screws joining the cover down to the base
-cover_screw_bcd     = 130;   // their bolt-circle Ø [mm] (in the ±45° gaps, clear of the tucked boards)
-cover_screw_a0      = 45;    // first-screw angle [deg]
+cover_screw_bcd     = 200;   // their bolt-circle Ø [mm] — at r=100, OUTSIDE the Ø157 ring and in the four
+                             // solid spokes the board layout leaves at 0/90/180/270 (verified clear)
+cover_screw_a0      = 0;     // first-screw angle [deg]
 cover_screw_d       = m3_clear;    // clearance hole in the cover (M3) [mm]
 cover_screw_pilot   = m3_insert;   // heat-set insert bore in the base (M3) [mm]
 cover_screw_cbore   = m3_cbore;    // counterbore Ø for the head [mm]
@@ -177,7 +228,7 @@ cap_lip_clear  = 0.2;  // skirt-to-rebate clearance per side [mm] (TPU press-fit
     printed part). The TOP face lies on the cover top over the ring (apple pokes through its centre) and
     clamps down with 3x M3 into the cover just outside the apple-core boss — same 3-screw fixing as before;
     the 4 walls drop from there to the flange face. */
-case_box_side  = 178;   // outer square side [mm] (encloses the Ø170 base: ~1 mm gap + a wall each side)
+case_box_side  = 233;   // outer square side [mm] (encloses the Ø225 base: ~1 mm gap + a wall each side)
 case_box_wall  = 3;     // wall & top-plate thickness [mm]
 case_top_bore  = 44.8;  // centre hole Ø in the top [mm] (clears the Ø44 apple-core boss poking through)
 disc_screw_n   = 3;     // clamp screws down into the cover (through the top face)
@@ -237,14 +288,6 @@ module joint_spigot(reg_d) {
     translate([0, 0, -joint_register_h]) cylinder(h = joint_register_h + eps, d = reg_d);
 }
 
-// A standoff post with a screw pilot, for mounting PCBs inside a compartment.
-module screw_boss(h = board_standoff, d_out = 9, d_hole = board_screw_d) {
-    difference() {
-        cylinder(h = h, d = d_out);
-        translate([0, 0, 1]) cylinder(h = h, d = d_hole);
-    }
-}
-
 // Straight wire channel (cut) between two points at a given z, as a hull of cylinders.
 module wire_channel(p0, p1, d = 7, z = base_floor + 3) {
     hull() {
@@ -253,93 +296,98 @@ module wire_channel(p0, p1, d = 7, z = base_floor + 3) {
     }
 }
 
-// --- PCB pocket helpers: a board centred at radius R on the `ang` axis, with its LONG side `Lt`
-//     TANGENTIAL and short (radial) side `Wr`, so it tucks toward the hub centre. ---
-function pcb_center(ang, R) = [R * cos(ang), R * sin(ang)];
+// --- PCB pocket helpers (Cartesian): board of footprint L x W centred at `pos`, turned by `rot`.
+//     No standoffs — the boards are velcro'd to the flat pocket floor. ---
 
-// open-top pocket cut (clear = component height above the board, standoff = post height under it)
-module pcb_pocket_cut(ang, R, Lt, Wr, clear, standoff) {
-    translate([pcb_center(ang,R)[0], pcb_center(ang,R)[1], base_h - (clear + standoff)])
-        rotate([0, 0, ang + 90])
-            translate([-Lt/2 - 2, -Wr/2 - 2, 0])
-                cube([Lt + 4, Wr + 4, clear + standoff + eps]);
+// open-top locating pocket; `depth` = velcro + PCB + tallest component, measured down from the base top
+module pcb_pocket_cut(pos, L, W, rot, depth) {
+    l = L + 2 * pocket_clear;
+    w = W + 2 * pocket_clear;
+    translate([pos[0], pos[1], base_h - depth])
+        rotate([0, 0, rot])
+            translate([-l/2, -w/2, 0])
+                cube([l, w, depth + eps]);
 }
-// four corner standoffs under the board
-module pcb_standoffs(ang, R, Lt, Wr, clear, standoff) {
-    for (s = [[1,1],[1,-1],[-1,1],[-1,-1]])
-        translate([pcb_center(ang,R)[0], pcb_center(ang,R)[1], base_h - clear - standoff])
-            rotate([0, 0, ang + 90])
-                translate([s[0]*(Lt/2 - 5), s[1]*(Wr/2 - 5), 0]) screw_boss();
-}
-// solid board mock (fit check only), PCB bottom at zbot
-module pcb_mock(ang, R, Lt, Wr, zbot, t, col) {
-    color(col) translate([pcb_center(ang,R)[0], pcb_center(ang,R)[1], zbot])
-        rotate([0, 0, ang + 90]) translate([-Lt/2, -Wr/2, 0]) cube([Lt, Wr, t]);
+// solid board mock (fit check only), PCB bottom sitting on the velcro at the pocket floor
+module pcb_mock(pos, L, W, rot, zbot, t, col) {
+    color(col) translate([pos[0], pos[1], zbot])
+        rotate([0, 0, rot]) translate([-L/2, -W/2, 0]) cube([L, W, t]);
 }
 
 // =====================================================================
-//  Flange mount cuts (8x M6 on Ø62 + Ø34 electric opening + Ø16 cable bore)
+//  (0) FLANGE PLATE — bolts to the robot (8x M6); the base bolts onto it (4x M3)
 // =====================================================================
-module flange_mount_cuts() {
-    for (i = [0 : flange_bolt_n - 1])
-        rotate([0, 0, flange_first_angle + i * 360 / flange_bolt_n])
-            translate([flange_pcd / 2, 0, 0]) {
-                // M6 clearance through the mounting wall (flange face -> under the head)
-                translate([0, 0, -eps]) cylinder(h = base_h + 2 * eps, d = flange_bolt_clear);
-                // steel-washer seat on the wall top: spreads bolt torque so the printed wall can't crush
-                translate([0, 0, flange_mount_t]) cylinder(h = flange_washer_t + eps, d = flange_washer_d);
-                // head-access well cut DOWN from the TOP: drop the M6 screw in and drive from the top (hex key or screwdriver)
-                translate([0, 0, flange_mount_t + flange_washer_t]) cylinder(h = base_h - flange_mount_t - flange_washer_t + eps, d = flange_cbore_d);
-            }
-    translate([0, 0, -eps]) cylinder(h = flange_center_h, d = flange_center_d);  // Ø34 electric opening (recess)
-    translate([0, 0, -eps]) cylinder(h = base_h + 2 * eps, d = cable_bore_d);    // Ø16 central cable bore
+module flange_plate() {
+    difference() {
+        cylinder(h = plate_t, d = plate_d);
+        // 8x M6 down into the robot flange. Head + washer are BURIED, so the plate top stays flat for
+        // the base to sit on: wall 0..8, washer seat 8..10, head 10..16 (flush with the top face).
+        for (i = [0 : flange_bolt_n - 1])
+            rotate([0, 0, flange_first_angle + i * 360 / flange_bolt_n])
+                translate([flange_pcd / 2, 0, 0]) {
+                    translate([0, 0, -eps]) cylinder(h = plate_t + 2*eps, d = flange_bolt_clear);
+                    translate([0, 0, flange_mount_t]) cylinder(h = flange_washer_t + eps, d = flange_washer_d);
+                    translate([0, 0, flange_mount_t + flange_washer_t])
+                        cylinder(h = flange_head_h + eps, d = flange_cbore_d);
+                }
+        translate([0, 0, -eps]) cylinder(h = flange_center_h, d = flange_center_d);  // connector recess (bottom face)
+        translate([0, 0, -eps]) cylinder(h = plate_t + 2*eps, d = cable_bore_d);     // Ø30 cable bore
+        // M3 heat-set inserts in the TOP face: the base screws down into these
+        for (i = [0 : plate_screw_n - 1])
+            rotate([0, 0, plate_screw_a0 + i * 360 / plate_screw_n])
+                translate([plate_screw_bcd/2, 0, plate_t - plate_screw_depth])
+                    cylinder(h = plate_screw_depth + eps, d = m3_insert);
+    }
 }
 
 // =====================================================================
-//  (1) BASE HUB
+//  (1) BASE HUB — sits on the plate; carries the five velcro'd boards
 // =====================================================================
 module base() {
-    board_xy   = pcb_center(board_angle,   board_radius);
-    conv_xy    = pcb_center(conv_angle,    conv_radius);
-    opto_xy    = pcb_center(opto_angle,    opto_radius);
-    shifter_xy = pcb_center(shifter_angle, shifter_radius);
-    haptic_xy  = pcb_center(haptic_angle,  haptic_radius);
-    zc         = base_h - 8;   // wiring-channel height: within every pocket's depth, pierces the dividers
+    zc = base_h - 8;   // wiring-channel height: above every pocket floor, pierces the solid spokes
 
     difference() {
         cylinder(h = base_h, d = base_d);                             // solid puck (centre = hub)
-        flange_mount_cuts();
-        // FIVE board pockets (ring lives in the cover): three big boards at 0/90/180, two small
-        // breakouts in the 270 quadrant. Long side tangential, tucked toward the centre.
-        pcb_pocket_cut(board_angle,   board_radius,   board_l,      board_w,      board_clear_h, board_standoff);
-        pcb_pocket_cut(conv_angle,    conv_radius,    conv_l,       conv_w,       conv_clear_h,  2);
-        pcb_pocket_cut(opto_angle,    opto_radius,    opto_l,       opto_w,       opto_clear,    board_standoff);
-        pcb_pocket_cut(shifter_angle, shifter_radius, shifter_l,    shifter_w,    shifter_clear, board_standoff);
-        pcb_pocket_cut(haptic_angle,  haptic_radius,  haptic_drv_l, haptic_drv_w, haptic_clear,  board_standoff);
-        // --- wiring distribution (channels through the pocket dividers, at height zc) ---
-        //  24 V media-flange bundle -> converter; then 5 V fanned OUT from the converter to every
-        //  consumer; data fanned out from the Metro board; the centre riser feeds the ring + apple.
-        wire_channel([0,0],    conv_xy,    7, zc);                 // 24 V in  -> converter
-        wire_channel(conv_xy,  board_xy,   6, zc);                 // 5 V -> Metro
-        wire_channel(conv_xy,  opto_xy,    6, zc);                 // 5 V -> optocoupler
-        wire_channel(conv_xy,  shifter_xy, 5, zc);                 // 5 V -> Pixel Shifter
-        wire_channel(conv_xy,  haptic_xy,  5, zc);                 // 5 V -> DRV2605L
-        wire_channel(conv_xy,  [0,0],      6, zc);                 // 5 V up the centre riser -> ring + apple
-        wire_channel(board_xy, opto_xy,    5, zc);                 // data -> optocoupler
-        wire_channel(board_xy, shifter_xy, 5, zc);                 // data -> Pixel Shifter (ring DIN)
-        wire_channel(board_xy, haptic_xy,  5, zc);                 // I2C  -> DRV2605L
-        wire_channel(board_xy, [0,0],      5, zc);                 // data up the centre riser -> apple
-        // cover-fastening screw pilots (rim, in the ±45° gaps)
+        translate([0, 0, -eps]) cylinder(h = base_h + 2*eps, d = cable_bore_d);   // Ø30 central cable bore
+        // base -> plate screws: M3 clearance through the floor, head seated at plate_head_z, and an
+        // access well bored straight up to the base top so a hex key reaches the head from inside the
+        // open compartment. Two of the four land under a board pocket, which is why the base must be
+        // bolted to the plate BEFORE the boards are velcro'd down.
+        for (i = [0 : plate_screw_n - 1])
+            rotate([0, 0, plate_screw_a0 + i * 360 / plate_screw_n])
+                translate([plate_screw_bcd/2, 0, 0]) {
+                    translate([0, 0, -eps]) cylinder(h = plate_head_z + eps, d = m3_clear);
+                    translate([0, 0, plate_head_z]) cylinder(h = base_h - plate_head_z + eps, d = m3_cbore);
+                }
+        // FIVE board pockets — flat-floored locating recesses (velcro, no screws)
+        pcb_pocket_cut(board_pos,   board_l,      board_w,      board_rot,   board_clear_h);
+        pcb_pocket_cut(conv_pos,    conv_l,       conv_w,       conv_rot,    conv_clear_h);
+        pcb_pocket_cut(opto_pos,    opto_l,       opto_w,       opto_rot,    opto_clear);
+        pcb_pocket_cut(shifter_pos, shifter_l,    shifter_w,    shifter_rot, shifter_clear);
+        pcb_pocket_cut(haptic_pos,  haptic_drv_l, haptic_drv_w, haptic_rot,  haptic_clear);
+        // --- wiring distribution ---
+        // Radial ports out of the central hub: the flange bundle can be fanned out in ANY direction
+        // instead of only along the point-to-point channels.
+        for (i = [0 : hub_port_n - 1])
+            rotate([0, 0, i * 360 / hub_port_n])
+                translate([0, 0, zc]) rotate([0, 90, 0])
+                    cylinder(h = base_d/2, d = hub_port_d);
+        // Point-to-point channels through the solid spokes between pockets, at height zc.
+        wire_channel([0,0],      conv_pos,    7, zc);   // 24 V in  -> converter
+        wire_channel(conv_pos,   board_pos,   6, zc);   // 5 V -> Metro
+        wire_channel(conv_pos,   opto_pos,    6, zc);   // 5 V -> optocoupler
+        wire_channel(conv_pos,   shifter_pos, 5, zc);   // 5 V -> level shifter
+        wire_channel(conv_pos,   haptic_pos,  5, zc);   // 5 V -> DRV2605L
+        wire_channel(conv_pos,   [0,0],       6, zc);   // 5 V up the centre riser -> ring + apple
+        wire_channel(board_pos,  opto_pos,    5, zc);   // data -> optocoupler
+        wire_channel(board_pos,  shifter_pos, 5, zc);   // data -> level shifter (ring DIN)
+        wire_channel(board_pos,  haptic_pos,  5, zc);   // I2C  -> DRV2605L
+        wire_channel(board_pos,  [0,0],       5, zc);   // data up the centre riser -> apple
+        // cover-fastening screw pilots (heat-set inserts, in the four solid spokes at 0/90/180/270)
         for (i = [0 : cover_screw_n - 1])
             translate([cover_screw_pos(i)[0], cover_screw_pos(i)[1], base_h - cover_screw_depth])
                 cylinder(h = cover_screw_depth + eps, d = cover_screw_pilot);
     }
-    // PCB standoffs added AFTER the pocket cut so they survive as islands on the pocket floor (each takes
-    // an M3 heat-set insert). Only the SCREWED boards get posts — the Metro + optocoupler; the potted
-    // converter and the two tiny breakouts sit in their pockets (tape / headers), no posts. Placeholder
-    // XY: set to each board's real footprint (fit-note 3).
-    pcb_standoffs(board_angle, board_radius, board_l, board_w, board_clear_h, board_standoff);
-    pcb_standoffs(opto_angle,  opto_radius,  opto_l,  opto_w,  opto_clear,    board_standoff);
 }
 
 // =====================================================================
@@ -354,8 +402,8 @@ module base_cover() {
             translate([0, 0, cover_t - eps])                              // apple-core joint boss (sits inside the ring)
                 cylinder(h = sj_flange_t, d = sj_flange_d);
         }
-        translate([0, 0, -eps])                                           // central cable bore (wiring up to the apple)
-            cylinder(h = face_top + 2*eps, d = cable_bore_d);
+        translate([0, 0, -eps])                                           // central bore (wiring up to the apple)
+            cylinder(h = face_top + 2*eps, d = apple_bore_d);
         joint_lower_cuts(face_top, sj_screw_n, sj_screw_bcd, sj_screw_a0, sj_register_d);  // pilots + recess for the apple core base
         // NeoPixel ring groove: annular pocket cut DOWN from the TOP face — the ring drops in from
         // above, LEDs up; the clear casing box covers it. The cover is opaque (no diffuser skin).
@@ -494,12 +542,12 @@ module electronics_mock() {
     // NeoPixel ring — seated in the groove on the cover TOP (LEDs up)
     color("green") translate([0, 0, cover_top_z - ring_groove_h + ring_pcb_t])
         difference() { cylinder(h = ring_pcb_t, r = ring_od/2); cylinder(h = ring_pcb_t+eps, r = ring_id/2); }
-    // five boards tucked in the base (long side tangential)
-    pcb_mock(board_angle,   board_radius,   board_l,      board_w,      base_h - board_clear_h, 1.6,              "steelblue");
-    pcb_mock(conv_angle,    conv_radius,    conv_l,       conv_w,       base_h - conv_clear_h,  conv_clear_h*0.6, "dimgray");
-    pcb_mock(opto_angle,    opto_radius,    opto_l,       opto_w,       base_h - opto_clear,    1.6,              "seagreen");
-    pcb_mock(shifter_angle, shifter_radius, shifter_l,    shifter_w,    base_h - shifter_clear, shifter_h,        "darkorange");
-    pcb_mock(haptic_angle,  haptic_radius,  haptic_drv_l, haptic_drv_w, base_h - haptic_clear,  haptic_drv_h,     "purple");
+    // five boards velcro'd into their pockets (PCB bottom sits on the velcro pad)
+    pcb_mock(board_pos,   board_l,      board_w,      board_rot,   base_h - board_clear_h + velcro_t, 1.6,              "steelblue");
+    pcb_mock(conv_pos,    conv_l,       conv_w,       conv_rot,    base_h - conv_clear_h  + velcro_t, conv_clear_h*0.6, "dimgray");
+    pcb_mock(opto_pos,    opto_l,       opto_w,       opto_rot,    base_h - opto_clear    + velcro_t, 1.6,              "seagreen");
+    pcb_mock(shifter_pos, shifter_l,    shifter_w,    shifter_rot, base_h - shifter_clear + velcro_t, shifter_h,        "darkorange");
+    pcb_mock(haptic_pos,  haptic_drv_l, haptic_drv_w, haptic_rot,  base_h - haptic_clear  + velcro_t, haptic_drv_h,     "purple");
 }
 
 // Clear casing BOX (built by hand from acrylic sheet) — 5 sides, OPEN on the arm-flange side (bottom).
@@ -529,6 +577,7 @@ module casing() {
 //  Assembly preview
 // =====================================================================
 module assembly() {
+    color("dimgray")  translate([0, 0, -plate_t]) flange_plate();   // adapter plate: robot <-> base
     color("silver")   base();
     %electronics_mock();
     color("gainsboro", 0.7) translate([0, 0, cover_z]) base_cover();
@@ -542,11 +591,12 @@ module assembly() {
         }
     }
     if (case_preview) translate([0, 0, cover_top_z]) casing();      // clear casing box (preview)
-    %translate([0, 0, -1]) cylinder(h = 1, d = base_d + 6);         // robot flange face marker
+    %translate([0, 0, -plate_t - 1]) cylinder(h = 1, d = plate_d + 6);  // robot flange face marker
 }
 
 // ---- render the selected part ----
-if      (part == "base")             base();
+if      (part == "flange_plate")     flange_plate();
+else if (part == "base")             base();
 else if (part == "cover")            base_cover();
 else if (part == "apple_core_base")  apple_core_base();
 else if (part == "adj_shaft")        adj_shaft();

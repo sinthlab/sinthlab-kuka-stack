@@ -75,7 +75,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Uniform Medium (Apple Pluck)",
         "Very Soft Z",
         "Flat table (free X/Y, stiff Z)",
-        "Vertical rail (stiff X/Y, free Z)",
+        "Rail guide (uniform 1000)",
         "Stiff (firm walls)"
     };
     private double[][] stiffness_vals_ = {
@@ -83,7 +83,13 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         {  100.0,  100.0,  100.0, 300.0, 300.0, 300.0 }, // apple pluck: uniform medium (preferred)
         {  800.0,  800.0,   10.0, 200.0, 200.0, 200.0 }, // apple pluck: extra-soft Z
         {   80.0,   80.0, 4000.0, 300.0, 300.0, 300.0 }, // plane fixture: free X/Y, hard Z wall
-        { 4000.0, 4000.0,   80.0, 300.0, 300.0, 300.0 }, // rail fixture: free Z, walls in X/Y
+        // Virtual-fixture experiments (restricted plane / maze / sinusoid rail). Deliberately UNIFORM,
+        // not "soft on the pull axis": those fixtures free their pull axis by streaming an equilibrium
+        // that tracks the measured pose on it (zero spring error -> zero force), so the cabinet needs no
+        // help. A soft axis here would be redundant AND harmful -- it is what lets an uncompensated tool
+        // load sag the arm (at 80 N/m, 10 N of payload = 125 mm of droop). 1000 N/m holds the tool to
+        // ~10 mm while keeping the fixture walls fightable: 3 cm off-rail = 30 N.
+        { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // fixture experiments: uniform guide
         { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }  // firm everywhere
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };

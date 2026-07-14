@@ -81,6 +81,19 @@ protected:
   void writeJointCmds(ctrl::VectorND &target_joint_positions);
 
   /**
+   * @brief Read back the joint position commands the hardware currently holds.
+   *
+   * These are the last setpoints written -- by this controller, or by whichever controller ran
+   * before it. On a compliant robot this is the only honest reading of the *equilibrium*: the
+   * measured joint positions are the equilibrium plus the impedance deflection, so a controller
+   * that anchors on them adopts that deflection (payload sag, contact force) as its new setpoint.
+   *
+   * @return false if any command is unavailable or non-finite (e.g. nothing has commanded the arm
+   *         yet), in which case @p joint_position_commands is left incomplete and must not be used.
+   */
+  bool readJointCmds(ctrl::VectorND &joint_position_commands);
+
+  /**
    * @brief Compute one control step using forward dynamics simulation
    *
    * Check \ref ForwardDynamicsSolver for details.
