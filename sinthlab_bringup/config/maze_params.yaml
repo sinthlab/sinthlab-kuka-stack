@@ -23,14 +23,15 @@
 
     move_to_start:
       update_rate: 200
-      # MAZE ENTRANCE. Tool points along +X (horizontal, out from the base) — NOT down like every other
-      # experiment. Solved by IK: EE = (0.540, 0.000, 0.500) m, tool axis = (+1, 0, 0) exactly. The arm
-      # is planar (A1=A3=A5=A7=0) so the start posture is deterministic and faces straight forward.
-      # This start also ANCHORS the fixture: z = 0.500 becomes the locked maze plane and this
-      # orientation is held for the whole trial.
-      # >>> SYNC: copy this array into config/clik_nullspace_maze.yaml, or the CLIK will hold the right
-      #     tool pose in the wrong arm posture.
-      target_joint_position: [0.0, 12.6, 0.0, -112.6, 0.0, -35.2, 0.0]
+      # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
+      # this joint array is the one knob that positions the whole maze — change it and the maze follows.
+      # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X (tilted up ~10°). This anchors the fixture: its z (0.9)
+      # becomes the locked maze plane and this orientation is held for the whole trial.
+      # >>> SYNC: keep this array identical to nullspace_desired_configuration in
+      #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
+      #     posture and fights you. (This start was verified: the whole maze footprint is reachable
+      #     while holding this orientation at z=0.9.)
+      target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
       joint_move_tolerance: 0.01
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] (clik completion)
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
@@ -40,7 +41,7 @@
       debug_log_rate_hz: 2.0
     move_to_start_recover:
       update_rate: 200
-      target_joint_position: [0.0, 12.6, 0.0, -112.6, 0.0, -35.2, 0.0]  # same as move_to_start
+      target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]  # same as move_to_start
       joint_move_tolerance: 0.15
       cartesian_move_tolerance: 0.05
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
@@ -63,19 +64,21 @@
       frequency_hz: 800
       duration_ms: 800
 
-    # Checkpoints (any order, reward once each) + goal. 3D spheres in base frame; z = the maze plane.
-    # CP1 = the first corner (main corridor -> up leg); CP2 = the second corner (up leg -> return leg).
+    # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
+    # are OFFSETS (metres) from the start EE, captured on the first tick, EXACTLY matching the relative
+    # maze corridors above (keep both relative). CP1 = C1↔C3 junction; CP2 = top of the final leg (C4).
     checkpoint_monitor:
       update_rate: 100
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      checkpoint_x: [0.68, 0.68]
-      checkpoint_y: [0.00, 0.15]
-      checkpoint_z: [0.50, 0.50]
+      relative_to_start: true
+      checkpoint_x: [0.000, 0.065]   # X offset from start
+      checkpoint_y: [0.100, 0.200]   # Y offset from start
+      checkpoint_z: [0.000, 0.000]   # on the maze plane (0 = same z as start)
       checkpoint_radius: [0.03, 0.03]
-      goal_x: 0.55          # far end of the return leg
-      goal_y: 0.15
-      goal_z: 0.50
+      goal_x: 0.065        # offset from start — far end of the final leg (C4)
+      goal_y: 0.230
+      goal_z: 0.000
       goal_radius: 0.03
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
@@ -90,40 +93,44 @@
 
     # ================================ MAZE GEOMETRY (X-Y plane) ================================
     # Corridors are axis-aligned rectangles in the two in-plane axes (a, b). restricted_axis "z" means
-    # the plane is X-Y, so a = X, b = Y, and z is locked to the start height (0.500 m). The arm is FREE
-    # inside any corridor and clamped to the nearest corridor edge outside them all — the cabinet's
-    # Cartesian stiffness turns "outside a corridor" into a wall. Tessellate any maze into rectangles.
+    # the plane is X-Y, so a = X, b = Y, and z is locked to the start height. The arm is FREE inside any
+    # corridor and clamped to the nearest corridor edge outside them all — the cabinet's Cartesian
+    # stiffness turns "outside a corridor" into a wall.
     #
-    # CORRIDORS ARE 14 cm WIDE (not 8). The first cut used 8 cm (+-4 cm) corridors; the operator's hand
-    # jitter exceeds 4 cm, so they were pinned against the lateral walls the whole time and every move
-    # fought the ~1000 N/m spring — "free along the corridor, stiff across it". +-7 cm gives real room.
-    # (Kinematics is NOT the cause: at these postures X is the arm's stiffest translational direction and
-    # Y the easiest, i.e. the opposite of the reported feel — so the resistance was the walls, not the arm.)
+    # corridor_frame: "relative" -> the numbers below are OFFSETS (metres) from the START EE. The maze
+    # origin is therefore wherever the arm starts: change move_to_start and the maze moves with it, no
+    # re-tuning. (checkpoint_monitor.relative_to_start does the same for the rewards/goal — keep both
+    # relative or both absolute.) START is (0,0) by construction, so it is always inside C1.
     #
-    #   Y +0.22  ┌──────────────────────────────┐         <- C4 return leg  (GOAL at its far end)
-    #            │ ★GOAL                  ┌─────┤
-    #   Y +0.08  └────────────────────────┤     │
-    #                                     │ C3  │          <- C3 up leg
-    #   Y +0.07  ┌────────────────────────┤ ②   │
-    #            │ ▶START        C1        └─────┤
-    #   Y -0.07  └────────┬─────────┬────────────┘         <- C1 entrance / main corridor
-    #                     │         │
-    #                     │   C2    │                      <- C2 DEAD END (the wrong turn)
-    #   Y -0.22          └─────────┘
-    #            0.52   0.56      0.68 0.74   <- X
+    # Laid out for the current start (EE ≈ (0.500, 0.000, 0.900), tool ≈ +X). At z=0.9 the reachable
+    # box relative to start is Xrel[-0.16,+0.12], Yrel[±0.24] — LESS forward reach than at z=0.5 — so
+    # the long runs go in +Y (roomy, and Y is an easy direction; X is the arm's stiffest here). 14 cm
+    # corridors (±7 cm) so hand jitter doesn't pin you on the walls.
     #
-    # Path: START (0.54, 0.00) -> +X along C1 -> ①(0.68, 0.00) -> +Y up C3 -> ②(0.68, 0.15)
-    #       -> -X back along C4 -> ★GOAL (0.55, 0.15).   C2 is a dead end branching off C1.
+    #  Yrel +0.23  ┌─────┐  ★GOAL
+    #              │ C4  │                 (final up-leg, on the right)
+    #  Yrel +0.14  ┌─────┼─────┐  ② at top of C4
+    #              │ C3  │     │           (C3 = turn +X to reach C4)
+    #  Yrel +0.07  │  ┌──┴─────┘
+    #     ┌────────┴──┤ ① CP1  (C1↔C3 junction)
+    #  C2 │  dead-end │ C1                 (C2 = wrong turn, branches −X off C1)
+    #     └────────┬──┤
+    #  Yrel -0.03     │ ▶START (0,0)
+    #             -0.16 -0.07 0 0.10  <- Xrel
+    #
+    # Path: ▶START(0,0) —+Y→ ①CP1(0.00, 0.10) —+X→ (0.065, 0.10) —+Y→ ②CP2(0.065, 0.20) → ★GOAL(0.065, 0.23).
+    # C2 branches −X off C1 and dead-ends.
     # Verified vs the URDF: start inside C1, all four regions connected, all 16 corners reachable while
-    # holding the tool along +X, everything inside the reachable box X[0.50,0.75] Y[+-0.25] at z=0.50.
+    # holding the start orientation, everything inside the reachable box at z=0.9.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
       max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
       maze:
         type: "maze"
-        restricted_axis: "z"    # plane = X-Y; z locked to the start pose (0.500 m)
-        #                C1     C2     C3     C4
-        corridor_a_min: [0.52,  0.56,  0.60,  0.52]   # X min of each corridor
-        corridor_a_max: [0.74,  0.68,  0.74,  0.74]   # X max
-        corridor_b_min: [-0.07, -0.22, -0.07,  0.08]  # Y min
-        corridor_b_max: [ 0.07, -0.05,  0.22,  0.22]  # Y max
+        restricted_axis: "z"        # plane = X-Y; z locked to the start height
+        corridor_frame: "relative"  # corridor coords are OFFSETS from the start EE (see above)
+        #                C1      C2      C3      C4
+        corridor_a_min: [-0.07, -0.16, -0.07,  0.03]   # X offset min
+        corridor_a_max: [ 0.07, -0.05,  0.10,  0.10]   # X offset max
+        corridor_b_min: [-0.03,  0.01,  0.07,  0.07]   # Y offset min
+        corridor_b_max: [ 0.14,  0.11,  0.14,  0.24]   # Y offset max

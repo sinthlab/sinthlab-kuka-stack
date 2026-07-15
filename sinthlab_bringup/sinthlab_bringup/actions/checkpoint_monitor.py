@@ -50,6 +50,15 @@ class CheckpointMonitor:
         ])
         self._goal_radius = float(get_required_param(node, self._param_prefix + "goal_radius"))
 
+        # RELATIVE (default): checkpoint_*/goal_* are OFFSETS from the start EE, captured on the first
+        # tick, so they track move_to_start exactly like the relative maze corridors do. Keep this in
+        # sync with the fixture's corridor_frame -- if the corridors move with the start but the
+        # checkpoints don't, the rewards/goal land in the wrong place. ABSOLUTE: raw base-frame coords.
+        self._relative = True
+        if node.has_parameter(self._param_prefix + "relative_to_start"):
+            self._relative = bool(get_required_param(node, self._param_prefix + "relative_to_start"))
+        self._origin: Optional[np.ndarray] = None  # start EE, captured on first tick when relative
+
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
 
@@ -71,6 +80,7 @@ class CheckpointMonitor:
             return
         self._visited = set()
         self._completed = False
+        self._origin = None  # re-capture the start EE for this trial (relative mode)
         self._ready = True
         self._node.get_logger().info("CheckpointMonitor activated for new trial.")
 
@@ -97,11 +107,21 @@ class CheckpointMonitor:
                 self._node.get_logger().warn("TF lookup failed; waiting for transform")
             return
 
+        # Anchor the checkpoint/goal offsets at the start EE on the first tick of the trial (relative
+        # mode). The monitor starts right after move_to_start + the quiet window, so the arm is still
+        # at the start pose here -- this IS the maze origin.
+        if self._relative and self._origin is None:
+            self._origin = p.copy()
+            self._node.get_logger().info(
+                f"Checkpoints anchored at start EE {np.round(self._origin, 3)} (relative)."
+            )
+        off = self._origin if (self._relative and self._origin is not None) else np.zeros(3)
+
         # Checkpoints — any order, reward once each on first entry.
         for i, (c, r) in enumerate(self._checkpoints):
             if i in self._visited:
                 continue
-            if float(np.linalg.norm(p - c)) <= r:
+            if float(np.linalg.norm(p - (c + off))) <= r:
                 self._visited.add(i)
                 self._node.get_logger().info(
                     f"Checkpoint {i} reached ({len(self._visited)}/{len(self._checkpoints)})."
@@ -110,7 +130,7 @@ class CheckpointMonitor:
                     self._on_reward(i)
 
         # Goal — ends the trial.
-        if float(np.linalg.norm(p - self._goal)) <= self._goal_radius:
+        if float(np.linalg.norm(p - (self._goal + off))) <= self._goal_radius:
             self._completed = True
             self._ready = False
             self._node.get_logger().info("GOAL reached — maze complete.")
@@ -123,5 +143,5 @@ class CheckpointMonitor:
         if self._debug_log_enabled and self._dbg.tick(self._dt):
             self._node.get_logger().info(
                 f"EE {np.round(p, 3)} | visited {len(self._visited)}/{len(self._checkpoints)} | "
-                f"goal dist {float(np.linalg.norm(p - self._goal)):.3f} m"
+                f"goal dist {float(np.linalg.norm(p - (self._goal + off))):.3f} m"
             )

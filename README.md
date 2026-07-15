@@ -346,32 +346,37 @@ outside them all, so the cabinet's Cartesian stiffness turns "outside a corridor
 checkpoint plays a reward cue (**any order, once each**); reaching the goal — or timing out — stops the
 fixtures, waits for the operator to let go, and resets to the start.
 
-**The maze is the only scenario whose tool points along +X** (horizontal, out from the base) instead of
-straight down. That is what lets the apple face the subject while the arm is dragged around a horizontal
-plane.
+**The maze tool points roughly +X** (horizontal, out from the base) instead of straight down — that lets
+the apple face the subject while the arm is dragged around a horizontal plane. **The maze is defined
+RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`), so its origin is
+wherever the arm starts: change `move_to_start` and the whole maze — corridors, checkpoints, goal — moves
+with it. No absolute coordinates to re-tune.
 
 #### What you should expect to see
 
-```
- Y (m)
- +0.22  ┌──────────────────────────────────────┐
-        │ ★ GOAL          C4  return leg     ② │   ② checkpoint 2  (0.68, +0.15)
- +0.08  └────────────────────────────┐         │
-                                     │   C3    │
- +0.07  ┌────────────────────────────┤ up leg  │
-        │ ▶ START     C1  entrance   │       ① │   ① checkpoint 1  (0.68,  0.00)
- -0.07  └────────┬──────────┬────────┴─────────┘
-                 │   C2     │
-                 │ DEAD END │                      C2 branches off C1 and goes nowhere
- -0.22           └──────────┘
-        0.52    0.56       0.68     0.74   ──► X (m)
+Coordinates are **offsets from the start EE** (▶START = 0,0). Corridors are 14 cm wide (±7 cm); the long
+runs go in +Y because at this height that's the roomier, easier-to-move direction.
 
-   corridors are 14 cm wide (±7 cm)   plane: z = 0.500 m (locked)   tool axis: +X (held)
-   path:  ▶START(0.54, 0.00) ─+X→ ①(0.68, 0.00) ─+Y→ ②(0.68, 0.15) ─−X→ ★GOAL(0.55, 0.15)
+```
+ Y offset (m)
+ +0.24  ┌──────┐  ★ GOAL          ★ GOAL   (0.065, +0.230)
+        │  C4  │                   ② CP2   (0.065, +0.200)  top of C4
+ +0.14  ┌──────┼──────┐
+        │  C3  │      │            C3 = turn +X onto the final leg
+ +0.07  │   ┌──┴──────┘
+   ┌────┴───┤ ① CP1  (0.000, +0.100)   C1↔C3 junction
+   │  C2    │ C1
+   │dead-end│                       C2 = the wrong turn (branches −X off C1)
+   └────┬───┤
+        │▶START (0,0)
+  -0.16 -0.07  0  +0.10   ──► X offset (m)
+
+   plane: z = start height (locked)     tool axis: start orientation (held)
+   path:  ▶START(0,0) ─+Y→ ①CP1(0.00,0.10) ─+X→ (0.065,0.10) ─+Y→ ②CP2(0.065,0.20) → ★GOAL(0.065,0.23)
 ```
 
 The arm starts at ▶, free to slide anywhere **inside** the corridors and firmly walled at their edges.
-The straight-ahead route through `C1` leads to the goal; `C2` is a **dead end** — the wrong turn.
+The route up `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the wrong turn.
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application:
@@ -387,24 +392,28 @@ The straight-ahead route through `C1` leads to the goal; `C2` is a **dead end** 
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
    ```
-3. The arm moves to ▶START with the tool horizontal, waits a quiet window, plays the go cue, and the
-   corridors go live. Drive it to the goal (or let the 60 s timeout expire).
+3. The arm moves to ▶START, waits a quiet window, plays the go cue, and the corridors go live. Drive it
+   to the goal (or let the 60 s timeout expire).
 
-> **The geometry is IK-solved, not guessed.** Holding the tool along +X costs reach: the arm can only
-> work in **X ∈ [0.50, 0.75], Y ∈ [±0.25]** at z = 0.50 (below X ≈ 0.50 the wrist folds back and the pose
-> becomes unreachable). Every corridor corner was checked to be reachable *while holding that
-> orientation* — the fixture locks orientation, so a corner the arm can only reach by twisting the tool
-> is unusable. **Re-run that check if you move the maze.**
+> **Moving the maze = changing `move_to_start`.** Because everything is start-relative, the joint start
+> pose is the one knob that positions the maze. Two things must move with it, and they do automatically —
+> but you still have to respect **reach**: holding one orientation, the arm can only cover a limited XY
+> box (for the shipped start ≈ (0.50, 0.00, 0.90), that box is roughly **Xrel[−0.16, +0.12], Yrel[±0.24]**).
+> The shipped maze fits inside it with every corner verified reachable. If you pick a very different start,
+> re-check that the maze footprint still fits — a corner the arm can only reach by twisting the (locked)
+> tool is unusable.
 >
-> **Editing the maze:** corridors are axis-aligned rectangles in `maze_params.yaml`
-> (`corridor_a_min/a_max/b_min/b_max`, where `a = X` and `b = Y`). Tessellate any maze into rectangles;
-> they must overlap to be connected. The start must lie *inside* a corridor, and the checkpoint/goal `z`
-> must equal the plane height.
+> **Two syncs to keep (both are pre-set):**
+> - `config/clik_nullspace_maze.yaml` `nullspace_desired_configuration` **must equal**
+>   `move_to_start.target_joint_position`. The CLIK matches only the EE *pose* and biases the arm's 7th DOF
+>   toward that posture; a mismatch holds the right pose in the wrong arm shape and drifts while you drive.
+> - `checkpoint_monitor.relative_to_start` and the fixture's `corridor_frame` must **both** be relative (or
+>   both absolute), or the rewards land in the wrong place relative to the walls.
 >
-> **CLIK redundancy posture.** The maze uses its own `config/clik_nullspace_maze.yaml`, because the CLIK
-> matches only the EE *pose* and resolves the arm's 7th DOF toward that posture — sharing the tool-down
-> default would hold the right horizontal tool pose in a completely wrong arm shape. Keep it in sync with
-> `move_to_start.target_joint_position`.
+> **Editing the shape:** corridors are axis-aligned rectangles in `maze_params.yaml`
+> (`corridor_a_min/a_max/b_min/b_max`; with `restricted_axis: z`, `a = X` and `b = Y`, as **offsets from
+> start**). They must overlap to be connected; START (0,0) must fall inside one; checkpoint/goal `z`-offset
+> is 0 (on the plane).
 
 ---
 
