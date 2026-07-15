@@ -6,6 +6,7 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
+from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
@@ -57,6 +58,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
         )
         self.restricted_plane = MoveRestrictedOnAPlaneAction(self, param_prefix="")
+        self.safety = SafetyStopMonitor(self, param_prefix="plane_safety", on_trip=self.on_safety_trip)
         self.switch_to_joint = SwitchControllerAction(
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint",
@@ -86,17 +88,27 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.audio_cue.start()
 
     def on_audio_complete(self):
-        self.get_logger().info("Audio cue played. Virtual fixtures and displacement monitor activated.")
+        self.get_logger().info("Audio cue played. Virtual fixtures + displacement monitor + safety active.")
         self.restricted_plane.start()
         self.monitor.start()
+        self.safety.start()
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
         self.restricted_plane.stop()
         self.audio_cue_snap.start()
 
+    def on_safety_trip(self, reason: str):
+        # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to recovery.
+        self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+        self.safety.stop()
+        self.monitor.stop()
+        self.restricted_plane.stop()
+        self.switch_to_joint.start()
+
     def on_monitor_complete(self):
         self.get_logger().info("User released tension. Switching to joint controller to recover.")
+        self.safety.stop()
         self.restricted_plane.stop()  # idempotent; ensure the fixture isn't still streaming
         self.switch_to_joint.start()
 

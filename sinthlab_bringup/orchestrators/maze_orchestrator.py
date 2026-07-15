@@ -7,6 +7,7 @@ from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPosition
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
+from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
@@ -55,6 +56,7 @@ class MazeOrchestratorNode(rclpyNode):
             self, param_prefix="checkpoint_monitor",
             on_complete=self.on_goal_reached, on_reward=self.on_checkpoint_reward,
         )
+        self.safety = SafetyStopMonitor(self, param_prefix="maze_safety", on_trip=self.on_safety_trip)
         self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self.goal_cue = AudioCue(self, param_prefix="audio_cue_goal", on_complete=lambda: None)
         self.timeout_cue = AudioCue(self, param_prefix="audio_cue_timeout", on_complete=lambda: None)
@@ -95,10 +97,11 @@ class MazeOrchestratorNode(rclpyNode):
         self.go_cue.start()
 
     def on_go_complete(self):
-        self.get_logger().info("Go! Maze fixtures + checkpoint monitor active; timeout armed.")
+        self.get_logger().info("Go! Maze fixtures + checkpoint monitor active; timeout + safety armed.")
         self.maze_fixtures.start()
         self.checkpoint_monitor.start()
         self.timeout.start()
+        self.safety.start()
 
     def on_checkpoint_reward(self, index):
         self.get_logger().info(f"Reward at checkpoint {index}.")
@@ -110,14 +113,25 @@ class MazeOrchestratorNode(rclpyNode):
     def on_timeout(self):
         self._end_trial("timeout")
 
+    def on_safety_trip(self, reason: str):
+        # Runaway (e.g. a gravity-driven fall): abort immediately, do NOT wait for the operator to let go.
+        self._end_trial("safety")
+
     def _end_trial(self, reason: str):
-        # Goal and timeout can race; only the first ends the trial.
+        # Goal, timeout and safety can race; only the first ends the trial.
         if self._trial_ending:
             return
         self._trial_ending = True
         self.timeout.stop()
         self.checkpoint_monitor.stop()
+        self.safety.stop()
         self.maze_fixtures.stop()
+        if reason == "safety":
+            # Do not play a cue or wait for release — drive straight back to the safe start posture, which
+            # (in the cabinet's impedance) sets the equilibrium at start and pulls the arm out of the fault.
+            self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+            self.switch_to_joint.start()
+            return
         if reason == "goal":
             self.get_logger().info("Maze solved! Playing goal cue; waiting for release before reset.")
             self.goal_cue.start()

@@ -85,6 +85,21 @@
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
 
+    # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
+    # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
+    # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
+    # The maze footprint is ≤ ~0.16 m from start, so 0.25 m clears it with margin; normal hand motion is
+    # under the CLIK's 0.4 m/s clamp, so 0.7 m/s catches a fall without false-tripping. This is a backstop,
+    # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
+    maze_safety:
+      update_rate: 100
+      base_frame: lbr_link_0
+      ee_frame: lbr_link_ee
+      max_displacement_m: 0.25
+      max_speed_mps: 0.7
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
     # Wait for the operator to let go (external force ~ 0) before recovering to start.
     force_release:
       update_rate: 100

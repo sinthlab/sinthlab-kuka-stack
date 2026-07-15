@@ -132,6 +132,11 @@ class CartesianImpedanceDisplacementMonitor:
         self._ready = True
         self._node.get_logger().info("Displacement monitor activated for new trial.")
 
+    def stop(self) -> None:
+        """Disarm the monitor (e.g. on an external safety abort) without firing its callbacks."""
+        self._ready = False
+        self._shutting_down = False
+
     def _step(self) -> None:
         if not self._ready:
             return

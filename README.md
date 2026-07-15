@@ -388,7 +388,7 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** (firmer walls: `Stiff (firm walls)`) |
+   | Cartesian stiffness (K diagonal) | **`Maze compliant (uniform 400)`** (softer) · `Rail guide (uniform 1000)`. **Do NOT use `Uniform Medium` (100) here** — see the gravity warning below. |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
 2. **Launch:**
@@ -397,6 +397,25 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
    ```
 3. The arm moves to ▶START, waits a quiet window, plays the go cue, and the corridors go live. Drive it
    to the goal (or let the 60 s timeout expire).
+
+> **⚠️ Gravity is load-bearing in the vertical maze — set the tool load data first.** Z (up/down) is a
+> FREE axis, so the arm's weight is held by **gravity compensation, not the spring**. With wrong/missing
+> tool `loadData`, the residual weight makes the arm **drift down — and free-fall at low stiffness** (fall
+> speed ≈ weight / (K × lag), so it runs away as K drops: it merely crept at 1000 and free-fell at 100).
+> **Run tool-load "Determine" with the real EE mounted (or set mass+COM) and re-sync before running the
+> vertical maze.** Until that's verified, **do not go below `Maze compliant` (400)**; `Uniform Medium`
+> (100) is unsafe here.
+>
+> **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
+> the EE leaves the start pose by > 0.25 m or exceeds 0.7 m/s, and **aborts the trial immediately** —
+> stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
+> velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
+> not remove the need for correct gravity compensation.
+>
+> **Tuning the compliance.** Softer cabinet stiffness = lighter free motion AND softer walls (the trade
+> with a uniform profile): **`Maze compliant` = 400** (recommended soft) · `Rail guide` = 1000 · `Stiff`
+> = 3000. If the resistance feels *speed-dependent* (stiffer the faster you push) rather than constant,
+> that's tracking lag from the CLIK `max_linear_velocity` clamp, not stiffness — raise it and it eases.
 
 > **Moving the maze = changing `move_to_start`.** Because everything is start-relative, the joint start
 > pose is the one knob that positions the maze. Everything moves with it automatically — but you still have
