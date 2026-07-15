@@ -354,21 +354,20 @@ plane.
 
 ```
  Y (m)
- +0.20  ┌──────────────────────────────────────┐
-        │ ★ GOAL             C4  return leg  ② │   ② checkpoint 2  (0.68, +0.16)
- +0.12  └──────────────────────────┐           │
-                                   │    C3     │
-                                   │  up leg   │
- +0.04  ┌──────────────────────────┤           │
-        │ ▶ START    C1  entrance  │         ① │   ① checkpoint 1  (0.68,  0.00)
- -0.04  └────────┬─────────┬───────┴───────────┘
-                 │   C2    │
-                 │ DEAD END│                       C2 branches off C1 and goes nowhere
- -0.20           └─────────┘
-        0.52    0.58     0.64  0.66        0.72   ──► X (m)
+ +0.22  ┌──────────────────────────────────────┐
+        │ ★ GOAL          C4  return leg     ② │   ② checkpoint 2  (0.68, +0.15)
+ +0.08  └────────────────────────────┐         │
+                                     │   C3    │
+ +0.07  ┌────────────────────────────┤ up leg  │
+        │ ▶ START     C1  entrance   │       ① │   ① checkpoint 1  (0.68,  0.00)
+ -0.07  └────────┬──────────┬────────┴─────────┘
+                 │   C2     │
+                 │ DEAD END │                      C2 branches off C1 and goes nowhere
+ -0.22           └──────────┘
+        0.52    0.56       0.68     0.74   ──► X (m)
 
-   plane: z = 0.500 m (locked)        tool axis: +X (held)
-   path:  ▶START(0.54, 0.00) ─+X→ ①(0.68, 0.00) ─+Y→ ②(0.68, 0.16) ─−X→ ★GOAL(0.55, 0.16)
+   corridors are 14 cm wide (±7 cm)   plane: z = 0.500 m (locked)   tool axis: +X (held)
+   path:  ▶START(0.54, 0.00) ─+X→ ①(0.68, 0.00) ─+Y→ ②(0.68, 0.15) ─−X→ ★GOAL(0.55, 0.15)
 ```
 
 The arm starts at ▶, free to slide anywhere **inside** the corridors and firmly walled at their edges.

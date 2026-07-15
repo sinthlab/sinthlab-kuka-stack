@@ -155,7 +155,7 @@ both share the Ø5.5/Ø10 head, so the counterbores fit either. The build here u
 | M3 cap-head screw | **M3 × 6** | 3 | Casing-box top → cover. **Short on purpose** — the cover pilot is only 5 mm deep in the 6 mm cover, so M3×10 would bottom out and never clamp. |
 | M3 brass heat-set insert | **Bambu M3×5×4** (M3, 5.0 mm OD, 4 mm long) | 14 | 4× **flange plate** + 4× base top (cover) + 3× cover boss + 3× cover top. Printed hole is **Ø4.6 (`m3_insert`)**; the 4 mm length seats in every pilot (shallowest = 5 mm cover-top). |
 | Height-set pin | **M3×25 screw + M3 nyloc nut** | 1 | Detent pin through the Ø3.4 boss/shaft holes (double shear). Nyloc so the arm's motion can't shake it loose; back the screw out to re-set the apple height. |
-| Steel washer, M6 | flat, OD ~12 (DIN 125) | 8 | **Under each M6 head** in the plate — spreads bolt torque so the printed 8 mm wall can't crush. Seats in the Ø13 recess (`flange_washer_*`). |
+| Steel washer, M6 | flat, OD ~12 (DIN 125) | 8 | **Under each M6 head** in the plate — spreads bolt torque so the printed 8 mm wall can't crush. Seats in the Ø14 recess (`flange_washer_*`). |
 | Washer, M3 | small | 3 | Under the casing-top screws — spread the clamp load on the clear sheet. |
 | **Hook-and-loop (velcro) pads** | ~2 mm thick | 5 boards | **Every board is stuck down, not screwed.** Pocket depths already allow for the pad (`velcro_t`). |
 
@@ -197,15 +197,15 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
   the robot.** Measure it **centre-to-centre** across two diametrically opposite holes. Do **not** set it
   from an outer-edge span: that span is `pcd + hole Ø`, and the plate's hole is deliberately *bigger* than
   the flange's tapped hole, so the two spans are not comparable. **Measuring the plate from the top gives
-  62 mm — that is the Ø11 cap-head counterbore, not the bolt hole**; it sits 10 mm above the mating face
+  ~63 mm — that is the Ø12.5 cap-head counterbore, not the bolt hole**; it sits 10 mm above the mating face
   and never touches the robot.
 
   | where you measure | feature | Ø | centre-to-centre | outer-edge span |
   |---|---|---|---|---|
   | the **robot flange** | tapped M6 hole | 6 | **51** | 57 |
   | plate, **mating face** (z=0) | M6 clearance hole | **7.0** | **51** | 58 |
-  | plate, washer recess (z=8) | washer seat | 13 | 51 | 64 |
-  | plate, **top face** (z=16) | M6 head well | 11 | 51 | **62** ← what you measured |
+  | plate, washer recess (z=8) | washer seat | 14 | 51 | 65 |
+  | plate, **top face** (z=16) | M6 head well | **12.5** | 51 | **63.5** ← what you measured |
 
   The clearance hole is **Ø7.0 (ISO 273 coarse)** on purpose: it absorbs the ±0.5 mm uncertainty in the
   measured pitch circle *and* the fact that FDM holes print 0.2–0.4 mm undersize (a Ø6.6 hole prints ~6.3

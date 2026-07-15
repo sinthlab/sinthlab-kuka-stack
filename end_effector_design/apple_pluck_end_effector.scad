@@ -46,9 +46,9 @@ part = "assembly"; // [assembly, flange_plate, base, cover, apple_core_base, adj
 
       on the ROBOT : pcd 51 + Ø6 tapped hole      -> outer-edge span 57  (what you measure on the arm)
       on the PLATE : pcd 51 + Ø7 clearance hole   -> outer-edge span 58  (0.5 mm of radial slop per side)
-      plate TOP    : pcd 51 + Ø11 head well       -> outer-edge span 62  <-- NOT the bolt hole. This is
+      plate TOP    : pcd 51 + Ø12.5 head well     -> outer-edge span 63.5 <-- NOT the bolt hole. This is
                      the counterbore the M6 cap head drops into, 10 mm above the mating face. Measuring
-                     the plate from the top hits THIS, which is why it reads 62.
+                     the plate from the top hits THIS, which is why it reads ~63.
 
     History: Ø62 pcd (span 68.6, measured ~70) did not bolt on; Ø50.4 came from wrongly subtracting the
     plate's Ø6.6 clearance instead of the flange's Ø6 thread. */
@@ -58,10 +58,15 @@ flange_bolt_clear  = 7.0;   // M6 clearance hole, ISO 273 COARSE fit [mm]. Coars
                             // the ±0.5 mm uncertainty in the measured pcd AND the fact that FDM holes
                             // print 0.2-0.4 mm undersize (a Ø6.6 hole prints ~6.3 and binds on an M6).
                             // The Ø12 steel washer under the head covers a Ø7 hole with room to spare.
-flange_cbore_d     = 11.0;  // head-access well Ø for an M6 cap/cheese head (head Ø10) [mm]
+flange_cbore_d     = 12.5;  // head-access well Ø for the M6 head [mm]. MEASURED head ~10; at Ø11 the well
+                            // printed ~10.6 (FDM shrinks holes 0.2-0.4) and the head jammed part-way.
+                            // Ø12.5 -> ~12.1 printed -> ~1 mm clearance/side, and clears a hex head's
+                            // ~11.5 mm across-corners too. If your head is bigger, raise this (keep it
+                            // below flange_washer_d so the washer still has a shoulder to seat on).
 flange_mount_t     = 8.0;   // mounting-wall thickness under the M6 head [mm] — the bolt spans THIS (+ the
                             // washer) then threads into the flange, so a short M6x16 reaches (~6.4 mm bite).
-flange_washer_d    = 13.0;  // washer-seat Ø under the head [mm] — clears a steel M6 flat washer (OD ~12)
+flange_washer_d    = 14.0;  // washer-seat Ø under the head [mm] — clears a steel M6 flat washer (OD ~12)
+                            // and stays > flange_cbore_d so its top edge is a shoulder that traps the washer
 flange_washer_t    = 2.0;   // washer-seat depth [mm] (M6 washer ~1.6 thick); spreads bolt torque on the wall
 flange_head_h      = 6.0;   // M6 cap-head height [mm] — buried in the plate so its top face stays flat
 flange_first_angle = 22.5;  // first-hole angle [deg] — VERIFY clocking vs the flange

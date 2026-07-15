@@ -70,11 +70,11 @@
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
       checkpoint_x: [0.68, 0.68]
-      checkpoint_y: [0.00, 0.16]
+      checkpoint_y: [0.00, 0.15]
       checkpoint_z: [0.50, 0.50]
       checkpoint_radius: [0.03, 0.03]
       goal_x: 0.55          # far end of the return leg
-      goal_y: 0.16
+      goal_y: 0.15
       goal_z: 0.50
       goal_radius: 0.03
       debug_log_enabled: false
@@ -94,20 +94,28 @@
     # inside any corridor and clamped to the nearest corridor edge outside them all — the cabinet's
     # Cartesian stiffness turns "outside a corridor" into a wall. Tessellate any maze into rectangles.
     #
-    #   Y +0.20  ┌──────────────────────────────┐          <- C4 return leg  (GOAL at its far end)
-    #            │ ★GOAL                    ┌───┤
-    #   Y +0.12  └──────────────────────────┤   │
-    #                                       │C3 │          <- C3 up leg
-    #   Y +0.04  ┌──────────────────────────┤ ②─┤
-    #            │ ▶START            C1      └───┘
-    #   Y -0.04  └──────┬────────┬──────────────┘          <- C1 entrance / main corridor
-    #                   │        │
-    #                   │   C2   │                         <- C2 DEAD END (the wrong turn)
-    #   Y -0.20        └────────┘
-    #            0.52  0.58    0.66  0.68   0.72   <- X
+    # CORRIDORS ARE 14 cm WIDE (not 8). The first cut used 8 cm (+-4 cm) corridors; the operator's hand
+    # jitter exceeds 4 cm, so they were pinned against the lateral walls the whole time and every move
+    # fought the ~1000 N/m spring — "free along the corridor, stiff across it". +-7 cm gives real room.
+    # (Kinematics is NOT the cause: at these postures X is the arm's stiffest translational direction and
+    # Y the easiest, i.e. the opposite of the reported feel — so the resistance was the walls, not the arm.)
     #
-    # Path: START (0.54, 0.00) -> +X along C1 -> ①(0.68, 0.00) -> +Y up C3 -> ②(0.68, 0.16)
-    #       -> -X back along C4 -> ★GOAL (0.55, 0.16).   C2 is a dead end branching off C1.
+    #   Y +0.22  ┌──────────────────────────────┐         <- C4 return leg  (GOAL at its far end)
+    #            │ ★GOAL                  ┌─────┤
+    #   Y +0.08  └────────────────────────┤     │
+    #                                     │ C3  │          <- C3 up leg
+    #   Y +0.07  ┌────────────────────────┤ ②   │
+    #            │ ▶START        C1        └─────┤
+    #   Y -0.07  └────────┬─────────┬────────────┘         <- C1 entrance / main corridor
+    #                     │         │
+    #                     │   C2    │                      <- C2 DEAD END (the wrong turn)
+    #   Y -0.22          └─────────┘
+    #            0.52   0.56      0.68 0.74   <- X
+    #
+    # Path: START (0.54, 0.00) -> +X along C1 -> ①(0.68, 0.00) -> +Y up C3 -> ②(0.68, 0.15)
+    #       -> -X back along C4 -> ★GOAL (0.55, 0.15).   C2 is a dead end branching off C1.
+    # Verified vs the URDF: start inside C1, all four regions connected, all 16 corners reachable while
+    # holding the tool along +X, everything inside the reachable box X[0.50,0.75] Y[+-0.25] at z=0.50.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
       max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
@@ -115,7 +123,7 @@
         type: "maze"
         restricted_axis: "z"    # plane = X-Y; z locked to the start pose (0.500 m)
         #                C1     C2     C3     C4
-        corridor_a_min: [0.52,  0.58,  0.64,  0.52]   # X min of each corridor
-        corridor_a_max: [0.72,  0.66,  0.72,  0.72]   # X max
-        corridor_b_min: [-0.04, -0.20, -0.04,  0.12]  # Y min
-        corridor_b_max: [ 0.04, -0.04,  0.20,  0.20]  # Y max
+        corridor_a_min: [0.52,  0.56,  0.60,  0.52]   # X min of each corridor
+        corridor_a_max: [0.74,  0.68,  0.74,  0.74]   # X max
+        corridor_b_min: [-0.07, -0.22, -0.07,  0.08]  # Y min
+        corridor_b_max: [ 0.07, -0.05,  0.22,  0.22]  # Y max
