@@ -25,8 +25,9 @@
       update_rate: 200
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
       # this joint array is the one knob that positions the whole maze — change it and the maze follows.
-      # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X (tilted up ~10°). This anchors the fixture: its z (0.9)
-      # becomes the locked maze plane and this orientation is held for the whole trial.
+      # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
+      # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
+      # plane through the start (tool points +X, perpendicular into it).
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
@@ -66,19 +67,20 @@
 
     # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
     # are OFFSETS (metres) from the start EE, captured on the first tick, EXACTLY matching the relative
-    # maze corridors above (keep both relative). CP1 = C1↔C3 junction; CP2 = top of the final leg (C4).
+    # maze corridors above (keep both relative). The maze is in the Y-Z plane, so the X offset is 0 (on
+    # the locked plane) and Y/Z carry the position. CP1 = C1↔C3 junction; CP2 = C3↔C4 (top) junction.
     checkpoint_monitor:
       update_rate: 100
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
       relative_to_start: true
-      checkpoint_x: [0.000, 0.065]   # X offset from start
-      checkpoint_y: [0.100, 0.200]   # Y offset from start
-      checkpoint_z: [0.000, 0.000]   # on the maze plane (0 = same z as start)
+      checkpoint_x: [0.000, 0.000]   # X offset = 0 (on the locked plane)
+      checkpoint_y: [0.145, 0.145]   # Y (sideways) offset from start
+      checkpoint_z: [0.000, 0.085]   # Z (up/down) offset from start
       checkpoint_radius: [0.03, 0.03]
-      goal_x: 0.065        # offset from start — far end of the final leg (C4)
-      goal_y: 0.230
-      goal_z: 0.000
+      goal_x: 0.000        # on the plane
+      goal_y: -0.060       # far (−Y) end of the return leg C4
+      goal_z: 0.085
       goal_radius: 0.03
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
@@ -91,46 +93,44 @@
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
 
-    # ================================ MAZE GEOMETRY (X-Y plane) ================================
-    # Corridors are axis-aligned rectangles in the two in-plane axes (a, b). restricted_axis "z" means
-    # the plane is X-Y, so a = X, b = Y, and z is locked to the start height. The arm is FREE inside any
-    # corridor and clamped to the nearest corridor edge outside them all — the cabinet's Cartesian
-    # stiffness turns "outside a corridor" into a wall.
+    # =============================== MAZE GEOMETRY (VERTICAL Y-Z plane) ===============================
+    # restricted_axis "x" locks the robot's RADIAL (in/out) axis — the one that is kinematically stiff at
+    # a forward reach (~0.34 mobility here) — and frees Y (sideways) + Z (up/down), BOTH easy (~0.5). The
+    # tool points +X, i.e. perpendicular INTO this plane, so the apple still faces the subject; the maze
+    # is a vertical "wall" in front of the robot and you drive it by moving sideways and up/down. (A
+    # horizontal X-Y maze forced the stiff radial X to be a free axis, which is why forward/back felt
+    # frozen while sideways tracked fine.)
     #
-    # corridor_frame: "relative" -> the numbers below are OFFSETS (metres) from the START EE. The maze
-    # origin is therefore wherever the arm starts: change move_to_start and the maze moves with it, no
-    # re-tuning. (checkpoint_monitor.relative_to_start does the same for the rewards/goal — keep both
-    # relative or both absolute.) START is (0,0) by construction, so it is always inside C1.
+    # Corridors are axis-aligned rectangles in the two free axes (a, b). With restricted_axis "x",
+    # a = Y (sideways) and b = Z (up/down). corridor_frame "relative": the numbers are OFFSETS (metres)
+    # from the START EE, so the maze origin is wherever the arm starts — change move_to_start and the
+    # maze moves with it. START is (0,0), always inside C1. (checkpoint_monitor.relative_to_start matches.)
     #
-    # Laid out for the current start (EE ≈ (0.500, 0.000, 0.900), tool ≈ +X). At z=0.9 the reachable
-    # box relative to start is Xrel[-0.16,+0.12], Yrel[±0.24] — LESS forward reach than at z=0.5 — so
-    # the long runs go in +Y (roomy, and Y is an easy direction; X is the arm's stiffest here). 14 cm
-    # corridors (±7 cm) so hand jitter doesn't pin you on the walls.
+    # Reachable box at this start: Y[±0.22], Z[-0.20,+0.16] (offsets). 14 cm corridors (±7 cm).
     #
-    #  Yrel +0.23  ┌─────┐  ★GOAL
-    #              │ C4  │                 (final up-leg, on the right)
-    #  Yrel +0.14  ┌─────┼─────┐  ② at top of C4
-    #              │ C3  │     │           (C3 = turn +X to reach C4)
-    #  Yrel +0.07  │  ┌──┴─────┘
-    #     ┌────────┴──┤ ① CP1  (C1↔C3 junction)
-    #  C2 │  dead-end │ C1                 (C2 = wrong turn, branches −X off C1)
-    #     └────────┬──┤
-    #  Yrel -0.03     │ ▶START (0,0)
-    #             -0.16 -0.07 0 0.10  <- Xrel
+    #  Z +0.12  ★GOAL ┌──────────── C4 return ──────────┐ ② CP2       (top: return leg, −Y)
+    #  Z +0.05        └───────────────────────────┐     │
+    #                                             │ C3  │             (C3 = up-leg +Z, on the right)
+    #  Z -0.07  ▶START ┌────────── C1 ────────────┤ ① CP1
+    #                  │           entrance +Y    └─────┘
+    #  Z -0.05        ┌┴────┐                                          (C2 = dead-end −Z, the wrong turn)
+    #  Z -0.16        │ C2  │
+    #                 └─────┘
+    #           Y:  -0.08   0        0.11  0.18   <- Y offset (sideways)
     #
-    # Path: ▶START(0,0) —+Y→ ①CP1(0.00, 0.10) —+X→ (0.065, 0.10) —+Y→ ②CP2(0.065, 0.20) → ★GOAL(0.065, 0.23).
-    # C2 branches −X off C1 and dead-ends.
-    # Verified vs the URDF: start inside C1, all four regions connected, all 16 corners reachable while
-    # holding the start orientation, everything inside the reachable box at z=0.9.
+    # Path: ▶START(0,0) —+Y→ ①CP1(0.145,0.00) —+Z up→ ②CP2(0.145,0.085) —−Y→ ★GOAL(-0.06,0.085).
+    # C2 branches −Z (down) off C1 and dead-ends.
+    # Verified vs the URDF: start inside C1, all four regions connected, all 16 corners reachable holding
+    # the start orientation, everything inside the reachable Y-Z box. Both free axes ~0.5 mobility.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
       max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
       maze:
         type: "maze"
-        restricted_axis: "z"        # plane = X-Y; z locked to the start height
-        corridor_frame: "relative"  # corridor coords are OFFSETS from the start EE (see above)
+        restricted_axis: "x"        # lock the radial X axis; free Y (sideways) + Z (up/down)
+        corridor_frame: "relative"  # corridor coords are OFFSETS from the start EE (a=Y, b=Z)
         #                C1      C2      C3      C4
-        corridor_a_min: [-0.07, -0.16, -0.07,  0.03]   # X offset min
-        corridor_a_max: [ 0.07, -0.05,  0.10,  0.10]   # X offset max
-        corridor_b_min: [-0.03,  0.01,  0.07,  0.07]   # Y offset min
-        corridor_b_max: [ 0.14,  0.11,  0.14,  0.24]   # Y offset max
+        corridor_a_min: [-0.03,  0.01,  0.11, -0.08]   # Y (sideways) offset min
+        corridor_a_max: [ 0.18,  0.11,  0.18,  0.18]   # Y offset max
+        corridor_b_min: [-0.07, -0.16, -0.07,  0.05]   # Z (up/down) offset min
+        corridor_b_max: [ 0.07, -0.05,  0.12,  0.12]   # Z offset max

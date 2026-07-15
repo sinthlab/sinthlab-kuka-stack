@@ -339,44 +339,47 @@ response to mechanical perturbation.
    1.5 seconds prior to the readiness cue.
 
 ### Scenario 4 — Maze
-The operator (or animal) drives the compliant arm through a **corridor maze** lying in the horizontal
-**X‑Y plane**. It reuses the same fixture engine as Scenario 2 (`MoveRestrictedOnAPlaneAction` with the
-`maze` profile): the arm is **free inside any corridor** and clamped to the nearest corridor edge
+The operator (or animal) drives the compliant arm through a **corridor maze** in a **vertical Y‑Z plane**
+in front of the robot. It reuses the same fixture engine as Scenario 2 (`MoveRestrictedOnAPlaneAction`
+with the `maze` profile): the arm is **free inside any corridor** and clamped to the nearest corridor edge
 outside them all, so the cabinet's Cartesian stiffness turns "outside a corridor" into a wall. Hitting a
 checkpoint plays a reward cue (**any order, once each**); reaching the goal — or timing out — stops the
 fixtures, waits for the operator to let go, and resets to the start.
 
-**The maze tool points roughly +X** (horizontal, out from the base) instead of straight down — that lets
-the apple face the subject while the arm is dragged around a horizontal plane. **The maze is defined
-RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`), so its origin is
-wherever the arm starts: change `move_to_start` and the whole maze — corridors, checkpoints, goal — moves
-with it. No absolute coordinates to re-tune.
+**Why vertical, not horizontal.** The tool points **+X** (out from the base, at the subject). The robot's
+**radial X axis (in/out) is kinematically stiff** at a forward reach — so a horizontal X‑Y maze made a
+*free* maze direction fight you (forward/back felt frozen while sideways tracked fine). The vertical Y‑Z
+maze instead **locks X** (the stiff axis, and the direction the tool points anyway) and frees **Y
+(sideways) + Z (up/down)** — both are easy (~0.5 mobility), so the maze feels uniformly compliant. The
+apple still points +X at the subject.
+
+**The maze is defined RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`),
+so its origin is wherever the arm starts: change `move_to_start` and the whole maze — corridors,
+checkpoints, goal — moves with it. No absolute coordinates to re-tune.
 
 #### What you should expect to see
 
-Coordinates are **offsets from the start EE** (▶START = 0,0). Corridors are 14 cm wide (±7 cm); the long
-runs go in +Y because at this height that's the roomier, easier-to-move direction.
+A vertical wall of corridors. Coordinates are **offsets from the start EE** (▶START = 0,0): **Y = sideways,
+Z = up/down**; X (in/out) is locked. Corridors are 14 cm wide (±7 cm).
 
 ```
- Y offset (m)
- +0.24  ┌──────┐  ★ GOAL          ★ GOAL   (0.065, +0.230)
-        │  C4  │                   ② CP2   (0.065, +0.200)  top of C4
- +0.14  ┌──────┼──────┐
-        │  C3  │      │            C3 = turn +X onto the final leg
- +0.07  │   ┌──┴──────┘
-   ┌────┴───┤ ① CP1  (0.000, +0.100)   C1↔C3 junction
-   │  C2    │ C1
-   │dead-end│                       C2 = the wrong turn (branches −X off C1)
-   └────┬───┤
-        │▶START (0,0)
-  -0.16 -0.07  0  +0.10   ──► X offset (m)
+ Z up (m)
+ +0.12  ★GOAL ┌───────────── C4 return ─────────────┐ ② CP2      ② (Y+0.145, Z+0.085)
+ +0.05        └────────────────────────────┐        │
+                                          │  C3   │             C3 = up-leg (+Z), on the right
+ -0.07  ▶START ┌────────── C1 ────────────┤ ① CP1              ① (Y+0.145, Z 0.000)
+               │          entrance (+Y)    └───────┘
+ -0.05        ┌┴─────┐                                          C2 = dead end (−Z), the wrong turn
+ -0.16        │  C2  │
+              └──────┘
+         Y:  -0.08    0            +0.11  +0.18   ──► Y sideways (m)
 
-   plane: z = start height (locked)     tool axis: start orientation (held)
-   path:  ▶START(0,0) ─+Y→ ①CP1(0.00,0.10) ─+X→ (0.065,0.10) ─+Y→ ②CP2(0.065,0.20) → ★GOAL(0.065,0.23)
+   plane: X = start radius (locked)   tool: +X, perpendicular into the plane (held)
+   path:  ▶START(0,0) ─+Y→ ①CP1(0.145, 0.00) ─+Z up→ ②CP2(0.145, 0.085) ─−Y→ ★GOAL(−0.06, 0.085)
 ```
 
 The arm starts at ▶, free to slide anywhere **inside** the corridors and firmly walled at their edges.
-The route up `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the wrong turn.
+The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the wrong turn.
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application:
@@ -396,12 +399,12 @@ The route up `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — th
    to the goal (or let the 60 s timeout expire).
 
 > **Moving the maze = changing `move_to_start`.** Because everything is start-relative, the joint start
-> pose is the one knob that positions the maze. Two things must move with it, and they do automatically —
-> but you still have to respect **reach**: holding one orientation, the arm can only cover a limited XY
-> box (for the shipped start ≈ (0.50, 0.00, 0.90), that box is roughly **Xrel[−0.16, +0.12], Yrel[±0.24]**).
-> The shipped maze fits inside it with every corner verified reachable. If you pick a very different start,
-> re-check that the maze footprint still fits — a corner the arm can only reach by twisting the (locked)
-> tool is unusable.
+> pose is the one knob that positions the maze. Everything moves with it automatically — but you still have
+> to respect **reach**: holding the start orientation, the arm covers a limited Y‑Z box (for the shipped
+> start ≈ (0.50, 0.00, 0.90) that box is roughly **Y[±0.22], Z[−0.20, +0.16]** in offsets). The shipped
+> maze fits inside it with every corner verified reachable. If you pick a very different start, re-check
+> that the maze footprint still fits, **and re-check mobility** — the whole point of the Y‑Z plane is that
+> both free axes are well-conditioned; a bad start can reintroduce a stiff axis.
 >
 > **Two syncs to keep (both are pre-set):**
 > - `config/clik_nullspace_maze.yaml` `nullspace_desired_configuration` **must equal**
@@ -411,9 +414,9 @@ The route up `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — th
 >   both absolute), or the rewards land in the wrong place relative to the walls.
 >
 > **Editing the shape:** corridors are axis-aligned rectangles in `maze_params.yaml`
-> (`corridor_a_min/a_max/b_min/b_max`; with `restricted_axis: z`, `a = X` and `b = Y`, as **offsets from
-> start**). They must overlap to be connected; START (0,0) must fall inside one; checkpoint/goal `z`-offset
-> is 0 (on the plane).
+> (`corridor_a_min/a_max/b_min/b_max`; with `restricted_axis: x`, `a = Y` (sideways) and `b = Z` (up/down),
+> as **offsets from start**). They must overlap to be connected; START (0,0) must fall inside one; the
+> checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
 
 ---
 
