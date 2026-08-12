@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+#!/usr/bin/env python3
+
+>>>>>>> c9cd189 (Test commit)
 import rclpy
 from rclpy.node import Node as rclpyNode
 
