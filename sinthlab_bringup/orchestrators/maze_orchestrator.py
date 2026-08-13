@@ -5,7 +5,7 @@ from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
-from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
+from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
@@ -51,7 +51,7 @@ class MazeOrchestratorNode(rclpyNode):
             self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         self.go_cue = AudioCue(self, param_prefix="audio_cue_play", on_complete=self.on_go_complete)
-        self.maze_fixtures = MoveRestrictedOnAPlaneAction(self, param_prefix="")
+        self.maze_fixtures = MoveInMazeAction(self, param_prefix="")
         self.checkpoint_monitor = CheckpointMonitor(
             self, param_prefix="checkpoint_monitor",
             on_complete=self.on_goal_reached, on_reward=self.on_checkpoint_reward,
