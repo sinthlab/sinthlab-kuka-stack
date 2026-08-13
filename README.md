@@ -360,19 +360,19 @@ checkpoints, goal — moves with it. No absolute coordinates to re-tune.
 #### What you should expect to see
 
 A vertical wall of corridors. Coordinates are **offsets from the start EE** (▶START = 0,0): **Y = sideways,
-Z = up/down**; X (in/out) is locked. Corridors are 14 cm wide (±7 cm).
+Z = up/down**; X (in/out) is locked. Corridors are ~9–18 cm across (≈1.6× the earlier play area).
 
 ```
  Z up (m)
- +0.12  ★GOAL ┌───────────── C4 return ─────────────┐ ② CP2      ② (Y+0.145, Z+0.085)
+ +0.14  ★GOAL ┌───────────── C4 return ─────────────┐ ② CP2      ② (Y+0.145, Z+0.085)
  +0.05        └────────────────────────────┐        │
                                           │  C3   │             C3 = up-leg (+Z), on the right
- -0.07  ▶START ┌────────── C1 ────────────┤ ① CP1              ① (Y+0.145, Z 0.000)
+ -0.09  ▶START ┌────────── C1 ────────────┤ ① CP1              ① (Y+0.145, Z 0.000)
                │          entrance (+Y)    └───────┘
  -0.05        ┌┴─────┐                                          C2 = dead end (−Z), the wrong turn
- -0.16        │  C2  │
+ -0.18        │  C2  │
               └──────┘
-         Y:  -0.08    0            +0.11  +0.18   ──► Y sideways (m)
+         Y:  -0.15    0            +0.10  +0.19   ──► Y sideways (m)
 
    plane: X = start radius (locked)   tool: +X, perpendicular into the plane (held)
    path:  ▶START(0,0) ─+Y→ ①CP1(0.145, 0.00) ─+Z up→ ②CP2(0.145, 0.085) ─−Y→ ★GOAL(−0.06, 0.085)

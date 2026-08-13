@@ -88,14 +88,14 @@
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
-    # The maze footprint is ≤ ~0.16 m from start, so 0.25 m clears it with margin; normal hand motion is
+    # The maze footprint reaches ~0.24 m from start, so 0.35 m clears it with margin; normal hand motion is
     # under the CLIK's 0.4 m/s clamp, so 0.7 m/s catches a fall without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:
       update_rate: 100
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      max_displacement_m: 0.25
+      max_displacement_m: 0.35
       max_speed_mps: 0.7
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
@@ -121,22 +121,23 @@
     # from the START EE, so the maze origin is wherever the arm starts — change move_to_start and the
     # maze moves with it. START is (0,0), always inside C1. (checkpoint_monitor.relative_to_start matches.)
     #
-    # Reachable box at this start: Y[±0.22], Z[-0.20,+0.16] (offsets). 14 cm corridors (±7 cm).
+    # Reachable box at this start: Y[±0.22], Z[-0.20,+0.16] (offsets). The maze spans Y[-0.15,0.19],
+    # Z[-0.18,0.14] — enlarged to ~1.6x the earlier footprint for more room, still inside the box.
     #
-    #  Z +0.12  ★GOAL ┌──────────── C4 return ──────────┐ ② CP2       (top: return leg, −Y)
+    #  Z +0.14  ★GOAL ┌──────────── C4 return ──────────┐ ② CP2       (top: return leg, −Y)
     #  Z +0.05        └───────────────────────────┐     │
     #                                             │ C3  │             (C3 = up-leg +Z, on the right)
-    #  Z -0.07  ▶START ┌────────── C1 ────────────┤ ① CP1
+    #  Z -0.09  ▶START ┌────────── C1 ────────────┤ ① CP1
     #                  │           entrance +Y    └─────┘
     #  Z -0.05        ┌┴────┐                                          (C2 = dead-end −Z, the wrong turn)
-    #  Z -0.16        │ C2  │
+    #  Z -0.18        │ C2  │
     #                 └─────┘
-    #           Y:  -0.08   0        0.11  0.18   <- Y offset (sideways)
+    #           Y:  -0.15   0        0.10  0.19   <- Y offset (sideways)
     #
     # Path: ▶START(0,0) —+Y→ ①CP1(0.145,0.00) —+Z up→ ②CP2(0.145,0.085) —−Y→ ★GOAL(-0.06,0.085).
-    # C2 branches −Z (down) off C1 and dead-ends.
-    # Verified vs the URDF: start inside C1, all four regions connected, all 16 corners reachable holding
-    # the start orientation, everything inside the reachable Y-Z box. Both free axes ~0.5 mobility.
+    # C2 branches −Z (down) off C1 and dead-ends. Checkpoints/goal are UNCHANGED; only the corridors grew.
+    # Verified vs the URDF (optas IK): start inside C1, all four regions connected, every corner + both
+    # checkpoints + goal reachable holding the start orientation, all inside the reachable Y-Z box.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
       max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
@@ -145,7 +146,7 @@
         restricted_axis: "x"        # lock the radial X axis; free Y (sideways) + Z (up/down)
         corridor_frame: "relative"  # corridor coords are OFFSETS from the start EE (a=Y, b=Z)
         #                C1      C2      C3      C4
-        corridor_a_min: [-0.03,  0.01,  0.11, -0.08]   # Y (sideways) offset min
-        corridor_a_max: [ 0.18,  0.11,  0.18,  0.18]   # Y offset max
-        corridor_b_min: [-0.07, -0.16, -0.07,  0.05]   # Z (up/down) offset min
-        corridor_b_max: [ 0.07, -0.05,  0.12,  0.12]   # Z offset max
+        corridor_a_min: [-0.06,  0.00,  0.10, -0.15]   # Y (sideways) offset min
+        corridor_a_max: [ 0.19,  0.13,  0.19,  0.19]   # Y offset max
+        corridor_b_min: [-0.09, -0.18, -0.09,  0.05]   # Z (up/down) offset min
+        corridor_b_max: [ 0.09, -0.05,  0.14,  0.14]   # Z offset max
