@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Switch the active ros2_control controller (e.g. joint-position <-> CLIK).
+"""Switch the active ros2_control controller (e.g. joint_impedance <-> cartesian_impedance).
 
-The restricted-plane / maze experiments drive the arm to a precise start posture on the
-``lbr_joint_position_command_controller`` (exact joints, like apple-pluck), then hand off to the
-``kuka_clik_controller`` for the Cartesian virtual-fixture phase. This action wraps the
-controller_manager ``switch_controller`` service so the orchestrator can do that hand-off (and the
-reverse, before the recover move) as just another step in the trial.
+The restricted-plane / maze experiments (TORQUE mode) drive the arm to a precise start posture on the
+``joint_impedance_controller``, then hand off to the ``cartesian_impedance_controller`` for the
+virtual-fixture phase. This action wraps the controller_manager ``switch_controller`` service so the
+orchestrator can do that hand-off (and the reverse, before the recover move) as just another step in
+the trial.
 
-The CLIK is spawned ``--inactive`` in PARALLEL with the orchestrator, so at the first hand-off it may
-not be loaded yet — especially when ``move_to_start`` finishes fast (start pose near the parked pose).
+The fixture controller is spawned ``--inactive`` in PARALLEL with the orchestrator, so at the first
+hand-off it may not be loaded yet — especially when ``move_to_start`` finishes fast.
 A STRICT switch to a not-yet-loaded controller aborts with "no controller with this name exists" and
 stalls the trial. So this action first POLLS ``list_controllers`` until every controller it needs is
 loaded (in any state), up to ``load_timeout_sec``, and only then switches.

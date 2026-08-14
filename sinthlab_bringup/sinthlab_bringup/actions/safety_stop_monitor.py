@@ -37,8 +37,8 @@ class SafetyStopMonitor:
         # Trip if the EE gets this far from the trial-start pose (m). Must exceed the largest legitimate
         # excursion (e.g. the maze footprint) with margin, but be small enough to catch a runaway early.
         self._max_disp = float(get_required_param(node, self._param_prefix + "max_displacement_m"))
-        # Trip if the EE speed exceeds this (m/s). Normal hand motion stays under the CLIK velocity clamp
-        # (~0.4 m/s); a fall blows past it. Catches a runaway before it travels max_displacement.
+        # Trip if the EE speed exceeds this (m/s). Normal hand guiding stays well below this; a fall or
+        # lurch blows past it. Catches a runaway before it travels max_displacement.
         self._max_speed = float(get_required_param(node, self._param_prefix + "max_speed_mps"))
 
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))

@@ -1,0 +1,24 @@
+# Per-experiment overlay for the RESTRICTED-PLANE (sine rail), loaded AFTER torque_controllers.yaml
+# so it overrides the Cartesian stiffness + nullspace posture for this experiment.
+#
+# The sine fixture streams target_frame = rail pose: x pinned, y = start_y + amp*sin(freq*(z-start_z)),
+# z tracks the pull. So: X stiff (pin the radius), Y firm (drive the arm ALONG the rail so the wave is
+# felt), Z soft (the free pull axis). HARDWARE-TUNE the values.
+#
+# nullspace posture = the restricted-plane move_to_start [0,10,0,-80,0,90,0] deg (tool DOWN), in radians.
+/**/cartesian_impedance_controller:
+  ros__parameters:
+    stiffness:
+      trans_x: 1000.0   # radial pin
+      trans_y: 700.0    # hold the rail (Y is driven by the sine)
+      trans_z: 120.0    # free pull axis: soft
+      rot_x: 40.0
+      rot_y: 40.0
+      rot_z: 40.0
+    nullspace_stiffness: 20.0
+    nullspace_desired_configuration: [0.0, 0.17453, 0.0, -1.39626, 0.0, 1.57080, 0.0]
+
+/**/joint_impedance_controller:
+  ros__parameters:
+    nullspace_stiffness: 20.0
+    nullspace_desired_configuration: [0.0, 0.17453, 0.0, -1.39626, 0.0, 1.57080, 0.0]

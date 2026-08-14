@@ -1,22 +1,24 @@
 /**:
   ros__parameters:
-    # Restricted-plane uses kuka_clik_controller (cartesian): move_to_start/recover use the
-    # MoveToPositionCartesianSpace action, and MoveRestrictedOnAPlaneAction streams the
-    # fixture-constrained equilibrium pose. The cabinet (LbrImpedanceControlServer) provides
-    # the compliance.
+    # Restricted-plane runs in TORQUE mode: move_to_start/recover use MoveToFrame ->
+    # joint_impedance_controller, and MoveRestrictedOnAPlaneAction streams the fixture-constrained
+    # equilibrium to cartesian_impedance_controller. The idra-lab impedance controllers provide the
+    # compliance (per-axis Cartesian stiffness on the ROS side); the cabinet runs TorqueControl.java
+    # (gravity comp). Tune the stiffness in config/torque_overlay_restricted_plane.yaml.
     state_topic: "lbr_state"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
     move_to_start:
       update_rate: 200
-      # Matches the apple-pluck/perturb start exactly (tool points down -Z).
-      # >>> SYNC: this goes through the CLIK, which only matches the EE *pose* and resolves the
-      #     redundant arm posture toward kuka_clik_controller's nullspace_desired_configuration.
-      #     If you change target_joint_position below, copy the SAME degrees array into
-      #     nullspace_desired_configuration in config/iiwa7_hardware_controllers.yaml, or the arm
-      #     reaches the right tool pose in a weird posture.
+      # Tool points down -Z. TORQUE mode: MoveToFrame FKs this to an EE pose and streams it (ramped)
+      # to joint_impedance_controller/target_frame, which IK-solves and drives there.
+      # >>> SYNC: if you change this, copy the SAME array (converted to RADIANS) into
+      #     nullspace_desired_configuration in config/torque_overlay_restricted_plane.yaml, or the
+      #     Cartesian impedance holds the right EE pose in a weird posture.
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
+      move_duration_sec: 6.0           # ramp time for the (possibly large) initial move [s]
       joint_move_tolerance: 0.01
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -39,6 +41,7 @@
     move_to_start_recover:
       update_rate: 200
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # same start pose as move_to_start
+      cartesian_move_tolerance: 0.03
       joint_move_tolerance: 0.15
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -103,8 +106,8 @@
         # FORCE is set by AMPLITUDE, not by wavelength. Pulling straight down and ignoring the rail puts
         # you at most `amplitude` off it, so the worst case is K_y * amplitude = 40 N at 1000 N/m. The
         # steeper slope (amplitude*spatial_freq = 1.2, a 50 deg rail) costs no extra force — it only
-        # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull, so the CLIK's
-        # max_linear_velocity must exceed it or the rail gets rate-limited flat (see that param).
+        # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull. In torque mode
+        # there is no target-rate clamp, so the impedance controller tracks the rail as fast as you pull.
         # Pair with the "Rail guide (uniform 1000)" cabinet profile.
         # History: the original 0.1 / 20.0 was slope 2.0 (63 deg) and a 10 cm error = 300 N at "Stiff" —
         # it would have slammed the arm sideways and tripped the cabinet.

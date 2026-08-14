@@ -5,10 +5,12 @@ LBR iiwa7. It is built as an *overlay* on top of the [`lbr_fri_ros2_stack`][^1],
 high‑level experiment orchestration, motion actions, and the KUKA Sunrise (FRI) applications
 needed to drive the arm.
 
-In every hardware scenario the **Cartesian compliance ("spring") runs on the KUKA cabinet at
-1000 Hz**. Apple-pluck / perturb stream **joint** setpoints to it via
-`LBRJointPositionCommandController`; the restricted-plane scenario streams **Cartesian** poses via
-`kuka_clik_controller`. Python state machines sequence each trial
+The stack runs **two control paradigms**. Apple-pluck / perturb use FRI **position** mode: they stream
+**joint** setpoints to `LBRJointPositionCommandController` and the KUKA cabinet's Cartesian impedance
+(`LbrImpedanceControlServer`) provides the spring. Restricted-plane / maze use FRI **torque** mode: the
+cabinet (`TorqueControl.java`) does gravity comp only, and the ROS-side `cartesian_impedance_controller`
+(idra-lab `ros2_effort_controller`) runs a 1 kHz Cartesian spring — soft inside, firm walls, no
+free-fall or position-streaming tracking lag. Python state machines sequence each trial
 (move → cue → monitor displacement → recoil → repeat).
 
 ## Table of Contents
@@ -215,13 +217,19 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 ### Scenario quick reference
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
 |---|----------|-------------|--------------------|----------------|
-| 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
-| 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
-| 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
-| 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` (position) | `LBRJointPositionCommandController` |
+| 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `TorqueControl` (torque) | `cartesian_impedance_controller` |
+| 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` (position) | `LBRJointPositionCommandController` |
+| 4 | Maze                 | `iiwa7_maze.launch.py`                          | `TorqueControl` (torque) | `cartesian_impedance_controller` |
 
-All scenarios use FRI **POSITION** command mode: ROS streams a target pose and the **cabinet's
-Cartesian impedance** (`LbrImpedanceControlServer`) provides the compliance.
+**Two control paradigms** (pick the matching SmartPad app per experiment):
+- **Apple Pluck / Perturb (1 & 3)** — FRI **POSITION** mode: ROS streams a joint setpoint and the
+  **cabinet's** Cartesian impedance (`LbrImpedanceControlServer`) provides the compliance.
+- **Restricted-plane / Maze (2 & 4)** — FRI **TORQUE** mode: the cabinet (`TorqueControl.java`) does
+  gravity/friction/Coriolis comp only, and the ROS-side `cartesian_impedance_controller` (idra-lab, from
+  `ros2_effort_controller`) provides a 1 kHz Cartesian spring. Compliance is tuned in
+  `config/torque_overlay_{restricted_plane,maze}.yaml`, **not** a SmartPad stiffness profile. No
+  free-fall (gravity is compensated on the cabinet), no position-streaming tracking-lag (direct torque at 1 kHz).
 
 ### Scenario 1 — Apple Pluck
 This scenario streams **joint** setpoints to the `LBRJointPositionCommandController` (joint positions
@@ -257,25 +265,20 @@ recoils when pushed off its commanded anchor.
 
 ### Scenario 2 — Move Restricted on a Plane
 This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
-arm moves freely *within* an allowed region and is pushed back *outside* it. By default the
-compliance runs **on the cabinet** (same `LbrImpedanceControlServer` app as Apple Pluck) —
-`kuka_clik_controller` streams a **fixture‑constrained equilibrium** pose and the cabinet's Cartesian
-impedance provides the free‑motion + soft‑wall feel at 1000 Hz. (A legacy rigid mode is also
-available — see the note.)
+arm moves freely *within* an allowed region and is pushed back *outside* it. It runs in **FRI TORQUE
+mode**: `cartesian_impedance_controller` streams a **fixture-constrained equilibrium** pose and runs a
+1 kHz Cartesian spring on the ROS side; the cabinet (`TorqueControl.java`) only compensates gravity.
+Along a free axis the equilibrium tracks the arm (~zero force, no lag); off the manifold it holds, so
+the spring walls the arm — soft inside, firm at the boundary, and no free-fall.
 
 **Steps to run:**
-1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application (same app as Apple
-   Pluck — the cabinet supplies the compliance). It opens four selection dialogs in sequence —
-   choose:
+1. On the KUKA SmartPad, start the **`TorqueControl`** application (NOT `LbrImpedanceControlServer` —
+   this experiment is torque mode). It sets a zero-stiffness joint-impedance base + FRI joint TORQUE
+   overlay (so the cabinet does gravity comp and ROS adds the impedance torques), then waits (~60 s)
+   for the ROS client to connect.
 
-   | Prompt | Select |
-   |--------|--------|
-   | FRI send period [ms] | `10` |
-   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** |
-   | Damping ratio (D0) | `0.7 (Standard)` |
-
-   The app then waits (~60 s) for the ROS client to connect.
+   > First run: verify `sunrise_controller_code/TorqueControl.java` has your ROS PC IP (`client_name_`,
+   > default `172.31.1.148`) and that `@Named("Tool")` matches the tool you ran load-data Determine on.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
@@ -283,28 +286,25 @@ available — see the note.)
 3. The arm rises to the workspace; pull it and feel it held onto the sine rail — free along the pull
    axis, walled in the other two.
 
-> **Pick a UNIFORM stiffness profile, not a "soft on the pull axis" one.** The fixture frees the pull
-> axis *itself* — it streams an equilibrium that tracks the measured pose on that axis, so the spring
-> error there is zero and the force is zero no matter how stiff K is. Softening the cabinet's Z buys
-> nothing the fixture isn't already doing, and it is what lets an uncompensated tool load **sag** the
-> arm (at 80 N/m, 10 N of payload = 125 mm of droop). Uniform 1000 N/m holds the tool to ~10 mm while
-> keeping the walls fightable.
+> **Tune the feel in `config/torque_overlay_restricted_plane.yaml`, not a SmartPad profile.** The
+> per-axis Cartesian `stiffness` sets how firmly each axis is held: X pins the radius, Y holds the
+> rail (so the wave is felt), Z is soft (the free pull axis). Raise Y for a crisper rail, lower Z for
+> an easier pull. Gravity is compensated on the cabinet, so a soft Z no longer sags the arm.
 >
 > **Tip:** Set `virtual_fixture_profile` (`sine_wave`, `flat_table`, …) in
-> `virtual_fixtures_params.yaml`. The fixture geometry defines *where* the walls are; the cabinet
-> stiffness sets *how firm* they feel. For the sine rail, size the **wavelength against the pull
-> stroke** — below ~1 period over the stroke it reads as a straight lean, not an oscillation.
+> `virtual_fixtures_params.yaml` — this defines *where* the fixture is. For the sine rail, size the
+> **wavelength against the pull stroke** — below ~1 period over the stroke it reads as a straight lean.
 
-#### How this relates to Apple Pluck — same cabinet compliance, different ROS controller
-Both scenarios run the **same cabinet Cartesian impedance at 1000 Hz** (`LbrImpedanceControlServer`);
-they differ in the ROS controller and what it streams:
+#### How this relates to Apple Pluck — a different control paradigm
+Apple Pluck and Restricted Plane / Maze now run **different** control paths — position vs torque:
 
-| | Apple Pluck (1 & 3) | Restricted Plane (2) |
+| | Apple Pluck (1 & 3) | Restricted Plane / Maze (2 & 4) |
 |---|---|---|
-| Cabinet (SmartPad) | `LbrImpedanceControlServer`, 1000 Hz | `LbrImpedanceControlServer`, 1000 Hz |
-| ROS controller | `LBRJointPositionCommandController` | `kuka_clik_controller` |
+| SmartPad app | `LbrImpedanceControlServer` (position) | `TorqueControl` (torque) |
+| Compliance | **cabinet** Cartesian impedance, 1000 Hz | **ROS** `cartesian_impedance_controller`, 1000 Hz (cabinet does gravity comp) |
+| ROS controller | `LBRJointPositionCommandController` | `cartesian_impedance_controller` (+ `joint_impedance_controller` for moves) |
 | ROS streams | **joint** positions (the start config) | a **Cartesian** pose projected onto the fixture manifold |
-| Feel | omnidirectional spring toward one pose | free within the fixture; soft wall outside it |
+| Feel | omnidirectional spring toward one pose | free within the fixture; firm wall outside it |
 
 So the cabinet — not Python — supplies the give: the arm yields to a sudden jerk at 1 kHz, and the
 "walls" are **soft impedance walls** (the arm is gently pulled back onto the manifold), which is the
@@ -382,14 +382,12 @@ The arm starts at ▶, free to slide anywhere **inside** the corridors and firml
 The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the wrong turn.
 
 **Steps to run:**
-1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application:
+1. On the KUKA SmartPad, start the **`TorqueControl`** application (NOT `LbrImpedanceControlServer` —
+   the maze is torque mode). It sets a zero-stiffness joint-impedance base + FRI joint TORQUE overlay
+   and waits (~60 s) for the ROS client. Stiffness is set in ROS, not here — see "Tuning" below.
 
-   | Prompt | Select |
-   |--------|--------|
-   | FRI send period [ms] | `10` |
-   | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Maze compliant (uniform 400)`** (softer) · `Rail guide (uniform 1000)`. **Do NOT use `Uniform Medium` (100) here** — see the gravity warning below. |
-   | Damping ratio (D0) | `0.7 (Standard)` |
+   > First run: verify `sunrise_controller_code/TorqueControl.java` has your ROS PC IP (`client_name_`)
+   > and `@Named("Tool")` matches the tool you ran load-data Determine on.
 
 2. **Launch:**
    ```bash
@@ -398,24 +396,22 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
 3. The arm moves to ▶START, waits a quiet window, plays the go cue, and the corridors go live. Drive it
    to the goal (or let the 60 s timeout expire).
 
-> **⚠️ Gravity is load-bearing in the vertical maze — set the tool load data first.** Z (up/down) is a
-> FREE axis, so the arm's weight is held by **gravity compensation, not the spring**. With wrong/missing
-> tool `loadData`, the residual weight makes the arm **drift down — and free-fall at low stiffness** (fall
-> speed ≈ weight / (K × lag), so it runs away as K drops: it merely crept at 1000 and free-fell at 100).
-> **Run tool-load "Determine" with the real EE mounted (or set mass+COM) and re-sync before running the
-> vertical maze.** Until that's verified, **do not go below `Maze compliant` (400)**; `Uniform Medium`
-> (100) is unsafe here.
+> **⚠️ Still set the tool load data.** In torque mode the CABINET (`TorqueControl.java`'s zero-stiffness
+> joint impedance) does the gravity/friction/Coriolis compensation, so a correct tool `loadData` is what
+> keeps the arm from drifting — run tool-load **Determine** with the real EE mounted before the vertical
+> maze. This is far more robust than the old position-mode setup (no spring has to hold the weight now),
+> so the low-stiffness free-fall failure is gone — but wrong loadData still causes slow drift.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.25 m or exceeds 0.7 m/s, and **aborts the trial immediately** —
+> the EE leaves the start pose by > 0.35 m or exceeds 0.7 m/s, and **aborts the trial immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
 >
-> **Tuning the compliance.** Softer cabinet stiffness = lighter free motion AND softer walls (the trade
-> with a uniform profile): **`Maze compliant` = 400** (recommended soft) · `Rail guide` = 1000 · `Stiff`
-> = 3000. If the resistance feels *speed-dependent* (stiffer the faster you push) rather than constant,
-> that's tracking lag from the CLIK `max_linear_velocity` clamp, not stiffness — raise it and it eases.
+> **Tuning the compliance** — edit `config/torque_overlay_maze.yaml`. `stiffness.trans_x` is the radial
+> plane lock (keep high); `trans_y`/`trans_z` set both the in-corridor softness AND the wall firmness
+> (raise for firmer walls, lower for easier guiding). Because it's a direct 1 kHz torque loop, the inside
+> stays genuinely soft (no velocity-clamp lag from streaming a position setpoint), so firm walls no longer force the inside to seize.
 
 > **Moving the maze = changing `move_to_start`.** Because everything is start-relative, the joint start
 > pose is the one knob that positions the maze. Everything moves with it automatically — but you still have
@@ -426,9 +422,9 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
 > both free axes are well-conditioned; a bad start can reintroduce a stiff axis.
 >
 > **Two syncs to keep (both are pre-set):**
-> - `config/clik_nullspace_maze.yaml` `nullspace_desired_configuration` **must equal**
->   `move_to_start.target_joint_position`. The CLIK matches only the EE *pose* and biases the arm's 7th DOF
->   toward that posture; a mismatch holds the right pose in the wrong arm shape and drifts while you drive.
+> - `config/torque_overlay_maze.yaml` `nullspace_desired_configuration` (in RADIANS) **must equal**
+>   `move_to_start.target_joint_position` (in degrees). The Cartesian impedance holds the EE *pose* and
+>   biases the arm's 7th DOF toward that posture; a mismatch holds the right pose in the wrong arm shape.
 > - `checkpoint_monitor.relative_to_start` and the fixture's `corridor_frame` must **both** be relative (or
 >   both absolute), or the rewards land in the wrong place relative to the walls.
 >
@@ -444,39 +440,42 @@ The stack separates **hard real‑time physical loops** from **high‑level orch
 Python state transitions never compromise the 1000 Hz hardware control loops.
 
 ### 6.1 System Overview — data flow
-Apple‑pluck / perturb send **joint** setpoints to the cabinet via `LBRJointPositionCommandController`;
-restricted‑plane sends **Cartesian** poses via `kuka_clik_controller`. Either path becomes a joint
-**position command** over FRI, and the **cabinet's Cartesian impedance provides the compliance**;
-robot state flows *back up* to the Python monitors.
+Two paths. **Apple-pluck / perturb** send **joint** setpoints via `LBRJointPositionCommandController`
+(FRI **position** mode) and the **cabinet's** Cartesian impedance (`LbrImpedanceControlServer`) is the
+spring. **Restricted-plane / maze** run FRI **torque** mode: `cartesian_impedance_controller` (and
+`joint_impedance_controller` for the moves) compute **joint torques** on the ROS side from a `Jᵀ`
+Cartesian/joint spring, and the cabinet (`TorqueControl`) does gravity comp only. State flows *back
+up* to the Python monitors.
 
 ```mermaid
 flowchart TB
     subgraph L3["Layer 3 · Orchestration (Python)"]
-        ORCH["Orchestrator<br/>state machine<br/>(apple_pluck,<br/>perturb,<br/>restricted_plane)"]
-        ACT["Modular actions:<br/>MoveToPosition<br/>DisplacementMonitor<br/>RestrictedPlane<br/>AudioCue"]
+        ORCH["Orchestrator<br/>state machine<br/>(apple_pluck, perturb,<br/>restricted_plane, maze)"]
+        ACT["Modular actions:<br/>MoveToFrame · MoveToPosition<br/>RestrictedPlane · MoveInMaze<br/>Monitors · AudioCue"]
     end
     subgraph L2["Layer 2 · Kinematics (Python)"]
         OPTAS["optas<br/>FK and<br/>Jacobian"]
     end
-    subgraph L1["Layer 1 · Real-time control (C++)"]
+    subgraph L1["Layer 1 · Real-time control (C++, 1 kHz)"]
         JPC["LBRJointPositionCommandController<br/>joint positions → FRI<br/>(apple-pluck / perturb)"]
-        CLIK["kuka_clik_controller<br/>Cartesian target → IK → joints<br/>(restricted-plane)"]
-        BCAST["Broadcasters:<br/>lbr_state<br/>force_torque<br/>estimated_wrench"]
+        CIC["cartesian_impedance_controller<br/>+ joint_impedance_controller<br/>Jᵀ spring → joint torque<br/>(restricted-plane / maze)"]
+        BCAST["Broadcasters:<br/>lbr_state · force_torque<br/>estimated_wrench"]
     end
     subgraph CAB["KUKA Cabinet · 1000 Hz"]
-        APP["LbrImpedanceControlServer<br/>(FRI app)<br/>Cartesian impedance<br/>POSITION cmd mode"]
+        POS["LbrImpedanceControlServer<br/>Cartesian impedance<br/>POSITION cmd mode<br/>(apple / perturb)"]
+        TRQ["TorqueControl<br/>gravity comp + joint<br/>TORQUE overlay<br/>(fixtures)"]
         ARM["iiwa7 arm"]
     end
 
     ORCH <--> ACT
     ACT -. "FK /<br/>Jacobian" .-> OPTAS
-    ACT -- "LBRJointPositionCommand<br/>(joint mode)" --> JPC
-    ACT -- "PoseStamped<br/>(cartesian mode)" --> CLIK
-    JPC -- "joint position<br/>cmd (FRI)" --> APP
-    CLIK -- "joint position<br/>cmd (FRI)" --> APP
-    APP -- "compliant<br/>motion" --> ARM
-    ARM -- "measured<br/>state" --> APP
-    APP -- "FRI<br/>state" --> BCAST
+    ACT -- "LBRJointPositionCommand<br/>(joint pos)" --> JPC
+    ACT -- "PoseStamped<br/>target_frame" --> CIC
+    JPC -- "joint position<br/>cmd (FRI)" --> POS
+    CIC -- "joint torque<br/>cmd (FRI)" --> TRQ
+    POS -- "compliant<br/>motion" --> ARM
+    TRQ -- "compliant<br/>motion" --> ARM
+    ARM -- "measured<br/>state" --> BCAST
     BCAST -- "LBRState /<br/>wrench" --> ACT
 ```
 
@@ -496,9 +495,10 @@ flowchart LR
   shared [`experiment_base.launch.py`](sinthlab_bringup/launch/experiment_base.launch.py), which does
   the identical hardware setup for every experiment: build the `robot_description`, include
   `iiwa7_hardware.launch.py` (FRI client + `ros2_control` + broadcasters), and start the
-  orchestrator. A wrapper supplies only the three things that differ — the **config YAML**, the
-  **orchestrator** to run, and the **controller** (`lbr_joint_position_command_controller` for
-  apple‑pluck / perturb, `kuka_clik_controller` for restricted‑plane).
+  orchestrator. A wrapper supplies only the things that differ — the **config YAML**, the
+  **orchestrator** to run, the **controllers** (`lbr_joint_position_command_controller` for apple‑pluck /
+  perturb; `joint_impedance_controller` + `cartesian_impedance_controller` for the fixtures), and the
+  **FRI system config** (position vs torque).
 
 - **The orchestrator owns the ROS side.** Each experiment has exactly one orchestrator node (1:1 with
   its launch) that builds the experiment's **trial state machine**. The three orchestrators are kept
@@ -510,10 +510,10 @@ flowchart LR
 
   | Action | Responsibility |
   |--------|----------------|
-  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd, no IK) |
-  | `MoveToPositionCartesianSpace` | drive to a target via `kuka_clik_controller` (Cartesian → IK) |
+  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd; apple / perturb) |
+  | `MoveToFrame` | drive to a start EE pose via `joint_impedance_controller` (torque mode; fixtures) |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
-  | `MoveRestrictedOnAPlaneAction` | stream the fixture‑constrained equilibrium pose |
+  | `MoveRestrictedOnAPlaneAction` / `MoveInMaze` | stream the fixture‑constrained equilibrium to `cartesian_impedance_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → recover |
   | `AudioCue` / `WaitAction` | play a tone cue / one‑shot delay |
 
@@ -532,27 +532,30 @@ sequenceDiagram
     participant CM as controller_manager
     participant CAB as KUKA cabinet (SmartPad)
 
-    Op->>ROS: ros2 launch ... apple_pluck_impedance_control.launch.py
+    Op->>ROS: ros2 launch ... (apple_pluck | move_restricted_plane | maze)
     ROS->>CM: start ros2_control_node (FRI client) + robot_state_publisher
-    Op->>CAB: Start LbrImpedanceControlServer (FRI 10 ms)
+    Op->>CAB: Start SmartPad app — LbrImpedanceControlServer (position) OR TorqueControl (fixtures)
     CAB-->>CM: FRI session established (COMMANDING_ACTIVE)
     CM->>CM: spawn joint_state_broadcaster
     Note over CM: only after it activates (URDF received)
-    CM->>CM: spawn estimated_wrench · lbr_state · force_torque · lbr_joint_position_command_controller
-    Note over CM: restricted-plane spawns kuka_clik_controller instead
+    CM->>CM: spawn estimated_wrench · lbr_state · force_torque · active ctrl
+    Note over CM: apple/perturb → joint_position_command_controller;<br/>fixtures → joint_impedance (active) + cartesian_impedance (inactive)
     ROS-->>Op: Orchestrator starts trial — arm moves to start pose
 ```
 
 ### 6.4 Layers
 **Layer 1 — Real‑time control (C++ / ros2_control)**
-- **Cabinet‑side Cartesian impedance (`LbrImpedanceControlServer`):** the KUKA cabinet runs the
-  Cartesian‑impedance virtual spring at 1000 Hz; ROS only streams the equilibrium to it.
+- **Cabinet apps (SmartPad):** `LbrImpedanceControlServer` runs the cabinet's Cartesian‑impedance
+  spring at 1000 Hz in FRI **position** mode (apple‑pluck / perturb — ROS streams the equilibrium).
+  `TorqueControl` runs a zero‑stiffness joint‑impedance base + FRI joint **torque** overlay (fixtures —
+  the cabinet does gravity/friction/Coriolis comp and ROS adds the impedance torques).
 - **`LBRJointPositionCommandController` (lbr_ros2_control):** the **apple‑pluck / perturb** controller
   — forwards joint positions straight to the FRI position command (no IK). Typed message
   `lbr_fri_idl/LBRJointPositionCommand` on `…/command/lbr_joint_position_command`.
-- **`kuka_clik_controller` (IDRA Lab):** the **restricted‑plane** controller — a Closed‑Loop IK
-  tracker that converts a Cartesian target into joint commands. Message `geometry_msgs/PoseStamped`
-  on `…/kuka_clik_controller/target_frame`.
+- **`cartesian_impedance_controller` + `joint_impedance_controller` (idra‑lab `ros2_effort_controller`):**
+  the **restricted‑plane / maze** controllers (FRI torque mode) — a Jᵀ Cartesian/joint spring that
+  outputs **joint torques**. The fixture streams `geometry_msgs/PoseStamped` on
+  `…/cartesian_impedance_controller/target_frame`; moves stream to `…/joint_impedance_controller/target_frame`.
 
 **Layer 2 — Kinematics math (Python)**
 - **`optas`:** used inside the Python actions for fast Forward Kinematics (FK) and analytical
@@ -562,8 +565,8 @@ sequenceDiagram
 **Layer 3 — State‑machine orchestration (Python)**
 The experimental flows are orchestrated by high‑level `rclpy` nodes (one per experiment), each
 composed entirely of the modular actions catalogued in §6.2 — `MoveToPositionJointSpace` /
-`MoveToPositionCartesianSpace`, `PerturbInitialPosition`, `CartesianImpedanceDisplacementMonitor`,
-`MoveRestrictedOnAPlaneAction`, `AudioCue`, `WaitAction`. The per‑scenario flows are below.
+`MoveToFrame`, `PerturbInitialPosition`, `CartesianImpedanceDisplacementMonitor`,
+`MoveRestrictedOnAPlaneAction` / `MoveInMaze`, `AudioCue`, `WaitAction`. The per‑scenario flows are below.
 
 ### 6.5 Control rates — why a 1000 Hz spring but a 10 ms FRI period
 The cabinet's control loop and the FRI network exchange run on **two different clocks** — don't
@@ -681,12 +684,13 @@ source install/setup.bash
 This work is built on top of Huber et al.[^1]; all original credit for `lbr_fri_ros2_stack` goes to
 that team.
 
-The vendored controllers in [`vendored_controllers/`](vendored_controllers/) —
-`kuka_clik_controller`, `controller_base`, and `debug_msg` — are by the **IDRA Lab** (University of
-Trento), from [`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller)
-(branch `kuka-prop-ctrl`), used via
+The torque controllers — `cartesian_impedance_controller`, `joint_impedance_controller`,
+`gravity_compensation`, `effort_controller_base`, and `debug_msg` — are by the **IDRA Lab**
+(University of Trento), from
+[`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller) (imported via
+`sinthlab_lbr_stack.repos`, pinned to a commit), used via
 [`idra-lab/kuka_lbr_control`](https://github.com/idra-lab/kuka_lbr_control). They are distributed
-under the Apache License 2.0 (see [`vendored_controllers/LICENSE`](vendored_controllers/LICENSE)).
+under the Apache License 2.0.
 Credit to Luca Beber, Davide Nardi, et al.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software. [doi](https://doi.org/10.21105/joss.06138)

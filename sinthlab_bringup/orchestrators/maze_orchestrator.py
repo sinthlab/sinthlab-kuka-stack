@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.move_to_frame import MoveToFrameAction
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
@@ -13,23 +13,25 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
-JOINT_CTRL = "lbr_joint_position_command_controller"
-CLIK_CTRL = "kuka_clik_controller"
+# TORQUE mode: joint-space impedance for the exact-posture start/recover moves; Cartesian impedance
+# (streamed target_frame) for the fixture. The orchestrator switches between the two.
+MOVE_CTRL = "joint_impedance_controller"
+FIXTURE_CTRL = "cartesian_impedance_controller"
 
 
 class MazeOrchestratorNode(rclpyNode):
     """Maze-exploration trial loop, composed entirely of actions:
 
-    move_to_start (JOINT) -> switch to CLIK -> quiet_window -> go_cue
+    move_to_start -> switch to Cartesian impedance -> quiet_window -> go_cue
     -> (maze_fixtures + checkpoint_monitor + timeout) -> [reward_cue per checkpoint, any order]
     -> goal OR timeout -> stop fixtures -> force_release (wait until the operator lets go)
-    -> switch to JOINT -> move_recover (JOINT) -> repeat.
+    -> switch to joint impedance -> move_recover -> repeat.
 
-    The start/recover moves run on the joint-position controller so the arm reaches the EXACT
-    configuration (deterministic posture). The corridor virtual fixtures need the CLIK, so we switch
-    to it once the arm is at start, and switch back before recovering. The operator drives the
-    compliant arm through the corridors; the cabinet impedance provides the walls. Both the goal and
-    the timeout converge on the same safe ending: stop the fixtures, wait for release, return to start.
+    The start/recover moves run on the joint-impedance controller so the arm reaches the start pose
+    firmly. The corridor virtual fixtures run on the cartesian_impedance_controller, so we switch to it
+    once the arm is at start, and switch back before recovering. The operator drives the compliant arm
+    through the corridors; the ROS Cartesian impedance provides the walls. Both the goal and the timeout
+    converge on the same safe ending: stop the fixtures, wait for release, return to start.
     """
 
     def __init__(self) -> None:
@@ -40,12 +42,13 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_ending = False
 
         # Actions that make up the trial.
-        self.move_to_start = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start", on_complete=self.on_move_complete
+        self.move_to_start = MoveToFrameAction(
+            self, param_prefix="move_to_start", on_complete=self.on_move_complete,
+            target_controller=MOVE_CTRL,
         )
         self.switch_to_fixture = SwitchControllerAction(
-            self, activate=[CLIK_CTRL], deactivate=[JOINT_CTRL],
-            on_complete=self.on_switched_to_fixture, name="switch->clik",
+            self, activate=[FIXTURE_CTRL], deactivate=[MOVE_CTRL],
+            on_complete=self.on_switched_to_fixture, name="switch->impedance",
         )
         self.quiet_window = WaitAction(
             self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
@@ -68,11 +71,12 @@ class MazeOrchestratorNode(rclpyNode):
             self, param_prefix="force_release", on_complete=self.on_force_released
         )
         self.switch_to_joint = SwitchControllerAction(
-            self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
-            on_complete=self.on_switched_to_joint, name="switch->joint",
+            self, activate=[MOVE_CTRL], deactivate=[FIXTURE_CTRL],
+            on_complete=self.on_switched_to_joint, name="switch->joint_impedance",
         )
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
+        self.move_recover = MoveToFrameAction(
+            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete,
+            target_controller=MOVE_CTRL,
         )
 
         self.get_logger().info("=== MULTI-TRIAL MAZE EXPERIMENT INITIALIZED ===")
@@ -85,11 +89,11 @@ class MazeOrchestratorNode(rclpyNode):
         self.move_to_start.start()
 
     def on_move_complete(self):
-        self.get_logger().info("Arm at exact maze start. Switching to CLIK for the fixtures...")
+        self.get_logger().info("Arm at exact maze start. Switching to the impedance controller for the fixtures...")
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
-        self.get_logger().info("On CLIK. Waiting for a quiet window...")
+        self.get_logger().info("On the impedance controller. Waiting for a quiet window...")
         self.quiet_window.start()
 
     def on_quiet_window_complete(self):
@@ -128,7 +132,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.maze_fixtures.stop()
         if reason == "safety":
             # Do not play a cue or wait for release — drive straight back to the safe start posture, which
-            # (in the cabinet's impedance) sets the equilibrium at start and pulls the arm out of the fault.
+            # (via the impedance controller) sets the equilibrium at start and pulls the arm out of the fault.
             self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
             self.switch_to_joint.start()
             return

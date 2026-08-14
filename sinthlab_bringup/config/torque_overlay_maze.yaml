@@ -1,0 +1,26 @@
+# Per-experiment overlay for the MAZE, loaded AFTER torque_controllers.yaml so it overrides the
+# Cartesian stiffness + nullspace posture for this experiment.
+#
+# The maze fixture streams target_frame = corridor-projected pose. Inside a corridor the projection
+# returns the measured point -> ~zero error -> soft (the 1 kHz torque loop has no tracking lag).
+# Outside a corridor the projection clamps to the edge -> K*penetration -> a wall.
+# So: X stiff (lock the radial plane), Y/Z soft (compliant guiding + the wall is K_yz * penetration).
+# HARDWARE-TUNE: raise trans_y/trans_z for firmer walls, lower for softer guiding.
+#
+# nullspace posture = the maze move_to_start [0,0,0,-70,-20,10,0] deg (tool along +X), in radians.
+/**/cartesian_impedance_controller:
+  ros__parameters:
+    stiffness:
+      trans_x: 1000.0   # radial plane lock
+      trans_y: 150.0    # sideways: soft guide + soft wall
+      trans_z: 150.0    # up/down: soft guide + soft wall
+      rot_x: 40.0
+      rot_y: 40.0
+      rot_z: 40.0
+    nullspace_stiffness: 20.0
+    nullspace_desired_configuration: [0.0, 0.0, 0.0, -1.22173, -0.34907, 0.17453, 0.0]
+
+/**/joint_impedance_controller:
+  ros__parameters:
+    nullspace_stiffness: 20.0
+    nullspace_desired_configuration: [0.0, 0.0, 0.0, -1.22173, -0.34907, 0.17453, 0.0]

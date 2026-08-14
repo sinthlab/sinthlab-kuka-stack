@@ -6,7 +6,7 @@ include this and pass:
 
   * params_file  - the experiment parameter YAML (loaded onto the orchestrator)
   * orchestrator - the orchestrator executable (e.g. apple_pluck_orchestrator.py)
-  * ctrl         - the controller spawned via FRI (joint-position for apple/perturb, clik for restricted)
+  * ctrl         - the ACTIVE controller (joint-position for apple/perturb, joint-impedance for the fixtures)
   * startup_delay- optional seconds to hold the orchestrator back so the controller is active first
 
 Not meant to be run directly (params_file and orchestrator are required).
@@ -40,23 +40,33 @@ def generate_launch_description():
         description="Controller spawned ACTIVE for hardware commands.",
     )
     # Optional second controller spawned INACTIVE (the restricted-plane/maze experiments set this to
-    # the CLIK; their orchestrator switches to it for the fixture phase and back for the moves).
+    # the Cartesian impedance controller; their orchestrator switches to it for the fixture phase and
+    # back for the moves).
     extra_inactive_ctrl = DeclareLaunchArgument(
         "extra_inactive_ctrl",
         default_value="",
-        description="Optional second controller spawned inactive (e.g. kuka_clik_controller).",
+        description="Optional second controller spawned inactive (e.g. cartesian_impedance_controller).",
     )
-    # The CLIK matches only the EE pose and resolves the arm's redundant 7th DOF toward this posture, so
-    # it must equal THIS experiment's move_to_start. The maze starts with the tool along +X; every other
-    # experiment starts tool-down, hence the default.
-    clik_nullspace_cfg = DeclareLaunchArgument(
-        "clik_nullspace_cfg",
-        default_value="config/clik_nullspace_default.yaml",
-        description="Per-experiment CLIK redundancy posture (overrides the shared controllers YAML).",
+    # A generic controller-params overlay loaded AFTER ctrl_cfg (so it wins). The torque fixtures point
+    # it at their per-experiment config/torque_overlay_*.yaml (Cartesian stiffness + nullspace posture);
+    # the position experiments leave it at the harmless default.
+    ctrl_overlay_cfg = DeclareLaunchArgument(
+        "ctrl_overlay_cfg",
+        default_value="config/ctrl_overlay_none.yaml",
+        description="Generic controller-params OVERLAY, loaded AFTER ctrl_cfg so it wins. Position "
+        "experiments leave it at the (harmless) default; the torque fixtures point it at their "
+        "config/torque_overlay_*.yaml (per-experiment Cartesian stiffness + nullspace posture).",
     )
+    # FRI system config + controllers config. Defaults = the POSITION path (apple-pluck / perturb).
+    # The restricted-plane / maze launches override these to run FRI in TORQUE mode on the idra-lab
+    # impedance controllers.
+    sys_cfg_pkg = DeclareLaunchArgument("sys_cfg_pkg", default_value="lbr_description")
+    sys_cfg = DeclareLaunchArgument("sys_cfg", default_value="ros2_control/lbr_system_config.yaml")
+    ctrl_cfg_pkg = DeclareLaunchArgument("ctrl_cfg_pkg", default_value="sinthlab_bringup")
+    ctrl_cfg = DeclareLaunchArgument("ctrl_cfg", default_value="config/iiwa7_hardware_controllers.yaml")
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
-    # ACTIVE before the first move streams setpoints (the CLIK resets its target to the current
-    # pose on activation). Joint-position experiments can leave it 0.
+    # ACTIVE before the first move streams setpoints (the impedance controller holds its current pose
+    # on activation). Can be left at 0.
     startup_delay = DeclareLaunchArgument(
         "startup_delay",
         default_value="0.0",
@@ -81,7 +91,11 @@ def generate_launch_description():
             "robot_name": LaunchConfiguration("robot_name"),
             "ctrl": LaunchConfiguration("ctrl"),
             "extra_inactive_ctrl": LaunchConfiguration("extra_inactive_ctrl"),
-            "clik_nullspace_cfg": LaunchConfiguration("clik_nullspace_cfg"),
+            "ctrl_overlay_cfg": LaunchConfiguration("ctrl_overlay_cfg"),
+            "sys_cfg_pkg": LaunchConfiguration("sys_cfg_pkg"),
+            "sys_cfg": LaunchConfiguration("sys_cfg"),
+            "ctrl_cfg_pkg": LaunchConfiguration("ctrl_cfg_pkg"),
+            "ctrl_cfg": LaunchConfiguration("ctrl_cfg"),
         }.items(),
     )
 
@@ -111,7 +125,11 @@ def generate_launch_description():
             robot_name,
             ctrl,
             extra_inactive_ctrl,
-            clik_nullspace_cfg,
+            ctrl_overlay_cfg,
+            sys_cfg_pkg,
+            sys_cfg,
+            ctrl_cfg_pkg,
+            ctrl_cfg,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

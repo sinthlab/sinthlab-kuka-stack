@@ -81,8 +81,9 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     # Optionally load a second controller in the INACTIVE state (configured, not running). The
-    # restricted-plane / maze experiments use this for the CLIK: the joint controller (ctrl) is
-    # active for the start/recover moves, then the orchestrator switches to this one for the fixture.
+    # restricted-plane / maze experiments use this for the Cartesian impedance controller: the
+    # joint-impedance controller (ctrl) is active for the start/recover moves, then the orchestrator
+    # switches to this one for the fixture.
     inactive_ctrl_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -142,23 +143,23 @@ def generate_launch_description() -> LaunchDescription:
                 description="Relative path from ctrl_cfg_pkg to the controllers.",
             ),
             DeclareLaunchArgument(
-                name="clik_nullspace_cfg",
-                default_value="config/clik_nullspace_default.yaml",
-                description="Per-experiment CLIK redundancy posture. Loaded AFTER ctrl_cfg so it "
-                "overrides it. The CLIK matches only the EE pose and resolves the 7th DOF toward this "
-                "configuration, so it must equal the experiment's move_to_start posture — the maze "
-                "(tool along +X) needs a different one from the tool-down experiments.",
+                name="ctrl_overlay_cfg",
+                default_value="config/ctrl_overlay_none.yaml",
+                description="Generic controller-params OVERLAY, loaded AFTER ctrl_cfg so it wins. The "
+                "torque fixtures point it at config/torque_overlay_*.yaml (per-experiment Cartesian "
+                "stiffness + nullspace posture); the position experiments leave it at the harmless default.",
             ),
             DeclareLaunchArgument(
                 name="ctrl",
-                default_value="kuka_clik_controller",
+                default_value="lbr_joint_position_command_controller",
                 description="Desired default controller (spawned ACTIVE). Must be defined in the ctrl_cfg.",
             ),
             DeclareLaunchArgument(
                 name="extra_inactive_ctrl",
                 default_value="",
-                description="Optional second controller spawned INACTIVE (e.g. the CLIK for the "
-                "restricted-plane/maze experiments; the orchestrator switches to it for the fixture).",
+                description="Optional second controller spawned INACTIVE (e.g. the Cartesian impedance "
+                "controller for the restricted-plane/maze experiments; the orchestrator switches to it "
+                "for the fixture).",
             ),
             Node(
                 package="robot_state_publisher",
@@ -179,11 +180,11 @@ def generate_launch_description() -> LaunchDescription:
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
                     )
                     / LaunchConfiguration("ctrl_cfg"),
-                    # Loaded LAST so it wins: the experiment's CLIK redundancy posture.
+                    # Loaded LAST so it wins: the experiment's controller-params overlay.
                     PathSubstitution(
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
                     )
-                    / LaunchConfiguration("clik_nullspace_cfg"),
+                    / LaunchConfiguration("ctrl_overlay_cfg"),
                 ],
                 namespace=LaunchConfiguration("namespace"),
             ),

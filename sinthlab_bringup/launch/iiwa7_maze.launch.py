@@ -20,13 +20,17 @@ def generate_launch_description():
                         [FindPackageShare("sinthlab_bringup"), "config", "maze_params.yaml"]
                     ),
                     "orchestrator": "maze_orchestrator.py",
-                    # Joint controller active for the exact-posture start/recover moves; CLIK loaded
-                    # inactive and switched in by the orchestrator for the corridor fixtures.
-                    "ctrl": "lbr_joint_position_command_controller",
-                    "extra_inactive_ctrl": "kuka_clik_controller",
-                    # The maze is the ONLY experiment whose tool points along +X, so the CLIK must
-                    # resolve the arm's redundancy toward the maze start posture, not the tool-down one.
-                    "clik_nullspace_cfg": "config/clik_nullspace_maze.yaml",
+                    # TORQUE mode (FRI joint-torque overlay + idra-lab impedance controllers):
+                    # joint impedance active for the exact-posture start/recover moves; Cartesian
+                    # impedance loaded INACTIVE and switched in by the orchestrator for the fixture.
+                    "ctrl": "joint_impedance_controller",
+                    "extra_inactive_ctrl": "cartesian_impedance_controller",
+                    "sys_cfg_pkg": "sinthlab_bringup",
+                    "sys_cfg": "config/lbr_system_config_torque.yaml",
+                    "ctrl_cfg": "config/torque_controllers.yaml",
+                    # Per-experiment overlay: Cartesian stiffness (X stiff, Y/Z soft) + the maze start
+                    # posture as the nullspace bias (tool along +X).
+                    "ctrl_overlay_cfg": "config/torque_overlay_maze.yaml",
                 }.items(),
             ),
         ]

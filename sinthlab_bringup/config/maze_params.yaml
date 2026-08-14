@@ -1,9 +1,10 @@
 /**:
   ros__parameters:
-    # Maze uses kuka_clik_controller (cartesian): move_to_start/recover use MoveToPositionCartesianSpace,
-    # and MoveRestrictedOnAPlaneAction streams the corridor-constrained equilibrium pose. The cabinet
-    # (LbrImpedanceControlServer) provides the walls — select a STIFF in-plane profile on the SmartPad
-    # so the maze walls are firm and the path is strictly followed.
+    # Maze runs in TORQUE mode: move_to_start/recover use MoveToFrame -> joint_impedance_controller,
+    # and MoveInMazeAction streams the corridor-constrained equilibrium to cartesian_impedance_controller.
+    # The idra-lab impedance controllers provide the compliance + walls (per-axis Cartesian stiffness on
+    # the ROS side); the cabinet runs TorqueControl.java (gravity comp, no free-fall). Tune the stiffness
+    # in config/torque_overlay_maze.yaml, NOT a SmartPad profile.
     #
     # GEOMETRY IS SOLVED, NOT GUESSED. Every position below is in metres, base frame (lbr_link_0), and
     # was checked by IK against the real iiwa7 URDF: the start posture puts the tool axis EXACTLY along
@@ -28,13 +29,14 @@
       # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
       # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
       # plane through the start (tool points +X, perpendicular into it).
-      # >>> SYNC: keep this array identical to nullspace_desired_configuration in
-      #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
-      #     posture and fights you. (This start was verified: the whole maze footprint is reachable
-      #     while holding this orientation at z=0.9.)
+      # >>> SYNC: keep this array identical (converted to RADIANS) to nullspace_desired_configuration
+      #     in config/torque_overlay_maze.yaml, or the Cartesian impedance holds the right EE pose in
+      #     the wrong arm posture and fights you. (This start was verified: the whole maze footprint is
+      #     reachable while holding this orientation at z=0.9.)
       target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
       joint_move_tolerance: 0.01
-      cartesian_move_tolerance: 0.03   # EE position tolerance [m] (clik completion)
+      cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
+      move_duration_sec: 6.0           # ramp time for the (possibly large) initial move [s]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # [rad/s^2]
       move_to_pos_j_max: 5.0  # [rad/s^3]
@@ -89,7 +91,7 @@
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
     # The maze footprint reaches ~0.24 m from start, so 0.35 m clears it with margin; normal hand motion is
-    # under the CLIK's 0.4 m/s clamp, so 0.7 m/s catches a fall without false-tripping. This is a backstop,
+    # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:
       update_rate: 100

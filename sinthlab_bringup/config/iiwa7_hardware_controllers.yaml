@@ -19,12 +19,9 @@
     lbr_state_broadcaster:
       type: lbr_ros2_control/LBRStateBroadcaster
 
-    # ROS 2 control controllers
-    # kuka_clik_controller -> restricted-plane scenario (cartesian target -> CLIK IK -> joints)
-    kuka_clik_controller:
-      type: kuka_clik_controller/KukaClikController
-
-    # LBR ROS 2 control controllers
+    # LBR ROS 2 control controllers.
+    # NOTE: the restricted-plane / maze fixtures moved to TORQUE mode (config/torque_controllers.yaml);
+    # this config now serves only the POSITION experiments (apple-pluck / perturb).
     # lbr_joint_position_command_controller -> apple-pluck / perturb (joint positions -> FRI)
     lbr_joint_position_command_controller:
       type: lbr_ros2_control/LBRJointPositionCommandController
@@ -58,43 +55,3 @@
 /**/lbr_joint_position_command_controller:
   ros__parameters:
     robot_name: lbr
-
-/**/kuka_clik_controller:
-  ros__parameters:
-    update_rate: 1000
-    robot_base_link: "lbr_link_0"
-    end_effector_link: "lbr_link_ee"
-    compliance_ref_link: "lbr_link_ee"
-    joints:
-      - lbr_A1
-      - lbr_A2
-      - lbr_A3
-      - lbr_A4
-      - lbr_A5
-      - lbr_A6
-      - lbr_A7
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
-    # Rate limit on how fast the commanded EQUILIBRIUM may chase its target, per axis [m/s].
-    # This is not just a safety clamp — it caps the fixture. Two ways it bites:
-    #   * the sine rail demands v_y = slope * v_pull (slope = amplitude*spatial_freq = 1.2), so a
-    #     0.2 m/s cap flattens the wave as soon as the operator pulls faster than 0.17 m/s;
-    #   * the pull axis is free only because the equilibrium tracks the measured z — pull faster than
-    #     this and it lags, and the lag becomes a spring force fighting the pull.
-    # 0.4 keeps both clear at a brisk (~0.3 m/s) pull.
-    max_linear_velocity: 0.4
-    max_angular_velocity: 0.2
-    clik_dt: 0.001
-    clik_it_max: 100
-    clik_eps: 1e-4
-    clik_filter_alpha: 0.99
-    # NOTE: `nullspace_desired_configuration` is deliberately NOT set here — it is PER-EXPERIMENT.
-    # The CLIK matches only the EE *pose* and resolves the arm's redundant 7th DOF toward that posture,
-    # so it must track each experiment's own move_to_start. A single shared value cannot be right for
-    # both the tool-DOWN experiments and the maze (tool along +X). It comes from the `clik_nullspace_cfg`
-    # overlay, loaded AFTER this file (see launch/iiwa7_hardware.launch.py):
-    #   config/clik_nullspace_default.yaml  -> apple-pluck / perturb / restricted-plane (tool DOWN)
-    #   config/clik_nullspace_maze.yaml     -> maze (tool along +X)
