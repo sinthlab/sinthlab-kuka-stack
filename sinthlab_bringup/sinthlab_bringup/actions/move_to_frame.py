@@ -36,9 +36,11 @@ class MoveToFrameAction:
         self._active = False
         self._done = False
 
-        state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
-        self.base_link = str(get_required_param(node, self._param_prefix + "base_link"))
-        self.ee_link = str(get_required_param(node, self._param_prefix + "end_effector_link"))
+        # state_topic / base_link / end_effector_link are TOP-LEVEL params (like the fixture reads them),
+        # NOT under the move_to_start prefix — only target_joint_position/update_rate/etc. are prefixed.
+        state_topic = str(get_required_param(node, "state_topic"))
+        self.base_link = str(get_required_param(node, "base_link"))
+        self.ee_link = str(get_required_param(node, "end_effector_link"))
 
         robot_name = node.get_namespace().strip("/")
         cmd_topic = (f"/{robot_name}/{target_controller}/target_frame"
