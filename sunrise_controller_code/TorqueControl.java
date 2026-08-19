@@ -66,7 +66,12 @@ public class TorqueControl extends RoboticsAPIApplication {
 	// FRI parameters
 	private String client_name_;
 	private String[] client_names_ = { "172.31.1.148", "192.170.10.100" };
-	private int send_period_ = 1;
+	// FRI send period [ms], chosen on the SmartPad. It MUST match controller_manager update_rate in
+	// config/torque_controllers.yaml: update_rate_hz = 1000 / send_period_ms (so 5 -> 200, 10 -> 100,
+	// 1 -> 1000). Pick 5 to match the shipped config. 1 ms / 1000 Hz needs a real-time host; if the FRI
+	// session hangs in "Monitoring (Wait)" (connection quality never GOOD), pick a larger value.
+	private int send_period_;
+	private String[] send_periods_ = { "1", "2", "5", "10" };
 
 	private FRIConfiguration fri_configuration_;
 	private FRISession fri_session_;
@@ -78,10 +83,17 @@ public class TorqueControl extends RoboticsAPIApplication {
 	private String[] command_modes_ = getNames(ClientCommandMode.class);
 	// methods
 	public void request_user_config() {
+		// Ask for Send Period (SmartPad dialog, like LbrImpedanceControlServer). Keep consistent with
+		// update_rate in config/torque_controllers.yaml: update_rate_hz = 1000 / send_period_ms.
+		int selectedButtonIndex = applicationUi.displayModalDialog(
+				ApplicationDialogType.QUESTION,
+				"Select the desired FRI send period [ms]:",
+				send_periods_);
+		send_period_ = Integer.valueOf(send_periods_[selectedButtonIndex]);
 		getLogger().info("Send period set to: " + send_period_);
 
-		// Ask for Remote IP on the SmartPad (like LbrImpedanceControlServer)
-		int selectedButtonIndex = applicationUi.displayModalDialog(
+		// Ask for Remote IP
+		selectedButtonIndex = applicationUi.displayModalDialog(
 				ApplicationDialogType.QUESTION,
 				"Select your remote IP address:",
 				client_names_);

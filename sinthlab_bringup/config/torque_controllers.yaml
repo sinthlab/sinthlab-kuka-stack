@@ -10,7 +10,8 @@
 #   cartesian_impedance_controller -> the fixture phase (target_frame = corridor/rail-projected pose)
 /**/controller_manager:
   ros__parameters:
-    update_rate: 1000        # torque impedance runs at the 1 ms FRI rate
+    update_rate: 200         # MUST match TorqueControl.java send_period_ (200 Hz <-> 5 ms). 1 kHz/1 ms
+                             # needs a real-time host; if FRI hangs in "Monitoring (Wait)", keep this lower.
     enforce_command_limits: true
 
     joint_state_broadcaster:

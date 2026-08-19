@@ -9,7 +9,7 @@ The stack runs **two control paradigms**. Apple-pluck / perturb use FRI **positi
 **joint** setpoints to `LBRJointPositionCommandController` and the KUKA cabinet's Cartesian impedance
 (`LbrImpedanceControlServer`) provides the spring. Restricted-plane / maze use FRI **torque** mode: the
 cabinet (`TorqueControl.java`) does gravity comp only, and the ROS-side `cartesian_impedance_controller`
-(idra-lab `ros2_effort_controller`) runs a 1 kHz Cartesian spring — soft inside, firm walls, no
+(idra-lab `ros2_effort_controller`) runs a real-time Cartesian spring — soft inside, firm walls, no
 free-fall or position-streaming tracking lag. Python state machines sequence each trial
 (move → cue → monitor displacement → recoil → repeat).
 
@@ -227,9 +227,25 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
   **cabinet's** Cartesian impedance (`LbrImpedanceControlServer`) provides the compliance.
 - **Restricted-plane / Maze (2 & 4)** — FRI **TORQUE** mode: the cabinet (`TorqueControl.java`) does
   gravity/friction/Coriolis comp only, and the ROS-side `cartesian_impedance_controller` (idra-lab, from
-  `ros2_effort_controller`) provides a 1 kHz Cartesian spring. Compliance is tuned in
+  `ros2_effort_controller`) provides a real-time Cartesian spring. Compliance is tuned in
   `config/torque_overlay_{restricted_plane,maze}.yaml`, **not** a SmartPad stiffness profile. No
-  free-fall (gravity is compensated on the cabinet), no position-streaming tracking-lag (direct torque at 1 kHz).
+  free-fall (gravity is compensated on the cabinet), no position-streaming tracking-lag (direct torque).
+
+  > **⚠️ FRI send period ↔ `update_rate` must match.** `TorqueControl` asks for the send period on the
+  > SmartPad; it must equal `controller_manager.update_rate` in `config/torque_controllers.yaml`, where
+  > **`update_rate_hz = 1000 / send_period_ms`**:
+  >
+  > | Send period (SmartPad) | `update_rate` (YAML) |
+  > |---|---|
+  > | 10 ms | 100 |
+  > | **5 ms** | **200** (shipped) |
+  > | 2 ms | 500 |
+  > | 1 ms | 1000 |
+  >
+  > A mismatch — or 1 ms/1000 Hz on a **non-realtime host** — leaves the FRI session stuck in
+  > **"Monitoring (Wait)"** (connection quality never reaches GOOD, so it can't enter Commanding and the
+  > overlay motion refuses to start). Start at **5 ms / 200 Hz**; only push faster once it's stable, and
+  > change **both** sides together (the YAML needs a `sinthlab_bringup` rebuild).
 
 ### Scenario 1 — Apple Pluck
 This scenario streams **joint** setpoints to the `LBRJointPositionCommandController` (joint positions
@@ -267,18 +283,20 @@ recoils when pushed off its commanded anchor.
 This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
 arm moves freely *within* an allowed region and is pushed back *outside* it. It runs in **FRI TORQUE
 mode**: `cartesian_impedance_controller` streams a **fixture-constrained equilibrium** pose and runs a
-1 kHz Cartesian spring on the ROS side; the cabinet (`TorqueControl.java`) only compensates gravity.
+real-time Cartesian spring on the ROS side; the cabinet (`TorqueControl.java`) only compensates gravity.
 Along a free axis the equilibrium tracks the arm (~zero force, no lag); off the manifold it holds, so
 the spring walls the arm — soft inside, firm at the boundary, and no free-fall.
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`TorqueControl`** application (NOT `LbrImpedanceControlServer` —
-   this experiment is torque mode). It sets a zero-stiffness joint-impedance base + FRI joint TORQUE
-   overlay (so the cabinet does gravity comp and ROS adds the impedance torques), then waits (~60 s)
-   for the ROS client to connect.
+   this experiment is torque mode). It prompts for the **FRI send period** (pick **5 ms** to match the
+   shipped `update_rate: 200` — see the rate note above) and the **remote IP**, then sets a
+   zero-stiffness joint-impedance base + FRI joint TORQUE overlay (cabinet does gravity comp, ROS adds
+   the impedance torques) and waits (~60 s) for the ROS client.
 
-   > First run: verify `sunrise_controller_code/TorqueControl.java` has your ROS PC IP (`client_name_`,
-   > default `172.31.1.148`) and that `@Named("Tool")` matches the tool you ran load-data Determine on.
+   > First run: the tool template `EE_TOOL_TEMPLATE = "SinthLabIiwa7EE"` must match the tool you ran
+   > load-data Determine on; add your PC's IP to `client_names_` in `TorqueControl.java` if the dialog
+   > doesn't offer it.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
@@ -383,11 +401,13 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`TorqueControl`** application (NOT `LbrImpedanceControlServer` —
-   the maze is torque mode). It sets a zero-stiffness joint-impedance base + FRI joint TORQUE overlay
-   and waits (~60 s) for the ROS client. Stiffness is set in ROS, not here — see "Tuning" below.
+   the maze is torque mode). It prompts for the **FRI send period** (pick **5 ms** to match the shipped
+   `update_rate: 200`) and the **remote IP**, then sets a zero-stiffness joint-impedance base + FRI
+   joint TORQUE overlay and waits (~60 s) for the ROS client. Stiffness is set in ROS, not here — see
+   "Tuning" below.
 
-   > First run: verify `sunrise_controller_code/TorqueControl.java` has your ROS PC IP (`client_name_`)
-   > and `@Named("Tool")` matches the tool you ran load-data Determine on.
+   > First run: the tool template `EE_TOOL_TEMPLATE = "SinthLabIiwa7EE"` must match the tool you ran
+   > load-data Determine on; add your PC's IP to `client_names_` in `TorqueControl.java` if needed.
 
 2. **Launch:**
    ```bash
