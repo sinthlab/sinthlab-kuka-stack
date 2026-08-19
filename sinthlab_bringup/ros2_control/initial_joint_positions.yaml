@@ -1,0 +1,12 @@
+# initial joint positions [degrees]
+# Copy of lbr_description/ros2_control/initial_joint_positions.yaml. The TORQUE experiments set
+# sys_cfg_pkg=sinthlab_bringup so the robot_description resolves BOTH the system config AND this file
+# from this package (LBRDescriptionMixin derives initial_joint_positions_path from sys_cfg_pkg). It is
+# only the URDF's initial-state fallback, so it can stay identical to the lbr_description default.
+A1: 0.0
+A2: 25.0
+A3: 0.0
+A4: 90.0
+A5: 0.0
+A6: 0.0
+A7: 0.0

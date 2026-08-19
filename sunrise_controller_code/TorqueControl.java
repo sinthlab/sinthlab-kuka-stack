@@ -1,5 +1,5 @@
 /*
- * TorqueControl — Sunrise FRI application for the TORQUE experiments (restricted-plane + maze).
+ * TorqueControl - Sunrise FRI application for the TORQUE experiments (restricted-plane + maze).
  * Source: idra-lab/kuka_lbr_control (assets/TorqueControl.java), Apache-2.0.
  *
  * Opens the FRI session as a JOINT overlay in ClientCommandMode.TORQUE with a zero-stiffness

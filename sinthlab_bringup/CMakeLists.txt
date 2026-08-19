@@ -42,4 +42,11 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Install ros2_control resources. The torque experiments set sys_cfg_pkg=sinthlab_bringup, so the
+# robot_description resolves initial_joint_positions.yaml from HERE (not lbr_description).
+install(
+  DIRECTORY ros2_control
+  DESTINATION share/${PROJECT_NAME}
+)
+
 ament_package()
