@@ -10,11 +10,11 @@
  * Pair with: config/lbr_system_config_torque.yaml (client_command_mode: torque).
  * The apple-pluck / perturb experiments keep using LbrImpedanceControlServer.java (position mode).
  *
- * >>> BEFORE RUNNING, MATCH YOUR SETUP (like the other servers in this folder):
- *   1. client_name_ IP below must be the ROS PC's address. 172.31.1.148 matches the first option in
- *      LBRServer.java / LbrImpedanceControlServer.java; change it if your PC differs.
- *   2. @Named("Tool") must match a Tool configured in your Sunrise project (the same tool you ran the
- *      load-data Determine on). Rename if your tool has a different name.
+ * >>> SETUP (matches the other servers in this folder):
+ *   - Remote IP is chosen at runtime via a SmartPad dialog (client_names_ list); add your PC's IP there
+ *     if it isn't already listed.
+ *   - EE_TOOL_TEMPLATE = "SinthLabIiwa7EE" must match the tool template in your Sunrise project (the one
+ *     you ran the load-data Determine on).
  */
 package lbr_fri_ros2;
 
@@ -25,7 +25,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.Arrays;
 
 import javax.inject.Inject;
-import javax.inject.Named;
 
 import com.kuka.roboticsAPI.applicationModel.RoboticsAPIApplication;
 import com.kuka.roboticsAPI.controllerModel.Controller;
@@ -34,6 +33,7 @@ import com.kuka.roboticsAPI.geometricModel.CartDOF;
 import com.kuka.roboticsAPI.geometricModel.ObjectFrame;
 import com.kuka.roboticsAPI.geometricModel.Tool;
 import com.kuka.roboticsAPI.uiModel.ApplicationDialogType;
+import com.kuka.roboticsAPI.uiModel.IApplicationUI;
 import com.kuka.roboticsAPI.motionModel.controlModeModel.*;
 import com.kuka.connectivity.fastRobotInterface.*;
 
@@ -41,11 +41,15 @@ public class TorqueControl extends RoboticsAPIApplication {
 	// members
 	@Inject
 	private LBR lbr_;
+	@Inject
+	private IApplicationUI applicationUi;
 	private Controller lbr_controller_;
 
-    @Inject
-    @Named("Tool")
-    private Tool mytool;
+	// End-effector tool TEMPLATE name — MUST match the tool template in your Sunrise project
+	// (RoboticsAPI.data.xml). Attaching it lets the cabinet gravity-compensate the payload; its
+	// loadData must match what is physically mounted (run the SmartPad "Determine").
+	private static final String EE_TOOL_TEMPLATE = "SinthLabIiwa7EE";
+	private Tool ee_tool_;
 
 	// control mode
 	private enum CONTROL_MODE {
@@ -60,7 +64,8 @@ public class TorqueControl extends RoboticsAPIApplication {
 	}
 
 	// FRI parameters
-	private String client_name_ = "172.31.1.148";
+	private String client_name_;
+	private String[] client_names_ = { "172.31.1.148", "192.170.10.100" };
 	private int send_period_ = 1;
 
 	private FRIConfiguration fri_configuration_;
@@ -75,6 +80,12 @@ public class TorqueControl extends RoboticsAPIApplication {
 	public void request_user_config() {
 		getLogger().info("Send period set to: " + send_period_);
 
+		// Ask for Remote IP on the SmartPad (like LbrImpedanceControlServer)
+		int selectedButtonIndex = applicationUi.displayModalDialog(
+				ApplicationDialogType.QUESTION,
+				"Select your remote IP address:",
+				client_names_);
+		client_name_ = client_names_[selectedButtonIndex];
 		getLogger().info("Remote address set to: " + client_name_);
 
 		control_mode_= 	new JointImpedanceControlMode(0.0,0.0,0.0,0.0,0.0,0.0,0.0);
@@ -124,7 +135,8 @@ public class TorqueControl extends RoboticsAPIApplication {
 	@Override
 	public void initialize() {
 		ObjectFrame lbr_flange = lbr_.getFlange();
-		mytool.attachTo(lbr_flange);
+		ee_tool_ = getApplicationData().createFromTemplate(EE_TOOL_TEMPLATE);
+		ee_tool_.attachTo(lbr_flange);
 		getLogger().info("End Effector position:" + lbr_flange.getX()/1000.0 + " " + lbr_flange.getY()/1000.0 + " " + lbr_flange.getZ()/1000.0);
 
         lbr_controller_ = (Controller) getContext().getControllers().toArray()[0];
