@@ -64,6 +64,8 @@ def generate_launch_description():
     sys_cfg = DeclareLaunchArgument("sys_cfg", default_value="ros2_control/lbr_system_config.yaml")
     ctrl_cfg_pkg = DeclareLaunchArgument("ctrl_cfg_pkg", default_value="sinthlab_bringup")
     ctrl_cfg = DeclareLaunchArgument("ctrl_cfg", default_value="config/iiwa7_hardware_controllers.yaml")
+    # Delay activating the active controller so FRI is streaming first (torque fixtures set ~10; else 0).
+    ctrl_activation_delay = DeclareLaunchArgument("ctrl_activation_delay", default_value="0.0")
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
     # ACTIVE before the first move streams setpoints (the impedance controller holds its current pose
     # on activation). Can be left at 0.
@@ -96,6 +98,7 @@ def generate_launch_description():
             "sys_cfg": LaunchConfiguration("sys_cfg"),
             "ctrl_cfg_pkg": LaunchConfiguration("ctrl_cfg_pkg"),
             "ctrl_cfg": LaunchConfiguration("ctrl_cfg"),
+            "ctrl_activation_delay": LaunchConfiguration("ctrl_activation_delay"),
         }.items(),
     )
 
@@ -130,6 +133,7 @@ def generate_launch_description():
             sys_cfg,
             ctrl_cfg_pkg,
             ctrl_cfg,
+            ctrl_activation_delay,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

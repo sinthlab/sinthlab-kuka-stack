@@ -705,12 +705,14 @@ This work is built on top of Huber et al.[^1]; all original credit for `lbr_fri_
 that team.
 
 The torque controllers — `cartesian_impedance_controller`, `joint_impedance_controller`,
-`gravity_compensation`, `effort_controller_base`, and `debug_msg` — are by the **IDRA Lab**
-(University of Trento), from
-[`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller) (imported via
-`sinthlab_lbr_stack.repos`, pinned to a commit), used via
+`effort_controller_base`, and `debug_msg` — are by the **IDRA Lab** (University of Trento), from
+[`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ros2_effort_controller), used via
 [`idra-lab/kuka_lbr_control`](https://github.com/idra-lab/kuka_lbr_control). They are distributed
-under the Apache License 2.0.
+under the Apache License 2.0 and are **vendored** in
+[`ros2_effort_controller/`](ros2_effort_controller/) (not imported via `.repos`) because they carry a
+local Jazzy compatibility patch — see
+[`ros2_effort_controller/README.md`](ros2_effort_controller/README.md) for the origin commit,
+ownership, and the patch log.
 Credit to Luca Beber, Davide Nardi, et al.
 
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software. [doi](https://doi.org/10.21105/joss.06138)

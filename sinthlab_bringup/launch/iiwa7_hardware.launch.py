@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -73,11 +73,33 @@ def generate_launch_description() -> LaunchDescription:
             "estimated_wrench_interface",
             "lbr_state_broadcaster",
             "force_torque_broadcaster",
-            LaunchConfiguration("ctrl"),
             "--controller-manager",
             "controller_manager",
         ],
         namespace=LaunchConfiguration("namespace"),
+    )
+
+    # The ACTIVE controller (ctrl) is spawned after an optional delay (ctrl_activation_delay, default 0),
+    # kept as a general knob for holding a controller back until the hardware has settled.
+    # NOTE: this is NOT how the effort controllers' empty-velocity-interface crash is handled — that was a
+    # deadlock (FRI reaches commanding only once a controller is active, but the controller needed
+    # commanding-populated velocity), so delaying activation could not fix it. It is fixed properly in
+    # ros2_effort_controller/effort_controller_base (SINTHLAB PATCH #1; see that folder's README).
+    delayed_ctrl_spawner = TimerAction(
+        period=LaunchConfiguration("ctrl_activation_delay"),
+        actions=[
+            Node(
+                package="controller_manager",
+                executable="spawner",
+                output="screen",
+                arguments=[
+                    LaunchConfiguration("ctrl"),
+                    "--controller-manager",
+                    "controller_manager",
+                ],
+                namespace=LaunchConfiguration("namespace"),
+            )
+        ],
     )
 
     # Optionally load a second controller in the INACTIVE state (configured, not running). The
@@ -161,6 +183,12 @@ def generate_launch_description() -> LaunchDescription:
                 "controller for the restricted-plane/maze experiments; the orchestrator switches to it "
                 "for the fixture).",
             ),
+            DeclareLaunchArgument(
+                name="ctrl_activation_delay",
+                default_value="0.0",
+                description="Seconds to delay spawning the ACTIVE controller (ctrl) after the "
+                "broadcasters. General-purpose knob; 0 for all shipped experiments.",
+            ),
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",
@@ -192,7 +220,7 @@ def generate_launch_description() -> LaunchDescription:
             RegisterEventHandler(
                 event_handler=OnProcessExit(
                     target_action=joint_state_broadcaster_spawner,
-                    on_exit=[robot_description_dependent_spawner, inactive_ctrl_spawner],
+                    on_exit=[robot_description_dependent_spawner, inactive_ctrl_spawner, delayed_ctrl_spawner],
                 )
             ),
         ]
