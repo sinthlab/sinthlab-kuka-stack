@@ -10,6 +10,7 @@
 #include "effort_controller_base/Utility.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"  // SINTHLAB PATCH #2
 #define DEBUG 0
 namespace joint_impedance_controller {
 
@@ -79,6 +80,12 @@ class JointImpedanceController
       m_target_wrench_subscriber;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
       m_target_frame_subscriber;
+
+  // >>> SINTHLAB PATCH #2 — joint-space target (bypasses the Cartesian IK round trip).
+  void targetJointsCallback(
+      const std_msgs::msg::Float64MultiArray::SharedPtr target);
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr
+      m_target_joints_subscriber;
   rclcpp::Publisher<debug_msg::msg::Debug>::SharedPtr m_data_publisher;
   KDL::Frame m_target_frame;
   ctrl::Vector6D m_ft_sensor_wrench;
@@ -90,6 +97,10 @@ class JointImpedanceController
 
   ctrl::MatrixND m_identity;
   ctrl::VectorND m_q_starting_pose;
+
+  // >>> SINTHLAB PATCH #2 — last commanded joint-space target and whether one has been received.
+  ctrl::VectorND m_q_target;
+  bool m_has_joint_target{false};
   ctrl::VectorND m_tau_old;
 
   double m_vel_old = 0.0;

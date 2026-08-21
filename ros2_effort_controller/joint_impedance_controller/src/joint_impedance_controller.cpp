@@ -99,6 +99,17 @@ JointImpedanceController::on_configure(
           std::bind(&JointImpedanceController::targetFrameCallback, this,
                     std::placeholders::_1));
 
+  // >>> SINTHLAB PATCH #2 — joint-space target topic. Publishing 7 joint angles [rad] here sets the
+  // impedance target DIRECTLY, skipping computeIKSolution(). The upstream path (target_frame -> IK)
+  // is a joints -> Cartesian -> joints round trip whose KDL ChainIkSolverPos_NR_JL fails on this
+  // 7-DOF arm (redundant chain / near-singular configurations). On failure computeIKSolution returns
+  // without touching m_q_desired, so tau = K*(q_activation - q) ~ 0 and the arm never moves.
+  m_target_joints_subscriber =
+      get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+          get_node()->get_name() + std::string("/target_joints"), 3,
+          std::bind(&JointImpedanceController::targetJointsCallback, this,
+                    std::placeholders::_1));
+
   m_data_publisher = get_node()->create_publisher<debug_msg::msg::Debug>(
       get_node()->get_name() + std::string("/data"), 1);
 
@@ -125,6 +136,10 @@ JointImpedanceController::on_activate(
 
   m_q_desired = Base::m_joint_positions.data;
   m_q_starting_pose = Base::m_joint_positions.data;
+
+  // >>> SINTHLAB PATCH #2 — start held at the current configuration until a joint target arrives.
+  m_q_target = Base::m_joint_positions.data;
+  m_has_joint_target = false;
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::
       CallbackReturn::SUCCESS;
@@ -198,8 +213,14 @@ ctrl::Vector6D JointImpedanceController::computeMotionError() {
 }
 
 ctrl::VectorND JointImpedanceController::computeTorque() {
-  // Compute the inverse kinematics
-  Base::computeIKSolution(m_target_frame, m_q_desired);
+  // >>> SINTHLAB PATCH #2 — prefer an explicit joint-space target; fall back to the upstream
+  // Cartesian IK path only when nobody publishes on /target_joints.
+  if (m_has_joint_target) {
+    m_q_desired = m_q_target;
+  } else {
+    // Compute the inverse kinematics
+    Base::computeIKSolution(m_target_frame, m_q_desired);
+  }
 
   // Compute the jacobian
   Base::m_jnt_to_jac_solver->JntToJac(Base::m_joint_positions,
@@ -245,6 +266,22 @@ ctrl::VectorND JointImpedanceController::computeTorque() {
 #endif
 
   return tau;
+}
+
+// >>> SINTHLAB PATCH #2
+void JointImpedanceController::targetJointsCallback(
+    const std_msgs::msg::Float64MultiArray::SharedPtr target) {
+  if (target->data.size() != Base::m_joint_number) {
+    auto &clock = *get_node()->get_clock();
+    RCLCPP_WARN_THROTTLE(get_node()->get_logger(), clock, 3000,
+                         "Ignoring joint target: expected %zu values, got %zu.",
+                         Base::m_joint_number, target->data.size());
+    return;
+  }
+  for (size_t i = 0; i < Base::m_joint_number; ++i) {
+    m_q_target(i) = target->data[i];
+  }
+  m_has_joint_target = true;
 }
 
 void JointImpedanceController::targetWrenchCallback(

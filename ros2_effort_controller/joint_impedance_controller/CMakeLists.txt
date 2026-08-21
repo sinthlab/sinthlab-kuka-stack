@@ -14,6 +14,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(effort_controller_base REQUIRED)
 find_package(debug_msg REQUIRED)
+find_package(std_msgs REQUIRED)  # SINTHLAB PATCH #2
 
 # Convenience variable for dependencies
 set(THIS_PACKAGE_INCLUDE_DEPENDS
@@ -21,6 +22,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
         effort_controller_base
         Eigen3
         debug_msg
+        std_msgs
 )
 
 ament_export_dependencies(

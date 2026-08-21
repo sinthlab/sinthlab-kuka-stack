@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.actions.move_to_frame import MoveToFrameAction
+from sinthlab_bringup.actions.move_to_joint_target import MoveToJointTargetAction
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
@@ -42,7 +42,7 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_ending = False
 
         # Actions that make up the trial.
-        self.move_to_start = MoveToFrameAction(
+        self.move_to_start = MoveToJointTargetAction(
             self, param_prefix="move_to_start", on_complete=self.on_move_complete,
             target_controller=MOVE_CTRL,
         )
@@ -74,7 +74,7 @@ class MazeOrchestratorNode(rclpyNode):
             self, activate=[MOVE_CTRL], deactivate=[FIXTURE_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint_impedance",
         )
-        self.move_recover = MoveToFrameAction(
+        self.move_recover = MoveToJointTargetAction(
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete,
             target_controller=MOVE_CTRL,
         )
