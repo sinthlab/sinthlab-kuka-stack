@@ -1,6 +1,7 @@
 /**:
   ros__parameters:
-    # Maze runs in TORQUE mode: move_to_start/recover use MoveToFrame -> joint_impedance_controller,
+    # Maze runs in TORQUE mode: move_to_start/recover use MoveToJointTarget -> joint_impedance_controller
+    # (joint targets, no IK),
     # and MoveInMazeAction streams the corridor-constrained equilibrium to cartesian_impedance_controller.
     # The idra-lab impedance controllers provide the compliance + walls (per-axis Cartesian stiffness on
     # the ROS side); the cabinet runs TorqueControl.java (gravity comp, no free-fall). Tune the stiffness
@@ -36,6 +37,8 @@
       target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
       joint_move_tolerance: 0.01
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
+      joint_leash_rad: 0.03            # max rad the command may lead the measured joints;
+                                       # bounds stiffness torque to K*leash (<10 Nm abort limit)
       move_duration_sec: 6.0           # ramp time for the (possibly large) initial move [s]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # [rad/s^2]
@@ -47,6 +50,8 @@
       target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]  # same as move_to_start
       joint_move_tolerance: 0.15
       cartesian_move_tolerance: 0.05
+      joint_leash_rad: 0.03            # max rad the command may lead the measured joints;
+                                       # bounds stiffness torque to K*leash (<10 Nm abort limit)
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
       move_to_pos_a_max: 2.0
       move_to_pos_j_max: 5.0
