@@ -16,11 +16,21 @@ joint_position_tau: 0.04
 command_guard:
   variant: default
 state_guard:
-  # HARDWARE NOTE: this trips if the measured external joint torque exceeds the limit at the moment
-  # a compliant control mode activates (i.e. when the orchestrator switches to an impedance
-  # controller). If activation trips, don't be touching the arm at the switch, or raise this.
+  # Trips if the measured EXTERNAL joint torque exceeds the limit at the moment a compliant control
+  # mode activates. It is a payload-calibration check: with a tool mounted, a trip means the tool's
+  # loadData does not match reality -> re-run SmartPad "Determine" (see README section 2), do NOT
+  # just raise this.
+  #
+  # 2.0 Nm (the lbr default) is too tight for a BARE FLANGE on this arm: with no payload, mass=0 is
+  # already the correct model and the ~2.5 Nm seen on A2 is residual model/friction error in the
+  # external-torque estimate, not an uncompensated load. 5.0 clears that without hiding a real one.
+  #
+  # >>> WHEN THE REAL END EFFECTOR IS MOUNTED: run Determine (tool attached, in a BENT posture -- not
+  #     mechanical zero, where the wrist axes align with gravity and Determine records no usable
+  #     data), copy the mass/COM into RoboticsAPI.data.xml so a project sync cannot wipe it, and
+  #     consider lowering this back toward 2.0 so the check stays meaningful.
   external_torque_safety_check: true
-  external_torque_limit: 2.0
+  external_torque_limit: 5.0
 external_torque_tau: 0.01
 measured_torque_tau: 0.01
 open_loop: true

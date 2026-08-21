@@ -683,19 +683,25 @@ so the first one that fails names the culprit.
 Run `TorqueControl` on the SmartPad (5 ms + your IP) for every rung, and stay in **T1 with the
 enabling switch held**.
 
-**Rung 1 — lbr's own torque controller (no sinthlab code, no idra-lab code).**
+**Rung 1 — the FRI torque path with ZERO commanded torque (no sinthlab control logic).**
 ```bash
 ros2 launch sinthlab_bringup iiwa7_hardware.launch.py \
   ctrl:=lbr_torque_command_controller \
   sys_cfg_pkg:=sinthlab_bringup sys_cfg:=config/lbr_system_config_torque.yaml \
   ctrl_cfg:=config/torque_controllers.yaml
 # in a second terminal:
-ros2 run lbr_demos_py torque_sine_overlay --ros-args -r __ns:=/lbr
+ros2 run sinthlab_bringup torque_float_test.py --ros-args -r __ns:=/lbr
 ```
-This overlays a 15 Nm sine on joint 4 around the held pose. If the joint oscillates and FRI stays
-COMMANDING_ACTIVE, then **FRI torque mode, `TorqueControl.java`, the tool load data and the cabinet
-config are all sound** — the fault is above this layer. If it faults here, the problem is the cabinet
-side and nothing in ROS will fix it.
+This streams `joint_position = measured, torque = 0` through lbr's own torque controller, so the arm
+sits in pure **cabinet gravity compensation**. PASS: it holds its pose, FRI stays COMMANDING_ACTIVE,
+and you can push it by hand and it stays where you leave it — proving the cabinet, `TorqueControl.java`,
+the tool load data and the FRI torque path are all sound. FAIL: it sags/drifts on its own (tool load
+data) or FRI drops / StateGuard trips (cabinet setup) — neither is fixable in ROS.
+
+> **Do NOT use lbr's `torque_sine_overlay` demo for this.** It applies a 15 Nm sine expecting the
+> cabinet to be *holding* the pose, but `TorqueControl.java` sets cabinet joint stiffness to **zero**
+> (ROS provides the whole spring). With nothing holding the joint, that torque just accelerates it —
+> an aggressive swing that tells you nothing about whether the setup is sound.
 
 **Rung 2 — the idra-lab stack, holding still.** Spawn `joint_impedance_controller` and publish
 nothing. It holds the configuration it activated in, so any fault is the controller/base layer
