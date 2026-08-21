@@ -28,23 +28,35 @@ from lbr_fri_idl.msg import LBRState, LBRTorqueCommand
 class TorqueFloatTest(Node):
     def __init__(self) -> None:
         super().__init__("torque_float_test")
+        # WHICH position to echo back as the FRI joint position command:
+        #   "measured" - where the arm physically is (what lbr's demos use)
+        #   "ipo"      - the CABINET's interpolated setpoint, i.e. the pose positionHold is holding
+        # This matters because FRI rejects a commanded position that strays too far from its own
+        # reference ("illegal axis delta"). With TorqueControl.java's ZERO cabinet stiffness nothing
+        # holds the arm, so it drifts, "measured" drifts with it, and the delta grows until the
+        # cabinet aborts. "ipo" always matches the cabinet's reference, so it cannot drift apart.
+        self.declare_parameter("position_source", "measured")
+        self._source = self.get_parameter("position_source").value
         self._cmd = LBRTorqueCommand()
         self._pub = self.create_publisher(LBRTorqueCommand, "command/lbr_torque_command", 1)
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
         self._n = 0
         self.get_logger().info(
-            "Zero-torque float test running. Expect: arm holds pose, FRI stays COMMANDING_ACTIVE. "
-            "Push the arm by hand -- it should move freely and stay put when released."
+            f"Zero-torque float test running (position_source='{self._source}'). Expect: arm holds "
+            "pose, FRI stays COMMANDING_ACTIVE. Push it by hand -- it should move freely and stay put."
         )
 
     def _on_state(self, state: LBRState) -> None:
-        # Echo the measured configuration back as the position command, add no torque at all.
-        self._cmd.joint_position = state.measured_joint_position
+        # Echo a configuration back as the position command, add no torque at all.
+        self._cmd.joint_position = (
+            state.ipo_joint_position if self._source == "ipo" else state.measured_joint_position
+        )
         self._cmd.torque = [0.0] * 7
         self._pub.publish(self._cmd)
         self._n += 1
         if self._n % 400 == 0:  # ~ every 2 s at 200 Hz
-            self.get_logger().info(f"still floating ({self._n} cycles, zero torque commanded)")
+            self.get_logger().info(
+                f"still floating ({self._n} cycles, zero torque, position_source='{self._source}')")
 
 
 def main(args=None) -> None:
