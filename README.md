@@ -673,6 +673,54 @@ stateDiagram-v2
 
 ---
 
+### Testing FRI TORQUE mode in isolation
+
+When a torque experiment fails on the cabinet (`LBR left COMMANDING_ACTIVE`, `illegal axis delta`,
+etc.) it is rarely obvious whether the fault is the **cabinet/FRI setup**, the **idra-lab
+controllers**, or **our experiment code**. Work up this ladder — each rung adds exactly one layer,
+so the first one that fails names the culprit.
+
+Run `TorqueControl` on the SmartPad (5 ms + your IP) for every rung, and stay in **T1 with the
+enabling switch held**.
+
+**Rung 1 — lbr's own torque controller (no sinthlab code, no idra-lab code).**
+```bash
+ros2 launch sinthlab_bringup iiwa7_hardware.launch.py \
+  ctrl:=lbr_torque_command_controller \
+  sys_cfg_pkg:=sinthlab_bringup sys_cfg:=config/lbr_system_config_torque.yaml \
+  ctrl_cfg:=config/torque_controllers.yaml
+# in a second terminal:
+ros2 run lbr_demos_py torque_sine_overlay --ros-args -r __ns:=/lbr
+```
+This overlays a 15 Nm sine on joint 4 around the held pose. If the joint oscillates and FRI stays
+COMMANDING_ACTIVE, then **FRI torque mode, `TorqueControl.java`, the tool load data and the cabinet
+config are all sound** — the fault is above this layer. If it faults here, the problem is the cabinet
+side and nothing in ROS will fix it.
+
+**Rung 2 — the idra-lab stack, holding still.** Spawn `joint_impedance_controller` and publish
+nothing. It holds the configuration it activated in, so any fault is the controller/base layer
+rather than our targets:
+```bash
+ros2 launch sinthlab_bringup iiwa7_hardware.launch.py \
+  ctrl:=joint_impedance_controller \
+  sys_cfg_pkg:=sinthlab_bringup sys_cfg:=config/lbr_system_config_torque.yaml \
+  ctrl_cfg:=config/torque_controllers.yaml
+```
+
+**Rung 3 — a small commanded motion.** With rung 2 running, nudge one joint a few degrees:
+```bash
+ros2 topic pub -1 /lbr/joint_impedance_controller/target_joints std_msgs/Float64MultiArray \
+  "{data: [0.0, 0.0, 0.0, -1.22, -0.35, 0.17, 0.0]}"   # <- current config with ONE joint changed slightly
+```
+A fault here but not at rung 2 means **driving motion** is the problem (commanded-position delta),
+not torque mode itself.
+
+**Rung 4 — the full experiment.** `ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py`
+
+> Useful discriminator: the rung-1 demo applies **15 Nm** and works. If rung 1 passes but our ~3.6 Nm
+> move fails, the problem is **not torque magnitude** — it is the commanded joint *position* stream
+> (how far/fast it travels), which points at the move strategy rather than the gains.
+
 ## 8. Development & Contributing
 - This stack follows an **underlay → overlay** structure. It reuses
   [`lbr_fri_ros2_stack`](https://github.com/lbr-stack/lbr_fri_ros2_stack)[^1], which in turn has

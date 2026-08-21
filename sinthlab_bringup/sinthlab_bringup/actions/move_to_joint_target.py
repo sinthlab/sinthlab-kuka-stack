@@ -119,7 +119,13 @@ class MoveToJointTargetAction:
         self._active = False
 
     def _state_cb(self, msg: LBRState) -> None:
-        self._last_measured = np.array(msg.measured_joint_position)
+        q = np.array(msg.measured_joint_position)
+        # lbr_ros2_control fills the state interfaces with NaN when the FRI session leaves
+        # COMMANDING_ACTIVE. Publishing a NaN-derived joint target would put NaN torques on the wire
+        # and fault the cabinet, so drop the sample and keep the last good one.
+        if not np.all(np.isfinite(q)):
+            return
+        self._last_measured = q
         self._have_state = True
 
     def _step(self) -> None:

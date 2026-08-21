@@ -245,7 +245,13 @@ class MoveRestrictedOnAPlaneAction:
         if not self._active:
             return
 
-        self.last_measured_joints = np.array(msg.measured_joint_position)
+        q_measured = np.array(msg.measured_joint_position)
+        # Drop non-finite states (lbr sets them to NaN once FRI leaves COMMANDING_ACTIVE): FK on NaN
+        # yields a NaN pose/quaternion, which both faults the impedance controller and shows up as
+        # TF_NAN_INPUT / TF_DENORMALIZED_QUATERNION downstream.
+        if not np.all(np.isfinite(q_measured)):
+            return
+        self.last_measured_joints = q_measured
 
         # Initialize the commanded anchor (used to lock the manifold origin to the start pose)
         if not hasattr(self, 'last_commanded'):

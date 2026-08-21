@@ -26,6 +26,13 @@
     lbr_state_broadcaster:
       type: lbr_ros2_control/LBRStateBroadcaster
 
+    # lbr-stack's OWN torque controller. Not used by the experiments -- kept so torque mode can be
+    # tested IN ISOLATION with lbr's reference implementation (see "Isolation test" in the README):
+    # it takes an LBRTorqueCommand (joint_position + torque) straight to FRI, with none of our code
+    # and none of the idra-lab controllers involved.
+    lbr_torque_command_controller:
+      type: lbr_ros2_control/LBRTorqueCommandController
+
     # idra-lab effort controllers (VENDORED in sinthlab-kuka-stack/ros2_effort_controller/)
     cartesian_impedance_controller:
       type: cartesian_impedance_controller/CartesianImpedanceController
@@ -51,6 +58,9 @@
       torque_y_th: 0.5
       torque_z_th: 0.5
 /**/lbr_state_broadcaster:
+  ros__parameters:
+    robot_name: lbr
+/**/lbr_torque_command_controller:
   ros__parameters:
     robot_name: lbr
 
