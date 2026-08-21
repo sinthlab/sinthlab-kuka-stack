@@ -612,17 +612,24 @@ void EffortControllerBase::updateJointStates() {
     // commanding needs an active controller, the controller needs commanding-populated velocity.)
     const auto position = position_interface.get_optional();
     const auto velocity = velocity_interface.get_optional();
-    if (!position.has_value() || !velocity.has_value()) {
-      continue;  // interface not populated yet; keep the previous joint state for this cycle
-    }
 
-    m_joint_positions(i) = position.value();
-    m_joint_velocities(i) =
-        std::round((m_dotq_alpha * velocity.value() +
-                    (1 - m_dotq_alpha) * m_old_joint_velocities(i)) *
-                   10000) /
-        10000;
-    m_old_joint_velocities(i) = m_joint_velocities(i);
+    // Read POSITION independently of velocity, and never skip it. m_joint_positions is
+    // zero-initialised AND (with command_current_configuration) is written straight back out as the
+    // FRI joint POSITION command. Skipping it for even one cycle therefore commands 0 rad on every
+    // joint while the arm is physically elsewhere -- the cabinet sees a huge commanded jump and kills
+    // the session ("LBR left COMMANDING_ACTIVE"). Position always has a value in practice because the
+    // URDF gives that interface an initial_value; velocity has none, so only the velocity term waits.
+    if (position.has_value()) {
+      m_joint_positions(i) = position.value();
+    }
+    if (velocity.has_value()) {
+      m_joint_velocities(i) =
+          std::round((m_dotq_alpha * velocity.value() +
+                      (1 - m_dotq_alpha) * m_old_joint_velocities(i)) *
+                     10000) /
+          10000;
+      m_old_joint_velocities(i) = m_joint_velocities(i);
+    }
   }
 }
 

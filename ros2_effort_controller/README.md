@@ -62,8 +62,14 @@ re-applied when re-syncing with upstream.
   interface has none, so it stays `std::nullopt` until the FRI hardware `read()` delivers its first
   **commanding** frame. Since FRI only reaches commanding once a controller is active, the very first
   `update()` always ran against an empty velocity interface.
-- **Fix:** read both via `get_optional()` and `continue` (keep the previous joint state) until values
-  exist, so the first few updates are no-ops instead of an exception.
+- **Fix:** read both via `get_optional()` and apply each **independently** — position whenever it has
+  a value, the velocity term only when velocity has one.
+- **Do NOT skip the position read** (an earlier version of this patch did, and it killed the FRI
+  session). `m_joint_positions` is zero-initialised *and*, with `command_current_configuration: true`,
+  is written straight back out as the FRI joint **position command**. Skipping it for even one cycle
+  commands 0 rad on every joint while the arm is physically elsewhere, so the cabinet sees a huge
+  commanded jump and aborts: `LBR left COMMANDING_ACTIVE`. Position is safe to read unconditionally
+  because the URDF gives that interface an `initial_value`; only velocity can be empty.
 - **Note:** this is *not* fixable by delaying activation (we tried) — it is a deadlock: commanding
   needs an active controller, and the controller needs commanding-populated velocity.
 - **Upstream status:** still present on `main` as of the vendored commit. Worth contributing back;
