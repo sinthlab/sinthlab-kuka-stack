@@ -1,5 +1,5 @@
 # Controller config for the TORQUE experiments (restricted-plane + maze).
-# Runs the idra-lab effort controllers (cartesian_impedance / joint_impedance) at 1 kHz on the FRI
+# Runs the idra-lab effort controllers (cartesian_impedance / joint_impedance) on the FRI
 # torque overlay. The per-experiment stiffness map + nullspace posture are supplied by an OVERLAY
 # file loaded AFTER this one (see the launch's `ctrl_overlay_cfg` arg):
 #   config/torque_overlay_restricted_plane.yaml
@@ -12,7 +12,10 @@
   ros__parameters:
     update_rate: 200         # MUST match TorqueControl.java send_period_ (200 Hz <-> 5 ms). 1 kHz/1 ms
                              # needs a real-time host; if FRI hangs in "Monitoring (Wait)", keep this lower.
-    enforce_command_limits: true
+    # NOTE: enforce_command_limits is deliberately NOT set here (upstream idra-lab's reference config
+    # does not use it either). In torque mode it ran the Jazzy joint limiter over command interfaces the
+    # controller had not written yet on the first update -> std::bad_optional_access -> the controller was
+    # deactivated; it also clamped legitimate torques toward zero ("limited: effort: -0.000000").
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -23,7 +26,7 @@
     lbr_state_broadcaster:
       type: lbr_ros2_control/LBRStateBroadcaster
 
-    # idra-lab effort controllers (from ros2_effort_controller, imported via the .repos)
+    # idra-lab effort controllers (VENDORED in sinthlab-kuka-stack/ros2_effort_controller/)
     cartesian_impedance_controller:
       type: cartesian_impedance_controller/CartesianImpedanceController
     joint_impedance_controller:
