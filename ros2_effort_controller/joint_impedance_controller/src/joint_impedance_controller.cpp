@@ -80,6 +80,12 @@ JointImpedanceController::on_configure(
   // Set the identity matrix with dimension of the joint space
   m_identity = ctrl::MatrixND::Identity(m_joint_number, m_joint_number);
 
+  // >>> SINTHLAB PATCH #2 — size the joint target HERE, not in on_activate: the /target_joints
+  // subscription below goes live at the end of on_configure, so a message can arrive while the
+  // controller is still INACTIVE. Writing into a default-constructed (size 0) Eigen vector
+  // segfaults, so it must already be sized by the time the first callback can run.
+  m_q_target = ctrl::VectorND::Zero(Base::m_joint_number);
+
   m_target_wrench_subscriber =
       get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
           get_node()->get_name() + std::string("/target_wrench"), 10,
@@ -277,6 +283,10 @@ void JointImpedanceController::targetJointsCallback(
                          "Ignoring joint target: expected %zu values, got %zu.",
                          Base::m_joint_number, target->data.size());
     return;
+  }
+  // Defensive: never index into an unsized vector (see the on_configure note above).
+  if (static_cast<size_t>(m_q_target.size()) != Base::m_joint_number) {
+    m_q_target = ctrl::VectorND::Zero(Base::m_joint_number);
   }
   for (size_t i = 0; i < Base::m_joint_number; ++i) {
     m_q_target(i) = target->data[i];

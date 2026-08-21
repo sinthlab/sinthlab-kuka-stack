@@ -87,6 +87,10 @@ re-applied when re-syncing with upstream.
   (`std_msgs/Float64MultiArray`, radians, one value per joint) and uses it directly as `m_q_desired`,
   skipping the IK. The upstream `target_frame` -> IK path is kept as a fallback and is used whenever
   nothing publishes on `/target_joints`, so upstream behaviour is unchanged for other users.
+- **Gotcha (fixed):** `m_q_target` must be sized in `on_configure`, not `on_activate` — the
+  `/target_joints` subscription goes live at the end of `on_configure`, so a message can arrive while
+  the controller is still INACTIVE; writing into a default-constructed (size 0) Eigen vector
+  segfaults. The callback also re-checks the size defensively.
 - **ROS side:** `sinthlab_bringup`'s `MoveToJointTargetAction`
   (`actions/move_to_joint_target.py`) ramps joints and publishes them on that topic.
 - **Upstream status:** upstream has no joint-space target path. Would need discussion before a PR.
