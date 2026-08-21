@@ -100,7 +100,17 @@ public class TorqueControl extends RoboticsAPIApplication {
 		client_name_ = client_names_[selectedButtonIndex];
 		getLogger().info("Remote address set to: " + client_name_);
 
-		control_mode_= 	new JointImpedanceControlMode(0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+		// Ask for cabinet joint stiffness (see stiffness_options_ above for why this matters).
+		selectedButtonIndex = applicationUi.displayModalDialog(
+				ApplicationDialogType.QUESTION,
+				"Cabinet JOINT stiffness [Nm/rad] (0 = pure gravity comp, nothing holds the arm):",
+				stiffness_options_);
+		joint_stiffness_ = Double.valueOf(stiffness_options_[selectedButtonIndex]);
+		getLogger().info("Cabinet joint stiffness set to: " + joint_stiffness_);
+
+		control_mode_ = new JointImpedanceControlMode(
+				joint_stiffness_, joint_stiffness_, joint_stiffness_, joint_stiffness_,
+				joint_stiffness_, joint_stiffness_, joint_stiffness_);
 		command_mode_ = ClientCommandMode.TORQUE;
 		getLogger().info("Client command mode set to: " + command_mode_.name());
 	}
