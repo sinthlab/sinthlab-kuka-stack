@@ -37,6 +37,13 @@ class TorqueFloatTest(Node):
         # cabinet aborts. "ipo" always matches the cabinet's reference, so it cannot drift apart.
         self.declare_parameter("position_source", "measured")
         self._source = self.get_parameter("position_source").value
+        # Max change of the COMMANDED joint position per FRI cycle [rad]. FRI rejects a commanded
+        # position that jumps too much between cycles ("illegal axis delta"), and a raw echo of the
+        # measured position jumps as fast as your hand does when you push the arm. 0 disables the
+        # limit (raw echo, the upstream behaviour). 0.004 rad/cycle at 5 ms ~= 0.8 rad/s.
+        self.declare_parameter("max_delta_rad", 0.004)
+        self._max_delta = float(self.get_parameter("max_delta_rad").value)
+        self._cmd_pos = None  # rate-limited command state
         self._cmd = LBRTorqueCommand()
         self._pub = self.create_publisher(LBRTorqueCommand, "command/lbr_torque_command", 1)
         self._sub = self.create_subscription(LBRState, "state", self._on_state, 1)
@@ -48,9 +55,19 @@ class TorqueFloatTest(Node):
 
     def _on_state(self, state: LBRState) -> None:
         # Echo a configuration back as the position command, add no torque at all.
-        self._cmd.joint_position = (
+        target = list(
             state.ipo_joint_position if self._source == "ipo" else state.measured_joint_position
         )
+        if self._cmd_pos is None:
+            self._cmd_pos = list(target)
+        if self._max_delta > 0.0:
+            for i in range(7):
+                d = target[i] - self._cmd_pos[i]
+                d = max(-self._max_delta, min(self._max_delta, d))
+                self._cmd_pos[i] += d
+        else:
+            self._cmd_pos = list(target)
+        self._cmd.joint_position = self._cmd_pos
         self._cmd.torque = [0.0] * 7
         self._pub.publish(self._cmd)
         self._n += 1
