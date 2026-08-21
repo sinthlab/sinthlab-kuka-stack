@@ -92,15 +92,21 @@
     command_interfaces: [effort]
     state_interfaces: [position, velocity]
     joints: [lbr_A1, lbr_A2, lbr_A3, lbr_A4, lbr_A5, lbr_A6, lbr_A7]
-    # per-joint stiffness [Nm/rad] -- HARDWARE-TUNE. Base joints stiffer than the wrist.
+    # Per-joint stiffness [Nm/rad] -- HARDWARE-TUNE, but keep them LOW. Two hard constraints:
+    #   * drive torque  = K * joint_leash_rad  (must beat joint friction, ~1-2 Nm, to move at all)
+    #   * damping       = 2*sqrt(K) in this controller, and effort_controller_base ABORTS THE PROCESS
+    #     (std::terminate) if a newly desired joint torque differs from the applied one by >10 Nm.
+    # Damping turns velocity noise into torque swings, so high K is dangerous: at K=200 (leash 0.03)
+    # a mere 0.14 rad/s transient trips the abort -- less than the arm's own glide speed. At K=60
+    # (leash 0.06) the drive torque is similar (3.6 Nm) but it takes 0.41 rad/s to trip. Hence:
     stiffness:
-      joint1: 200.0
-      joint2: 200.0
-      joint3: 200.0
-      joint4: 200.0
-      joint5: 100.0
-      joint6: 100.0
-      joint7: 100.0
+      joint1: 60.0
+      joint2: 60.0
+      joint3: 60.0
+      joint4: 60.0
+      joint5: 40.0
+      joint6: 40.0
+      joint7: 40.0
     nullspace_stiffness: 0.0
     compensate_gravity: false
     compensate_coriolis: false
