@@ -71,7 +71,21 @@ public class TorqueControl extends RoboticsAPIApplication {
 	// 1 -> 1000). Pick 5 to match the shipped config. 1 ms / 1000 Hz needs a real-time host; if the FRI
 	// session hangs in "Monitoring (Wait)" (connection quality never GOOD), pick a larger value.
 	private int send_period_;
-	private String[] send_periods_ = { "1", "2", "5", "10" };
+	// Ordered so the value matching the shipped ROS config is FIRST (least error-prone default).
+	// update_rate_hz = 1000 / send_period_ms, and it MUST match controller_manager.update_rate in
+	// config/torque_controllers.yaml:  5 -> 200 (shipped) | 10 -> 100 | 2 -> 500 | 1 -> 1000.
+	// A mismatch means missed FRI frames and the cabinet drops the session.
+	private String[] send_periods_ = { "5", "10", "2", "1" };
+
+	// Cabinet JOINT stiffness [Nm/rad] applied under the torque overlay.
+	//   0    = pure gravity compensation; NOTHING holds the arm. This is what the idra-lab design
+	//          assumes (ROS provides the entire spring), but any gravity-comp residual then makes the
+	//          arm drift with nothing to arrest it, and FRI aborts with "illegal axis delta" --
+	//          observed here even with ZERO commanded torque.
+	//   >0   = the cabinet holds the commanded configuration, so the arm stops drifting. Costs some
+	//          compliance (the cabinet resists motion), but is far more stable.
+	private String[] stiffness_options_ = { "0", "50", "200" };
+	private double joint_stiffness_;
 
 	private FRIConfiguration fri_configuration_;
 	private FRISession fri_session_;
