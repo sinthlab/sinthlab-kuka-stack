@@ -47,6 +47,7 @@ class SwitchControllerAction:
         self._poll_timer = None
         self._list_pending = False
         self._deadline = None
+        self._last_loaded = set()  # most recent list_controllers result, for a precise timeout message
 
     def start(self) -> None:
         self._cancel_poll()  # trials repeat; never leave a previous poll timer running
@@ -70,9 +71,13 @@ class SwitchControllerAction:
     def _poll_loaded(self) -> None:
         if self._node.get_clock().now() > self._deadline:
             self._cancel_poll()
+            # Report only what is actually MISSING -- printing the whole required set makes an
+            # unbuilt/unspawned controller look like a broader failure than it is.
+            missing = sorted(self._need_loaded - self._last_loaded)
             self._node.get_logger().error(
-                f"{self._name}: controllers {sorted(self._need_loaded)} not loaded within "
-                f"{self._load_timeout:.0f}s; cannot switch."
+                f"{self._name}: controller(s) {missing} not loaded within {self._load_timeout:.0f}s; "
+                f"cannot switch. (loaded: {sorted(self._last_loaded)}). A missing controller is usually "
+                f"not built/installed, or absent from the controllers YAML."
             )
             return
         if self._list_pending or not self._list_cli.service_is_ready():
@@ -86,6 +91,7 @@ class SwitchControllerAction:
             loaded = {c.name for c in future.result().controller}
         except Exception:
             return  # transient; the timer will retry
+        self._last_loaded = loaded
         if self._need_loaded.issubset(loaded):
             self._cancel_poll()
             self._do_switch()
