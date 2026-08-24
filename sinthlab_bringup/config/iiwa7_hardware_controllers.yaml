@@ -24,6 +24,12 @@
     lbr_joint_position_command_controller:
       type: lbr_ros2_control/LBRJointPositionCommandController
 
+    # ROS 2 control controllers
+    # kuka_clik_controller -> restricted-plane + maze (Cartesian equilibrium -> IK -> joint positions).
+    # Spawned INACTIVE by the launch; the orchestrator switches to it for the fixture phase.
+    kuka_clik_controller:
+      type: kuka_clik_controller/KukaClikController
+
 # ROS 2 control broadcasters
 /**/force_torque_broadcaster:
   ros__parameters:
