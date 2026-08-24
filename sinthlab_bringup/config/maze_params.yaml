@@ -13,9 +13,14 @@
     # the interior stays free.
     #
     # GEOMETRY IS SOLVED, NOT GUESSED. Every position below is in metres, base frame (lbr_link_0), and
-    # was checked by IK against the real iiwa7 URDF: the start posture puts the tool axis EXACTLY along
-    # +X, and all 16 corridor corners are reachable while HOLDING that orientation (the fixture locks
-    # orientation, so a corner the arm can only reach by twisting the tool is unusable).
+    # was checked by IK against the real iiwa7 URDF: the start posture points the tool axis (the EE
+    # frame's Z axis, the approach direction) along +X to within ~11 deg, and all corridor corners are
+    # reachable while HOLDING that orientation (the fixture locks orientation, so a corner the arm can
+    # only reach by twisting the tool is unusable).
+    #
+    # NOTE the EE frame's other axes are NOT aligned with the base: local X is ~22 deg off straight
+    # DOWN and local Y is ~base +Y. Only local Z (the tool/approach axis) is the ~+X one -- read the
+    # third column of the EE transform, not the first, when checking where the tool points.
     #
     # The horizontal-tool pose costs reach: holding the tool along +X, the arm can only work in
     #   X in [0.50, 0.75], Y in [-0.25, +0.25]  at z = 0.50
@@ -35,11 +40,20 @@
       # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
       # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
       # plane through the start (tool points +X, perpendicular into it).
+      # >>> WHY THIS POSTURE (changed 2026-08): the EE pose is IDENTICAL to the previous start
+      #     [0,0,0,-70,-20,10,0] -- same position, same tool orientation -- but the arm reaches it with
+      #     the elbow flipped. That matters because both fixtures LOCK ORIENTATION, and translating the
+      #     EE while holding orientation is far harder in some postures than others. Measured cost of
+      #     1 m/s of pure sideways (Y) translation with orientation held, ||qdot||:
+      #         old posture: 19.8 at start, up to 33.6 across the maze   -> felt like treacle
+      #         this one   :  2.5 at start, up to  8.2 across the maze   -> comparable to the sine rail
+      #     (6D condition number 45.0 -> 10.1.) An earlier analysis picked the old posture using the
+      #     LINEAR Jacobian only, which ignores the orientation lock and made Y look cheap (1.4).
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
       #     while holding this orientation at z=0.9.)
-      target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]
       joint_move_tolerance: 0.01
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
@@ -49,7 +63,7 @@
       debug_log_rate_hz: 2.0
     move_to_start_recover:
       update_rate: 200
-      target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]  # same as move_to_start
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # same as move_to_start
       joint_move_tolerance: 0.15
       cartesian_move_tolerance: 0.05
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]

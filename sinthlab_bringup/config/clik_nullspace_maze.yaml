@@ -9,4 +9,4 @@
     #
     #   >>> SYNC with move_to_start.target_joint_position in config/maze_params.yaml.
     # EE ≈ (0.500, 0.000, 0.900) m in lbr_link_0, tool ≈ +X (tilted up ~10°).
-    nullspace_desired_configuration: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
+    nullspace_desired_configuration: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]
