@@ -11,9 +11,6 @@ repositories:
     type: git
     url: https://github.com/lbr-stack/lbr_fri_ros2_stack
     version: jazzy-v2.4.3
-  # NOTE: the idra-lab torque controllers are NOT imported here — they are VENDORED inside
-  # sinthlab-kuka-stack/ros2_effort_controller/ because they carry a local Jazzy compatibility patch
-  # (see that folder's README.md). Importing them here as well would give colcon duplicate packages.
   sinthlab-kuka-stack:
     type: git
     url: https://github.com/sinthlab/sinthlab-kuka-stack

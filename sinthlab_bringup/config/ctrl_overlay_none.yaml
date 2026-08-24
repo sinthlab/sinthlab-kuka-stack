@@ -1,7 +1,0 @@
-# No-op controller-params overlay. The POSITION experiments (apple-pluck / perturb) need no
-# per-experiment override, so their launch loads this. The torque fixtures point the overlay arg at
-# config/torque_overlay_{restricted_plane,maze}.yaml instead. (Sets a param on a controller that is
-# never spawned, so it is inert.)
-/**/ctrl_overlay_placeholder:
-  ros__parameters:
-    noop: true

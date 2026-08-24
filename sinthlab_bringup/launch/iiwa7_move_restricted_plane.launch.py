@@ -20,17 +20,10 @@ def generate_launch_description():
                         [FindPackageShare("sinthlab_bringup"), "config", "virtual_fixtures_params.yaml"]
                     ),
                     "orchestrator": "restricted_plane_orchestrator.py",
-                    # TORQUE mode (FRI joint-torque overlay + idra-lab impedance controllers):
-                    # joint impedance active for the exact-posture start/recover moves; Cartesian
-                    # impedance loaded INACTIVE and switched in by the orchestrator for the fixture.
-                    "ctrl": "joint_impedance_controller",
-                    "extra_inactive_ctrl": "cartesian_impedance_controller",
-                    "sys_cfg_pkg": "sinthlab_bringup",
-                    "sys_cfg": "config/lbr_system_config_torque.yaml",
-                    "ctrl_cfg": "config/torque_controllers.yaml",
-                    # Per-experiment overlay: Cartesian stiffness (X pin, Y rail, Z free) + the
-                    # tool-down start posture as the nullspace bias.
-                    "ctrl_overlay_cfg": "config/torque_overlay_restricted_plane.yaml",
+                    # Joint controller active for the exact-posture start/recover moves; CLIK loaded
+                    # inactive and switched in by the orchestrator for the fixture phase.
+                    "ctrl": "lbr_joint_position_command_controller",
+                    "extra_inactive_ctrl": "kuka_clik_controller",
                 }.items(),
             ),
         ]

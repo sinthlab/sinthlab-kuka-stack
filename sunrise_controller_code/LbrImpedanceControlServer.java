@@ -77,7 +77,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Flat table (free X/Y, stiff Z)",
         "Rail guide (uniform 1000)",
         "Stiff (firm walls)",
-        "Maze compliant (uniform 400)"
+        "Maze compliant (uniform 400)",
+        "Maze walls (X lock, Y/Z firm)"
     };
     private double[][] stiffness_vals_ = {
         { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
@@ -86,7 +87,15 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         {   80.0,   80.0, 4000.0, 300.0, 300.0, 300.0 }, // plane fixture: free X/Y, hard Z wall
         { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // fixture experiments: uniform guide
         { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }, // firm everywhere
-        { 400.0, 400.0, 400.0, 300.0, 300.0, 300.0 }     // maze: compliant uniform guide
+        { 400.0, 400.0, 400.0, 300.0, 300.0, 300.0 },    // maze: compliant uniform guide
+        // MAZE (vertical Y-Z plane, restricted_axis "x"): ANISOTROPIC and the one to use.
+        //   X 2500 = lock the radial axis -> the plane is enforced by the CABINET, hard.
+        //   Y/Z 1000 = firm corridor walls (~10 N per cm of penetration).
+        // The corridor INTERIOR still feels free: there the fixture's projection returns the measured
+        // pose, so spring error ~ 0 and force ~ 0 regardless of these numbers. Only the walls and the
+        // locked axis see a real error. This is why a uniform profile could never win -- 400 made the
+        // walls mushy, 3000 made everything heavy.
+        { 2500.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }  // maze: X lock + firm Y/Z walls
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
     private double[] damping_vals_ = { 0.3, 0.7, 1.0 };

@@ -19,7 +19,7 @@ class MoveRestrictedOnAPlaneAction:
     """
     Action that applies mathematical virtual fixtures (boundaries)
     by updating a target Pose based on physical pushes, mapping it to geometric 
-    rails, and streaming it to the Cartesian impedance controller (FRI torque mode).
+    rails, and streaming it to the CLIK controller (FRI position mode).
     """
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None) -> None:
         self._node = node
@@ -30,11 +30,15 @@ class MoveRestrictedOnAPlaneAction:
 
         state_topic = str(get_required_param(node, self._param_prefix + "state_topic"))
         
-        # TORQUE mode: stream the fixture equilibrium to the Cartesian IMPEDANCE controller's target
-        # frame. The 1 kHz torque impedance (no velocity/step clamp, no IK lag) is what makes the
-        # inside of the fixture actually soft while the projection still gives firm walls.
+        # POSITION mode: stream the fixture equilibrium to the CLIK, which IKs it to joint positions
+        # for the cabinet's Cartesian impedance. SOFT-INSIDE does not come from low stiffness: inside
+        # the allowed region the projection returns the measured pose, so the spring error -- and hence
+        # the force -- is ~zero whatever K is. High K only bites at the walls. What breaks that is
+        # TRACKING LAG: if the equilibrium cannot keep up with the hand, the error (and the force) grows
+        # with speed. Hence kuka_clik_controller.max_linear_velocity and max_target_step_m must exceed
+        # real hand speed -- see config/iiwa7_hardware_controllers.yaml.
         robot_name = node.get_namespace().strip("/")
-        cmd_topic = f"/{robot_name}/cartesian_impedance_controller/target_frame" if robot_name else "/cartesian_impedance_controller/target_frame"
+        cmd_topic = f"/{robot_name}/kuka_clik_controller/target_frame" if robot_name else "/kuka_clik_controller/target_frame"
         
         self.ee_link = str(get_required_param(node, self._param_prefix + "end_effector_link"))
         self.base_link = str(get_required_param(node, self._param_prefix + "base_link"))
@@ -72,7 +76,7 @@ class MoveRestrictedOnAPlaneAction:
         base_prefix = self._param_prefix + "virtual_fixtures."
 
         # Cap on how far the commanded equilibrium may move per state tick [m] — a jerk guard so a
-        # sudden push/spike can't make the target leap (the controller also bounds torque via delta_tau_max).
+        # sudden push/spike can't make the target leap (the CLIK also clamps velocity downstream).
         self.max_target_step_m = 0.01
         if node.has_parameter(base_prefix + "max_target_step_m"):
             self.max_target_step_m = float(node.get_parameter(base_prefix + "max_target_step_m").value)
@@ -236,11 +240,11 @@ class MoveRestrictedOnAPlaneAction:
         """
         Runs at the hardware/state rate (~100-200 Hz).
 
-        TORQUE mode: the ROS cartesian_impedance_controller runs a 1 kHz Cartesian spring (the cabinet
-        does gravity comp only). This node streams the fixture-constrained *equilibrium*: the measured
-        EE pose projected onto the allowed manifold. Along allowed directions the equilibrium tracks
-        the arm (free motion, no lag); off the manifold it stays on it, so the spring pulls the arm back
-        (a soft/firm virtual wall). The result is step-clamped and published to that controller.
+The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this node streams
+        the fixture-constrained *equilibrium*: the measured EE pose projected onto the allowed
+        manifold. Along allowed directions the equilibrium tracks the arm (free motion); off the
+        manifold it stays on it, so the cabinet's 1 kHz spring pulls the arm back (a virtual wall).
+        The result is step-clamped and published to the CLIK.
         """
         if not self._active:
             return

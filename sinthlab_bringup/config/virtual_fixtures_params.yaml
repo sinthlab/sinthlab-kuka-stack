@@ -1,27 +1,19 @@
 /**:
   ros__parameters:
-    # Restricted-plane runs in TORQUE mode: move_to_start/recover use MoveToJointTarget ->
-    # joint_impedance_controller (joint targets, no IK), and MoveRestrictedOnAPlaneAction streams the fixture-constrained
-    # equilibrium to cartesian_impedance_controller. The idra-lab impedance controllers provide the
-    # compliance (per-axis Cartesian stiffness on the ROS side); the cabinet runs TorqueControl.java
-    # (gravity comp). Tune the stiffness in config/torque_overlay_restricted_plane.yaml.
+    # Restricted-plane runs in POSITION mode: move_to_start/recover use MoveToPositionJointSpace, and
+    # MoveRestrictedOnAPlaneAction streams the fixture-constrained equilibrium to kuka_clik_controller.
+    # The CABINET (LbrImpedanceControlServer) provides the compliance -- pair with "Rail guide
+    # (uniform 1000)". This scenario already worked; the raised CLIK clamps only make the rail easier
+    # to pull at speed.
     state_topic: "lbr_state"
     base_link: "lbr_link_0"
     end_effector_link: "lbr_link_ee"
 
     move_to_start:
       update_rate: 200
-      # Tool points down -Z. TORQUE mode: MoveToJointTarget leashes these joints straight to
-      # joint_impedance_controller/target_joints (no Cartesian round trip, no IK).
-      # >>> SYNC: if you change this, copy the SAME array (converted to RADIANS) into
-      #     nullspace_desired_configuration in config/torque_overlay_restricted_plane.yaml, or the
-      #     Cartesian impedance holds the right EE pose in a weird posture.
+      # Tool points down -Z. Matches the apple-pluck/perturb start exactly.
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
-      joint_leash_rad: 0.06            # max rad the command may lead the measured joints;
-                                       # drive torque = K*leash (K=60 -> 3.6 Nm): must beat joint
-                                       # friction yet stay well under the 10 Nm process abort
-      move_duration_sec: 6.0           # ramp time for the (possibly large) initial move [s]
       joint_move_tolerance: 0.01
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -45,9 +37,6 @@
       update_rate: 200
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # same start pose as move_to_start
       cartesian_move_tolerance: 0.03
-      joint_leash_rad: 0.06            # max rad the command may lead the measured joints;
-                                       # drive torque = K*leash (K=60 -> 3.6 Nm): must beat joint
-                                       # friction yet stay well under the 10 Nm process abort
       joint_move_tolerance: 0.15
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -78,7 +67,12 @@
     virtual_fixtures:
       # The KUKA cabinet runs Cartesian impedance (run LbrImpedanceControlServer on the SmartPad);
       # this node streams the fixture-constrained equilibrium pose.
-      max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
+      # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
+      # first is kuka_clik_controller.max_linear_velocity): at 0.01 m/tick and ~100 Hz state the
+      # equilibrium could only chase the hand at 1 m/s, but combined with the CLIK clamp it was the
+      # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
+      # against spikes without throttling normal guiding.
+      max_target_step_m: 0.05
       simple_plane:
         type: "plane"
         restricted_axis: "y" # "x", "y", or "z"
@@ -112,8 +106,8 @@
         # FORCE is set by AMPLITUDE, not by wavelength. Pulling straight down and ignoring the rail puts
         # you at most `amplitude` off it, so the worst case is K_y * amplitude = 40 N at 1000 N/m. The
         # steeper slope (amplitude*spatial_freq = 1.2, a 50 deg rail) costs no extra force — it only
-        # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull. In torque mode
-        # there is no target-rate clamp, so the impedance controller tracks the rail as fast as you pull.
+        # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull, so the CLIK's
+        # max_linear_velocity must exceed it or the rail gets rate-limited flat (now 1.0 m/s).
         # Pair with the "Rail guide (uniform 1000)" cabinet profile.
         # History: the original 0.1 / 20.0 was slope 2.0 (63 deg) and a 10 cm error = 300 N at "Stiff" —
         # it would have slammed the arm sideways and tripped the cabinet.

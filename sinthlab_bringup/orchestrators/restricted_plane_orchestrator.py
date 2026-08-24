@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.actions.move_to_joint_target import MoveToJointTargetAction
+from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
@@ -11,22 +11,20 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
 
-# TORQUE mode: joint-space impedance for the exact-posture start/recover moves; Cartesian impedance
-# (streamed target_frame) for the fixture. The orchestrator switches between the two.
-MOVE_CTRL = "joint_impedance_controller"
-FIXTURE_CTRL = "cartesian_impedance_controller"
+JOINT_CTRL = "lbr_joint_position_command_controller"
+CLIK_CTRL = "kuka_clik_controller"
 
 
 class RestrictedPlaneOrchestratorNode(rclpyNode):
     """Restricted-plane trial loop, composed entirely of actions:
 
-    move_to_start -> switch to Cartesian impedance -> quiet_window -> audio_cue
+    move_to_start (JOINT) -> switch to CLIK -> quiet_window -> audio_cue
     -> (restricted_plane + monitor) -> snap (stop fixtures + cue)
-    -> switch to joint impedance -> move_recover -> repeat.
+    -> switch to JOINT -> move_recover (JOINT) -> repeat.
 
-    The start/recover moves run on the joint-impedance controller so the arm reaches the start pose
-    firmly. The Cartesian virtual fixture runs on the cartesian_impedance_controller, so we switch to
-    it once the arm is at start, and switch back before recovering.
+    The start/recover moves run on the joint-position controller so the arm reaches the EXACT
+    configuration (deterministic posture, like apple-pluck). The Cartesian virtual fixture needs
+    the CLIK, so we switch to it once the arm is at start, and switch back before recovering.
     """
 
     def __init__(self):
@@ -39,13 +37,12 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.trial_count = 0
 
         # Actions that make up the trial.
-        self.move_to_start = MoveToJointTargetAction(
-            self, param_prefix="move_to_start", on_complete=self.on_move_complete,
-            target_controller=MOVE_CTRL,
+        self.move_to_start = MoveToPositionJointSpace(
+            self, param_prefix="move_to_start", on_complete=self.on_move_complete
         )
         self.switch_to_fixture = SwitchControllerAction(
-            self, activate=[FIXTURE_CTRL], deactivate=[MOVE_CTRL],
-            on_complete=self.on_switched_to_fixture, name="switch->impedance",
+            self, activate=[CLIK_CTRL], deactivate=[JOINT_CTRL],
+            on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
         self.quiet_window = WaitAction(
             self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
@@ -63,12 +60,11 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.restricted_plane = MoveRestrictedOnAPlaneAction(self, param_prefix="")
         self.safety = SafetyStopMonitor(self, param_prefix="plane_safety", on_trip=self.on_safety_trip)
         self.switch_to_joint = SwitchControllerAction(
-            self, activate=[MOVE_CTRL], deactivate=[FIXTURE_CTRL],
-            on_complete=self.on_switched_to_joint, name="switch->joint_impedance",
+            self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
+            on_complete=self.on_switched_to_joint, name="switch->joint",
         )
-        self.move_recover = MoveToJointTargetAction(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete,
-            target_controller=MOVE_CTRL,
+        self.move_recover = MoveToPositionJointSpace(
+            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
 
         self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
@@ -80,11 +76,11 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.move_to_start.start()  # joint controller is active at the start of every trial
 
     def on_move_complete(self):
-        self.get_logger().info("Arm at exact start posture. Switching to the impedance controller for the fixture...")
+        self.get_logger().info("Arm at exact start posture. Switching to CLIK for the fixture...")
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
-        self.get_logger().info("On the impedance controller. Waiting for a quiet window...")
+        self.get_logger().info("On CLIK. Waiting for a quiet window...")
         self.quiet_window.start()
 
     def on_quiet_window_complete(self):

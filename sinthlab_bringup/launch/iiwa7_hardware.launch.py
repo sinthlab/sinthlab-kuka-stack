@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable, TimerAction
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -73,39 +73,16 @@ def generate_launch_description() -> LaunchDescription:
             "estimated_wrench_interface",
             "lbr_state_broadcaster",
             "force_torque_broadcaster",
+            LaunchConfiguration("ctrl"),
             "--controller-manager",
             "controller_manager",
         ],
         namespace=LaunchConfiguration("namespace"),
     )
 
-    # The ACTIVE controller (ctrl) is spawned after an optional delay (ctrl_activation_delay, default 0),
-    # kept as a general knob for holding a controller back until the hardware has settled.
-    # NOTE: this is NOT how the effort controllers' empty-velocity-interface crash is handled — that was a
-    # deadlock (FRI reaches commanding only once a controller is active, but the controller needed
-    # commanding-populated velocity), so delaying activation could not fix it. It is fixed properly in
-    # ros2_effort_controller/effort_controller_base (SINTHLAB PATCH #1; see that folder's README).
-    delayed_ctrl_spawner = TimerAction(
-        period=LaunchConfiguration("ctrl_activation_delay"),
-        actions=[
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                output="screen",
-                arguments=[
-                    LaunchConfiguration("ctrl"),
-                    "--controller-manager",
-                    "controller_manager",
-                ],
-                namespace=LaunchConfiguration("namespace"),
-            )
-        ],
-    )
-
     # Optionally load a second controller in the INACTIVE state (configured, not running). The
-    # restricted-plane / maze experiments use this for the Cartesian impedance controller: the
-    # joint-impedance controller (ctrl) is active for the start/recover moves, then the orchestrator
-    # switches to this one for the fixture.
+    # restricted-plane / maze experiments use this for the CLIK: the joint controller (ctrl) is
+    # active for the start/recover moves, then the orchestrator switches to this one for the fixture.
     inactive_ctrl_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -165,29 +142,23 @@ def generate_launch_description() -> LaunchDescription:
                 description="Relative path from ctrl_cfg_pkg to the controllers.",
             ),
             DeclareLaunchArgument(
-                name="ctrl_overlay_cfg",
-                default_value="config/ctrl_overlay_none.yaml",
-                description="Generic controller-params OVERLAY, loaded AFTER ctrl_cfg so it wins. The "
-                "torque fixtures point it at config/torque_overlay_*.yaml (per-experiment Cartesian "
-                "stiffness + nullspace posture); the position experiments leave it at the harmless default.",
+                name="clik_nullspace_cfg",
+                default_value="config/clik_nullspace_default.yaml",
+                description="Per-experiment CLIK redundancy posture. Loaded AFTER ctrl_cfg so it "
+                "overrides it. The CLIK matches only the EE pose and resolves the 7th DOF toward this "
+                "configuration, so it must equal the experiment's move_to_start posture — the maze "
+                "(tool along +X) needs a different one from the tool-down experiments.",
             ),
             DeclareLaunchArgument(
                 name="ctrl",
-                default_value="lbr_joint_position_command_controller",
+                default_value="kuka_clik_controller",
                 description="Desired default controller (spawned ACTIVE). Must be defined in the ctrl_cfg.",
             ),
             DeclareLaunchArgument(
                 name="extra_inactive_ctrl",
                 default_value="",
-                description="Optional second controller spawned INACTIVE (e.g. the Cartesian impedance "
-                "controller for the restricted-plane/maze experiments; the orchestrator switches to it "
-                "for the fixture).",
-            ),
-            DeclareLaunchArgument(
-                name="ctrl_activation_delay",
-                default_value="0.0",
-                description="Seconds to delay spawning the ACTIVE controller (ctrl) after the "
-                "broadcasters. General-purpose knob; 0 for all shipped experiments.",
+                description="Optional second controller spawned INACTIVE (e.g. the CLIK for the "
+                "restricted-plane/maze experiments; the orchestrator switches to it for the fixture).",
             ),
             Node(
                 package="robot_state_publisher",
@@ -208,11 +179,11 @@ def generate_launch_description() -> LaunchDescription:
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
                     )
                     / LaunchConfiguration("ctrl_cfg"),
-                    # Loaded LAST so it wins: the experiment's controller-params overlay.
+                    # Loaded LAST so it wins: the experiment's CLIK redundancy posture.
                     PathSubstitution(
                         FindPackageShare(LaunchConfiguration("ctrl_cfg_pkg"))
                     )
-                    / LaunchConfiguration("ctrl_overlay_cfg"),
+                    / LaunchConfiguration("clik_nullspace_cfg"),
                 ],
                 namespace=LaunchConfiguration("namespace"),
             ),
@@ -220,7 +191,7 @@ def generate_launch_description() -> LaunchDescription:
             RegisterEventHandler(
                 event_handler=OnProcessExit(
                     target_action=joint_state_broadcaster_spawner,
-                    on_exit=[robot_description_dependent_spawner, inactive_ctrl_spawner, delayed_ctrl_spawner],
+                    on_exit=[robot_description_dependent_spawner, inactive_ctrl_spawner],
                 )
             ),
         ]

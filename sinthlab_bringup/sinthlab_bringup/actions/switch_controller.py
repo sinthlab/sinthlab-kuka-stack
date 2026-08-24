@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Switch the active ros2_control controller (e.g. joint_impedance <-> cartesian_impedance).
+"""Switch the active ros2_control controller (e.g. joint-position <-> CLIK).
 
-The restricted-plane / maze experiments (TORQUE mode) drive the arm to a precise start posture on the
-``joint_impedance_controller``, then hand off to the ``cartesian_impedance_controller`` for the
+The restricted-plane / maze experiments drive the arm to a precise start posture on the
+``lbr_joint_position_command_controller``, then hand off to the ``kuka_clik_controller`` for the
 virtual-fixture phase. This action wraps the controller_manager ``switch_controller`` service so the
 orchestrator can do that hand-off (and the reverse, before the recover move) as just another step in
 the trial.

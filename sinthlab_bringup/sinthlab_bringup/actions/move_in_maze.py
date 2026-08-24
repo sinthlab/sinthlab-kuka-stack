@@ -15,7 +15,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
     The maze IS a restricted-plane fixture (lock one axis + orientation to the start plane) plus a
     corridor projection in the freed 2D plane, so it reuses the base class wholesale: the LBRState
     subscription, optas FK, the state-rate equilibrium loop, the step clamp, and the publish to
-    cartesian_impedance_controller/target_frame all come from the base. This subclass adds two things:
+    kuka_clik_controller/target_frame all come from the base. This subclass adds two things:
 
       1. it loads the corridor rectangles (in __init__), and
       2. it overrides apply_surface_constraints to lock the out-of-plane axis + orientation to the

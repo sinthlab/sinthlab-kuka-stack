@@ -20,8 +20,6 @@
       type: lbr_ros2_control/LBRStateBroadcaster
 
     # LBR ROS 2 control controllers.
-    # NOTE: the restricted-plane / maze fixtures moved to TORQUE mode (config/torque_controllers.yaml);
-    # this config now serves only the POSITION experiments (apple-pluck / perturb).
     # lbr_joint_position_command_controller -> apple-pluck / perturb (joint positions -> FRI)
     lbr_joint_position_command_controller:
       type: lbr_ros2_control/LBRJointPositionCommandController
@@ -55,3 +53,28 @@
 /**/lbr_joint_position_command_controller:
   ros__parameters:
     robot_name: lbr
+
+# ROS 2 control controllers
+# kuka_clik_controller -> restricted-plane + maze (Cartesian equilibrium -> IK -> joint positions)
+/**/kuka_clik_controller:
+  ros__parameters:
+    update_rate: 1000
+    robot_base_link: "lbr_link_0"
+    end_effector_link: "lbr_link_ee"
+    compliance_ref_link: "lbr_link_ee"
+    joints: [lbr_A1, lbr_A2, lbr_A3, lbr_A4, lbr_A5, lbr_A6, lbr_A7]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    # >>> THE "STIFF WHILE MOVING" KNOB. These cap how fast the commanded EQUILIBRIUM may chase the
+    # hand. Inside a fixture the equilibrium tracks the measured pose, so the spring error -- and the
+    # force -- is ~zero. But if the operator moves FASTER than these clamps, the equilibrium falls
+    # behind CUMULATIVELY, the error grows without bound, and K * error is felt as a wall in every
+    # direction. That, not stiffness, is what made the maze feel stiff at every cabinet profile.
+    # 1.0 m/s is comfortably above hand-guiding speed (~0.2-0.3 m/s), leaving only loop-latency lag
+    # (force = K * v * latency, a few N) instead of an unbounded one.
+    max_linear_velocity: 1.0
+    max_angular_velocity: 0.5
+    clik_dt: 0.001
+    clik_it_max: 100
+    clik_eps: 1e-4
+    clik_filter_alpha: 0.99

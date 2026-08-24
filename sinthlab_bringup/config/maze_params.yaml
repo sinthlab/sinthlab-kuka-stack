@@ -1,11 +1,16 @@
 /**:
   ros__parameters:
-    # Maze runs in TORQUE mode: move_to_start/recover use MoveToJointTarget -> joint_impedance_controller
-    # (joint targets, no IK),
-    # and MoveInMazeAction streams the corridor-constrained equilibrium to cartesian_impedance_controller.
-    # The idra-lab impedance controllers provide the compliance + walls (per-axis Cartesian stiffness on
-    # the ROS side); the cabinet runs TorqueControl.java (gravity comp, no free-fall). Tune the stiffness
-    # in config/torque_overlay_maze.yaml, NOT a SmartPad profile.
+    # Maze runs in POSITION mode: move_to_start/recover use MoveToPositionJointSpace, and MoveInMazeAction
+    # streams the corridor-constrained equilibrium to kuka_clik_controller. The CABINET
+    # (LbrImpedanceControlServer) provides the compliance and the walls.
+    #
+    # >>> USE THE ANISOTROPIC "Maze walls (X lock, Y/Z firm)" SmartPad profile, not a uniform one.
+    # Soft-inside does NOT come from low stiffness: inside a corridor the projection returns the measured
+    # pose, so spring error -- and force -- is ~zero whatever K is. High K only bites at the walls. Every
+    # uniform profile we tried failed for a different reason: 400 gave walls too weak to feel (4 N/cm),
+    # 3000 was dominated by TRACKING LAG. The lag is fixed by the raised clamps (kuka_clik_controller
+    # max_linear_velocity + max_target_step_m below), which lets X lock hard and Y/Z walls stay firm while
+    # the interior stays free.
     #
     # GEOMETRY IS SOLVED, NOT GUESSED. Every position below is in metres, base frame (lbr_link_0), and
     # was checked by IK against the real iiwa7 URDF: the start posture puts the tool axis EXACTLY along
@@ -30,17 +35,13 @@
       # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
       # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
       # plane through the start (tool points +X, perpendicular into it).
-      # >>> SYNC: keep this array identical (converted to RADIANS) to nullspace_desired_configuration
-      #     in config/torque_overlay_maze.yaml, or the Cartesian impedance holds the right EE pose in
-      #     the wrong arm posture and fights you. (This start was verified: the whole maze footprint is
-      #     reachable while holding this orientation at z=0.9.)
+      # >>> SYNC: keep this array identical to nullspace_desired_configuration in
+      #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
+      #     posture and fights you. (This start was verified: the whole maze footprint is reachable
+      #     while holding this orientation at z=0.9.)
       target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]
       joint_move_tolerance: 0.01
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
-      joint_leash_rad: 0.06            # max rad the command may lead the measured joints;
-                                       # drive torque = K*leash (K=60 -> 3.6 Nm): must beat joint
-                                       # friction yet stay well under the 10 Nm process abort
-      move_duration_sec: 6.0           # ramp time for the (possibly large) initial move [s]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # [rad/s^2]
       move_to_pos_j_max: 5.0  # [rad/s^3]
@@ -51,9 +52,6 @@
       target_joint_position: [0.0, 0.0, 0.0, -70.0, -20.0, 10.0, 0.0]  # same as move_to_start
       joint_move_tolerance: 0.15
       cartesian_move_tolerance: 0.05
-      joint_leash_rad: 0.06            # max rad the command may lead the measured joints;
-                                       # drive torque = K*leash (K=60 -> 3.6 Nm): must beat joint
-                                       # friction yet stay well under the 10 Nm process abort
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
       move_to_pos_a_max: 2.0
       move_to_pos_j_max: 5.0
@@ -149,7 +147,12 @@
     # checkpoints + goal reachable holding the start orientation, all inside the reachable Y-Z box.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
-      max_target_step_m: 0.01   # cap on commanded-equilibrium move per tick [m] (jerk guard)
+      # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
+      # first is kuka_clik_controller.max_linear_velocity): at 0.01 m/tick and ~100 Hz state the
+      # equilibrium could only chase the hand at 1 m/s, but combined with the CLIK clamp it was the
+      # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
+      # against spikes without throttling normal guiding.
+      max_target_step_m: 0.05
       maze:
         type: "maze"
         restricted_axis: "x"        # lock the radial X axis; free Y (sideways) + Z (up/down)
