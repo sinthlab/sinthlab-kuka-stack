@@ -149,6 +149,19 @@
     # C2 branches −Z (down) off C1 and dead-ends. Checkpoints/goal are UNCHANGED; only the corridors grew.
     # Verified vs the URDF (optas IK): start inside C1, all four regions connected, every corner + both
     # checkpoints + goal reachable holding the start orientation, all inside the reachable Y-Z box.
+    # >>> DIAGNOSTIC LADDER. Switch `virtual_fixture_profile` between these to isolate WHY the maze
+    # feels the way it does. They are all "maze" fixtures -- a corridor spanning the whole workspace
+    # simply has no walls, and a long thin corridor IS a line -- so no code changes are needed.
+    #
+    #   free_plane  -> X locked, Y+Z completely free (one huge corridor, no reachable wall).
+    #                  Tests the PLANE LOCK + cabinet stiffness + tracking, with the corridors removed.
+    #                  Should feel like the sine rail's free axis: light to move sideways and up/down.
+    #                  If THIS feels stiff, the problem is not the maze geometry at all.
+    #   single_line -> one corridor, long in Y and thin in Z: a horizontal RAIL you slide along.
+    #                  Adds exactly one wall pair (in Z). Free along Y, walled above/below.
+    #   maze        -> the real thing.
+    #
+    # Work up the ladder and stop at the first one that feels wrong -- that names the culprit.
     virtual_fixture_profile: "maze"
     virtual_fixtures:
       # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
@@ -157,6 +170,27 @@
       # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
       # against spikes without throttling normal guiding.
       max_target_step_m: 0.05
+      # --- rung 1: no walls at all (X locked, Y/Z free). Corridor covers the reachable box. ---
+      free_plane:
+        type: "maze"
+        restricted_axis: "x"
+        corridor_frame: "relative"
+        corridor_a_min: [-0.20]
+        corridor_a_max: [ 0.20]
+        corridor_b_min: [-0.18]
+        corridor_b_max: [ 0.14]
+
+      # --- rung 2: a single horizontal LINE along Y (thin in Z = one wall pair). ---
+      single_line:
+        type: "maze"
+        restricted_axis: "x"
+        corridor_frame: "relative"
+        corridor_a_min: [-0.06]
+        corridor_a_max: [ 0.19]
+        corridor_b_min: [-0.02]
+        corridor_b_max: [ 0.02]
+
+      # --- rung 3: the real maze ---
       maze:
         type: "maze"
         restricted_axis: "x"        # lock the radial X axis; free Y (sideways) + Z (up/down)
