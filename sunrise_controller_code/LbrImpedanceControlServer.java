@@ -78,7 +78,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Rail guide (uniform 1000)",
         "Stiff (firm walls)",
         "Maze compliant (uniform 400)",
-        "Maze walls (X lock, Y/Z firm)"
+        "Maze walls (X lock, Y/Z firm)",
+        "Maze walls + easy guiding (rot 120)"
     };
     private double[][] stiffness_vals_ = {
         { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
@@ -95,7 +96,17 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         // pose, so spring error ~ 0 and force ~ 0 regardless of these numbers. Only the walls and the
         // locked axis see a real error. This is why a uniform profile could never win -- 400 made the
         // walls mushy, 3000 made everything heavy.
-        { 2500.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }  // maze: X lock + firm Y/Z walls
+        { 2500.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // maze: X lock + firm Y/Z walls
+        // MAZE, tuned for SMOOTH guiding. IDENTICAL translational stiffness to the profile above --
+        // the maze's constraints are ALL translational (X = the plane lock, Y/Z = the corridor walls),
+        // so those must stay firm or the fixture itself goes mushy. ONLY the rotational terms are
+        // relaxed:
+        //   rot 300 -> 120. Orientation locking defines nothing about the maze; it merely stops the
+        //   tool twisting. But holding orientation while translating is the EXPENSIVE motion (it is
+        //   what made the old maze start feel like treacle), so this is the one knob that reduces drag
+        //   on guiding WITHOUT weakening the plane or the walls.
+        // Trade-off: the tool may twist a little more -- watch the apple angle.
+        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }  // maze: firm constraints, easy guiding
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
     private double[] damping_vals_ = { 0.3, 0.7, 1.0 };

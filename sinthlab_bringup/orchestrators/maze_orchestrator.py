@@ -40,6 +40,15 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_ending = False
 
         # Actions that make up the trial.
+        # Pre-start waypoint, run ONCE before the first trial. Mechanical zero is an exactly singular
+        # configuration, and a Cartesian-impedance move commanded from there does not reliably reach the
+        # maze start (see move_to_prestart in maze_params.yaml). Stepping via a well-conditioned posture
+        # first makes startup deterministic regardless of where the arm was parked.
+        self.move_to_prestart = MoveToPositionJointSpace(
+            self, param_prefix="move_to_prestart", on_complete=self.on_prestart_complete
+        )
+        self._did_prestart = False
+
         self.move_to_start = MoveToPositionJointSpace(
             self, param_prefix="move_to_start", on_complete=self.on_move_complete
         )
@@ -82,6 +91,17 @@ class MazeOrchestratorNode(rclpyNode):
         self.trial_count += 1
         self._trial_ending = False
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        if not self._did_prestart:
+            # First trial only: step via the well-conditioned waypoint (see __init__).
+            self.get_logger().info("Stepping via the pre-start waypoint (avoids the mechanical-zero singularity)...")
+            self.move_to_prestart.start()
+            return
+        self.move_to_start.start()
+
+    def on_prestart_complete(self):
+        # Waypoint reached; from here the maze start is reliably reachable. Never repeated.
+        self._did_prestart = True
+        self.get_logger().info("At pre-start waypoint. Moving to the maze start...")
         self.move_to_start.start()
 
     def on_move_complete(self):

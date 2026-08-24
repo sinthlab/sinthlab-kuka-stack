@@ -33,6 +33,31 @@
     # Whole-experiment timeout [s]; on expiry the arm waits for release then returns to start.
     timeout_sec: 60.0
 
+    # PRE-START WAYPOINT -- run ONCE at startup, before the first move to the maze start.
+    #
+    # WHY: MECHANICAL ZERO IS AN EXACTLY SINGULAR CONFIGURATION (smallest singular value of the
+    # Jacobian is 0.0, condition number infinite -- the arm is fully extended straight up). The cabinet
+    # runs Cartesian impedance, so a move commanded from there is ill-conditioned: the Jacobian has lost
+    # rank and the 7-DOF nullspace is degenerate, so the arm does not reliably reach the maze start.
+    # Observed on hardware: launching the maze from mechanical zero misses the start posture, while
+    # running the restricted-plane experiment first (which parks the arm here) then makes it work.
+    #
+    # This posture is the restricted-plane start -- empirically proven to be reachable FROM mechanical
+    # zero, and to be a configuration the maze start is reachable FROM. It is well conditioned
+    # (smallest singular value 0.206 vs 0.0 at mechanical zero).
+    #
+    # Only the FIRST trial uses it; afterwards the arm is already at the maze start, so the recovery
+    # move goes straight there and the trial loop is not slowed down.
+    move_to_prestart:
+      update_rate: 200
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+      joint_move_tolerance: 0.15   # loose: this is only a waypoint, not the experiment start
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+      move_to_pos_a_max: 2.0
+      move_to_pos_j_max: 5.0
+      debug_log_enabled: false
+      debug_log_rate_hz: 2.0
+
     move_to_start:
       update_rate: 200
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
@@ -54,7 +79,15 @@
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
       #     while holding this orientation at z=0.9.)
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]
-      joint_move_tolerance: 0.01
+      # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
+      #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
+      #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory
+      #     alone; observed on hardware finishing at meas err 0.0219 rad against a 0.0100 tolerance,
+      #     i.e. the arm was still ~2x outside tolerance and the whole maze was then offset from it.
+      #     Tolerance is 0.03 rad (~1.7 deg, ~2 cm at the EE) rather than 0.01: under cabinet impedance
+      #     there is always some steady-state joint error, and 0.01 would never be met, hanging the move.
+      joint_move_tolerance: 0.03
+      wait_for_physical_arrival: true
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # [rad/s^2]
@@ -65,6 +98,7 @@
       update_rate: 200
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # same as move_to_start
       joint_move_tolerance: 0.15
+      wait_for_physical_arrival: true  # next trial must not start from a half-recovered pose
       cartesian_move_tolerance: 0.05
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
       move_to_pos_a_max: 2.0
