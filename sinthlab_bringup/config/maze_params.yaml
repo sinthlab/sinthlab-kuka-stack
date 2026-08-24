@@ -104,6 +104,10 @@
       ee_frame: lbr_link_ee
       max_displacement_m: 0.35
       max_speed_mps: 0.7
+      # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
+      # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
+      # stays appropriate here even with the raised CLIK clamp -- watch for false trips.
+      speed_trip_samples: 5
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
 
