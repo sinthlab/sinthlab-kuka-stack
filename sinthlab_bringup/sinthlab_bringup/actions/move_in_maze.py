@@ -64,6 +64,8 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
 
         # Periodic maze-position logging (see _record_extra). Reuses the fixture's own debug flags if
         # present so it can be switched off without touching code.
+        # How far off a rail still counts as "on" it, for logging only (the projection is unaffected).
+        self._on_rail_tol = 0.015
         self._dbg = None
         self._log_dt = 1.0 / 100.0
         try:
@@ -115,7 +117,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
     # IN THE MAZE, and which corridor am I in". These add maze-relative columns so a run can be plotted
     # straight on top of the corridor rectangles from maze_params.yaml.
     def _record_extra_header(self):
-        return ["rel_a", "rel_b", "corridor", "clamped"]
+        return ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist"]
 
     def _maze_coords(self, measured_T):
         """Return (a, b, corridor_index, clamped) for a measured EE transform.
@@ -138,23 +140,31 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             a, b = measured_T[0, 3], measured_T[1, 3]
             a0, b0 = (si[0, 3], si[1, 3]) if self._corridor_relative else (0.0, 0.0)
         qa, qb = a - a0, b - b0
-        idx = -1
+        # Report the NEAREST segment and how far off it we are, rather than a strict inside/outside
+        # test. With zero-width (linear) corridors a strict test can never pass -- the arm is only ever
+        # exactly on a rail by coincidence -- so it would always read "outside" and tell you nothing.
+        idx, best = -1, float("inf")
         for i, (amn, amx, bmn, bmx) in enumerate(self._maze_corridors):
-            if amn <= qa <= amx and bmn <= qb <= bmx:
-                idx = i
-                break
-        return qa, qb, idx, (0 if idx >= 0 else 1)
+            ca = min(max(qa, amn), amx)
+            cb = min(max(qb, bmn), bmx)
+            d = ((qa - ca) ** 2 + (qb - cb) ** 2) ** 0.5
+            if d < best:
+                best, idx = d, i
+        # "on the rail" if within this distance of it; beyond that the spring is actively pulling back.
+        on_rail = best <= self._on_rail_tol
+        return qa, qb, (idx if on_rail else -1), (0 if on_rail else 1), best, idx
 
     def _record_extra(self, measured_T):
-        qa, qb, idx, clamped = self._maze_coords(measured_T)
+        qa, qb, idx, clamped, dist, nearest = self._maze_coords(measured_T)
         # Live view of progress. Without this you cannot tell "I am inside C1 and need to move further"
         # from "I am pinned against a wall" -- they feel similar through a compliant arm.
         if self._dbg is not None and self._dbg.tick(self._log_dt):
-            where = f"corridor C{idx + 1}" if idx >= 0 else "OUTSIDE (held at a wall)"
+            where = (f"on rail C{nearest + 1}" if idx >= 0
+                     else f"OFF rail (nearest C{nearest + 1}, {dist * 1000:.0f} mm away, being pulled back)")
             self._node.get_logger().info(
                 f"maze: a={qa:+.3f} b={qb:+.3f} -> {where}"
             )
-        return [round(qa, 5), round(qb, 5), idx, clamped]
+        return [round(qa, 5), round(qb, 5), idx, clamped, round(dist, 5)]
 
     def _project_to_corridors(self, pa: float, pb: float,
                               a0: float = 0.0, b0: float = 0.0) -> tuple[float, float]:
