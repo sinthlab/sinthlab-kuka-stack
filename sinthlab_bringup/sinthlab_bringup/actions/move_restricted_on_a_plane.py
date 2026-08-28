@@ -112,7 +112,7 @@ class MoveRestrictedOnAPlaneAction:
         self._initial_transform = None
         self._published_xyz = None
         
-        self.recorder.start() # Start modular recorder 
+        self.recorder.start(extra_header=self._record_extra_header())  # start modular recorder
         
         # CRITICAL FIX: Wipe the old commanded position from the previous trial!
         # This forces the script to re-orient itself to the exact joint positions
@@ -288,7 +288,8 @@ The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this n
         self._publish_pose(target_pose)
 
         # Record the real (measured) Cartesian trajectory at the state rate
-        self.recorder.record_pose(self._fk_func(self.last_measured_joints))
+        measured_T = self._fk_func(self.last_measured_joints)
+        self.recorder.record_pose(measured_T, self._record_extra(measured_T))
 
     def _compute_cabinet_target(self, msg: LBRState) -> np.ndarray:
         """
@@ -300,6 +301,13 @@ The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this n
         constrained_pose, _is_restricted = self.apply_surface_constraints(measured_pose)
         constrained_pose[0:3, 0:3] = self._initial_transform[0:3, 0:3]
         return constrained_pose
+
+    # --- trajectory-log hooks. Base logs only the absolute pose; MoveInMaze adds maze coordinates. ---
+    def _record_extra_header(self):
+        return []
+
+    def _record_extra(self, measured_T):
+        return []
 
     def _publish_pose(self, target_pose: np.ndarray) -> None:
         from scipy.spatial.transform import Rotation as R

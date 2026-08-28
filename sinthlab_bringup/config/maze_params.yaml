@@ -137,7 +137,7 @@
       goal_y: -0.060       # far (−Y) end of the return leg C4
       goal_z: 0.085
       goal_radius: 0.03
-      debug_log_enabled: false
+      debug_log_enabled: true
       debug_log_rate_hz: 2.0
 
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,

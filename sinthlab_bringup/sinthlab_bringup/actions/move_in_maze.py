@@ -62,6 +62,19 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
                 str(node.get_parameter(prefix + "corridor_frame").value).lower() != "absolute"
             )
 
+        # Periodic maze-position logging (see _record_extra). Reuses the fixture's own debug flags if
+        # present so it can be switched off without touching code.
+        self._dbg = None
+        self._log_dt = 1.0 / 100.0
+        try:
+            from sinthlab_bringup.helpers.common_threshold import DebugTicker
+            rate = 2.0
+            if node.has_parameter(self._param_prefix + "maze_safety.debug_log_rate_hz"):
+                rate = float(node.get_parameter(self._param_prefix + "maze_safety.debug_log_rate_hz").value)
+            self._dbg = DebugTicker(rate)
+        except Exception:
+            self._dbg = None
+
         node.get_logger().info(f"Maze fixture: {len(self._maze_corridors)} corridors loaded.")
 
     def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
@@ -96,6 +109,52 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         transform[1, 3] = y
         transform[2, 3] = z
         return transform, restricted
+
+    # ---------------- trajectory logging (see analysis/robot_trajectory_*.csv) ----------------
+    # The absolute EE pose alone is hard to reason about: what you actually want to know is "where am I
+    # IN THE MAZE, and which corridor am I in". These add maze-relative columns so a run can be plotted
+    # straight on top of the corridor rectangles from maze_params.yaml.
+    def _record_extra_header(self):
+        return ["rel_a", "rel_b", "corridor", "clamped"]
+
+    def _maze_coords(self, measured_T):
+        """Return (a, b, corridor_index, clamped) for a measured EE transform.
+
+        a, b are the in-plane offsets from the maze origin (the anchored start), in the same frame the
+        corridors are written in. corridor_index is the first corridor containing the point, or -1 when
+        the arm is OUTSIDE every corridor (i.e. being held against a wall). clamped mirrors that as 0/1.
+        """
+        if self._initial_transform is None:
+            return 0.0, 0.0, -1, 1
+        si = self._initial_transform
+        locked = self.profile_config.get("restricted_axis", "z").lower()
+        if locked == "x":
+            a, b = measured_T[1, 3], measured_T[2, 3]
+            a0, b0 = (si[1, 3], si[2, 3]) if self._corridor_relative else (0.0, 0.0)
+        elif locked == "y":
+            a, b = measured_T[0, 3], measured_T[2, 3]
+            a0, b0 = (si[0, 3], si[2, 3]) if self._corridor_relative else (0.0, 0.0)
+        else:
+            a, b = measured_T[0, 3], measured_T[1, 3]
+            a0, b0 = (si[0, 3], si[1, 3]) if self._corridor_relative else (0.0, 0.0)
+        qa, qb = a - a0, b - b0
+        idx = -1
+        for i, (amn, amx, bmn, bmx) in enumerate(self._maze_corridors):
+            if amn <= qa <= amx and bmn <= qb <= bmx:
+                idx = i
+                break
+        return qa, qb, idx, (0 if idx >= 0 else 1)
+
+    def _record_extra(self, measured_T):
+        qa, qb, idx, clamped = self._maze_coords(measured_T)
+        # Live view of progress. Without this you cannot tell "I am inside C1 and need to move further"
+        # from "I am pinned against a wall" -- they feel similar through a compliant arm.
+        if self._dbg is not None and self._dbg.tick(self._log_dt):
+            where = f"corridor C{idx + 1}" if idx >= 0 else "OUTSIDE (held at a wall)"
+            self._node.get_logger().info(
+                f"maze: a={qa:+.3f} b={qb:+.3f} -> {where}"
+            )
+        return [round(qa, 5), round(qb, 5), idx, clamped]
 
     def _project_to_corridors(self, pa: float, pb: float,
                               a0: float = 0.0, b0: float = 0.0) -> tuple[float, float]:
