@@ -81,6 +81,25 @@ class MoveRestrictedOnAPlaneAction:
         if node.has_parameter(base_prefix + "max_target_step_m"):
             self.max_target_step_m = float(node.get_parameter(base_prefix + "max_target_step_m").value)
         self._published_xyz = None  # last commanded equilibrium translation (for the step clamp)
+
+        # WHERE THE FIXTURE ANCHORS ITS ORIGIN.
+        # By default the manifold is anchored on the COMMANDED pose the instant the fixture starts.
+        # That is right for the sine rail, but wrong for the maze: under cabinet impedance a FREE axis
+        # carries no restoring force, so the arm settles a few cm below the commanded start (measured:
+        # ~4 cm, bounded, it stops). Anchoring on the commanded pose then puts the whole maze that far
+        # ABOVE the arm -- checkpoints at b=0 sit overhead and get missed by more than their radius.
+        #   anchor_settle_sec  : wait this long after start() before capturing the origin, so the sag
+        #                        has finished (it settles in ~25 s, but most of it happens in the first
+        #                        few seconds).
+        #   anchor_on_measured : capture from the MEASURED joints (where the arm actually is) instead
+        #                        of the commanded ones.
+        self._anchor_settle_sec = 0.0
+        if node.has_parameter(base_prefix + "anchor_settle_sec"):
+            self._anchor_settle_sec = float(node.get_parameter(base_prefix + "anchor_settle_sec").value)
+        self._anchor_on_measured = False
+        if node.has_parameter(base_prefix + "anchor_on_measured"):
+            self._anchor_on_measured = bool(node.get_parameter(base_prefix + "anchor_on_measured").value)
+        self._anchor_elapsed = 0.0
             
         self.profile_config = {}
         prefix = base_prefix + f"{self.active_profile}."
@@ -111,6 +130,7 @@ class MoveRestrictedOnAPlaneAction:
         self._needs_init_capture = True
         self._initial_transform = None
         self._published_xyz = None
+        self._anchor_elapsed = 0.0
         
         self.recorder.start(extra_header=self._record_extra_header())  # start modular recorder
         
@@ -265,12 +285,24 @@ The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this n
             else:
                 self.last_commanded = q_cmd
 
-        # On the first tick, anchor the fixture manifold at the start pose
+        # Anchor the fixture manifold (see anchor_settle_sec / anchor_on_measured above).
         if getattr(self, '_needs_init_capture', True):
+            if self._anchor_settle_sec > 0.0 and self._anchor_elapsed < self._anchor_settle_sec:
+                # Hold off: let the arm finish settling so the origin is where it RESTS, and keep the
+                # commanded equilibrium on the measured pose meanwhile so we do not fight the settle.
+                self._anchor_elapsed += 1.0 / 100.0
+                self._publish_pose(self._fk_func(self.last_measured_joints))
+                return
             self._needs_init_capture = False
-            self._initial_transform = self._fk_func(self.last_commanded)
+            src = self.last_measured_joints if self._anchor_on_measured else self.last_commanded
+            self._initial_transform = self._fk_func(src)
             self._published_xyz = self._initial_transform[0:3, 3].copy()
-            self._node.get_logger().info("Fixture anchored at start pose.")
+            self._node.get_logger().info(
+                f"Fixture anchored at start pose "
+                f"({'measured' if self._anchor_on_measured else 'commanded'}"
+                f"{f', after {self._anchor_settle_sec:.1f}s settle' if self._anchor_settle_sec > 0 else ''})"
+                f" EE={np.round(self._initial_transform[0:3, 3], 3)}"
+            )
 
         target_pose = self._compute_cabinet_target(msg)
 
