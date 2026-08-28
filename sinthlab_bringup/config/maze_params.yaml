@@ -130,12 +130,12 @@
       ee_frame: lbr_link_ee
       relative_to_start: true
       checkpoint_x: [0.000, 0.000]   # X offset = 0 (on the locked plane)
-      checkpoint_y: [0.320,  0.320]   # Y (sideways) offset from start
-      checkpoint_z: [0.000, -0.300]   # Z (up/down) offset from start
+      checkpoint_y: [0.220, 0.220]   # Y (sideways) offset from start
+      checkpoint_z: [0.000, 0.150]   # Z (up/down) offset from start
       checkpoint_radius: [0.03, 0.03]
       goal_x: 0.000        # on the plane
-      goal_y: -0.320       # far (−Y) end of the return leg C4
-      goal_z: -0.300
+      goal_y: -0.220       # far (−Y) end of the return leg C6, up on +Z
+      goal_z:  0.150
       goal_radius: 0.03
       debug_log_enabled: true
       debug_log_rate_hz: 2.0
@@ -143,14 +143,14 @@
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
-    # The maze footprint now reaches ~0.44 m from start (the goal corner), so 0.60 m clears it; normal hand motion is
+    # The maze footprint reaches ~0.27 m from start (the goal corner), so 0.45 m clears it; normal hand motion is
     # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:
       update_rate: 100
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      max_displacement_m: 0.60
+      max_displacement_m: 0.45
       max_speed_mps: 0.7
       # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
       # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
@@ -183,18 +183,21 @@
     # Reachable box at this start: Y[±0.22], Z[-0.20,+0.16] (offsets). The maze spans Y[-0.15,0.19],
     # Z[-0.18,0.14] — enlarged to ~1.6x the earlier footprint for more room, still inside the box.
     #
-    #  Z +0.12                    ╷ C2                                (C2 = dead-end UP, the wrong turn)
-    #                              ╷
-    #  Z  0.00        ▶START ──────┴──── C1 entrance +Y ──────► ① CP1
-    #                                                          ╷
-    #                                                          ╷ C3    (C3 = down-leg, gravity helps)
-    #                                                          ╷
-    #  Z -0.30        ★GOAL ◄──────── C4 return −Y ────────────┘ ② CP2
-    #           Y:    -0.32        0     0.15                 0.32     <- Y offset (sideways)
+    #  Z +0.15    ★GOAL ◄─────────── C6 return −Y ─────────────┐ ② CP2
+    #                                                           ╷
+    #                                                           ╷ C5   (up-leg to the goal level)
+    #                                                           ╷
+    #  Z  0.00    ▶START ────── C1 entrance +Y ──┬────┬─────────┘ ① CP1
+    #                                           ╷    ╵
+    #                                        C2 ╷    ╵ C4   (DETOUR: wrong turn drops off C1 here,
+    #  Z -0.15                                  └─C3─┘        runs across, and climbs back onto it.
+    #                                                         Recoverable, but +0.30 m of travel.)
+    #           Y:  -0.22        0       0.10 0.18 0.22        <- Y offset (sideways)
     #           (all legs are LINES: you slide along a rail and turn only at a junction)
     #
-    # Path: ▶START(0,0) —+Y 0.32→ ①CP1(0.320,0.00) —−Z down 0.30→ ②CP2(0.320,-0.300) —−Y 0.64→ ★GOAL(-0.320,-0.300).
-    # Total 1.26 m of travel (2.0x the previous maze). C2 branches UP off C1 and dead-ends.
+    # Path: ▶START(0,0) —+Y 0.22→ ①CP1(0.220,0.00) —+Z up 0.15→ ②CP2(0.220,0.150) —−Y 0.44→ ★GOAL(-0.220,0.150).
+    # Main route 0.81 m; the C2/C3/C4 detour adds 0.30 m if taken. All 50 sampled points verified
+    # reachable by IK while holding the tool orientation.
     # C2 branches −Z (down) off C1 and dead-ends. Checkpoints/goal are UNCHANGED; only the corridors grew.
     # Verified vs the URDF (optas IK): start inside C1, all four regions connected, every corner + both
     # checkpoints + goal reachable holding the start orientation, all inside the reachable Y-Z box.
@@ -261,8 +264,18 @@
         # width low down, narrowing badly at the top (at b=+0.20 only a in +/-0.10). So the long return
         # leg runs along the BOTTOM, which also means the big traverse is DOWNHILL: gravity helps
         # instead of fighting, which is what made the old upward C3 leg so hard.
-        #                C1      C2      C3      C4
-        corridor_a_min: [-0.05,  0.15,  0.32, -0.32]   # Y (sideways) offset min
-        corridor_a_max: [ 0.32,  0.15,  0.32,  0.32]   # Y offset max
-        corridor_b_min: [ 0.00,  0.00, -0.30, -0.30]   # Z (up/down) offset min
-        corridor_b_max: [ 0.00,  0.12,  0.00, -0.30]   # Z offset max
+        # SIX linear segments. Main route runs +Y then UP then back -Y, so the GOAL is on +Z.
+        # A straight mirror of the downward version does NOT fit: the reachable envelope is pinched at
+        # the top (b=+0.30 is unreachable at EVERY a), so the upper return leg sits at b=+0.15 and the
+        # main path is 0.81 m rather than the 1.26 m the downward layout allowed.
+        #
+        # The wrong turn is now a DETOUR LOOP, not a dead end: C2->C3->C4 drops off C1, runs across and
+        # climbs back onto C1 further along. You recover by continuing forward instead of reversing out
+        # of a stub, but it still costs +0.30 m of travel, so a wrong choice is still penalised.
+        #                C1      C2      C3      C4      C5      C6
+        #             entrance detour  detour  detour  up-leg  return
+        #                       down   across    up
+        corridor_a_min: [-0.05,  0.10,  0.10,  0.18,  0.22, -0.22]   # Y (sideways) offset min
+        corridor_a_max: [ 0.22,  0.10,  0.18,  0.18,  0.22,  0.22]   # Y offset max
+        corridor_b_min: [ 0.00, -0.15, -0.15, -0.15,  0.00,  0.15]   # Z (up/down) offset min
+        corridor_b_max: [ 0.00,  0.00, -0.15,  0.00,  0.15,  0.15]   # Z offset max
