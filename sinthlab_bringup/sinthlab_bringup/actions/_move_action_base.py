@@ -76,6 +76,9 @@ class MoveActionBase:
         self._q_cmd_sync = np.zeros(7)
         self._q_cmd_completion = np.zeros(7)
         self._q_meas_completion = np.zeros(7)
+        # Set once, never cleared (unlike _init, which start() resets): lets a caller ask where the
+        # arm is BEFORE any move has been started -- e.g. to decide whether a move is needed at all.
+        self._state_seen = False
         self._shutdown_requested = False
 
         # Trajectory generator (Ruckig)
@@ -179,9 +182,19 @@ class MoveActionBase:
 
         except Exception:
             return
+        self._state_seen = True
         # Don't plan/check until we've actually seen the robot's joint state once.
         if not self._init:
             self._init = True
+
+    def latest_measured_joints(self):
+        """Latest MEASURED joint positions [rad], or None if no robot state has arrived yet.
+
+        Public so an orchestrator can ask "where is the arm right now?" before deciding whether a move
+        is necessary. Uses the measured (not commanded) joints deliberately: the question is where the
+        arm physically IS, not where it was last told to go.
+        """
+        return self._q_meas_completion.copy() if self._state_seen else None
 
     def start(self) -> None:
         """Trigger the action to start."""

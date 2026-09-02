@@ -62,6 +62,20 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
                 str(node.get_parameter(prefix + "corridor_frame").value).lower() != "absolute"
             )
 
+        # RAIL ADJACENCY. Two rails are neighbours if they touch (share a point) -- that is a junction.
+        # Precomputed once so the per-tick projection can be restricted to the rail we are ON and the
+        # rails it actually connects to.
+        def _touch(r, s_):
+            da = max(0.0, r[0] - s_[1], s_[0] - r[1])
+            db = max(0.0, r[2] - s_[3], s_[2] - r[3])
+            return (da * da + db * db) <= 1e-12
+        self._rail_neighbours = [
+            {j for j in range(len(self._maze_corridors)) if j != i and _touch(self._maze_corridors[i], self._maze_corridors[j])}
+            for i in range(len(self._maze_corridors))
+        ]
+        # The rail the arm is currently travelling. Latched: see _project_to_corridors.
+        self._cur_rail = None
+
         # Periodic maze-position logging (see _record_extra). Reuses the fixture's own debug flags if
         # present so it can be switched off without touching code.
         # How far off a rail still counts as "on" it, for logging only (the projection is unaffected).
@@ -78,6 +92,11 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             self._dbg = None
 
         node.get_logger().info(f"Maze fixture: {len(self._maze_corridors)} corridors loaded.")
+
+    def start(self) -> None:
+        # Forget which rail we were on; the next trial re-latches from wherever the arm actually is.
+        self._cur_rail = None
+        super().start()
 
     def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
         """Lock the out-of-plane axis + orientation to the start pose (like the base 'plane' profile),
@@ -166,29 +185,43 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             )
         return [round(qa, 5), round(qb, 5), idx, clamped, round(dist, 5)]
 
+    @staticmethod
+    def _clamp_to(rail, qa, qb):
+        ca = min(max(qa, rail[0]), rail[1])
+        cb = min(max(qb, rail[2]), rail[3])
+        return ca, cb, (qa - ca) ** 2 + (qb - cb) ** 2
+
     def _project_to_corridors(self, pa: float, pb: float,
                               a0: float = 0.0, b0: float = 0.0) -> tuple[float, float]:
-        """Project an in-plane point onto the union of allowed corridor rectangles.
+        """Project the point onto the rail the arm is CURRENTLY on, or one that rail connects to.
 
-        Bounds are relative to the origin (a0, b0) -- the start EE for a relative maze, or (0, 0) for
-        an absolute one. Inside any corridor -> the point is returned unchanged (free motion). Outside
-        all corridors -> clamped to the nearest corridor boundary. Coords stay in the SAME (absolute)
-        frame as the input.
+        WHY NOT SIMPLY THE NEAREST RAIL: that let the arm pass through walls. Push hard enough off
+        rail A and some unrelated rail B becomes the closest one, so the equilibrium jumps to B and the
+        cabinet spring drags the arm across the maze -- exactly the "it went off rail" behaviour. The
+        rails are a graph, and travel must follow the graph.
+
+        So the rail is LATCHED: each tick we only consider the current rail and its neighbours (rails
+        that physically touch it, i.e. real junctions). Switching therefore happens only where two rails
+        actually meet. At the end of a rail with nowhere to go the projection stays clamped to the
+        endpoint, and the spring holds the arm there -- a wall you cannot walk through, only push
+        against.
         """
         corridors = self._maze_corridors
         if not corridors:
             return pa, pb
         qa, qb = pa - a0, pb - b0  # into corridor-local (origin-relative) coordinates
-        for (amn, amx, bmn, bmx) in corridors:
-            if amn <= qa <= amx and bmn <= qb <= bmx:
-                return pa, pb  # inside a corridor: free motion
-        best = (qa, qb)
-        best_d = float("inf")
-        for (amn, amx, bmn, bmx) in corridors:
-            ca = min(max(qa, amn), amx)
-            cb = min(max(qb, bmn), bmx)
-            d = (qa - ca) ** 2 + (qb - cb) ** 2
-            if d < best_d:
-                best_d = d
-                best = (ca, cb)
+
+        # First tick of a trial: latch onto whichever rail we are actually on.
+        if self._cur_rail is None:
+            self._cur_rail = min(range(len(corridors)),
+                                 key=lambda i: self._clamp_to(corridors[i], qa, qb)[2])
+
+        # Candidates = the rail we are on + the rails it connects to. Never the whole maze.
+        candidates = [self._cur_rail] + sorted(self._rail_neighbours[self._cur_rail])
+        best_i, best = candidates[0], self._clamp_to(corridors[candidates[0]], qa, qb)
+        for i in candidates[1:]:
+            c = self._clamp_to(corridors[i], qa, qb)
+            if c[2] < best[2]:
+                best_i, best = i, c
+        self._cur_rail = best_i
         return best[0] + a0, best[1] + b0  # back to absolute

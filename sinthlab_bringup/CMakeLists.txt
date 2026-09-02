@@ -13,6 +13,7 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   orchestrators/perturb_orchestrator.py
   orchestrators/restricted_plane_orchestrator.py
   orchestrators/maze_orchestrator.py
+  diagnostics/check_maze.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})

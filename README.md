@@ -362,47 +362,185 @@ response to mechanical perturbation.
    1.5 seconds prior to the readiness cue.
 
 ### Scenario 4 — Maze
-The operator (or animal) drives the compliant arm through a **corridor maze** in a **vertical Y‑Z plane**
-in front of the robot. It reuses the same fixture engine as Scenario 2 (`MoveRestrictedOnAPlaneAction`
-with the `maze` profile): the arm is **free inside any corridor** and clamped to the nearest corridor edge
-outside them all, so the cabinet's Cartesian stiffness turns "outside a corridor" into a wall. Hitting a
-checkpoint plays a reward cue (**any order, once each**); reaching the goal — or timing out — stops the
-fixtures, waits for the operator to let go, and resets to the start.
+The operator (or animal) drives the compliant arm along a network of **linear rails** in a **vertical
+Y‑Z plane** in front of the robot. It reuses the same fixture engine as Scenario 2
+(`MoveRestrictedOnAPlaneAction` with the `maze` profile). Hitting a checkpoint plays a reward cue
+(**any order, once each**); reaching the goal — or timing out — stops the fixtures, waits for the
+operator to let go, and resets to the start.
 
-**Why vertical, not horizontal.** The tool points **+X** (out from the base, at the subject). The robot's
-**radial X axis (in/out) is kinematically stiff** at a forward reach — so a horizontal X‑Y maze made a
-*free* maze direction fight you (forward/back felt frozen while sideways tracked fine). The vertical Y‑Z
-maze instead **locks X** (the stiff axis, and the direction the tool points anyway) and frees **Y
-(sideways) + Z (up/down)** — both are easy (~0.5 mobility), so the maze feels uniformly compliant. The
-apple still points +X at the subject.
+**The legs are LINES, not corridors.** Each "corridor" in `maze_params.yaml` is a *degenerate*
+rectangle — a horizontal leg has `b_min == b_max`, a vertical leg has `a_min == a_max` — so the fixture
+always projects the equilibrium onto the **nearest segment**, exactly like the sine rail. You slide
+*along* a rail and can only turn at a junction; there is no free area to wander in.
+
+**Why vertical, and why this start posture.** The tool axis (the EE frame's **Z** axis) points ~+X at
+the subject, and the maze locks base‑X so the plane is enforced by the cabinet. The start posture
+matters more than it looks: both fixtures **lock orientation**, and translating the EE while holding
+orientation is far more expensive in some arm configurations than others. The shipped start reaches the
+same EE pose as an earlier one but with the **elbow flipped**, which cut the cost of sideways motion
+from ‖q̇‖ ≈ 19.8 to ≈ 2.5 (6D condition number 45 → 10). Before that change the maze felt like treacle
+in exactly the directions it was supposed to be free.
+
+**Workspace limits (measured by IK, holding tool orientation).** From the shipped start the arm can
+reach **a ∈ [−0.40, +0.40] m** sideways and **b ∈ [−0.35, +0.20] m** up/down — but that envelope is a
+**trapezoid**: full width low down, pinched at the top (at b = +0.20 only a ∈ ±0.10). That is why the
+maze grid stops at b = +0.15 and its top row spans only a ∈ [−0.15, +0.15].
 
 **The maze is defined RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`),
-so its origin is wherever the arm starts: change `move_to_start` and the whole maze — corridors,
-checkpoints, goal — moves with it. No absolute coordinates to re-tune.
+so its origin is wherever the arm starts: change `move_to_start` and the whole maze — rails, checkpoints,
+goal — moves with it. It is anchored on the **settled measured** pose, not the commanded one
+(`anchor_settle_sec: 3.0`, `anchor_on_measured: true`): a free axis carries no restoring force, so the
+arm sinks a few cm below the commanded start, and anchoring on the command put the whole maze that far
+overhead and the checkpoints were missed.
 
 #### What you should expect to see
 
-A vertical wall of corridors. Coordinates are **offsets from the start EE** (▶START = 0,0): **Y = sideways,
-Z = up/down**; X (in/out) is locked. Corridors are ~9–18 cm across (≈1.6× the earlier play area).
+A **2-D maze** of linear rails on a 0.15 m grid — shaded cells are solid, you can only travel the
+rails, and only one route reaches the goal. Coordinates are **offsets from the anchored start**
+(▶ = 0,0): **a = Y sideways, b = Z up/down**; X (in/out) is locked by the cabinet.
 
 ```
- Z up (m)
- +0.14  ★GOAL ┌───────────── C4 return ─────────────┐ ② CP2      ② (Y+0.145, Z+0.085)
- +0.05        └────────────────────────────┐        │
-                                          │  C3   │             C3 = up-leg (+Z), on the right
- -0.09  ▶START ┌────────── C1 ────────────┤ ① CP1              ① (Y+0.145, Z 0.000)
-               │          entrance (+Y)    └───────┘
- -0.05        ┌┴─────┐                                          C2 = dead end (−Z), the wrong turn
- -0.18        │  C2  │
-              └──────┘
-         Y:  -0.15    0            +0.10  +0.19   ──► Y sideways (m)
-
-   plane: X = start radius (locked)   tool: +X, perpendicular into the plane (held)
-   path:  ▶START(0,0) ─+Y→ ①CP1(0.145, 0.00) ─+Z up→ ②CP2(0.145, 0.085) ─−Y→ ★GOAL(−0.06, 0.085)
+   a:     -0.30    -0.15     0.00    +0.15    +0.30
+         ┌─────────────────────────────────┐
+ b +0.15 │░░░░░░░░┘═══════════════★░░░░░░░░│  ★ GOAL
+         │░░░░░░░░║░░░░░░░░░░░░░░░░░░░░░░░░│
+ b  0.00 │┌═══════┘░░░░░░░▶═══════◆═══════┐│  ▶ START
+         │║░░░░░░░░░░░░░░░░░░░░░░░║░░░░░░░║│
+ b -0.15 │└═══════◆═══════◆═══════◆═══════┘│  ◆ checkpoint (a real fork)
+         │░░░░░░░░║░░░░░░░║░░░░░░░░░░░░░░░░│
+ b -0.30 │░░░░░░░░└═══════┘░░░░░░░░░░░░░░░░│
+         └─────────────────────────────────┘
+            ◆ = the only 4 places with a CHOICE -> reward cue fires here
+            ░ = solid (no rail)     ═ ║ ┘ ┌ ┐ └ = rail you can travel
 ```
 
-The arm starts at ▶, free to slide anywhere **inside** the corridors and firmly walled at their edges.
-The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the wrong turn.
+**A checkpoint fires only where a turn decision is actually made** — the four junctions with three
+ways out (◆). The maze's other eight junctions are corners where the turn is forced, and arriving at
+one tells the subject nothing they have to act on, so they get no cue. A reward tone therefore means
+exactly one thing: **"you are at a fork — choose."** The four forks, in route order:
+
+| fork | the choice |
+|---|---|
+| (+0.15, 0.00) | first fork out of START: turn down, or carry on right the long way |
+| (+0.15, −0.15) | left toward the goal, or right around the far column |
+| (0.00, −0.15) | carry on left, or drop into the bottom pocket |
+| (−0.15, −0.15) | carry on left, or drop into the bottom pocket |
+
+**The solution — 1.50 m over 7 legs:** ▶START → right to ①, → down, → **left along the whole bottom
+row** to ②, → up, → right, → ③, → up, → right → ★GOAL.
+
+**No dead ends — every wrong turn is a loop.** The arm can never end up somewhere it has to be
+reversed out of; wrong turns cost *time*, which is what makes them wrong:
+
+| wrong turn | what happens |
+|---|---|
+| right past ① instead of turning down | the far column takes you down to the b=−0.15 row anyway — the long way round |
+| down into the b=−0.30 pocket | drops off the row and climbs back onto it further along |
+
+**The walls hold you.** The fixture latches onto the rail you are travelling and will only hand you
+over to a rail that *physically touches* it — a real junction. Push sideways mid-rail and the
+equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it. (Previously the
+projection simply picked the globally nearest rail each tick, so a hard push could make an unrelated
+rail the closest one and the arm would be dragged across the maze — passing straight through a wall.)
+
+**The gap matters.** On the b=0 row there is deliberately **no rail between a=−0.15 and a=0.00**
+(the shaded cells left of ▶). Without it the arm could run straight from START to the goal up-link and
+the maze would be trivial — that gap is what forces the long way round.
+
+Every rail is verified reachable by IK while holding the tool orientation (40 samples along the rails,
+all reachable, sideways cost median 2.9 / max 3.5).
+
+#### Changing or extending the maze
+
+**The maze is pure configuration — you never edit code to change it.** Everything lives in
+`sinthlab_bringup/config/maze_params.yaml`, and the geometry is *relative to the start*, so the whole
+maze follows `move_to_start` automatically.
+
+**Rails** are four parallel arrays under the `maze` profile — one entry per segment:
+
+```yaml
+#                R1     R2     R3   ...
+corridor_a_min: [ 0.00,  0.15, -0.30, ...]   # a = Y sideways
+corridor_a_max: [ 0.30,  0.15,  0.30, ...]
+corridor_b_min: [ 0.00, -0.15, -0.15, ...]   # b = Z up/down
+corridor_b_max: [ 0.00,  0.00, -0.15, ...]
+```
+
+A **horizontal** rail has `b_min == b_max`; a **vertical** rail has `a_min == a_max`. If both spans are
+non-zero you have made a *box* — an open area the arm can wander inside — not a rail.
+
+**Rules the maze must obey**
+
+| rule | why |
+|---|---|
+| no key defined twice in the same block | YAML silently keeps the **last** one, so the file says one thing and ROS loads another |
+| every rail linear (degenerate in one axis) | otherwise it is an open box, not a corridor |
+| all four `corridor_*` arrays the same length | they are read positionally |
+| START `(0,0)` lies on a rail | otherwise the arm begins pinned against a wall |
+| segments **touch** to form junctions | rails that don't touch are separate; the arm can't cross between them |
+| every checkpoint and the goal lies on a rail | a waypoint off the rails can never be triggered |
+| `checkpoint_x/y/z/radius` the same length | read positionally, like the rails |
+| `maze_safety.max_displacement_m` exceeds the farthest rail point | otherwise the safety stop fires mid-trial |
+| fits the reachable envelope | see below |
+
+**Reach.** Holding the tool orientation, the arm covers **a ∈ [−0.40, +0.40]**, **b ∈ [−0.35, +0.20]**,
+and that envelope is a **trapezoid** — full width low down, sharply pinched at the top (at b = +0.20
+only a ∈ ±0.10). Vertical room is the scarce resource; sideways room is plentiful.
+
+**If you change `move_to_start`**, you must also update `config/clik_nullspace_maze.yaml`
+(`nullspace_desired_configuration`) to the same joint array, or the CLIK will hold the right EE pose in
+the wrong arm posture. And re-check the *orientation-constrained* cost of the free directions — that is
+what decides whether guiding feels light or like treacle, and it is not visible in reach alone.
+
+**Validate before you touch the robot:**
+
+```bash
+# reach checks need a generated URDF (once per shell)
+xacro $(ros2 pkg prefix lbr_description)/share/lbr_description/urdf/iiwa7/iiwa7.xacro > /tmp/iiwa7.urdf
+export IIWA7_URDF=/tmp/iiwa7.urdf
+
+ros2 run sinthlab_bringup check_maze.py
+```
+
+It checks every rule above, then IKs points along each rail to confirm the arm can actually reach them
+while holding the tool orientation, and reports the sideways-motion cost. Exit code is non-zero on
+failure, so it works in CI. Example of a bad maze:
+
+```
+  [--] key 'checkpoint_x' is defined TWICE in the same block (second at line 156).
+       YAML keeps the LAST one, so the file does not say what ROS loads.
+  [--] rails [10] have width in BOTH axes -- they are boxes, not lines.
+  [--] rails [10] are NOT connected to the start -- unreachable, the arm can never enter them.
+  [--] CP4 is 70 mm off every rail -- it can never be triggered.
+  [--] maze reaches 0.99 m but maze_safety.max_displacement_m is 0.20 -- the safety stop
+       would fire mid-trial. Raise it above 0.99.
+FAILED (5 problem(s))
+```
+
+The duplicate-key check runs **first**, and it is there because this bug actually shipped: a stale
+three-element `checkpoint_x` sat above the real four-element one, the file parsed cleanly, and every
+other check passed while the maze quietly loaded different values than the file appeared to specify.
+
+Structural checks run without the URDF; the kinematic ones are skipped with a note if `optas` or
+`IIWA7_URDF` is unavailable.
+
+**Making it harder.** Add rails (junctions, dead ends, loops), not width. Length is cheap along `a`,
+expensive along `b`. A deliberate **gap** between two collinear rails — as between `a = −0.15` and
+`a = 0.00` on the b = 0 row — is what forces the long way round; without gaps a grid of rails is just
+an open field.
+
+#### Diagnostic ladder
+
+If the maze feels wrong, switch `virtual_fixture_profile` to isolate the cause — these need no code
+change, because a rail spanning the whole workspace has no walls and a long thin one *is* a line:
+
+| profile | what it is | what it tests |
+|---|---|---|
+| `free_plane` | one huge corridor, no reachable wall | the plane lock + stiffness + tracking, with the maze removed |
+| `single_line` | one corridor, long in Y, ±2 cm in Z | adds exactly one wall pair |
+| `maze` | the real thing | full geometry |
+
+Work up the ladder and stop at the first rung that feels wrong.
 
 **Steps to run:**
 1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application:
@@ -411,47 +549,64 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Maze walls (X lock, Y/Z firm)`** — anisotropic `{2500, 1000, 1000}` |
+   | Cartesian stiffness (K diagonal) | **`Maze walls + easy guiding (rot 120)`** — `{2500, 1000, 1000, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
-   > **Use the anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
-   > enforces the plane in hardware; Y/Z 1000 gives firm corridor walls (~10 N per cm of penetration).
-   > The corridor *interior* still feels free — there the fixture's projection returns the measured
-   > pose, so the spring error (and the force) is ~zero whatever K is. Only the walls and the locked
-   > axis see a real error. Uniform profiles could never win: 400 made the walls mushy, 3000 made
-   > everything heavy.
+   > **Use an anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
+   > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
+   > never win: 400 made the walls mushy, 3000 made everything heavy.
+   >
+   > Two maze profiles ship, differing **only in rotational stiffness** (300 vs 120) so you can A/B the
+   > one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
+   > the rails), so orientation stiffness defines nothing about the maze — it only stops the tool
+   > twisting. But holding orientation *while translating* is the expensive motion, so dropping it to
+   > 120 reduces guiding effort **without** softening the plane or the rails. Trade-off: the tool may
+   > twist a little more — watch the apple angle.
 2. **Launch:**
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
    ```
-3. The arm moves to ▶START, waits a quiet window, plays the go cue, and the corridors go live. Drive it
-   to the goal (or let the 60 s timeout expire).
+3. The orchestrator checks **where the arm actually is** before the first move. If it is parked in a
+   near-singular ("straight") posture it steps via a pre-start waypoint first; otherwise it drives
+   straight to ▶START. The log says which branch it took. Later trials always go straight there.
+4. The arm settles for 3 s, the fixture anchors on where it **rests**, the go cue plays, and the rails go
+   live. Drive to the goal (or let the 60 s timeout expire).
 
-> **⚠️ Gravity matters on the free axes.** Z (up/down) is a FREE axis, so the equilibrium tracks the
-> arm there and the spring exerts ~no restoring force — the arm's weight is held by **gravity
-> compensation**. With wrong/missing tool `loadData` the arm creeps downward (and at low stiffness can
-> run away). Run tool-load **Determine** with the real EE mounted before the vertical maze, and keep
-> Y/Z stiffness firm (the shipped profile uses 1000) so any creep is slow and the safety-stop catches it.
+   > **Watching progress.** The fixture logs your maze position at 2 Hz:
+   > `maze: a=+0.180 b=+0.002 -> on rail C1`, or `OFF rail (nearest C1, 31 mm away, being pulled back)`.
+   > Every run also writes `analysis/robot_trajectory_*.csv` with
+   > `time, x, y, z, rel_a, rel_b, corridor, off_rail, rail_dist` — plot `rel_a` vs `rel_b` straight on
+   > top of the rail coordinates in `maze_params.yaml`. Set `checkpoint_monitor.debug_log_enabled: true`
+   > to also see live distance to each checkpoint and the goal.
+
+> **⚠️ Gravity matters on the free axes.** Along a rail the equilibrium tracks the arm, so the spring
+> exerts ~no restoring force in that direction and the tool's weight rests on **gravity compensation**.
+> Measured on the bare flange: the arm sinks ~4 cm and then **stops** (bounded, not a runaway). That is
+> why the fixture anchors on the settled pose. With the real EE mounted, run tool-load **Determine**
+> first — a wrong `loadData` makes the sink larger and biases every vertical leg.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.35 m or exceeds 0.7 m/s, and **aborts the trial immediately** —
+> the EE leaves the start pose by > 0.50 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
 >
-> **Tuning the compliance** — pick the SmartPad profile, and remember the two levers are independent:
-> the **anisotropic stiffness** sets how hard the plane is locked (X) and how firm the walls are (Y/Z,
-> ~10 N per cm at 1000), while **tracking lag** sets how heavy the corridor *interior* feels. If the
-> interior drags when you move fast, that is lag — raise `kuka_clik_controller.max_linear_velocity`
-> and the fixture's `max_target_step_m`, not the stiffness. If the walls feel mushy, raise Y/Z.
+> **Tuning the feel** — three independent levers, in the order worth trying:
+> 1. **Rotational stiffness** (SmartPad profile, 300 vs 120): the biggest lever on how heavy guiding
+>    feels, and it costs no fixture fidelity.
+> 2. **Tracking lag**: if it drags *when you move fast*, that is lag, not stiffness — raise
+>    `kuka_clik_controller.max_linear_velocity` (now 1.0 m/s) and `max_target_step_m` (now 0.05).
+> 3. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
+>
+> If a *free* direction feels heavy no matter what, suspect the **start posture** rather than any of
+> these — see the note on orientation-constrained translation above.
 
 > **Moving the maze = changing `move_to_start`.** Because everything is start-relative, the joint start
 > pose is the one knob that positions the maze. Everything moves with it automatically — but you still have
-> to respect **reach**: holding the start orientation, the arm covers a limited Y‑Z box (for the shipped
-> start ≈ (0.50, 0.00, 0.90) that box is roughly **Y[±0.22], Z[−0.20, +0.16]** in offsets). The shipped
-> maze fits inside it with every corner verified reachable. If you pick a very different start, re-check
-> that the maze footprint still fits, **and re-check mobility** — the whole point of the Y‑Z plane is that
-> both free axes are well-conditioned; a bad start can reintroduce a stiff axis.
+> to respect **reach**: holding the start orientation the arm covers **a ∈ [−0.40, +0.40], b ∈ [−0.35,
+> +0.20]**, and that envelope is a trapezoid (pinched at the top). Every rail point in the shipped maze
+> is verified reachable. If you pick a very different start, re-check the footprint **and** re-check the
+> orientation-constrained cost of the free directions — a bad posture reintroduces the treacle feel.
 >
 > **Two syncs to keep (both are pre-set):**
 > - `config/clik_nullspace_maze.yaml` `nullspace_desired_configuration` **must equal**
@@ -460,10 +615,11 @@ The route `C1`→`C3`→`C4` leads to the goal; `C2` is a **dead end** — the w
 > - `checkpoint_monitor.relative_to_start` and the fixture's `corridor_frame` must **both** be relative (or
 >   both absolute), or the rewards land in the wrong place relative to the walls.
 >
-> **Editing the shape:** corridors are axis-aligned rectangles in `maze_params.yaml`
-> (`corridor_a_min/a_max/b_min/b_max`; with `restricted_axis: x`, `a = Y` (sideways) and `b = Z` (up/down),
-> as **offsets from start**). They must overlap to be connected; START (0,0) must fall inside one; the
-> checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
+> **Editing the shape:** rails live in `maze_params.yaml` as `corridor_a_min/a_max/b_min/b_max`
+> (with `restricted_axis: x`, `a = Y` sideways and `b = Z` up/down, as **offsets from start**). Keep them
+> degenerate — a horizontal leg has `b_min == b_max`, a vertical leg has `a_min == a_max` — or you get a
+> box with free area inside it again. Segments must **touch** to form a junction; START (0,0) must lie on
+> one; the checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
 
 ---
 
@@ -545,12 +701,33 @@ flowchart LR
 
   | Action | Responsibility |
   |--------|----------------|
-  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd; apple / perturb) |
+  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move, and for the maze's conditional pre-start waypoint |
   | `MoveToPositionCartesianSpace` | drive to a target via `kuka_clik_controller` (Cartesian → IK) |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
   | `MoveRestrictedOnAPlaneAction` / `MoveInMaze` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → recover |
   | `AudioCue` / `WaitAction` | play a tone cue / one‑shot delay |
+
+  **Start-up guard (maze).** `MoveToPositionJointSpace` exposes `latest_measured_joints()`, so the
+  orchestrator can ask *where the arm physically is* before committing to a move. The maze uses this to
+  decide **once per run** whether it needs its pre-start waypoint:
+
+  ```
+  max(|A2|, |A4|, |A6|) < extended_if_bend_below_deg   ->  arm is nearly STRAIGHT
+                                                       ->  near-singular  ->  go via the waypoint
+  otherwise                                            ->  drive straight to the start
+  ```
+
+  A straight arm is a singular one: at mechanical zero the Jacobian's smallest singular value is
+  **0.0**, and a Cartesian-impedance move commanded from there does not reliably reach the target. The
+  bend test was validated against the Jacobian and agrees exactly with "smallest singular value <
+  0.05" — including the awkward *extended-but-rotated* case (A1 = 90° but the arm straight), which a
+  plain "distance from mechanical zero" test would miss. The maze start scores 79.5° and the plane
+  start 90°, so neither triggers it.
+
+  This is a guard, not a routine step: running the waypoint unconditionally dragged the arm out to the
+  restricted-plane posture and back on every launch — including when it was already sitting at the maze
+  start — which was disruptive and pointless.
 
   A trial is then literally a chain of actions — e.g. apple‑pluck:
   `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
