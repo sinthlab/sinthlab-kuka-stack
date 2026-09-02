@@ -146,17 +146,17 @@
       #
       #   ( a  ,  b  )  the choice
       #   (-0.15,-0.11) drop here for the SHORT route, or carry on left and drop at a=-0.30 (long)
-      #   (-0.15,-0.33) turn right for the goal, or left along the bottom (the long way round)
+      #   (-0.15,-0.22) turn right for the goal, or left along the bottom (the long way round)
       #
       # The midpoint of the descent rail is deliberately NOT a checkpoint: nothing branches there, so
       # there is nothing to decide. Every other junction is a forced corner and gets no cue either.
       checkpoint_x:      [ 0.000,  0.000]
       checkpoint_y:      [-0.150, -0.150]
-      checkpoint_z:      [-0.110, -0.330]
+      checkpoint_z:      [-0.110, -0.220]
       checkpoint_radius: [ 0.040,  0.040]
       goal_x: 0.000        # on the plane
       goal_y:  0.150       # far (+Y) end of the BOTTOM goal row R10
-      goal_z: -0.330
+      goal_z: -0.220
       goal_radius: 0.03
       debug_log_enabled: true
       debug_log_rate_hz: 2.0
@@ -282,12 +282,18 @@
         #   2. Vertical conditioning DEGRADES with height: the cost of 1 m/s of vertical motion with
         #      orientation held was 3.4 at b=-0.15 but 8.6 at b=+0.15 -- 2.5x the sideways cost.
         #
+        # DEPTH IS 0.22, NOT 0.33, so the arm does not reach uncomfortably low: the goal row sits at
+        # z = 0.64 m in the base frame instead of 0.53 m. Shortening the maze was chosen over RAISING
+        # the start, because raising the start drags the start row back into the badly-conditioned
+        # region (start-row vertical cost 4.5 at the shipped height, 6.9 if raised 0.10, 12.6 at 0.15),
+        # while shortening costs nothing: same height gain, conditioning unchanged.
+        #
         #   a:      -0.30   -0.15    0.00    +0.15
         #  b  0.00                   >-------O          (R1 entrance, R2 down-link)
         #                                    |
         #  b -0.11   O-------1-------========O          (R3 long row)
-        #            |       |                          (R6 far descent | R4 the 4-5-6 rail)
-        #  b -0.33   O-------2-------========*GOAL      (R5 goal row)
+        #            |       |                          (R6 far descent | R4 the single descent)
+        #  b -0.22   O-------2-------========*GOAL      (R5 goal row)
         #
         #   1,2 = the two FORKS (the only cue points). O = forced corner. > = START, * = GOAL.
         #
@@ -296,7 +302,7 @@
         #
         # THE CHOICE is which way down: drop at a=-0.15 (short) or carry on to a=-0.30 and drop there
         # (long). Both reach the goal row, so there are no dead ends -- a wrong choice costs travel.
-        #   short route 1.08 m  |  long route 1.38 m
+        #   short route 0.97 m  |  long route 1.27 m
         #
         # Every rail verified reachable by IK holding the tool orientation. Re-check with:
         #     ros2 run sinthlab_bringup check_maze.py
@@ -304,5 +310,5 @@
         #                R1     R2     R3     R4     R5     R6
         corridor_a_min: [ 0.00,  0.15, -0.30, -0.15, -0.30, -0.30]
         corridor_a_max: [ 0.15,  0.15,  0.15, -0.15,  0.15, -0.30]
-        corridor_b_min: [ 0.00, -0.11, -0.11, -0.33, -0.33, -0.33]
-        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.33, -0.11]
+        corridor_b_min: [ 0.00, -0.11, -0.11, -0.22, -0.22, -0.22]
+        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.22, -0.11]
