@@ -142,30 +142,21 @@
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
       relative_to_start: true
-      # CHECKPOINTS ONLY WHERE A TURN DECISION IS ACTUALLY MADE.
+      # CHECKPOINTS ONLY WHERE A TURN DECISION IS ACTUALLY MADE -- both forks.
       #
-      # Of the maze's 12 junctions, only 4 offer a real choice (three ways out). The other 8 are
-      # corners where the turn is forced -- arriving there tells the subject nothing they have to act
-      # on, so they get no cue. A reward tone therefore means exactly one thing: "you are at a fork,
-      # choose". Listed in the order the solution route meets them:
+      #   ( a  ,  b  )  the choice
+      #   (-0.15,-0.11) drop here for the SHORT route, or carry on left and drop at a=-0.30 (long)
+      #   (-0.15,-0.33) turn right for the goal, or left along the bottom (the long way round)
       #
-      #   ( a  ,  b  )  rails    the choice
-      #   ( 0.15, 0.00) R1,R2    first fork out of START: turn down, or carry on right the long way
-      #   ( 0.15,-0.15) R2,R3    left toward the goal, or right around the far column
-      #   ( 0.00,-0.15) R3,R4    carry on left, or drop into the bottom pocket
-      #   (-0.15,-0.15) R3,R6    carry on left, or drop into the bottom pocket
-      #
-      # (To cue every junction instead, add the 8 corners: (-0.30,-0.15) (-0.30,0.00) (-0.15,-0.30)
-      #  (-0.15,0.00) (-0.15,0.15) (0.00,-0.30) (0.30,-0.15) (0.30,0.00).)
-      #
-      # Radius 0.04 m: junctions are 0.15 m apart, so these cannot overlap.
-      checkpoint_x:      [ 0.000,  0.000,  0.000,  0.000]
-      checkpoint_y:      [ 0.150,  0.150,  0.000, -0.150]
-      checkpoint_z:      [ 0.000, -0.150, -0.150, -0.150]
-      checkpoint_radius: [ 0.040,  0.040,  0.040,  0.040]
+      # The midpoint of the descent rail is deliberately NOT a checkpoint: nothing branches there, so
+      # there is nothing to decide. Every other junction is a forced corner and gets no cue either.
+      checkpoint_x:      [ 0.000,  0.000]
+      checkpoint_y:      [-0.150, -0.150]
+      checkpoint_z:      [-0.110, -0.330]
+      checkpoint_radius: [ 0.040,  0.040]
       goal_x: 0.000        # on the plane
-      goal_y: 0.150        # far (+Y) end of the top goal row R10
-      goal_z: 0.150
+      goal_y:  0.150       # far (+Y) end of the BOTTOM goal row R10
+      goal_z: -0.330
       goal_radius: 0.03
       debug_log_enabled: true
       debug_log_rate_hz: 2.0
@@ -173,14 +164,14 @@
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
-    # The maze footprint reaches ~0.34 m from start (the far corners), so 0.50 m clears it; normal hand motion is
+    # The maze footprint reaches ~0.45 m from start (the bottom-left corner), so 0.55 m clears it; normal hand motion is
     # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:
       update_rate: 100
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      max_displacement_m: 0.50
+      max_displacement_m: 0.55
       max_speed_mps: 0.7
       # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
       # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
@@ -210,10 +201,11 @@
     #
     # Reachable envelope at this start, measured by IK holding the tool orientation:
     #   a in [-0.40, +0.40], b in [-0.35, +0.20], TRAPEZOIDAL (pinched at the top).
-    # The maze grid stops at b=+0.15 and its top row spans a in [-0.15,+0.15] to stay inside it.
+    # The maze sits ENTIRELY AT OR BELOW the start (b = 0 down to -0.33): the lower region is both
+    # better conditioned for vertical motion and has gravity helping rather than fighting.
     #
     # Layout and solution: see the grid diagram in the `maze` profile below.
-    # Solution route 1.50 m over 7 legs. There are NO dead ends -- every wrong turn is a loop that
+    # Short route 1.08 m; the long way round 1.38 m. Every vertical leg travelled DOWNWARD. There are NO dead ends -- every wrong turn is a loop that
     # rejoins the route, so it costs time rather than trapping the arm. Verified vs the URDF (optas
     # IK) by `ros2 run sinthlab_bringup check_maze.py`: every rail sampled reachable while holding the
     # start orientation, all junctions connected, START on a rail, all checkpoints + goal on rails.
@@ -281,40 +273,36 @@
         # tool orientation): a in [-0.40,+0.40], b in [-0.35,+0.20]. That envelope is a TRAPEZOID --
         # full width low down, pinched at the top (at b=+0.20 only a in +/-0.10) -- so the grid stops
         # at b=+0.15 and the top row spans only a in [-0.15,+0.15].
-        # A TRUE 2-D MAZE on a 0.15 m grid: 11 linear rails forming 12 junctions, with NO dead ends --
-        # every wrong turn is a loop that rejoins the route. Only ONE route is the short way to the
-        # goal; every other choice costs you time.
+        # A 2-D MAZE on a 0.15 m grid, ENTIRELY BELOW THE START so every vertical leg is travelled
+        # DOWNWARD. Six rails, two forks, one loop, no dead ends.
         #
-        #   a:      -0.30   -0.15    0.00    +0.15   +0.30
-        #  b +0.15           O-------O-------*GOAL          (R10 goal row)
-        #                    |
-        #                    | R9
-        #  b  0.00   O-------O       >START--1-------O     (R8 | R1 -- NOTE the GAP between
-        #            |                       |       |       a=-0.15 and a=0.00: no shortcut)
-        #            | R7                    | R2    | R11
-        #  b -0.15   O-------4-------3-------2-------O     (R3 long row)
-        #                    |       |
-        #                    | R6    | R4
-        #  b -0.30           O-------O                      (R5 pocket bottom)
+        # WHY BELOW: climbing is hard on this arm for two independent, measured reasons.
+        #   1. The gravity-comp residual is a constant ~5.5 N DOWNWARD at the tool, so climbing fights
+        #      it and descending is assisted.
+        #   2. Vertical conditioning DEGRADES with height: the cost of 1 m/s of vertical motion with
+        #      orientation held was 3.4 at b=-0.15 but 8.6 at b=+0.15 -- 2.5x the sideways cost.
         #
-        #   1..4 = the FOUR forks, and the only points that fire a reward cue (see checkpoint_monitor).
-        #   O    = a junction where the turn is forced -- no choice, so no cue.
+        #   a:      -0.30   -0.15    0.00    +0.15
+        #  b  0.00                   >-------O          (R1 entrance, R2 down-link)
+        #                                    |
+        #  b -0.11   O-------1-------========O          (R3 long row)
+        #            |       |                          (R6 far descent | R4 the 4-5-6 rail)
+        #  b -0.33   O-------2-------========*GOAL      (R5 goal row)
         #
-        # SOLUTION (1.50 m, 7 legs): START -> right to fork 1 -> down R2 to fork 2 -> LEFT along R3
-        #   past forks 3 and 4 to the far end -> up R7 -> right R8 -> up R9 -> right R10 -> *GOAL.
-        # NO DEAD ENDS -- every wrong turn is a LOOP that rejoins the route, so the arm can never get
-        # stuck somewhere it has to be reversed out of. Wrong turns still COST TIME, which is what makes
-        # them wrong:
-        #   R1 past a=+0.15 -> R11 -> R3 : the long way round to the same place (+0.30 m).
-        #   R4/R5/R6 U-pocket           : drops off R3 and climbs back onto it further along.
-        # The R8/R1 GAP at b=0 is deliberate. Without it the arm could run straight from START to the
-        # goal up-link and the maze would be trivial.
+        #   1,2 = the two FORKS (the only cue points). O = forced corner. > = START, * = GOAL.
         #
-        # Every rail is verified reachable by IK holding the tool orientation (40 samples along the
-        # rails, all reachable, Y-cost median 2.9 / max 3.5). Re-check with:
+        # R4 is a SINGLE rail from fork 1 straight down to fork 2 -- nothing branches off it in
+        # between, so its midpoint is not a junction and gets no cue.
+        #
+        # THE CHOICE is which way down: drop at a=-0.15 (short) or carry on to a=-0.30 and drop there
+        # (long). Both reach the goal row, so there are no dead ends -- a wrong choice costs travel.
+        #   short route 1.08 m  |  long route 1.38 m
+        #
+        # Every rail verified reachable by IK holding the tool orientation. Re-check with:
         #     ros2 run sinthlab_bringup check_maze.py
-        #                R1     R2     R3     R4     R5     R6     R7     R8     R9    R10    R11
-        corridor_a_min: [ 0.00,  0.15, -0.30,  0.00, -0.15, -0.15, -0.30, -0.30, -0.15, -0.15,  0.30]
-        corridor_a_max: [ 0.30,  0.15,  0.30,  0.00,  0.00, -0.15, -0.30, -0.15, -0.15,  0.15,  0.30]
-        corridor_b_min: [ 0.00, -0.15, -0.15, -0.30, -0.30, -0.30, -0.15,  0.00,  0.00,  0.15, -0.15]
-        corridor_b_max: [ 0.00,  0.00, -0.15, -0.15, -0.30, -0.15,  0.00,  0.00,  0.15,  0.15,  0.00]
+        #
+        #                R1     R2     R3     R4     R5     R6
+        corridor_a_min: [ 0.00,  0.15, -0.30, -0.15, -0.30, -0.30]
+        corridor_a_max: [ 0.15,  0.15,  0.15, -0.15,  0.15, -0.30]
+        corridor_b_min: [ 0.00, -0.11, -0.11, -0.33, -0.33, -0.33]
+        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.33, -0.11]

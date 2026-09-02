@@ -229,18 +229,33 @@ def main() -> int:
         if locked == "y":   return P0 + np.array([pt[0], 0, pt[1]])
         return P0 + np.array([pt[0], pt[1], 0])
 
-    def ik(tp, iters=300):
-        q = q0.copy()
+    def _ik_from(tp, seed, iters=400):
+        q = seed.copy()
         for _ in range(iters):
             T = fk(q); ep = tp - T[:3, 3]
             eo = R.from_matrix(R0 @ T[:3, :3].T).as_rotvec()
             if np.linalg.norm(ep) < 2e-3 and np.linalg.norm(eo) < np.deg2rad(1):
                 return q
             J = Jf(q)
-            q = np.clip(q + 0.5 * (J.T @ np.linalg.solve(J @ J.T + 1e-3 * np.eye(6),
+            q = np.clip(q + 0.4 * (J.T @ np.linalg.solve(J @ J.T + 1e-3 * np.eye(6),
                                                          np.concatenate([ep, eo]))), -lim_j, lim_j)
         ok = np.linalg.norm(tp - fk(q)[:3, 3]) < 2e-3 and np.all(np.abs(q) < lim_j - np.deg2rad(3))
         return q if ok else None
+
+    def ik(tp):
+        """Damped-least-squares IK, retried from several seeds.
+
+        A SINGLE seed gives false negatives: the solver is a local method on a redundant arm, so it can
+        stall short of a target that is perfectly reachable from a different arm configuration. That
+        happened here -- a point on the goal row was reported unreachable and then solved first try from
+        another seed. Reporting a good maze as broken is worse than taking a few extra iterations.
+        """
+        rng = np.random.default_rng(0)
+        for seed in [q0] + [np.clip(q0 + rng.uniform(-0.6, 0.6, 7), -lim_j, lim_j) for _ in range(12)]:
+            q = _ik_from(tp, seed)
+            if q is not None:
+                return q
+        return None
 
     pts, unreachable, costs = set(), [], []
     for r in rails:

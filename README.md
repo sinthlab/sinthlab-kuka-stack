@@ -383,8 +383,25 @@ in exactly the directions it was supposed to be free.
 
 **Workspace limits (measured by IK, holding tool orientation).** From the shipped start the arm can
 reach **a ∈ [−0.40, +0.40] m** sideways and **b ∈ [−0.35, +0.20] m** up/down — but that envelope is a
-**trapezoid**: full width low down, pinched at the top (at b = +0.20 only a ∈ ±0.10). That is why the
-maze grid stops at b = +0.15 and its top row spans only a ∈ [−0.15, +0.15].
+**trapezoid**: full width low down, pinched at the top (at b = +0.20 only a ∈ ±0.10).
+
+**Why the maze sits entirely at or below the start.** Climbing is hard on this arm for two independent
+reasons, both measured:
+
+| | sideways cost | vertical cost | gravity at the tool |
+|---|---|---|---|
+| low (b = −0.15) | 2.8 | **3.4** | −5.3 N |
+| high (b = +0.15) | 3.4 | **8.6** | −5.4 N |
+
+1. The gravity-compensation residual is a constant **~5.5 N downward**, so climbing fights it and
+   descending is assisted.
+2. **Vertical conditioning degrades with height** — the cost of vertical motion with orientation held
+   is 3.4 low down but **8.6** near the top, 2.5× the sideways cost there.
+
+An earlier layout put the goal *above* the start, and its two climbing legs were reported as markedly
+harder to pull than anything else in the maze. Moving the whole maze below the start (rows at
+b = 0, −0.11, −0.33) cuts the worst vertical cost from **8.6 to 3.5** and puts gravity on the
+operator's side.
 
 **The maze is defined RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`),
 so its origin is wherever the arm starts: change `move_to_start` and the whole maze — rails, checkpoints,
@@ -400,42 +417,42 @@ rails, and only one route reaches the goal. Coordinates are **offsets from the a
 (▶ = 0,0): **a = Y sideways, b = Z up/down**; X (in/out) is locked by the cabinet.
 
 ```
-   a:     -0.30    -0.15     0.00    +0.15    +0.30
-         ┌─────────────────────────────────┐
- b +0.15 │░░░░░░░░┘═══════════════★░░░░░░░░│  ★ GOAL
-         │░░░░░░░░║░░░░░░░░░░░░░░░░░░░░░░░░│
- b  0.00 │┌═══════┘░░░░░░░▶═══════◆═══════┐│  ▶ START
-         │║░░░░░░░░░░░░░░░░░░░░░░░║░░░░░░░║│
- b -0.15 │└═══════◆═══════◆═══════◆═══════┘│  ◆ checkpoint (a real fork)
-         │░░░░░░░░║░░░░░░░║░░░░░░░░░░░░░░░░│
- b -0.30 │░░░░░░░░└═══════┘░░░░░░░░░░░░░░░░│
-         └─────────────────────────────────┘
-            ◆ = the only 4 places with a CHOICE -> reward cue fires here
-            ░ = solid (no rail)     ═ ║ ┘ ┌ ┐ └ = rail you can travel
+   a:      -0.30     -0.15      0.00     +0.15
+         ┌────────────────────────────┐
+ b  0.00 │░░░░░░░░░░░░░░░░░░▶════════┐│  ▶ START
+         │░░░░░░░░░░░░░░░░░░░░░░░░░░░║│
+ b -0.11 │┌════════◆═════════════════┘│  ◆ fork (reward cue)
+         │║░░░░░░░░║░░░░░░░░░░░░░░░░░░│
+ b -0.33 │└════════◆═════════════════★│  ★ GOAL — below the start
+         └────────────────────────────┘
+            the two ◆ are the only choices; every vertical leg is DESCENDED
+            ░ = solid (no rail)     ═ ║ ┌ ┐ └ ┘ = rail you can travel
 ```
 
-**A checkpoint fires only where a turn decision is actually made** — the four junctions with three
-ways out (◆). The maze's other eight junctions are corners where the turn is forced, and arriving at
-one tells the subject nothing they have to act on, so they get no cue. A reward tone therefore means
-exactly one thing: **"you are at a fork — choose."** The four forks, in route order:
+**A checkpoint fires only where a turn decision is actually made** — the **two** junctions offering a
+real choice (◆). Every other junction is a corner where the turn is forced, and arriving at one tells
+the subject nothing to act on, so it gets no cue. A reward tone therefore means exactly one thing:
+**"you are at a fork — choose."**
 
 | fork | the choice |
 |---|---|
-| (+0.15, 0.00) | first fork out of START: turn down, or carry on right the long way |
-| (+0.15, −0.15) | left toward the goal, or right around the far column |
-| (0.00, −0.15) | carry on left, or drop into the bottom pocket |
-| (−0.15, −0.15) | carry on left, or drop into the bottom pocket |
+| (−0.15, −0.11) | drop here for the **short** route, or carry on left and drop at a = −0.30 (**long**) |
+| (−0.15, −0.33) | turn right for the goal, or left along the bottom (the long way round) |
 
-**The solution — 1.50 m over 7 legs:** ▶START → right to ①, → down, → **left along the whole bottom
-row** to ②, → up, → right, → ③, → up, → right → ★GOAL.
+The descent at a = −0.15 is a **single rail** from the first fork straight down to the second — nothing
+branches off it in between, so its midpoint is not a junction and deliberately gets no cue.
 
-**No dead ends — every wrong turn is a loop.** The arm can never end up somewhere it has to be
-reversed out of; wrong turns cost *time*, which is what makes them wrong:
+**The choice is which column to descend.** Drop at a = −0.15 for the **short route (1.08 m)**, or carry
+on to a = −0.30 and drop there for the **long route (1.38 m)**. Both reach the goal row, so there are
+**no dead ends** — a wrong choice costs travel rather than trapping the arm. Every vertical leg is
+descended, never climbed.
 
-| wrong turn | what happens |
-|---|---|
-| right past ① instead of turning down | the far column takes you down to the b=−0.15 row anyway — the long way round |
-| down into the b=−0.30 pocket | drops off the row and climbs back onto it further along |
+**No dead ends.** The only choice is which column to descend, and both reach the goal row — so a
+wrong turn costs travel rather than trapping the arm somewhere it must be reversed out of.
+
+**The walls hold you.** The fixture latches onto the rail you are travelling and will only hand you
+over to a rail that *physically touches* it — a real junction. Push sideways mid-rail and the
+equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it.
 
 **The walls hold you.** The fixture latches onto the rail you are travelling and will only hand you
 over to a rail that *physically touches* it — a real junction. Push sideways mid-rail and the
@@ -586,7 +603,7 @@ Work up the ladder and stop at the first rung that feels wrong.
 > first — a wrong `loadData` makes the sink larger and biases every vertical leg.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.50 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
+> the EE leaves the start pose by > 0.55 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
