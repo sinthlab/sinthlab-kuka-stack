@@ -5,9 +5,9 @@ Two views:
   * MAZE view (rel_a vs rel_b) with the actual rails from maze_params.yaml drawn underneath, so you
     can see where the operator went, where they were held off a rail, and which forks they hit. This
     is the useful one for maze runs.
-  * 3-D Cartesian path in the robot base frame, ANIMATED, and rotated by default to look straight
-    down the locked X axis so the Y-Z plane -- where the maze actually lives -- faces the viewer.
-    It stays a 3-D plot, so --elev/--azim let you tilt off axis to see X drift as depth.
+  * 3-D Cartesian path in the robot base frame, ANIMATED. Kept as a real perspective 3-D view: the
+    maze panel already shows the Y-Z plane face-on, so pointing this one down the X axis too would
+    just duplicate it. --elev/--azim rotate it (use --elev 0 --azim 0 for the face-on view).
 
 Runs on numpy + matplotlib only -- deliberately NO pandas, which is not installed in the ROS
 environment on the arm box and made the previous version unrunnable there.
@@ -16,6 +16,7 @@ environment on the arm box and made the previous version unrunnable there.
     python3 plot_trajectory.py --save out.gif  # animated GIF (headless / WSL)
     python3 plot_trajectory.py --save out.png  # static PNG (final frame)
     python3 plot_trajectory.py --fps 40 --frames 400
+    python3 plot_trajectory.py --elev 0 --azim 0   # face-on Y-Z instead of perspective
     python3 plot_trajectory.py --file robot_trajectory_20260902_115639.csv
     python3 plot_trajectory.py --all           # overlay every CSV in the folder (maze view)
 """
@@ -77,8 +78,13 @@ def main() -> int:
     ap.add_argument("--fps", type=int, default=25, help="animation frames per second")
     ap.add_argument("--frames", type=int, default=250, help="how many frames to render")
     ap.add_argument("--no-anim", action="store_true", help="draw the whole path at once")
-    ap.add_argument("--elev", type=float, default=0.0, help="3-D elevation (0 = edge-on to Y-Z)")
-    ap.add_argument("--azim", type=float, default=0.0, help="3-D azimuth (0 = looking down +X)")
+    ap.add_argument("--stretch-x", action="store_true",
+                    help="give the locked X axis its own scale to magnify drift (DISTORTS the view)")
+    # Default to a normal 3-D perspective. Looking straight down X (elev=0, azim=0) makes this panel a
+    # near-duplicate of the maze view on the left, which is already the Y-Z plane face-on -- the two
+    # panels should show DIFFERENT things. Pass --elev 0 --azim 0 if you do want the face-on view.
+    ap.add_argument("--elev", type=float, default=22.0, help="3-D elevation (0 = edge-on to Y-Z)")
+    ap.add_argument("--azim", type=float, default=-58.0, help="3-D azimuth (0 = looking down +X)")
     a = ap.parse_args()
 
     if a.save:
@@ -172,18 +178,26 @@ def main() -> int:
     ax2.set_xlabel("X (m)  — locked")
     ax2.set_ylabel("Y (m)  — sideways")
     ax2.set_zlabel("Z (m)  — height")
-    ax2.set_title("Cartesian path — Y-Z facing (looking down locked X)")
+    ax2.set_title("Cartesian path (3-D, base frame)")
     # elev=0, azim=0 looks straight down +X, so Y runs across and Z up: the maze face-on.
     ax2.view_init(elev=a.elev, azim=a.azim)
-    # Y and Z share a scale so the maze keeps its true shape. X gets its OWN, much tighter scale:
-    # it is the locked axis, so its span is millimetres, and forcing it to the Y/Z scale would leave a
-    # 0.5 m-deep box holding an 8 mm signal. The consequence is that X drift is visually EXAGGERATED --
-    # read the actual figure off the readout, not off the depth.
-    rng = max(y.ptp(), z.ptp()) / 2.0 or 0.1
+    # ALL THREE AXES SHARE ONE SCALE by default, so the picture is metrically honest: the path really
+    # is nearly planar (X is the locked axis and moves only millimetres), and it should LOOK planar.
+    #
+    # An earlier version gave X its own tighter scale to make drift visible. That magnified X by ~10x
+    # relative to Y/Z, so a 7 mm wobble was drawn like 70 mm of in-plane error and the arm appeared to
+    # be off the rails for most of the run when it was actually within 2.3 mm of them (median).
+    # Magnifying one axis of a trajectory plot is a good way to invent a problem that is not there, so
+    # it is now opt-in via --stretch-x and the title says so when it is on.
+    rng = max(x.ptp(), y.ptp(), z.ptp()) / 2.0 or 0.1
     cy, cz = y.mean(), z.mean()
     ax2.set_ylim(cy - rng, cy + rng); ax2.set_zlim(cz - rng, cz + rng)
-    xpad = max(x.ptp(), 0.02) * 0.75
-    ax2.set_xlim(x.mean() - xpad, x.mean() + xpad)
+    if a.stretch_x:
+        xpad = max(x.ptp(), 0.02) * 0.75
+        ax2.set_xlim(x.mean() - xpad, x.mean() + xpad)
+        ax2.set_title("Cartesian path (3-D) — X EXAGGERATED %.0fx" % (2 * rng / max(x.ptp(), 0.02)))
+    else:
+        ax2.set_xlim(x.mean() - rng, x.mean() + rng)
     # Edge-on, the X ticks collapse into an unreadable smear -- drop them and say so on the axis label.
     face_on = abs(a.elev) < 5 and abs(a.azim) < 5
     if face_on:
@@ -206,9 +220,12 @@ def main() -> int:
         trail.set_3d_properties(z[: i + 1])
         head.set_data([x[i]], [y[i]])
         head.set_3d_properties([z[i]])
-        readout.set_text(f"t   {d['time'][i] - d['time'][0]:6.1f} s\n"
-                         f"Y {y[i]:+.3f}  Z {z[i]:+.3f}\n"
-                         f"X drift {1000 * (x[i] - x0):+5.0f} mm")
+        txt = (f"t   {d['time'][i] - d['time'][0]:6.1f} s\n"
+               f"Y {y[i]:+.3f}  Z {z[i]:+.3f}\n"
+               f"X drift {1000 * (x[i] - x0):+5.0f} mm")
+        if "rail_dist" in d:
+            txt += f"\noff rail {1000 * d['rail_dist'][i]:5.0f} mm"
+        readout.set_text(txt)
         return trail, head, readout
 
     # Only build the animation if something will actually consume it -- an unrendered FuncAnimation

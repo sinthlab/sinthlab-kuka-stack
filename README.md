@@ -11,6 +11,11 @@ providing the Cartesian spring at 1000 Hz. Apple-pluck / perturb stream **joint*
 equilibrium** via `kuka_clik_controller`. Python state machines sequence each trial
 (move → cue → monitor displacement → recoil → repeat).
 
+The repo also carries the physical end of the rig: the parametric
+[end‑effector design](end_effector_design/README.md) and the
+[end‑effector board firmware](end_effector_metro_code/README.md) (NeoPixel cue ring, triggered over
+a hardwired media‑flange line), see [§6.7](#67-endeffector-board--the-visual-cue).
+
 FRI **torque** mode (ROS-side impedance) was evaluated on hardware and **not adopted** — see the
 [appendix](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out) for what was learned and
 the conditions under which it would be worth revisiting.
@@ -871,6 +876,49 @@ stateDiagram-v2
     Snap --> WaitRecoil : Recoil physics
     WaitRecoil --> MoveToStart
 ```
+
+---
+
+### 6.7 End‑effector board — the visual cue
+
+The [apple‑pluck end effector](end_effector_design/README.md) carries its own microcontroller, an
+**Adafruit Metro M4 AirLift**, which drives the 60‑LED RGBW **NeoPixel ring** on the cover as a
+**visual cue** for the subject. Its CircuitPython firmware lives in
+[`end_effector_metro_code/`](end_effector_metro_code/README.md).
+
+The cue is **hardwired, not networked.** The intended path runs down the same media flange the arm
+already uses:
+
+```
+orchestrator ──?──► Sunrise app ──► 24 V media-flange digital output
+                                              │
+                                     optocoupler (galvanic isolation)
+                                              │
+                                     Metro M4 ── D2 asserted
+                                              │
+                                     NeoPixel ring flashes ~2 s (programmable)
+```
+
+The board also hosts its **own Wi‑Fi access point** (`KUKA_NEOPIXEL`, HTTP on `192.168.4.1`), but
+that is a **side door** for setup, manual control and debugging — deliberately *not* the experiment
+path. A single Wi‑Fi interface cannot be joined to the board's AP and the KUKA network at once, and
+a cue should not depend on a radio when a wire already runs to the flange. The firmware brings the
+wired path up first and wraps the whole Wi‑Fi stack in a `try`/`except`, so a dead radio or a bad
+credential degrades to hardwired‑only rather than killing the cue.
+
+**The `──?──` above is the open piece.** The board responds to the trigger line today, and the
+cabinet can drive media‑flange I/O from a Sunrise application; what does not exist is a channel by
+which a ROS orchestrator tells the Sunrise app *"cue now"*. FRI carries joint commands, not
+arbitrary application calls. The recommended route is a **small socket listener inside
+[`LbrImpedanceControlServer.java`](sunrise_controller_code/)** — it lives entirely in code we
+already own and needs no upstream or FRI changes. The alternative (declaring a boolean FRI I/O) is
+cleaner in principle but requires command‑interface support in `lbr_ros2_control`, which is
+upstream. Both are laid out in the
+[firmware README](end_effector_metro_code/README.md#driving-the-trigger-from-ros-2).
+
+On the ROS side the shape is a **`VisualCue` action** alongside `AudioCue`, so an orchestrator can
+fire a light at a maze checkpoint exactly the way it fires a tone today — **non‑blocking**, because
+an experiment must never stall on a cue transport.
 
 ---
 
