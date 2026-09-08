@@ -383,11 +383,37 @@ def test_flash_wear():
     check("repeated resets cost nothing more", fw.nvm_writes == 3, f"{fw.nvm_writes} writes")
 
     check("/status reports the write count", "nvm_writes=" in call(fw, "/status"))
+    check("real flash is reported as available", "nvm=available" in call(fw, "/status"))
 
     # The saved value must still be correct after all that skipping.
     call(fw, "/config", r=7, g=8, b=9, w=10, save=1)
     check("the record is still accurate after skipped saves",
           (load().cfg["r"], load().cfg["g"]) == (7, 8))
+
+
+def test_survives_missing_nvm():
+    section("A build with no NVM must still boot and cue")
+    # The board this ships on HAS nvm (/status says so). This covers the failure mode, not the
+    # probability: nvm_load() runs at module scope, before the trigger exists, so an unguarded
+    # None here would stop code.py before poll_trigger() and the ring would never fire.
+    real = sys.modules["microcontroller"]
+    try:
+        sys.modules["microcontroller"] = None       # `import microcontroller` -> ImportError
+        fw = load()
+        check("the board boots", fw.server is not None)
+        check("falls back to a RAM buffer", not fw._nvm_is_flash)
+        check("settings are still changeable", (call(fw, "/config", r=7) or True)
+              and fw.cfg["r"] == 7)
+        body = call(fw, "/config", save=1)
+        check("save reports the truth, not a fake success", "RAM ONLY" in body, body.splitlines()[0])
+        check("/status says it is not persistent", "RAM ONLY" in call(fw, "/status"))
+        trigger_on(fw)
+        check("and the wire still fires the cue", fw.cue_active())
+        advance(2.1)
+        fw.cue_service()
+        check("which still times out", not fw.cue_active())
+    finally:
+        sys.modules["microcontroller"] = real
 
 
 def test_wire_survives_wifi_failure():
@@ -563,6 +589,7 @@ def main():
         test_settings_compose,
         test_persistence,
         test_flash_wear,
+        test_survives_missing_nvm,
         test_wire_survives_wifi_failure,
         test_trigger_details,
         test_patterns,

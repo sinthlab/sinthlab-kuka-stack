@@ -334,14 +334,17 @@ Without it, the board comes back with the defaults in `code.py`.
 > between you and a working board. NVM has neither cost. See
 > [Changing the firmware without USB](#changing-the-firmware-without-usb).
 
-The record is magic-tagged, versioned and checksummed; a corrupt or absent record falls back to the
-defaults rather than failing to boot. **NVM is not in every CircuitPython build** — if it is
-missing everything still works, settings just revert on reset, and `save=1` says so instead of
-pretending. Check with:
+The record is magic-tagged, versioned and checksummed; a corrupt record falls back to the defaults
+rather than failing to boot.
 
-```python
-import microcontroller; print(microcontroller.nvm)      # None = not in this build
-```
+NVM **is** present on this board — `/status` reports `nvm=available`. The firmware still falls back
+to a RAM buffer if a build ever lacks it, and that is about the *failure mode*, not the
+probability: `nvm_load()` runs at module scope, **before the trigger is set up**, so an unguarded
+access on a missing `nvm` would stop `code.py` before `poll_trigger()` exists and the ring would
+fire nothing at all. The fallback costs two lines and lets `nvm_save`/`nvm_load`/`nvm_clear`
+contain no presence checks at all — they always work, and the only difference is whether values
+outlive a reboot. In that case `/status` reads `nvm=RAM ONLY (not persistent)` and `save=1` says
+`saved to RAM ONLY`, so it never pretends.
 
 #### Is repeated saving bad for the board?
 
@@ -730,7 +733,10 @@ sequence number and two cabinet timestamps: `OK <seq> <nanoTime_ns> <wallClock_m
 - **`<nanoTime_ns>`** is monotonic; use it for intervals. `<wallClock_ms>` is only meaningful if the
   cabinet's clock is synchronised, which it generally is not.
 - **Hold the connection open** across trials. A fresh TCP handshake per cue adds a round trip to
-  exactly the latency this design keeps small.
+  exactly the latency this design keeps small. A one-shot client (connect, `CUE`, read, hang up)
+  works correctly too — the pulse is bounded by the cabinet's own deassert timer, not by the
+  socket — but the server serves **one client at a time**, so a second connection waits until the
+  first disconnects.
 
 ### Commissioning it
 

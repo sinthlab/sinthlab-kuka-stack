@@ -144,13 +144,21 @@ _NVM_LEN = struct.calcsize(_NVM_FMT) + 1        # +1 checksum
 nvm_writes = 0                  # actual flash writes this power-up; reported by /status so a
                                 # script that saves too eagerly is visible rather than silent
 
+# microcontroller.nvm is present on this board (confirmed: /status reports nvm=available), and on
+# every current CircuitPython build for it. The fallback below is NOT hedging about that -- it is
+# there because this runs at MODULE SCOPE, before the trigger is set up. If `nvm` were ever None,
+# an unguarded `_nvm[0:16]` would raise here and code.py would stop before poll_trigger() exists,
+# so the board would fire no cue at all. Falling back to a RAM buffer costs two lines and means
+# the save/load functions below have no conditionals in them at all: they always work, and the
+# only difference is whether the values outlive a reboot.
 try:
     import microcontroller
     _nvm = microcontroller.nvm
-    if _nvm is not None and len(_nvm) < _NVM_LEN:
-        _nvm = None
+    _nvm_is_flash = _nvm is not None and len(_nvm) >= _NVM_LEN
 except Exception:
-    _nvm = None
+    _nvm_is_flash = False
+if not _nvm_is_flash:
+    _nvm = bytearray(_NVM_LEN)  # settings still work; they just do not survive a power cycle
 
 
 def _nvm_pack():
@@ -169,7 +177,7 @@ def _nvm_pack():
 
 
 def nvm_save():
-    """Persist the settings. Returns False only if this build has no NVM.
+    """Persist the settings.
 
     A write to microcontroller.nvm is an erase+program of a flash row, and the SAMD51's flash is
     rated for a finite number of those (~25k cycles; check your datasheet). Two things keep that
@@ -182,8 +190,6 @@ def nvm_save():
     So the cycle count only advances when the stored settings actually change.
     """
     global nvm_writes
-    if _nvm is None:
-        return False
     blob = _nvm_pack()
     if bytes(_nvm[0:_NVM_LEN]) == blob:
         return True                     # already stored -- no erase, no wear
@@ -194,8 +200,6 @@ def nvm_save():
 
 def nvm_load():
     """Overlay the saved settings onto cfg. True only if a valid record was found."""
-    if _nvm is None:
-        return False
     blob = bytes(_nvm[0:_NVM_LEN])
     if blob[0] != _NVM_MAGIC or blob[1] != _NVM_VER:
         return False
@@ -219,8 +223,6 @@ def nvm_load():
 
 def nvm_clear():
     global nvm_writes
-    if _nvm is None:
-        return False
     if _nvm[0] == 0:
         return True                     # already invalid -- do not wear flash to re-zero it
     _nvm[0:1] = b"\x00"                 # wiping the magic byte invalidates the record
@@ -460,7 +462,7 @@ def cfg_text(note=""):
         "pattern={pattern}\nsegments={segments}\nduration={duration}\nperiod={period}\n"
         "# board\nbrightness={brightness}\nmode={mode}\nactive_low={active_low}\n"
         "debounce_ms={debounce_ms}\nretrigger={retrigger}\nenabled={enabled}\n"
-    ).format(**cfg) + "nvm={}\n".format("available" if _nvm else "unavailable")
+    ).format(**cfg) + "nvm={}\n".format("available" if _nvm_is_flash else "RAM ONLY (not persistent)")
 
 
 # --- /config : read or change EVERYTHING -------------------------------------
@@ -509,7 +511,8 @@ def configure(request: Request):
             apply_polarity()
 
     if _bool(request, "save", False):
-        note = "saved to NVM" if nvm_save() else "NOT SAVED -- no NVM on this build"
+        nvm_save()
+        note = "saved to NVM" if _nvm_is_flash else "saved to RAM ONLY -- no NVM on this build"
     return Response(request, cfg_text(note))
 
 

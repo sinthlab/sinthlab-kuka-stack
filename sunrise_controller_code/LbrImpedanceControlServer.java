@@ -2,6 +2,12 @@ package lbr_fri_ros2;
 
 import static com.kuka.roboticsAPI.motionModel.BasicMotions.positionHold;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -30,11 +36,7 @@ import com.kuka.connectivity.fastRobotInterface.FRIConfiguration;
 import com.kuka.connectivity.fastRobotInterface.FRISession;
 import com.kuka.connectivity.fastRobotInterface.IFRISessionListener;
 import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
-// Generated per-project from the Sunrise I/O configuration. If this import does not resolve,
-// the media flange is not in your project's I/O configuration yet -- add it in Sunrise Workbench
-// (Station Setup -> I/O Configuration) and the class will be generated. See the cue-server
-// section below.
-import com.kuka.generated.ioAccess.MediaFlangeIOGroup;
+import com.kuka.roboticsAPI.controllerModel.Controller;
 
 /**
  * LbrImpedanceControlServer
@@ -156,8 +158,23 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
                                                             // pulse width IS the cue length
     private static final int CUE_TICK_MS = 1;               // deassert-timer resolution
 
-    @Inject
-    private MediaFlangeIOGroup media_flange_;
+    // The media-flange I/O group is looked up by REFLECTION, not imported.
+    //
+    // com.kuka.generated.ioAccess.MediaFlangeIOGroup is generated per-project by Sunrise
+    // Workbench from the station's I/O configuration. Importing it directly makes the whole
+    // application fail to compile on any project where the media flange is not configured --
+    // which would let an OPTIONAL cue feature block the motion control that is the point of this
+    // file. Reflection keeps that dependency at runtime: no media flange, no cue, everything else
+    // unaffected.
+    //
+    // It also makes the setter name a string you can change in one place, and lets the app PRINT
+    // the setters your flange actually exposes when the configured one is missing -- see
+    // bindCueOutput(). That turns "which method do I call?" from a guess into a log line.
+    private static final String MEDIA_FLANGE_CLASS = "com.kuka.generated.ioAccess.MediaFlangeIOGroup";
+    private static final String CUE_OUTPUT_SETTER = "setOutputX3Pin1";
+
+    private Object media_flange_;           // the generated IOGroup instance, or null
+    private Method cue_output_setter_;      // its boolean setter, or null
 
     private volatile boolean cue_running_ = false;
     private ServerSocket cue_server_socket_;
@@ -275,22 +292,67 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         getLogger().info("FRI connection established.");
     }
 
-    // -----------------------------------------------------------------------------------
-    // ==> THE ONE PLACE THAT TOUCHES THE MEDIA FLANGE. ADAPT THIS TO YOUR FLANGE VARIANT. <==
-    // -----------------------------------------------------------------------------------
-    // The generated MediaFlangeIOGroup's setter name depends on which media flange the robot has
-    // and how the I/O was named in the Sunrise project's I/O configuration. Common variants:
-    //
-    //     media_flange_.setOutputX3Pin1(on);   // Media Flange IO / electrical  <-- assumed here
-    //     media_flange_.setOutputX3Pin2(on);
-    //     media_flange_.setLEDBlue(on);        // Media Flange Touch
-    //
-    // In Sunrise Workbench, type "media_flange_." and let autocomplete list what your project
-    // actually generated, then keep the one that maps to the pin you wired the optocoupler to.
-    // Nothing else in this file needs to change.
-    private void setCueOutput(boolean on) {
+    /**
+     * Binds the media-flange output, if this project has one. Never throws.
+     *
+     * On failure it logs WHY and, when the I/O group exists but the configured setter does not,
+     * lists every setter the group actually has -- so adapting to your flange variant means
+     * reading the cabinet log and changing CUE_OUTPUT_SETTER, not guessing.
+     */
+    private void bindCueOutput() {
         try {
-            media_flange_.setOutputX3Pin1(on);
+            Class<?> group = Class.forName(MEDIA_FLANGE_CLASS);
+            Controller controller = lbr_.getController();
+            Constructor<?> ctor = group.getConstructor(Controller.class);
+            Object instance = ctor.newInstance(controller);
+
+            // Matched by NAME with a single argument, so this works whether the generated setter
+            // takes a primitive boolean or a java.lang.Boolean.
+            Method setter = null;
+            List<String> available = new ArrayList<String>();
+            Method[] methods = group.getMethods();
+            for (int i = 0; i < methods.length; i++) {
+                Method m = methods[i];
+                if (m.getParameterTypes().length != 1) {
+                    continue;
+                }
+                if (m.getName().startsWith("set")) {
+                    available.add(m.getName());
+                }
+                if (m.getName().equals(CUE_OUTPUT_SETTER)) {
+                    setter = m;
+                }
+            }
+
+            if (setter == null) {
+                Collections.sort(available);
+                getLogger().error("Media flange has no '" + CUE_OUTPUT_SETTER
+                        + "'. Set CUE_OUTPUT_SETTER to one of: " + available);
+                return;
+            }
+
+            media_flange_ = instance;
+            cue_output_setter_ = setter;
+            getLogger().info("Cue output bound to " + MEDIA_FLANGE_CLASS + "."
+                    + CUE_OUTPUT_SETTER + "()");
+        } catch (ClassNotFoundException e) {
+            getLogger().warn("No media flange I/O in this project (" + MEDIA_FLANGE_CLASS
+                    + " not generated). The cue server will run but drive nothing."
+                    + " Add the media flange in Sunrise Workbench's Station Setup, save, and"
+                    + " let Workbench regenerate com.kuka.generated.ioAccess.");
+        } catch (Exception e) {
+            getLogger().error("Could not bind the media flange output: " + e.toString()
+                    + " -- the cue server will run but drive nothing.");
+        }
+    }
+
+    /** Drives the cue line. A no-op, logged once at bind time, if there is no media flange. */
+    private void setCueOutput(boolean on) {
+        if (cue_output_setter_ == null) {
+            return;
+        }
+        try {
+            cue_output_setter_.invoke(media_flange_, Boolean.valueOf(on));
         } catch (Exception e) {
             // An I/O fault must not propagate into the motion application.
             getLogger().error("Cue output write failed: " + e.toString());
@@ -402,8 +464,15 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         } catch (IOException e) {
             getLogger().warn("Cue client I/O error: " + e.toString());
         } finally {
-            // A client going away must never leave the ring latched on.
-            releaseCue();
+            // Deliberately does NOT release the cue.
+            //
+            // An earlier version released here, reasoning that a vanished client must not leave
+            // the line latched on. That protection was already redundant -- assertCue() always
+            // sets a deassert deadline and the timer thread always clears it, so the line drops
+            // within CUE_MAX_PULSE_MS no matter what the client does -- and it actively broke the
+            // most natural client shape: connect, send CUE, read the ack, disconnect. That
+            // one-shot pattern had its pulse killed the instant it hung up, which is a silent,
+            // baffling failure. The timer is the guarantee; the socket is not.
             closeQuietly(in);
             closeQuietly(out);
             closeQuietly(socket);
@@ -448,6 +517,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
      * Failure to start is logged and swallowed. The experiment must still run without a cue ring.
      */
     private void startCueServer() {
+        bindCueOutput();        // logs and continues if there is no media flange in this project
         try {
             cue_server_socket_ = new ServerSocket();
             cue_server_socket_.setReuseAddress(true);

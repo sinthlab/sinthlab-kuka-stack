@@ -86,25 +86,37 @@ to install the application to the robot.
 
 ### Media flange I/O (visual cue)
 `LbrImpedanceControlServer.java` pulses a **media‑flange digital output** to fire the end effector's
-NeoPixel cue ring (see [§6.7](#67-endeffector-board--the-visual-cue)). That needs one setup step in
-Sunrise Workbench, and the app will not compile without it:
+NeoPixel cue ring (see [§6.7](#67-endeffector-board--the-visual-cue)).
 
-1. **Station Setup → I/O Configuration** → add the **media flange** so Workbench generates
-   `com.kuka.generated.ioAccess.MediaFlangeIOGroup`. If the import in the Java does not resolve,
-   this is why.
-2. **Point the code at the pin you wired.** The generated setter name depends on your flange
-   variant. In Workbench, type `media_flange_.` and let autocomplete list what your project actually
-   generated, then edit the single line inside `setCueOutput()` — nothing else in the file changes.
-   ```java
-   media_flange_.setOutputX3Pin1(on);   // Media Flange IO / electrical  <-- assumed
-   media_flange_.setLEDBlue(on);        // Media Flange Touch
+**The app compiles and runs without any of this.** `com.kuka.generated.ioAccess.MediaFlangeIOGroup`
+is generated per‑project by Sunrise Workbench, so importing it directly would let an *optional* cue
+feature block the motion control that is the point of the file. It is therefore resolved by
+**reflection at runtime**: no media flange, no cue, everything else unaffected. The cabinet log says
+which case you are in at startup.
+
+To actually drive the line:
+
+1. **Add the media flange in Sunrise Workbench's Station Setup**, save, and let Workbench regenerate
+   `com.kuka.generated.ioAccess`. Until then the log reads:
+   `No media flange I/O in this project (… not generated). The cue server will run but drive nothing.`
+2. **Point it at the pin you wired.** The generated setter name depends on your flange variant, so
+   set the `CUE_OUTPUT_SETTER` constant near the top of the file. You do not have to guess: if the
+   configured name is missing, the app **logs every setter your flange actually exposes**:
    ```
+   Media flange has no 'setOutputX3Pin1'. Set CUE_OUTPUT_SETTER to one of:
+       [setLEDBlue, setOutputX3Pin11, setOutputX3Pin12]
+   ```
+   On success it logs `Cue output bound to …MediaFlangeIOGroup.setOutputX3Pin1()`.
 3. **Verify before wiring the effector**, with the arm idle and the app running:
    ```bash
    python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --cue 2000
    ```
    Put a meter or a scope on the pin. The cabinet log shows `Cue server listening on TCP 30300`
    when the app starts.
+
+> **The cue server serves one client at a time.** The accept loop blocks on the connected client
+> until it disconnects, so opening a second connection while the orchestrator is attached will
+> simply wait. Close one before opening another.
 
 ### Tool Load Data (payload calibration)
 The cabinet must know the end‑effector's mass, or the compliant control modes (Cartesian / joint
