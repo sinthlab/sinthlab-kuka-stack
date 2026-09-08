@@ -2,29 +2,21 @@
 #
 # Drives the 60-LED RGBW NeoPixel ring on the apple-pluck end effector.
 #
-# TWO INDEPENDENT CONTROL PATHS:
+# ---------------------------------------------------------------------------------------------
+# HOW IT WORKS
+# ---------------------------------------------------------------------------------------------
+# TRIGGER (the wire).  Sunrise asserts a 24 V media-flange output -> optocoupler -> CUE_PIN.
+#                      The board runs its configured cue for its configured duration, then stops.
+#                      On and off with a timer. That is the whole behaviour.
+#                      No network is involved, so the trigger keeps working with Wi-Fi down.
 #
-#   1. HARDWIRED CUE (primary, used by the experiment)
-#      Sunrise app asserts a 24 V media-flange digital output -> optocoupler (24 V -> 3.3 V,
-#      galvanically isolated) -> CUE_PIN on this board -> the ring runs a cue.
-#      No network involved. Brought up FIRST and designed to keep working even if the WiFi
-#      co-processor never starts.
+# SETTINGS (the API).  The board hosts its OWN Wi-Fi access point. Join it from a laptop or phone
+#                      and set what the cue looks like -- colour, intensity, pattern, segments,
+#                      duration, rate -- with /config. `save=1` keeps it across reboots.
 #
-#   2. WIFI + HTTP (secondary: configuration, manual control, read-back)
-#      The board hosts its OWN access point; a laptop joins it and drives the ring by URL.
-#
-# The wire carries TIMING only (one bit). WHAT the cue looks like is configuration.
-#
-# DESIGN RULE -- CONFIGURATION, NOT CODE EDITS
-#   The board is bolted inside a closed end effector, so reaching the USB port is expensive.
-#   Everything an experiment might reasonably want to change is therefore a RUNTIME SETTING
-#   reachable over HTTP (/config) and persistable to NVM (/config?save=1) -- colour, duration,
-#   rate, pattern, brightness, trigger polarity, debounce, mode. Editing this file should be
-#   reserved for genuinely new behaviour, not for tuning.
-#
-#   Only two classes of thing stay hard-coded:
-#     * physical facts   -- pin assignments, LED count (changing them means re-wiring anyway)
-#     * safety limits    -- MAX_BRIGHTNESS, which caps the ring's current draw
+# The two are deliberately separate: the wire cannot carry a colour (it is one bit), and the
+# experiment must never depend on a radio link. So the cabinet says WHEN, and the board -- already
+# configured by hand -- decides WHAT.
 #
 # See README.md.
 
@@ -53,30 +45,33 @@ CUE_PIN = board.D2              # <- optocoupler output (isolated from the 24 V 
 # ---------------------------------------------------------------------------
 # The ring pulls ~3.5 A at 5 V full white. Brightness scales that roughly linearly, so this
 # ceiling is what stops a stray request asking the converter and the 5 V wiring for more than
-# they are sized to deliver. Raise it only after re-checking both.
+# they are sized to deliver. Every cue's `intensity` multiplies WITHIN this cap, never past it.
 MAX_BRIGHTNESS = 0.35           # ~1.2 A worst case
 
-FRAME_MS = 33                   # ~30 fps for the continuous patterns (breathe / chase)
+FRAME_MS = 33                   # ~30 fps for the continuous patterns
 CHASE_LEN = max(1, PHYSICAL_LEDS // 8)
-PATTERNS = ("flash", "solid", "breathe", "chase")
+PATTERNS = ("flash", "solid", "breathe", "chase", "segment")
 MODES = ("pulse", "follow")
 OFF = (0, 0, 0, 0)
 
 # ---------------------------------------------------------------------------
-# Runtime configuration
+# Settings -- the cue's appearance and the board's behaviour, in one place
 # ---------------------------------------------------------------------------
-# DEFAULTS is what the board falls back to (fresh board, or /config?reset=1). The live copy
-# is `cfg`, changed over HTTP and optionally persisted to NVM.
+# Every field is independent and settable over /config; send any subset and the rest is
+# unchanged. This is the whole configurable surface of the board.
 DEFAULTS = {
-    # what the cue looks like
-    "r": 0, "g": 0, "b": 0, "w": 255,   # white via the dedicated W channel
-    "duration": 2.0,                    # seconds (ignored in "follow" mode)
-    "period": 0.5,                      # seconds per full cycle -> 2 Hz flash
-    "pattern": "flash",                 # flash | solid | breathe | chase
-    "brightness": 0.2,
-    # how the hardwired trigger behaves
-    "mode": "pulse",                    # pulse: board owns the length
-                                        # follow: ring runs while the line is held
+    # --- what the cue looks like ---
+    "r": 0, "g": 0, "b": 0, "w": 255,   # colour; w is the dedicated white channel
+    "intensity": 1.0,                   # 0..1 scale on the cue, inside the brightness cap below
+    "pattern": "flash",                 # flash | solid | breathe | chase | segment
+    "segments": 4,                      # lit blocks, for the "segment" pattern
+    "duration": 2.0,                    # seconds the cue runs after a trigger
+    "period": 0.5,                      # seconds per full cycle -> 2 Hz
+
+    # --- how the board behaves ---
+    "brightness": 0.2,                  # board-wide current cap; the cue scales within it
+    "mode": "pulse",                    # pulse : the trigger starts a cue of `duration`
+                                        # follow: the cue runs while the line is held
     "active_low": True,                 # opto sinks the pin when the 24 V line is asserted;
                                         # the pull-up then makes "idle" = HIGH, so an
                                         # unplugged connector reads as "no cue"
@@ -111,16 +106,18 @@ for _ in range(2):
 # ---------------------------------------------------------------------------
 # Persistence -- microcontroller.nvm
 # ---------------------------------------------------------------------------
-# NVM is a small battery-free non-volatile byte area. It is used INSTEAD of a file because
-# writing to the filesystem would require storage.remount() in boot.py, which makes CIRCUITPY
-# read-only to the host computer -- see README. NVM has neither that cost nor that risk.
-#
-# Not every build exposes it, so every access is guarded: if NVM is unavailable the board
-# still works, settings just revert to DEFAULTS on reset.
-_NVM_MAGIC = 0xC5
-_NVM_VER = 1
-_NVM_FMT = "<BBBBBBHHBBBB"      # magic, ver, r, g, b, w, dur_cs, per_cs, bright, flags,
-_NVM_LEN = struct.calcsize(_NVM_FMT) + 1        # debounce, pattern  (+1 checksum byte)
+# NVM is used INSTEAD of a config file because writing to the filesystem would require
+# storage.remount() in boot.py, which makes CIRCUITPY read-only to the host computer -- see
+# README. NVM has neither that cost nor that risk. Not every build exposes it, so every access
+# is guarded: without NVM the board still works, settings just revert to defaults on reset.
+_NVM_MAGIC = 0xC8
+_NVM_VER = 4
+_NVM_FMT = "<BB" "BBBB" "BBBB" "HHBB"
+# magic, ver | r, g, b, w | intensity, brightness, flags, debounce | dur_cs, per_cs, pattern, segs
+# Note the quantisation of the round trip: intensity and brightness are one byte (~0.4% steps),
+# duration and period are centiseconds (10 ms steps). Both are far finer than anything that
+# matters here, but a value read back after a save will not be bit-identical to what you sent.
+_NVM_LEN = struct.calcsize(_NVM_FMT) + 1        # +1 checksum
 
 try:
     import microcontroller
@@ -139,10 +136,9 @@ def _nvm_pack():
     blob = struct.pack(
         _NVM_FMT, _NVM_MAGIC, _NVM_VER,
         cfg["r"], cfg["g"], cfg["b"], cfg["w"],
-        min(int(cfg["duration"] * 100), 65535),
-        min(int(cfg["period"] * 100), 65535),
-        int(cfg["brightness"] * 255),
-        flags, cfg["debounce_ms"], PATTERNS.index(cfg["pattern"]),
+        int(cfg["intensity"] * 255), int(cfg["brightness"] * 255), flags, cfg["debounce_ms"],
+        min(int(cfg["duration"] * 100), 65535), min(int(cfg["period"] * 100), 65535),
+        PATTERNS.index(cfg["pattern"]), cfg["segments"],
     )
     return blob + bytes([sum(blob) & 0xFF])
 
@@ -155,7 +151,7 @@ def nvm_save():
 
 
 def nvm_load():
-    """Overlay saved settings onto cfg. Returns True only if a valid record was found."""
+    """Overlay the saved settings onto cfg. True only if a valid record was found."""
     if _nvm is None:
         return False
     blob = bytes(_nvm[0:_NVM_LEN])
@@ -163,15 +159,17 @@ def nvm_load():
         return False
     if (sum(blob[:-1]) & 0xFF) != blob[-1]:
         return False
-    (_, _, r, g, b, w, dur, per, bright,
-     flags, deb, pat) = struct.unpack(_NVM_FMT, blob[:-1])
+    (_, _, r, g, b, w, inten, bright, flags, deb,
+     dur, per, pat, seg) = struct.unpack(_NVM_FMT, blob[:-1])
     if pat >= len(PATTERNS):
-        return False
+        return False                    # reject the WHOLE record rather than load half of it
     cfg.update({
         "r": r, "g": g, "b": b, "w": w,
-        "duration": dur / 100.0, "period": max(per / 100.0, 0.02),
+        "intensity": inten / 255.0,
         "brightness": min(bright / 255.0, MAX_BRIGHTNESS),
-        "pattern": PATTERNS[pat], "debounce_ms": max(deb, 1),
+        "pattern": PATTERNS[pat], "segments": max(1, min(seg, PHYSICAL_LEDS // 2)),
+        "duration": max(dur / 100.0, 0.05), "period": max(per / 100.0, 0.02),
+        "debounce_ms": max(deb, 1),
         "enabled": bool(flags & 1), "active_low": bool(flags & 2),
         "retrigger": bool(flags & 4), "mode": "follow" if flags & 8 else "pulse",
     })
@@ -181,7 +179,7 @@ def nvm_load():
 def nvm_clear():
     if _nvm is None:
         return False
-    _nvm[0:1] = b"\x00"         # wiping the magic byte is enough to invalidate the record
+    _nvm[0:1] = b"\x00"                 # wiping the magic byte invalidates the record
     return True
 
 
@@ -192,16 +190,17 @@ pixels.brightness = cfg["brightness"]
 # Cue engine -- non-blocking
 # ---------------------------------------------------------------------------
 # Driven from the main loop by cue_service(); no handler ever sleeps. That is what lets a cue
-# animate while the HTTP server stays responsive, and why the hardwired trigger's latency is
-# the debounce time regardless of network traffic.
-_cue_until_ns = 0               # 0 = idle; -1 = run until stopped ("follow" mode)
+# animate while the HTTP server stays responsive, and why the wire trigger's latency is the
+# debounce time regardless of network traffic.
+_cue_until_ns = 0                       # 0 = idle; -1 = run until stopped ("follow" mode)
 _cue_start_ns = 0
 _cue_period_ns = 1
-_cue_color = OFF
+_cue_color = OFF                        # already scaled by the spec's intensity
 _cue_pattern = "flash"
+_cue_segments = 4
 _cue_frame_ns = 0
 _cue_step = -1
-_cue_restore = None             # ring contents to put back when the cue ends
+_cue_restore = None                     # ring contents to put back when the cue ends
 
 
 def cue_active():
@@ -233,22 +232,37 @@ def _render(phase):
         head = int(phase * PHYSICAL_LEDS)
         for i in range(CHASE_LEN):
             pixels[(head + i) % PHYSICAL_LEDS] = _cue_color
+    elif _cue_pattern == "segment":
+        # N lit blocks evenly spaced around the ring, flashing together. Visually distinct from
+        # a full-ring flash at a glance, which is the point of having it at all.
+        pixels.fill(OFF)
+        if phase < 0.5:
+            n = max(1, _cue_segments)
+            block = max(1, PHYSICAL_LEDS // (2 * n))
+            for k in range(n):
+                start = (k * PHYSICAL_LEDS) // n
+                for j in range(block):
+                    pixels[(start + j) % PHYSICAL_LEDS] = _cue_color
     else:                                       # "flash"
         pixels.fill(_cue_color if phase < 0.5 else OFF)
     pixels.show()
 
 
-def cue_start(color, duration, period, pattern):
-    """Begin a cue. duration <= 0 means 'until cue_stop()' (follow mode)."""
+def cue_start(spec, follow=False):
+    """Run a cue spec. follow=True means 'until cue_stop()', ignoring the spec's duration."""
     global _cue_until_ns, _cue_start_ns, _cue_period_ns, _cue_color
-    global _cue_pattern, _cue_frame_ns, _cue_step, _cue_restore
+    global _cue_pattern, _cue_segments, _cue_frame_ns, _cue_step, _cue_restore
     now = time.monotonic_ns()
     if not cue_active():
-        _cue_restore = _snapshot()          # snapshot the pre-cue ring, never a cue frame
-    _cue_color = color
-    _cue_pattern = pattern if pattern in PATTERNS else "flash"
-    _cue_period_ns = max(int(period * 1_000_000_000), 20_000_000)    # floor 20 ms
-    _cue_until_ns = -1 if duration <= 0 else now + int(duration * 1_000_000_000)
+        _cue_restore = _snapshot()      # snapshot the pre-cue ring, never a cue frame
+    # Per-cue intensity is folded into the colour rather than into pixels.brightness, so it
+    # cannot escape the board-wide current cap and cannot leak into the next cue.
+    _cue_color = _scaled((spec["r"], spec["g"], spec["b"], spec["w"]),
+                         max(0.0, min(spec["intensity"], 1.0)))
+    _cue_segments = max(1, min(int(spec["segments"]), PHYSICAL_LEDS // 2))
+    _cue_pattern = spec["pattern"] if spec["pattern"] in PATTERNS else "flash"
+    _cue_period_ns = max(int(spec["period"] * 1_000_000_000), 20_000_000)    # floor 20 ms
+    _cue_until_ns = -1 if follow else now + int(max(spec["duration"], 0.01) * 1_000_000_000)
     _cue_start_ns = now
     _cue_frame_ns = now
     _cue_step = 0
@@ -266,12 +280,6 @@ def cue_stop(restore=True):
     _cue_restore = None
 
 
-def cue_from_config():
-    cue_start((cfg["r"], cfg["g"], cfg["b"], cfg["w"]),
-              0 if cfg["mode"] == "follow" else cfg["duration"],
-              cfg["period"], cfg["pattern"])
-
-
 def cue_service():
     """Advance the animation. Call every pass of the main loop."""
     global _cue_frame_ns, _cue_step
@@ -284,8 +292,8 @@ def cue_service():
     if _cue_pattern == "solid":
         return                                  # nothing to animate
     phase = ((now - _cue_start_ns) % _cue_period_ns) / _cue_period_ns
-    if _cue_pattern == "flash":
-        step = 0 if phase < 0.5 else 1          # only two states -- redraw on the boundary
+    if _cue_pattern == "flash" or _cue_pattern == "segment":
+        step = 0 if phase < 0.5 else 1          # two states -- redraw on the boundary only
         if step == _cue_step:
             return
         _cue_step = step
@@ -302,9 +310,10 @@ def cue_service():
 cue_in = DigitalInOut(CUE_PIN)
 cue_in.direction = Direction.INPUT
 
-_trig_state = False             # debounced logical level ("asserted")
+_trig_state = False                     # debounced logical level ("asserted")
 _trig_raw = False
 _trig_since_ns = 0
+fired = 0                               # wire-triggered cue count, echoed by /status
 
 
 def trigger_asserted():
@@ -324,7 +333,7 @@ def apply_polarity():
 
 
 def poll_trigger():
-    global _trig_state, _trig_raw, _trig_since_ns
+    global _trig_state, _trig_raw, _trig_since_ns, fired
     raw = trigger_asserted()
     now = time.monotonic_ns()
 
@@ -341,8 +350,11 @@ def poll_trigger():
     if not cfg["enabled"]:
         return
     if raw:
-        if cfg["mode"] == "follow" or cfg["retrigger"] or not cue_active():
-            cue_from_config()
+        follow = cfg["mode"] == "follow"
+        if follow or cfg["retrigger"] or not cue_active():
+            fired += 1
+            cue_start(cfg, follow=follow)       # on, then off after `duration`. That is all the
+                                                # wire does -- it carries no colour, only timing.
     elif cfg["mode"] == "follow":
         cue_stop()
 
@@ -355,7 +367,7 @@ print("Cue input on {} (active {}), mode={}, nvm={}".format(
 # ---------------------------------------------------------------------------
 # HTTP route handlers
 # ---------------------------------------------------------------------------
-# Defined unconditionally, registered further down only if the WiFi stack came up. Nothing
+# Defined unconditionally, registered further down only if the Wi-Fi stack came up. Nothing
 # here sleeps -- every handler returns immediately and lets the main loop do the animation.
 
 def _int(request, name, default, lo=0, hi=255):
@@ -390,36 +402,30 @@ def _given(request, *names):
     return any(request.query_params.get(n) is not None for n in names)
 
 
-def parse_color(request, default=(0, 0, 0, 0)):
-    """Colour components in R, G, B, W order (GRBW is only the wire order)."""
-    return (
-        _int(request, "r", default[0]),
-        _int(request, "g", default[1]),
-        _int(request, "b", default[2]),
-        _int(request, "w", default[3]),
-    )
+CUE_FIELDS = ("r", "g", "b", "w", "intensity", "pattern", "segments", "duration", "period")
+BOARD_FIELDS = ("brightness", "mode", "active_low", "debounce_ms", "retrigger", "enabled")
 
 
-def _config_text(note=""):
-    return (
-        "{}r={}\ng={}\nb={}\nw={}\n"
-        "duration={}\nperiod={}\npattern={}\nbrightness={}\n"
-        "mode={}\nactive_low={}\ndebounce_ms={}\nretrigger={}\nenabled={}\n"
-        "nvm={}\n"
-    ).format(
-        note + "\n" if note else "",
-        cfg["r"], cfg["g"], cfg["b"], cfg["w"],
-        cfg["duration"], cfg["period"], cfg["pattern"], cfg["brightness"],
-        cfg["mode"], cfg["active_low"], cfg["debounce_ms"], cfg["retrigger"],
-        cfg["enabled"], "available" if _nvm else "unavailable",
-    )
+def cfg_text(note=""):
+    return ((note + "\n") if note else "") + (
+        "# cue\nr={r}\ng={g}\nb={b}\nw={w}\nintensity={intensity}\n"
+        "pattern={pattern}\nsegments={segments}\nduration={duration}\nperiod={period}\n"
+        "# board\nbrightness={brightness}\nmode={mode}\nactive_low={active_low}\n"
+        "debounce_ms={debounce_ms}\nretrigger={retrigger}\nenabled={enabled}\n"
+    ).format(**cfg) + "max_brightness={}\nnvm={}\n".format(
+        MAX_BRIGHTNESS, "available" if _nvm else "unavailable")
 
 
-# --- /config : read or change every runtime setting -------------------------
-# Read:    http://192.168.4.1/config
-# Write:   http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.5&pattern=breathe
-# Persist: http://192.168.4.1/config?save=1          (survives reset, NVM permitting)
-# Restore: http://192.168.4.1/config?reset=1         (back to DEFAULTS, clears NVM)
+# --- /config : read or change EVERYTHING -------------------------------------
+# The whole configurable surface of the board, in one place. Send any subset of the fields;
+# the rest is unchanged. This is how you set what a cue looks like -- join the board's access
+# point from a laptop or phone and call it.
+#
+#   http://192.168.4.1/config
+#   http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&pattern=segment&segments=6
+#   http://192.168.4.1/config?duration=1.2&period=0.3
+#   http://192.168.4.1/config?save=1        keep it across reboots
+#   http://192.168.4.1/config?reset=1       back to the defaults in this file
 def configure(request: Request):
     note = ""
     if _bool(request, "reset", False):
@@ -428,23 +434,27 @@ def configure(request: Request):
         nvm_clear()
         pixels.brightness = cfg["brightness"]
         apply_polarity()
-        return Response(request, _config_text("reset to defaults, NVM cleared"))
+        return Response(request, cfg_text("reset to defaults, NVM cleared"))
 
-    if _given(request, "r", "g", "b", "w", "duration", "period", "pattern", "brightness",
-              "mode", "active_low", "debounce_ms", "retrigger", "enabled"):
-        was_active_low = cfg["active_low"]
-        cfg["r"], cfg["g"], cfg["b"], cfg["w"] = parse_color(
-            request, (cfg["r"], cfg["g"], cfg["b"], cfg["w"]))
+    if _given(request, *CUE_FIELDS):
+        cfg["r"] = _int(request, "r", cfg["r"])
+        cfg["g"] = _int(request, "g", cfg["g"])
+        cfg["b"] = _int(request, "b", cfg["b"])
+        cfg["w"] = _int(request, "w", cfg["w"])
+        cfg["intensity"] = _float(request, "intensity", cfg["intensity"], 0.0, 1.0)
+        cfg["pattern"] = _choice(request, "pattern", cfg["pattern"], PATTERNS)
+        cfg["segments"] = _int(request, "segments", cfg["segments"], 1, PHYSICAL_LEDS // 2)
         cfg["duration"] = _float(request, "duration", cfg["duration"], 0.05, 300.0)
         cfg["period"] = _float(request, "period", cfg["period"], 0.02, 10.0)
-        cfg["pattern"] = _choice(request, "pattern", cfg["pattern"], PATTERNS)
-        cfg["mode"] = _choice(request, "mode", cfg["mode"], MODES)
+
+    if _given(request, *BOARD_FIELDS):
+        was_active_low = cfg["active_low"]
         cfg["brightness"] = _float(request, "brightness", cfg["brightness"], 0.0, MAX_BRIGHTNESS)
+        cfg["mode"] = _choice(request, "mode", cfg["mode"], MODES)
         cfg["debounce_ms"] = _int(request, "debounce_ms", cfg["debounce_ms"], 1, 200)
         cfg["active_low"] = _bool(request, "active_low", cfg["active_low"])
         cfg["retrigger"] = _bool(request, "retrigger", cfg["retrigger"])
         cfg["enabled"] = _bool(request, "enabled", cfg["enabled"])
-
         pixels.brightness = cfg["brightness"]
         pixels.show()
         if cfg["active_low"] != was_active_low:
@@ -452,50 +462,42 @@ def configure(request: Request):
 
     if _bool(request, "save", False):
         note = "saved to NVM" if nvm_save() else "NOT SAVED -- no NVM on this build"
-    return Response(request, _config_text(note))
+    return Response(request, cfg_text(note))
 
 
-# --- /cue : fire a cue now, the software equivalent of the trigger wire ------
-# Usage: http://192.168.4.1/cue
-#        http://192.168.4.1/cue?r=255&duration=3&period=0.25&pattern=chase
+# --- /cue : run the configured cue now, without the wire ---------------------
+# What the trigger does, on demand -- for checking a setting looks right before you walk away.
+#   http://192.168.4.1/cue
 def fire_cue(request: Request):
-    color = parse_color(request, (cfg["r"], cfg["g"], cfg["b"], cfg["w"]))
-    duration = _float(request, "duration", cfg["duration"], 0.0, 300.0)
-    period = _float(request, "period", cfg["period"], 0.02, 10.0)
-    pattern = _choice(request, "pattern", cfg["pattern"], PATTERNS)
-    cue_start(color, duration, period, pattern)
-    return Response(request, "Cue {} {} for {}s at {}s/cycle".format(
-        pattern, color, duration, period))
+    cue_start(cfg)
+    return Response(request, "firing the configured cue ({}s)\n".format(cfg["duration"]))
 
 
 # --- /set_color : solid colour on the whole ring ----------------------------
-# Usage: http://192.168.4.1/set_color?r=255&g=0&b=0&w=50
 def set_color(request: Request):
     cue_stop(restore=False)             # a manual command wins over an in-flight cue
-    color = parse_color(request)
-    pixels.fill(color)
+    color = (_int(request, "r", 0), _int(request, "g", 0),
+             _int(request, "b", 0), _int(request, "w", 0))
+    pixels.fill(_scaled(color, _float(request, "intensity", 1.0, 0.0, 1.0)))
     pixels.show()
-    return Response(request, "Set to {}".format(color))
+    return Response(request, "Set to {}\n".format(color))
 
 
-# --- /segments : split the ring into arcs -----------------------------------
-# Usage: http://192.168.4.1/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255
-#        segments separated by '.', components within a segment by ','
+# --- /segments : static arcs (not a timed cue -- use pattern=segment for that)
+#   http://<board>/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255
 def set_multi_segments(request: Request):
     cue_stop(restore=False)
     factor = _int(request, "factor", 1, 1, PHYSICAL_LEDS)
     colors_str = request.query_params.get("colors", "")
-
     pixels.fill(OFF)
-
     if colors_str:
         seg_size = PHYSICAL_LEDS // factor      # truncates: a factor that does not divide 60
                                                 # leaves the remaining pixels dark
-        for i, config in enumerate(colors_str.split(".")):
+        for i, part in enumerate(colors_str.split(".")):
             if i >= factor:
                 break
             try:
-                c = [int(p) for p in config.split(",")]
+                c = [int(v) for v in part.split(",")]
                 if len(c) == 3:                 # auto-pad RGB -> RGBW
                     c.append(0)
                 for p in range(i * seg_size, (i + 1) * seg_size):
@@ -503,19 +505,8 @@ def set_multi_segments(request: Request):
             except Exception as e:
                 print("Segment error:", e)
                 continue
-
     pixels.show()
-    return Response(request, "Segments updated")
-
-
-# --- /blink : flash without touching the configuration (non-blocking) -------
-# Usage: http://192.168.4.1/blink?r=255&delay=0.5&count=5
-def blink(request: Request):
-    color = parse_color(request)
-    delay = _float(request, "delay", 0.5, 0.02, 5.0)        # half-cycle, i.e. on-time
-    count = _int(request, "count", 3, 1, 100)
-    cue_start(color, count * 2 * delay, 2 * delay, "flash")
-    return Response(request, "Blinking {}x -- returns immediately, runs in background".format(count))
+    return Response(request, "Segments updated\n")
 
 
 # --- /off : clear the ring and cancel any running cue -----------------------
@@ -523,19 +514,19 @@ def set_off(request: Request):
     cue_stop(restore=False)
     pixels.fill(OFF)
     pixels.show()
-    return Response(request, "NeoPixels are now OFF")
+    return Response(request, "NeoPixels are now OFF\n")
 
 
 # --- /status : what is the board doing? First stop when a cue "does not work"
 def status(request: Request):
-    return Response(request, _config_text() + (
-        "leds={}\nmax_brightness={}\npatterns={}\n"
-        "cue_active={}\ncue_pattern={}\n"
+    return Response(request, cfg_text() + (
+        "# state\nleds={}\npatterns={}\nip={}\n"
+        "cue_active={}\nwire_fired={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
         "nvm_restored_at_boot={}\nuptime_s={:.1f}\n"
     ).format(
-        PHYSICAL_LEDS, MAX_BRIGHTNESS, ",".join(PATTERNS),
-        cue_active(), _cue_pattern,
+        PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
+        cue_active(), fired,
         cue_in.value, trigger_asserted(), _trig_state,
         _nvm_loaded, time.monotonic_ns() / 1e9,
     ))
@@ -545,19 +536,16 @@ def status(request: Request):
 # Read-only file access
 # ---------------------------------------------------------------------------
 # Deliberately READ-ONLY. Serving files needs nothing special; WRITING them would require
-# storage.remount() in boot.py, which makes CIRCUITPY read-only to the host computer and puts
-# a boot-time failure between you and a working board. See README.
-#
-# settings.toml is refused: it holds the AP password.
-_FS_ROOT = "/"                  # the CIRCUITPY drive root. Paths in the API are relative to
-                                # it, so every filesystem call below is explicitly anchored
-                                # rather than depending on the interpreter's cwd.
+# storage.remount() in boot.py, which makes CIRCUITPY read-only to the host computer and puts a
+# boot-time failure between you and a working board. See README.
+# settings.toml is refused: it holds the Wi-Fi credential.
+_FS_ROOT = "/"                  # the CIRCUITPY drive root; every call below is explicitly
+                                # anchored rather than depending on the interpreter's cwd
 _FS_DENY = ("settings.toml",)
 _FS_ALLOW_EXT = (".py", ".txt", ".json", ".toml")
 
 
 def _fs_reject(path):
-    """Return a refusal reason, or None if the path may be read."""
     if not path:
         return "no path given"
     if ".." in path or path.startswith("/"):
@@ -590,14 +578,12 @@ def _walk(rel, out, depth=0):
             out.append("{:<40s} {:>7d}".format(full, st[6]))
 
 
-# --- /fs : list what is actually on the board -------------------------------
 def fs_list(request: Request):
     out = []
     _walk("", out)
     return Response(request, "\n".join(out) + "\n")
 
 
-# --- /fs/get?path=code.py : read a file back --------------------------------
 def fs_get(request: Request):
     path = request.query_params.get("path", "")
     why = _fs_reject(path)
@@ -616,18 +602,22 @@ ROUTES = (
     ("/status", status),
     ("/set_color", set_color),
     ("/segments", set_multi_segments),
-    ("/blink", blink),
     ("/off", set_off),
     ("/fs", fs_list),
     ("/fs/get", fs_get),
 )
 
 # ---------------------------------------------------------------------------
-# WiFi access point + HTTP server  (SECONDARY path -- failure here is not fatal)
+# Wi-Fi access point + HTTP server  (settings only -- failure here is NOT fatal)
 # ---------------------------------------------------------------------------
-# Wrapped so that a dead ESP32, a missing or unparseable settings.toml, or a WPA2-rejected
-# password cannot stop the board servicing the hardwired cue. If this block fails the loop
-# below still runs, just without the network path.
+# The board hosts its OWN network. Join it from a laptop or phone to change what the cue looks
+# like; nothing else routes to it, and nothing needs to. The experiment's cue arrives on the
+# WIRE, so the radio is never in the timing path and never in the experiment's path at all.
+#
+# Wrapped so that a dead ESP32, a missing settings.toml, or a rejected password cannot stop the
+# board servicing the trigger. If this block fails the loop below still runs, using the settings
+# restored from NVM (or the defaults in this file).
+wifi_ip = "-"
 server = None
 try:
     esp32_cs = DigitalInOut(board.ESP_CS)
@@ -646,28 +636,27 @@ try:
     if not ssid or not password:
         raise RuntimeError(
             "CIRCUITPY_WIFI_SSID / CIRCUITPY_WIFI_PASSWORD missing from settings.toml "
-            "(values must be QUOTED strings; the password must be 8-63 chars for WPA2)"
-        )
+            "(values must be QUOTED strings; a WPA2 password must be 8-63 chars)")
     esp.create_AP(ssid, password, 1)
 
+    wifi_ip = str(esp.pretty_ip(esp.ip_address))        # the AP gateway: 192.168.4.1
     pool = socketpool.SocketPool(esp)
     server = Server(pool, debug=True)
     for path, handler in ROUTES:
         server.route(path, methods=["GET"])(handler)
-
-    server.start(str(esp.pretty_ip(esp.ip_address)), port=80)
-    print("Server started at http://{}".format(esp.pretty_ip(esp.ip_address)))
+    server.start(wifi_ip, port=80)
+    print("Access point '{}' up, settings at http://{}".format(ssid, wifi_ip))
 except Exception as e:
     server = None
     print("WiFi/HTTP unavailable: {}".format(e))
-    print("Continuing with the HARDWIRED cue path only.")
+    print("Continuing with the WIRE ONLY (settings from NVM/defaults, not changeable until fixed).")
 
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
-# poll_trigger() runs FIRST and cue_service() second, so the wired cue is serviced even while
-# HTTP traffic is arriving. server.poll() is non-blocking and no route handler sleeps, so a
-# pass through this loop is short and the trigger latency stays at roughly the debounce time.
+# poll_trigger() runs FIRST and cue_service() second, so the wire is serviced even while HTTP
+# traffic is arriving. server.poll() is non-blocking and no route handler sleeps, so a pass
+# through this loop is short and trigger latency stays at roughly the debounce time.
 while True:
     try:
         poll_trigger()

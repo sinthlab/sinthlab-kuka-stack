@@ -6,6 +6,7 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
 
@@ -22,6 +23,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             automatically_declare_parameters_from_overrides=True,
         )
         AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
+        VisualCue.warmup(self)  # open the cabinet cue socket so the first cue isn't delayed
 
         self.trial_count = 0
 
@@ -37,6 +39,16 @@ class ApplePluckOrchestratorNode(rclpyNode):
         )
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
+        )
+        # Audio and visual cues fire together. The visual cue sends TIMING only --
+        # what the ring shows is configured on the board itself. It is a no-op when
+        # `visual_cue.enabled` is false, so the experiment runs unchanged before the
+        # ring is wired.
+        self.visual_cue = VisualCue(
+            self, label="play", on_complete=lambda: None
+        )
+        self.visual_cue_snap = VisualCue(
+            self, label="snap", on_complete=lambda: None
         )
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self, param_prefix="apple_pluck_impedance_control_displacement",
@@ -65,6 +77,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
         self.audio_cue.start()
+        self.visual_cue.start()
 
     def on_audio_complete(self):
         self.get_logger().info("Audio cue played. Initiating Displacement Monitor.")
@@ -73,6 +86,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")
         self.audio_cue_snap.start()
+        self.visual_cue_snap.start()
         self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
 
     def on_monitor_complete(self):

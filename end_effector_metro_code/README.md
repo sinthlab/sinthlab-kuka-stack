@@ -11,33 +11,43 @@ NeoPixel ring** (Adafruit 2874, Ø157) seated in the cover as a **visual cue** f
 
 ---
 
-## The two control paths
+## How it works
 
-The firmware is built around one decision: **the experiment cue is hardwired, and Wi-Fi is an
-optional side door.**
+**The trigger is on/off with a timer.** The cabinet asserts a 24 V media-flange line; the board
+runs its configured cue for its configured duration, then stops. That is the entire behaviour.
 
-| | **1. Hardwired cue** *(primary)* | **2. Wi-Fi + HTTP** *(secondary)* |
+**What the cue looks like is a setting, changed over the board's own Wi-Fi.** Join the board's
+access point from a laptop or phone and call `/config`:
+
+```bash
+curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&pattern=segment&segments=6&duration=1.2&save=1"
+```
+
+| | **Trigger** — the wire | **Settings** — the API |
 |---|---|---|
-| Carries | **Timing** — one bit, "cue now" | **Content + config** — colour, duration, rate, manual control |
-| Route | Sunrise app → 24 V media-flange output → optocoupler → `D2` | Laptop joins the board's own AP → `http://192.168.4.1/` |
-| Used by | The experiment, every trial | Setup, debugging, ad-hoc control |
-| Latency | ≈ the debounce time (5 ms), deterministic | Whatever the network does |
-| If it fails | No cue | Experiment unaffected |
+| Carries | one edge: "now" | colour, intensity, pattern, segments, duration, rate |
+| Path | Sunrise → 24 V flange line → optocoupler → `D2` | your laptop → the board's own access point |
+| When | every trial | once, at commissioning |
+| Needs a network | **no** | yes, but only yours — not the robot's |
 
-The wire carries **no colour and no duration** — a digital line is one bit. What the flash *looks
-like* is configuration — live over HTTP, and persistable. Keep that split in
-mind: **the cabinet decides *when*, the board decides *what*.**
+The two are separate on purpose. The trigger line is **one bit** and cannot carry a colour, and an
+experiment cue must not depend on a radio link. So **the cabinet says *when*, and the board —
+already configured by hand — decides *what*.**
 
-Because the wired path is the one the experiment depends on, the firmware brings it up **first** and
-**wraps the entire Wi-Fi stack in a `try`/`except`**. A dead ESP32, a malformed `settings.toml`, or a
-WPA2-rejected password prints a message and drops the board to hardwired-only operation — it cannot
-stop the ring cueing.
+```
+  ROS orchestrator ──TCP :30300──► cabinet ──► 24 V ──► opto ──► D2 ──► ring on, then off
+                                   (timing only)
 
-> ### Status — the board half is done, the cabinet half is not
-> The firmware responds to the trigger line today. What does **not** exist yet is the link that makes
-> the cabinet assert that line on command from a ROS orchestrator — see
-> [Driving the trigger from ROS 2](#driving-the-trigger-from-ros-2). Experiment cues in the ROS stack
-> are still audio-only (`AudioCue`).
+  your laptop ──joins KUKA_NEOPIXEL──► http://192.168.4.1/config  (what it looks like)
+```
+
+The board hosts its **own** access point and never joins another network. Wi-Fi bring-up is wrapped
+in `try`/`except`, so a dead ESP32 or a bad credential drops it to trigger-only operation, running
+the settings saved in NVM — it cannot stop the ring cueing.
+
+> ### Status — built and tested, not yet wired
+> No cue has run on real hardware. `visual_cue.enabled` ships as `false` in every experiment
+> config.
 
 ---
 
@@ -45,7 +55,7 @@ stop the ring cueing.
 - [Hardware context](#hardware-context)
 - [The cue trigger — wiring](#the-cue-trigger--wiring)
 - [Architecture](#architecture)
-- [Configuration, not code edits](#configuration-not-code-edits)
+- [Settings](#settings)
 - [Files on the board](#files-on-the-board)
 - [HTTP API](#http-api)
 - [Deployment](#deployment)
@@ -226,83 +236,98 @@ deliberately overriding.
 
 ### Trigger modes
 
-`mode` selects who owns the cue's length — **settable over HTTP, no code edit**:
+`mode` decides who owns the cue's length:
 
 | Mode | Behaviour | Use when |
 |---|---|---|
-| **`pulse`** *(default)* | An asserted edge starts a cue of `duration`. The line can drop immediately — the board runs the full length. | The cabinet can only emit a short strobe, or you want one fixed cue length everywhere. |
-| `follow` | The ring runs for **exactly as long as the line is held**. `duration` is ignored. | You want the orchestrator to own cue length directly, the way it owns `AudioCue` length. |
+| **`pulse`** *(default)* | An asserted edge starts the cue, which runs for its configured **`duration`** and stops. The line may drop immediately. | Normal use — on and off with the board's timer. |
+| `follow` | The cue runs for **exactly as long as the line is held**; `duration` is ignored. | You want the cabinet to own cue length, the way it owns `AudioCue` length. |
 
 `retrigger=0` (the default) makes a second edge arriving mid-cue a no-op, so contact bounce or a
-double-pulse cannot restart the cue. Set `retrigger=1` if re-triggering is what you want.
+double-pulse cannot restart the cue.
 
----
+## Settings
 
-## Configuration, not code edits
+**This is the whole configurable surface of the board**, and all of it lives behind one endpoint,
+`/config`. Every field is independent: send any subset and the rest is unchanged.
 
-The board is bolted inside a closed effector, so reaching its USB port is expensive. The firmware
-is therefore built so that **everything an experiment might reasonably want to change is a runtime
-setting**, reachable over HTTP and persistable across reboots. Editing `code.py` should be reserved
-for genuinely new behaviour — not for tuning.
+```bash
+curl http://192.168.4.1/config                                  # read everything
+curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0"              # colour
+curl "http://192.168.4.1/config?intensity=0.4&duration=1.2"     # dimmer, shorter
+curl "http://192.168.4.1/config?pattern=segment&segments=6"      # look
+curl "http://192.168.4.1/config?save=1"                          # keep across reboots
+curl http://192.168.4.1/cue                                      # try it without the wire
+```
 
-Only two classes of thing stay hard-coded:
+### What the cue looks like
 
-| Stays in `code.py` | Why |
-|---|---|
-| `LED_PIN`, `CUE_PIN`, `PHYSICAL_LEDS`, `ORDER` | physical facts — changing them means re-wiring anyway |
-| `MAX_BRIGHTNESS` | a **safety limit**: it caps the ring's current draw, so no HTTP request can ask the converter and the 5 V wiring for more than they are sized to deliver |
-
-Everything else is live:
-
-| Setting | Values | What it does |
+| Field | Values | What it does |
 |---|---|---|
-| `r` `g` `b` `w` | 0–255 | cue colour |
-| `duration` | 0.05–300 s | cue length (ignored in `follow` mode) |
+| `r` `g` `b` `w` | 0–255 | colour (`w` is the dedicated white channel — cleaner than `r=g=b`) |
+| `intensity` | 0.0–1.0 | this cue's brightness, scaled inside the board-wide cap |
+| `pattern` | `flash` `solid` `breathe` `chase` `segment` | the cue modality |
+| `segments` | 1–30 | lit blocks, for the `segment` pattern |
+| **`duration`** | 0.05–300 s | **the timer** — how long the ring stays on after a trigger |
 | `period` | 0.02–10 s | one full cycle of the pattern |
-| `pattern` | `flash` `solid` `breathe` `chase` | the cue **modality** |
-| `brightness` | 0 – `MAX_BRIGHTNESS` (0.35) | ring brightness; the cap is enforced, not advisory |
-| `mode` | `pulse` `follow` | who owns cue length — board or cabinet |
+
+| Pattern | Behaviour | Update rate |
+|---|---|---|
+| `flash` | square on/off at `period` | boundary only |
+| `solid` | steady for `duration` | drawn once |
+| `breathe` | smooth raised-cosine fade in/out | ~30 fps |
+| `chase` | a lit arc of 8 LEDs rotating once per `period` | ~30 fps |
+| `segment` | `segments` lit blocks evenly spaced, flashing together | boundary only |
+
+### How the board behaves
+
+| Field | Values | What it does |
+|---|---|---|
+| `brightness` | 0 – `MAX_BRIGHTNESS` (0.35) | board-wide current cap that every cue scales within |
+| `mode` | `pulse` `follow` | who owns the cue's length — `duration`, or the wire |
 | `active_low` | 0 / 1 | trigger polarity — **flip this to match your optocoupler without opening the box** |
 | `debounce_ms` | 1–200 | how long the input must hold a level |
 | `retrigger` | 0 / 1 | may a new edge restart an in-flight cue |
 | `enabled` | 0 / 1 | arm/disarm the wire entirely |
 
-### Patterns
+### `intensity` vs `brightness` — two different things
 
-`pattern` is what makes a new cue *modality* a configuration change rather than a code change:
+`intensity` is **per cue** and is folded into the colour. `brightness` is **board-wide** and is the
+current limiter. They multiply:
 
-| Pattern | Behaviour | Update rate |
-|---|---|---|
-| `flash` | square on/off at `period` | redrawn only on the half-period boundary |
-| `solid` | steady for `duration` | drawn once |
-| `breathe` | smooth raised-cosine fade in/out | ~30 fps |
-| `chase` | a lit arc of 8 LEDs rotating once per `period` | ~30 fps |
+```
+what the LEDs draw  ≈  colour × intensity × brightness      (brightness ≤ 0.35, enforced)
+```
+
+So dim a cue with `intensity=0.3` and leave the current ceiling where the wiring can carry it. No
+HTTP request can raise `MAX_BRIGHTNESS` — that is a deliberate code edit, made only after
+re-checking the converter rating and the 5 V wiring.
 
 ### Persistence — NVM, not a file
 
-`/config?save=1` writes the settings to **`microcontroller.nvm`**, a small non-volatile byte area,
-and they are restored at the next boot.
+`/config?save=1` writes every setting above to `microcontroller.nvm`, restored at the next boot.
+Without it, the board comes back with the defaults in `code.py`.
 
-> **Why NVM and not a config file?** Writing any file from firmware requires
-> `storage.remount()` in `boot.py`, which makes **CIRCUITPY read-only to your computer** and puts a
-> boot-time failure between you and a working board. NVM has neither cost. See
+> **Why NVM and not a config file?** Writing any file from firmware requires `storage.remount()`
+> in `boot.py`, which makes **CIRCUITPY read-only to your computer** and puts a boot-time failure
+> between you and a working board. NVM has neither cost. See
 > [Changing the firmware without USB](#changing-the-firmware-without-usb).
 
-The record is magic-tagged, versioned and checksummed; a corrupt or absent record silently falls
-back to the `DEFAULTS` in `code.py` rather than failing to boot. **NVM is not present in every
-CircuitPython build** — if it is missing, everything still works, settings just revert to
-`DEFAULTS` on reset, and `/config?save=1` tells you so instead of pretending. Check with:
+The record is magic-tagged, versioned and checksummed; a corrupt or absent record falls back to the
+defaults rather than failing to boot. **NVM is not in every CircuitPython build** — if it is
+missing everything still works, settings just revert on reset, and `save=1` says so instead of
+pretending. Check with:
 
 ```python
 import microcontroller; print(microcontroller.nvm)      # None = not in this build
 ```
 
-Saving writes to flash, so it is **only** done on an explicit `save=1` — never automatically on
-every config change — to avoid wearing the cell out.
+Saving writes to flash, so it happens **only** on an explicit `save=1`, never automatically.
+`/config?reset=1` restores the defaults and invalidates the record.
 
-`/config?reset=1` restores the code defaults and invalidates the saved record.
-
----
+> **Values are quantised by the save.** `intensity` and `brightness` are stored as one byte
+> (~0.4% steps) and `duration`/`period` as centiseconds. Read back after a save, a value will be
+> close but not bit-identical — `brightness=0.3` returns `0.298`.
 
 ## Files on the board
 
@@ -352,66 +377,57 @@ copies to prune.
 
 | Route | Parameters | Effect |
 |---|---|---|
-| **`/config`** | any setting above, plus `save=1` / `reset=1` | **Read or change every runtime setting.** No parameters = read-only. |
-| `/cue` | `r` `g` `b` `w`, `duration`, `period`, `pattern` | Fire a cue **now** — the software equivalent of the trigger wire. Omitted parameters fall back to the configured cue. |
-| `/status` | — | Everything `/config` reports, plus the **live trigger-pin state**, the active pattern and uptime. First stop when debugging. |
-| `/fs` | — | List what is actually on the board, with sizes. |
+| **`/config`** | any setting, plus `save=1` / `reset=1` | **The whole configurable surface.** No parameters = read-only. |
+| **`/cue`** | — | Run the configured cue **now**, without the wire. |
+| **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire count and uptime. First stop when debugging. |
+| `/off` | — | Clear the ring and cancel a running cue. |
+| `/set_color` | `r` `g` `b` `w`, `intensity` | Hold a solid colour (not a cue — it does not time out). |
+| `/segments` | `factor`, `colors` | Static arcs. For a *timed* segmented cue use `pattern=segment`. |
+| `/fs` | — | List what is on the board, with sizes. |
 | `/fs/get` | `path` | Read a text file back (`code.py`, `*.txt`, `*.json`). **Read-only** — see [below](#changing-the-firmware-without-usb). |
-| `/set_color` | `r` `g` `b` `w` | Solid colour on the whole ring. Cancels a running cue. |
-| `/segments` | `factor`, `colors` | Split the ring into `factor` equal arcs, colour each. Cancels a running cue. |
-| `/blink` | `r` `g` `b` `w`, `delay` (s), `count` | Flash without touching the configuration. |
-| `/off` | — | Clear the ring and cancel any running cue. |
 
 ### Examples
 
+Join the board's access point (`KUKA_NEOPIXEL`) first — it is always at **192.168.4.1**.
+
 ```bash
-# what is the board doing right now?  (config + trigger pin + uptime)
+# what is the board doing right now?  (settings, trigger pin, fire count, uptime)
 curl http://192.168.4.1/status
+```
 
-# fire the configured cue — exactly what the trigger wire does
+**Set what the cue looks like — this is the part that replaces editing `code.py`:**
+
+```bash
+# dim green, six segments, 0.8 s
+curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.4&pattern=segment&segments=6&duration=0.8"
+
+# change ONE field; everything else carries over
+curl "http://192.168.4.1/config?intensity=0.9"
+curl "http://192.168.4.1/config?pattern=breathe&period=1.2"
+curl "http://192.168.4.1/config?duration=2.5"
+
+# try it without the robot, then keep it across reboots
 curl http://192.168.4.1/cue
-
-# one-off, without changing the configuration: 3 s of amber chase
-curl "http://192.168.4.1/cue?r=255&g=140&b=0&w=0&duration=3&period=0.6&pattern=chase"
-```
-
-**Re-configure what the *wire* does — this is the part that replaces editing `code.py`:**
-
-```bash
-# 1.5 s of green, breathing
-curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.5&period=1.0&pattern=breathe"
-
-# the optocoupler turned out to be active-high — fix it without opening the effector
-curl "http://192.168.4.1/config?active_low=0"
-
-# noisy line: lengthen the debounce
-curl "http://192.168.4.1/config?debounce_ms=25"
-
-# let the cabinet own cue length instead of the board
-curl "http://192.168.4.1/config?mode=follow"
-
-# disarm the wire while you work on the wiring, then re-arm
-curl "http://192.168.4.1/config?enabled=0"
-curl "http://192.168.4.1/config?enabled=1"
-
-# keep it across power cycles / start over
 curl "http://192.168.4.1/config?save=1"
-curl "http://192.168.4.1/config?reset=1"
 ```
 
-**Read the board back:**
+**How the board behaves:**
 
 ```bash
+curl "http://192.168.4.1/config?mode=follow"        # let the wire own cue length
+curl "http://192.168.4.1/config?brightness=0.25"    # the current cap all cues scale within
+curl "http://192.168.4.1/config?active_low=0"       # opto turned out inverted
+curl "http://192.168.4.1/config?enabled=0"          # disarm the wire while you work on it
+curl "http://192.168.4.1/config?reset=1"            # back to the defaults in code.py
+```
+
+**Manual control and read-back:**
+
+```bash
+curl "http://192.168.4.1/set_color?w=255&intensity=0.5"
+curl http://192.168.4.1/off
 curl http://192.168.4.1/fs                          # what is on the drive
 curl "http://192.168.4.1/fs/get?path=code.py"       # confirm what is actually running
-```
-
-**Manual control:**
-
-```bash
-curl "http://192.168.4.1/set_color?w=255"
-curl "http://192.168.4.1/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255"
-curl http://192.168.4.1/off
 ```
 
 ### `/segments` format
@@ -581,44 +597,133 @@ exception tracebacks only ever appear on serial.
 
 ## Driving the trigger from ROS 2
 
-The board now does its half. The remaining work is upstream, and it is worth being precise about
-where the gap actually is.
+**The whole software chain is built.** What remains is the physical wiring.
 
 ```
-  ┌─ EXISTS ───────────────────────────────────────────────────────────┐
-  │  Metro:  D2 asserted  →  ring flashes for 2 s                      │
+  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
+  │  Metro:  D2 asserted  →  ring runs the configured cue              │
   └────────────────────────────────────────────────────────────────────┘
                                    ▲
                         24 V media-flange digital output
                                    ▲
-  ┌─ EXISTS (hardware) ────────────────────────────────────────────────┐
-  │  Cabinet can drive media-flange I/O from a Sunrise application     │
-  │  (MediaFlangeIOGroup.setOutputX(...))                              │
+  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
+  │  Sunrise cue server — a TCP listener inside                        │
+  │  LbrImpedanceControlServer.java that pulses the flange output      │
   └────────────────────────────────────────────────────────────────────┘
                                    ▲
-  ┌─ ✗ MISSING ────────────────────────────────────────────────────────┐
-  │  a channel by which a ROS orchestrator tells the Sunrise app       │
-  │  "cue now"                                                          │
+  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
+  │  VisualCue action in sinthlab_bringup, fired beside AudioCue at    │
+  │  all 8 cue sites across the 4 experiments                          │
   └────────────────────────────────────────────────────────────────────┘
 ```
 
-**The missing piece is not the wire — it is ROS → cabinet.** Our ROS↔cabinet link is FRI, and FRI
-carries joint commands, not arbitrary application calls. Three ways to close it:
+**Why a socket and not FRI I/O.** FRI carries joint commands and robot state; it has no channel for
+"run a cue now" unless boolean FRI I/O is declared in the Sunrise project **and** a matching command
+interface is added to `lbr_ros2_control` — which is upstream, and we do not edit upstream. The
+socket keeps the whole feature inside code we own.
 
-| Option | What it needs | Assessment |
-|---|---|---|
-| **A. Side channel into the Sunrise app** — a small TCP/UDP listener thread in `LbrImpedanceControlServer.java` that accepts a "cue" message from the ROS box and calls `setOutputX(true)`, then clears it | Java changes in [`sunrise_controller_code/`](../sunrise_controller_code/) + a ROS node that opens a socket | **Recommended.** Lives entirely in code we already own, no upstream edits, no FRI changes. Sub-millisecond on a wired LAN — far below the cue timing that matters. |
-| **B. FRI boolean I/O** — declare a boolean I/O in the FRI configuration and set it from the ROS side each cycle | FRI I/O declarations in the Sunrise project **and** command-interface support in `lbr_ros2_control` (upstream, which we do not edit) | Cleanest in principle — the cue rides the existing 100 Hz channel and is timestamped with the motion. But it needs upstream work we have ruled out before. |
-| **C. Cabinet-side timing** — the Sunrise app decides when to cue | nothing new | Rejected: the orchestrator owns trial timing, and splitting that across two codebases is how cue/trial desynchronisation bugs happen. |
+### The cue protocol
 
-### ROS-side shape
+Line-oriented ASCII on **TCP 30300** (FRI uses 30200 — kept distinct). Every reply carries a
+sequence number and two cabinet timestamps: `OK <seq> <nanoTime_ns> <wallClock_ms>`.
 
-Whichever transport wins, the node shape is the same and should mirror the existing audio cue:
+| Command | Effect |
+|---|---|
+| `CUE [ms]` | assert the flange output for `[ms]` (default **50 ms**, ceiling 10 s), then release |
+| `OFF` | release now |
+| `PING` | liveness check |
+| `STATUS` | report whether the line is asserted |
 
-- a **`VisualCue` action** in `sinthlab_bringup/actions/`, alongside `AudioCue`, so an orchestrator
-  fires a light at a maze checkpoint exactly the way it fires a tone today;
-- **non-blocking** — an experiment orchestrator must never stall on a cue transport. Fire and
-  forget; log a failure, never wait on one.
+- **50 ms default** comfortably clears the board's 5 ms debounce. In `pulse` mode the board owns
+  the cue length, so the pulse only has to be an edge; in `follow` mode the pulse width **is** the
+  cue length, which is what the 10 s ceiling is for.
+- **`<seq>`** lets the ROS side detect a dropped or duplicated cue — the failure mode that silently
+  corrupts behavioural data instead of announcing itself.
+- **`<nanoTime_ns>`** is monotonic; use it for intervals. `<wallClock_ms>` is only meaningful if the
+  cabinet's clock is synchronised, which it generally is not.
+- **Hold the connection open** across trials. A fresh TCP handshake per cue adds a round trip to
+  exactly the latency this design keeps small.
+
+### Commissioning it
+
+[`cue_client_test.py`](../sunrise_controller_code/cue_client_test.py) drives the line with no ROS
+and no dependencies:
+
+```bash
+python3 sunrise_controller_code/cue_client_test.py <cabinet-ip>            # interactive
+python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --cue 2000 # one 2 s pulse
+python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --latency  # network leg only
+```
+
+Bring it up in this order, so a failure tells you *where* it is:
+
+1. `--cue 2000` with a **meter on the flange pin** — proves the cabinet half and your
+   `setCueOutput()` pin choice.
+2. Same, with the **optocoupler wired to `D2`** but the ring's `curl .../status` open — proves the
+   isolation stage and the polarity (`trigger_asserted` should follow the cabinet).
+3. Same, with the **ring connected** — proves the whole chain.
+
+### On timestamping the cue against motion
+
+A correction worth stating plainly: **FRI boolean I/O would not have given you a cue "timestamped
+with the motion" either.** It timestamps the *command*. Everything downstream — cabinet I/O cycle,
+optocoupler, the board's `debounce_ms`, `pixels.show()` (~2.4 ms for 60 RGBW LEDs) — is **identical
+for both approaches** and is what dominates, at roughly **8 ms, mostly deterministic**.
+
+The socket differs from FRI I/O in one leg only:
+
+| | ROS → cabinet |
+|---|---|
+| **FRI I/O** | rides the existing 100 Hz channel → **0–10 ms quantisation, bounded**, and you know which cycle |
+| **Socket** | sub-millisecond typical on a wired LAN, but the sender is **WSL2, not an RT OS** → an unbounded jitter tail |
+
+Three things make the socket route rigorous:
+
+1. **Log the send time in the ROS timebase**, into the same `robot_trajectory_*.csv` as the motion —
+   same clock by construction, no cross-timebase mapping.
+2. **Use the ack.** `[t_send, t_ack]` brackets the cabinet-side action, which bounds precisely the
+   leg where the socket is weaker. This closes the gap; the server already returns it.
+3. **Calibrate the fixed downstream offset once** with a scope on the flange output against a
+   ROS-logged event. **FRI I/O would need this too.**
+
+> **If you are recording neurally, skip all of it.** Split the same 24 V line into the acquisition
+> system's digital input. The cue then lands in the neural timebase with microsecond accuracy and
+> no software in the path, and the ROS timestamp becomes a convenience rather than the truth.
+
+### The ROS side
+
+[`sinthlab_bringup/actions/visual_cue.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
+mirrors `AudioCue` and fires alongside it at every cue site — all four experiments, eight sites. It
+sends **timing only**, so there is nothing per cue site to configure:
+
+```yaml
+visual_cue:
+  enabled: false                # <-- flip to true once the ring is wired
+  host: "172.31.1.147"          # cabinet IP on the KUKA network (the FRI peer)
+  port: 30300
+  pulse_ms: 0                   # 0 = bare trigger; the board's own `duration` owns the length.
+                                # Set this only if the board is in "follow" mode.
+```
+
+Every trigger runs the same board-side cue — that is the design, not a limitation of the action.
+Appearance is a **commissioning step** done once over the board's access point, because the wire
+cannot carry a colour and the experiment must not depend on a radio.
+
+Three properties that matter:
+
+- **`enabled: false` is the shipped default.** Every visual cue is a no-op until you turn it on, so
+  the experiments run unchanged before the ring is wired. No orchestrator edits either way.
+- **Nothing blocks.** Short timeouts, guarded sockets, and `on_complete` fires even when the cue
+  server is unreachable, which warns **once**. A missing cue is bad; a stalled orchestrator is worse.
+- **One shared connection** across all cue sites, opened at `warmup()` and silently reconnected if
+  the cabinet application restarts.
+
+Check the path from the ROS box with
+[`check_visual_cue.py`](../sinthlab_bringup/diagnostics/check_visual_cue.py):
+
+```bash
+python3 sinthlab_bringup/diagnostics/check_visual_cue.py config/maze_params.yaml --fire 3
+```
 
 ### Wi-Fi is not on this path
 
@@ -626,38 +731,37 @@ The board's AP exists for setup and debugging. Do **not** put the experiment cue
 Wi-Fi interface cannot be joined to `KUKA_NEOPIXEL` and the KUKA network at once, and an
 experiment cue should not depend on a radio link when a wire is already running to the flange.
 
-### If you later need more than one cue type
+### If you need cues faster than you can arm them
 
-One line is one bit. To distinguish, say, "go" from "reward":
-
-- **a second trigger line** into another free pin — 2 lines give 4 states, and the firmware change
-  is a second `poll_trigger()` instance;
-- **pulse-width encoding** on the existing line — the Sunrise app holds it 50 ms vs 200 ms, and the
-  firmware measures the assert duration before choosing a pattern. One wire, but it costs the
-  distinction between "cue" and "line stuck".
-
-The first is simpler and unambiguous; prefer it if a pin and a conductor are available.
+Arming is an HTTP round trip. For back-to-back cues tens of milliseconds apart, arm the *next* cue
+during the *current* one — `VisualCue.arm()` is separate from `start()` precisely so an
+orchestrator can do that. If cues must be independent and simultaneous, the answer is a second
+trigger line into another free pin, with the firmware holding one armed spec per line.
 
 ---
 
 ## Known limitations
 
-1. **No ROS 2 integration yet.** The cabinet→board wire works; ROS→cabinet does not exist. See
-   [above](#driving-the-trigger-from-ros-2).
-2. **The wire carries one bit.** No colour, no duration, no cue type — only "now". See
-   [above](#if-you-later-need-more-than-one-cue-type) for how to extend that.
-3. **`CUE_PIN` and the optocoupler polarity are unverified against the real flange.** `D2` and the
+1. **Nothing is wired yet.** The full software chain is built and tested, but no cue has run on
+   real hardware. `visual_cue.enabled` ships as `false`.
+2. **The ROS box cannot see the board.** By design — the board hosts its own access point and the
+   ROS box is on the KUKA network. So the cue's appearance cannot be checked or changed from the
+   experiment host, and `check_visual_cue.py` verifies the trigger path only.
+3. **One cue appearance at a time.** Every trigger runs the same configured cue; the wire carries
+   one bit and cannot select between looks. Different cues per event would need a second trigger
+   line into another free pin, with the firmware holding one setting per line.
+4. **`CUE_PIN` and the optocoupler polarity are unverified against the real flange.** `D2` and the
    opto pinout in [The cue trigger](#the-cue-trigger--wiring) are assumptions. Confirm them against
    your optocoupler board and your media-flange variant's datasheet, and bench-test with a jumper
    first. Polarity itself is recoverable over Wi-Fi (`/config?active_low=0`); the pin choice is not.
-4. **Settings persistence depends on `microcontroller.nvm` being present in the build.** If it is
+5. **Settings persistence depends on `microcontroller.nvm` being present in the build.** If it is
    absent, `/config?save=1` says so and settings revert to `DEFAULTS` on reset.
-5. **No code upload over Wi-Fi.** Deliberate — see
+6. **No code upload over Wi-Fi.** Deliberate — see
    [Changing the firmware without USB](#changing-the-firmware-without-usb).
-6. **No authentication or TLS on the HTTP path.** Acceptable only because the AP is isolated and
+7. **No authentication or TLS on the HTTP path.** Acceptable only because the AP is isolated and
    WPA2-protected. Anyone on that AP can change the cue and read `code.py` (but not
    `settings.toml`). Do not put this board on a shared network as-is.
-7. **`debug=True` on the HTTP server** prints every request to the serial console. Harmless, but
+8. **`debug=True` on the HTTP server** prints every request to the serial console. Harmless, but
    noisy when you are watching for cue diagnostics.
 
 ---

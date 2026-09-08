@@ -11,6 +11,7 @@ from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
@@ -36,6 +37,7 @@ class MazeOrchestratorNode(rclpyNode):
     def __init__(self) -> None:
         super().__init__("maze_orchestrator", automatically_declare_parameters_from_overrides=True)
         AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
+        VisualCue.warmup(self)  # open the cabinet cue socket so the first cue isn't delayed
 
         self.trial_count = 0
         self._trial_ending = False
@@ -70,7 +72,11 @@ class MazeOrchestratorNode(rclpyNode):
         self.quiet_window = WaitAction(
             self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
+        # Audio and visual cues fire together at each site. The visual cue sends TIMING only --
+        # what the ring shows is configured on the board itself. It is a no-op when
+        # `visual_cue.enabled` is false, so the experiment runs unchanged before the ring is wired.
         self.go_cue = AudioCue(self, param_prefix="audio_cue_play", on_complete=self.on_go_complete)
+        self.go_cue_visual = VisualCue(self, label="play", on_complete=lambda: None)
         self.maze_fixtures = MoveInMazeAction(self, param_prefix="")
         self.checkpoint_monitor = CheckpointMonitor(
             self, param_prefix="checkpoint_monitor",
@@ -80,6 +86,9 @@ class MazeOrchestratorNode(rclpyNode):
         self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self.goal_cue = AudioCue(self, param_prefix="audio_cue_goal", on_complete=lambda: None)
         self.timeout_cue = AudioCue(self, param_prefix="audio_cue_timeout", on_complete=lambda: None)
+        self.reward_cue_visual = VisualCue(self, label="reward", on_complete=lambda: None)
+        self.goal_cue_visual = VisualCue(self, label="goal", on_complete=lambda: None)
+        self.timeout_cue_visual = VisualCue(self, label="timeout", on_complete=lambda: None)
         self.timeout = WaitAction(
             self, duration_sec=float(get_required_param(self, "timeout_sec")),
             on_complete=self.on_timeout, name="experiment_timeout",
@@ -152,6 +161,7 @@ class MazeOrchestratorNode(rclpyNode):
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding go cue.")
         self.go_cue.start()
+        self.go_cue_visual.start()
 
     def on_go_complete(self):
         self.get_logger().info("Go! Maze fixtures + checkpoint monitor active; timeout + safety armed.")
@@ -163,6 +173,7 @@ class MazeOrchestratorNode(rclpyNode):
     def on_checkpoint_reward(self, index):
         self.get_logger().info(f"Reward at checkpoint {index}.")
         self.reward_cue.start()
+        self.reward_cue_visual.start()
 
     def on_goal_reached(self):
         self._end_trial("goal")
@@ -192,9 +203,11 @@ class MazeOrchestratorNode(rclpyNode):
         if reason == "goal":
             self.get_logger().info("Maze solved! Playing goal cue; waiting for release before reset.")
             self.goal_cue.start()
+            self.goal_cue_visual.start()
         else:
             self.get_logger().info("Timeout reached. Playing timeout cue; waiting for release before reset.")
             self.timeout_cue.start()
+            self.timeout_cue_visual.start()
         # Return to start only once the operator lets go (external force ~ 0).
         self.force_release.start()
 
