@@ -141,6 +141,9 @@ _NVM_FMT = "<BB" "BBBB" "BBBB" "HHB"
 # after a save will not be bit-identical to what you sent.
 _NVM_LEN = struct.calcsize(_NVM_FMT) + 1        # +1 checksum
 
+nvm_writes = 0                  # actual flash writes this power-up; reported by /status so a
+                                # script that saves too eagerly is visible rather than silent
+
 try:
     import microcontroller
     _nvm = microcontroller.nvm
@@ -166,9 +169,26 @@ def _nvm_pack():
 
 
 def nvm_save():
+    """Persist the settings. Returns False only if this build has no NVM.
+
+    A write to microcontroller.nvm is an erase+program of a flash row, and the SAMD51's flash is
+    rated for a finite number of those (~25k cycles; check your datasheet). Two things keep that
+    a non-issue:
+
+      * saving is NEVER automatic -- this is called only from /config?save=1;
+      * an identical save costs nothing. Re-saving the same settings, or a script that calls
+        save=1 in a loop, compares equal here and returns without touching flash.
+
+    So the cycle count only advances when the stored settings actually change.
+    """
+    global nvm_writes
     if _nvm is None:
         return False
-    _nvm[0:_NVM_LEN] = _nvm_pack()
+    blob = _nvm_pack()
+    if bytes(_nvm[0:_NVM_LEN]) == blob:
+        return True                     # already stored -- no erase, no wear
+    _nvm[0:_NVM_LEN] = blob
+    nvm_writes += 1
     return True
 
 
@@ -198,9 +218,13 @@ def nvm_load():
 
 
 def nvm_clear():
+    global nvm_writes
     if _nvm is None:
         return False
+    if _nvm[0] == 0:
+        return True                     # already invalid -- do not wear flash to re-zero it
     _nvm[0:1] = b"\x00"                 # wiping the magic byte invalidates the record
+    nvm_writes += 1
     return True
 
 
@@ -545,12 +569,12 @@ def set_off(request: Request):
 def status(request: Request):
     return Response(request, cfg_text() + (
         "# state\nleds={}\npatterns={}\nip={}\n"
-        "cue_active={}\nwire_fired={}\n"
+        "cue_active={}\nwire_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
         "nvm_restored_at_boot={}\nuptime_s={:.1f}\n"
     ).format(
         PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
-        cue_active(), fired,
+        cue_active(), fired, nvm_writes,
         cue_in.value, trigger_asserted(), _trig_state,
         _nvm_loaded, time.monotonic_ns() / 1e9,
     ))

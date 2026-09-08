@@ -343,7 +343,35 @@ pretending. Check with:
 import microcontroller; print(microcontroller.nvm)      # None = not in this build
 ```
 
-Saving writes to flash, so it happens **only** on an explicit `save=1`, never automatically.
+#### Is repeated saving bad for the board?
+
+`microcontroller.nvm` is a reserved region of the SAMD51's internal flash, and a write is an
+erase-and-program of a flash row. That has a finite endurance — **~25,000 cycles** per the SAMD51
+datasheet (confirm for your exact part). Three things keep it a non-issue:
+
+- **Saving is never automatic.** `nvm_save()` has exactly one caller: `/config?save=1`. There is
+  no timer, no save-on-change, no save-on-shutdown. Tuning over `/config` is free; only the
+  explicit save writes.
+- **An identical save costs nothing.** The firmware packs the record, compares it to what is
+  already stored, and returns without touching flash if they match. Re-saving the same settings,
+  or a script that loops on `save=1`, does **zero** writes. `reset=1` on an already-cleared record
+  is likewise free.
+- **The counter is visible.** `/status` reports `nvm_writes` — actual flash writes since power-up.
+  If a script is saving more than you expect, it shows up there instead of quietly eating cycles.
+
+So the cycle count advances only when the stored settings genuinely change. At a handful of real
+changes per commissioning session, 25,000 cycles is thousands of sessions — not a limit you will
+reach by hand.
+
+**If it ever did wear out**, the failure is benign: the row stops holding the value, the checksum
+fails at boot, and the board falls back to the defaults in `code.py`. Settings stop persisting;
+nothing bricks, and the trigger keeps working. NVM is a separate region from the CIRCUITPY
+filesystem, so wear there cannot touch `code.py`.
+
+**Power loss mid-write** is the other risk worth naming — the arm's 24 V can vanish at any moment.
+A half-written record fails its checksum on the next boot and is rejected wholesale, so the board
+comes up on defaults rather than on a corrupted config. Save while the arm is idle, not mid-trial.
+
 `/config?reset=1` restores the defaults and invalidates the record.
 
 > **Values are quantised by the save.** `brightness` is stored as one byte (~0.4% steps) and

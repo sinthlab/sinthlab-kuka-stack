@@ -356,6 +356,40 @@ def test_persistence():
     check("reset clears NVM too", load().cfg["r"] == 0)
 
 
+def test_flash_wear():
+    section("Flash wear — a write only happens when something actually changed")
+    NVM.nvm[:] = bytearray(256)
+    fw = load()
+    check("no writes at boot", fw.nvm_writes == 0)
+
+    call(fw, "/config", r=42, save=1)
+    check("first save writes once", fw.nvm_writes == 1)
+
+    for _ in range(50):
+        call(fw, "/config", save=1)
+    check("50 identical saves cost ZERO further writes", fw.nvm_writes == 1,
+          f"{fw.nvm_writes} writes")
+
+    call(fw, "/config", r=43, save=1)
+    check("a real change writes again", fw.nvm_writes == 2)
+
+    call(fw, "/config", r=99)                   # changed, but not saved
+    check("changing without save=1 does not write", fw.nvm_writes == 2)
+
+    call(fw, "/config", reset=1)
+    check("reset invalidates the record (one write)", fw.nvm_writes == 3)
+    for _ in range(10):
+        call(fw, "/config", reset=1)
+    check("repeated resets cost nothing more", fw.nvm_writes == 3, f"{fw.nvm_writes} writes")
+
+    check("/status reports the write count", "nvm_writes=" in call(fw, "/status"))
+
+    # The saved value must still be correct after all that skipping.
+    call(fw, "/config", r=7, g=8, b=9, w=10, save=1)
+    check("the record is still accurate after skipped saves",
+          (load().cfg["r"], load().cfg["g"]) == (7, 8))
+
+
 def test_wire_survives_wifi_failure():
     section("Wi-Fi down — the trigger must still work")
     NVM.nvm[:] = bytearray(256)
@@ -528,6 +562,7 @@ def main():
         test_brightness_is_uncapped_but_clamped,
         test_settings_compose,
         test_persistence,
+        test_flash_wear,
         test_wire_survives_wifi_failure,
         test_trigger_details,
         test_patterns,
