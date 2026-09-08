@@ -957,18 +957,25 @@ with [`check_visual_cue.py`](sinthlab_bringup/diagnostics/check_visual_cue.py).
 
 #### Changing what the cue looks like
 
-**Not from ROS, and not in this repo's YAML.** Colour, intensity, pattern, segments, duration and
+**Not from ROS, and not in this repo's YAML.** Colour, brightness, pattern, segments, duration and
 rate live **on the board** and are set over the board's **own Wi‑Fi access point**:
 
 1. Join **`KUKA_NEOPIXEL`** from a laptop or phone (the board hosts it; it never joins another
    network). The board is always at **`192.168.4.1`**.
 2. Call `/config` with any subset of settings — unsent fields are unchanged:
    ```bash
-   curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&pattern=segment&segments=6&duration=1.2"
-   curl  http://192.168.4.1/cue          # try it, no robot needed
+   curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6&duration=1.2"
+   curl  http://192.168.4.1/cue              # try it, no robot needed
    curl "http://192.168.4.1/config?save=1"   # keep it across reboots
-   curl  http://192.168.4.1/status       # read everything back, incl. the live trigger pin
+   curl  http://192.168.4.1/status           # read everything back, incl. the live trigger pin
    ```
+3. **`brightness` (0.0–1.0) is not capped in firmware.** At 1.0 the 60‑LED ring can draw up to
+   **~4.8 A at 5 V**; the default `0.2` is a conservative starting point, not a measured limit for
+   your build. Before raising it, check the converter rating, the 5 V wiring gauge, that 5 V is
+   injected at all four quarter‑ring joints, and the temperature inside the casing — the effector
+   is handled by an animal. The
+   [power section](end_effector_metro_code/README.md#power--read-before-raising-brightness) has
+   the per‑colour current table.
 
 The split is deliberate: the trigger line is **one bit** and cannot carry a colour, and an
 experiment cue must not depend on a radio link. So the cabinet says *when*, and the board — already
@@ -1012,6 +1019,15 @@ relaunch:
 rm -rf build/ install/ log/
 colcon build --symlink-install
 source install/setup.bash
+```
+
+Two offline checks run without hardware and are worth using before a deploy:
+```bash
+# maze geometry: rails, connectivity, reachability, CLIK nullspace, duplicate YAML keys
+ros2 run sinthlab_bringup check_maze.py
+
+# cue ring firmware: the real code.py against stubbed CircuitPython, on a virtual clock
+python3 sinthlab-kuka-stack/end_effector_metro_code/test_code.py
 ```
 
 ---

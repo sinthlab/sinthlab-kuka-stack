@@ -1,9 +1,9 @@
 # End-Effector Board Firmware — NeoPixel Cue Ring (Metro M4 AirLift)
 
 > # ⛔ DO NOT COPY THIS FILE TO THE BOARD
-> **`README.md` is repository documentation only — it must never be written to the `CIRCUITPY`
-> drive.** When flashing or refreshing a board, copy **only** `code.py`, `settings.toml` and
-> `lib/` — that is the complete payload. See [Deployment](#deployment).
+> **`README.md` and `test_code.py` are repository files only — they must never be written to the
+> `CIRCUITPY` drive.** When flashing or refreshing a board, copy **only** `code.py`,
+> `settings.toml` and `lib/` — that is the complete payload. See [Deployment](#deployment).
 
 CircuitPython firmware for the **Adafruit Metro M4 Express AirLift Lite** that lives in the base hub
 of the [apple-pluck end effector](../end_effector_design/README.md). It drives the **60-LED RGBW
@@ -20,12 +20,12 @@ runs its configured cue for its configured duration, then stops. That is the ent
 access point from a laptop or phone and call `/config`:
 
 ```bash
-curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&pattern=segment&segments=6&duration=1.2&save=1"
+curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6&duration=1.2&save=1"
 ```
 
 | | **Trigger** — the wire | **Settings** — the API |
 |---|---|---|
-| Carries | one edge: "now" | colour, intensity, pattern, segments, duration, rate |
+| Carries | one edge: "now" | colour, brightness, pattern, segments, duration, rate |
 | Path | Sunrise → 24 V flange line → optocoupler → `D2` | your laptop → the board's own access point |
 | When | every trial | once, at commissioning |
 | Needs a network | **no** | yes, but only yours — not the robot's |
@@ -56,9 +56,11 @@ the settings saved in NVM — it cannot stop the ring cueing.
 - [The cue trigger — wiring](#the-cue-trigger--wiring)
 - [Architecture](#architecture)
 - [Settings](#settings)
+- [Power — read before raising brightness](#power--read-before-raising-brightness)
 - [Files on the board](#files-on-the-board)
 - [HTTP API](#http-api)
 - [Deployment](#deployment)
+- [Testing](#testing)
 - [`settings.toml` — Wi-Fi credentials](#settingstoml--wi-fi-credentials)
 - [Changing the firmware without USB](#changing-the-firmware-without-usb)
 - [Driving the trigger from ROS 2](#driving-the-trigger-from-ros-2)
@@ -103,11 +105,10 @@ the settings saved in NVM — it cannot stop the ring cueing.
              └─────────────────────────────────┘
 ```
 
-> **Current.** The ring can pull **~3.5 A at 5 V** at full white; brightness scales that roughly
-> linearly. The default is `0.2` (**≈0.7 A**), and the firmware enforces a hard ceiling of
-> `MAX_BRIGHTNESS = 0.35` (**≈1.2 A**) that **no HTTP request can exceed** — raising it is a
-> deliberate code edit, to be made only after re-checking the converter rating and the 5 V wiring.
-> Never try to feed the ring from the Metro's own 5 V pin.
+> **⚡ Current is not capped in firmware — see [Power](#power--read-before-raising-brightness).**
+> `brightness` is settable to 1.0, and at 1.0 the ring can draw up to **~4.8 A at 5 V**. The
+> default of `0.2` is a conservative starting point, not a measured limit for your build. Never
+> feed the ring from the Metro's own 5 V pin.
 
 ---
 
@@ -254,7 +255,7 @@ double-pulse cannot restart the cue.
 ```bash
 curl http://192.168.4.1/config                                  # read everything
 curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0"              # colour
-curl "http://192.168.4.1/config?intensity=0.4&duration=1.2"     # dimmer, shorter
+curl "http://192.168.4.1/config?brightness=0.3&duration=1.2"    # brighter, shorter
 curl "http://192.168.4.1/config?pattern=segment&segments=6"      # look
 curl "http://192.168.4.1/config?save=1"                          # keep across reboots
 curl http://192.168.4.1/cue                                      # try it without the wire
@@ -265,7 +266,6 @@ curl http://192.168.4.1/cue                                      # try it withou
 | Field | Values | What it does |
 |---|---|---|
 | `r` `g` `b` `w` | 0–255 | colour (`w` is the dedicated white channel — cleaner than `r=g=b`) |
-| `intensity` | 0.0–1.0 | this cue's brightness, scaled inside the board-wide cap |
 | `pattern` | `flash` `solid` `breathe` `chase` `segment` | the cue modality |
 | `segments` | 1–30 | lit blocks, for the `segment` pattern |
 | **`duration`** | 0.05–300 s | **the timer** — how long the ring stays on after a trigger |
@@ -283,25 +283,46 @@ curl http://192.168.4.1/cue                                      # try it withou
 
 | Field | Values | What it does |
 |---|---|---|
-| `brightness` | 0 – `MAX_BRIGHTNESS` (0.35) | board-wide current cap that every cue scales within |
+| `brightness` | 0.0–1.0 | scales the whole ring. **Not capped — [read this](#power--read-before-raising-brightness).** |
 | `mode` | `pulse` `follow` | who owns the cue's length — `duration`, or the wire |
 | `active_low` | 0 / 1 | trigger polarity — **flip this to match your optocoupler without opening the box** |
 | `debounce_ms` | 1–200 | how long the input must hold a level |
 | `retrigger` | 0 / 1 | may a new edge restart an in-flight cue |
 | `enabled` | 0 / 1 | arm/disarm the wire entirely |
 
-### `intensity` vs `brightness` — two different things
+### Power — read before raising `brightness`
 
-`intensity` is **per cue** and is folded into the colour. `brightness` is **board-wide** and is the
-current limiter. They multiply:
+**`brightness` is the only scale, and it is deliberately not capped in firmware.** It multiplies
+the ring's current draw very nearly linearly, and keeping that inside what the hardware can deliver
+is the operator's call, not something the firmware should quietly decide for you.
 
-```
-what the LEDs draw  ≈  colour × intensity × brightness      (brightness ≤ 0.35, enforced)
-```
+At `brightness = 1.0`, 60 SK6812 RGBW LEDs draw roughly:
 
-So dim a cue with `intensity=0.3` and leave the current ceiling where the wiring can carry it. No
-HTTP request can raise `MAX_BRIGHTNESS` — that is a deliberate code edit, made only after
-re-checking the converter rating and the 5 V wiring.
+| Colour | Per LED | 60 LEDs |
+|---|---|---|
+| `w=255` only | ~20 mA | **~1.2 A** ← the white channel is the cheap one |
+| `r=g=b=255, w=0` | ~60 mA | **~3.6 A** |
+| `r=g=b=w=255` | ~80 mA | **~4.8 A** ← absolute worst case |
+
+Multiply by `brightness` for the actual draw. The default cue (`w=255`, `brightness=0.2`) is about
+**0.24 A**.
+
+Before raising it, check **all** of:
+
+- **The Tobsun 24 V→5 V converter's rating**, and its derating when warm. This is the usual limit.
+- **The 5 V wiring gauge** down the flange bore. Several amps through thin wire means voltage drop,
+  heat, and visible colour shift at the far end of the ring.
+- **That 5 V is injected at all four quarter-ring joints.** Feeding 60 LEDs through one arc's
+  traces browns out the far end and overheats the near end — the ring is bought as 4 arcs for
+  exactly this reason.
+- **Temperature inside the closed casing box.** The effector is handled by an animal, so surface
+  temperature is a subject-safety limit, not just an electronics one.
+- **How bright the cue actually needs to be.** A cue is a *signal*, not illumination, and the ring
+  sits centimetres from the subject's face. The lowest brightness that reads reliably is the right
+  one — for the subject as much as for the wiring.
+
+**Never feed the ring from the Metro's own 5 V pin**: that comes off the board regulator and cannot
+source anything close to these currents.
 
 ### Persistence — NVM, not a file
 
@@ -325,9 +346,9 @@ import microcontroller; print(microcontroller.nvm)      # None = not in this bui
 Saving writes to flash, so it happens **only** on an explicit `save=1`, never automatically.
 `/config?reset=1` restores the defaults and invalidates the record.
 
-> **Values are quantised by the save.** `intensity` and `brightness` are stored as one byte
-> (~0.4% steps) and `duration`/`period` as centiseconds. Read back after a save, a value will be
-> close but not bit-identical — `brightness=0.3` returns `0.298`.
+> **Values are quantised by the save.** `brightness` is stored as one byte (~0.4% steps) and
+> `duration`/`period` as centiseconds. Read back after a save, `brightness=0.9` returns `0.898`.
+> Colour components are bytes already, so those round-trip exactly.
 
 ## Files on the board
 
@@ -340,6 +361,7 @@ bundle, and `README.md` never leaves the repo.
 | **`settings.toml`** | **ours** | **yes** | AP SSID + password. See [below](#settingstoml--wi-fi-credentials). |
 | **`lib/`** | Adafruit bundle | **yes** | `.mpy` libraries, below. |
 | `README.md` | **ours** | **no** | This document. Repository documentation only. |
+| **`test_code.py`** | **ours** | **no** | Offline test suite — see [Testing](#testing). Never copy it to the drive. |
 
 The board's own drive also carries `boot_out.txt` (written *by* CircuitPython at boot — firmware
 version, board ID, UID) and the zero-byte macOS indexing suppressors `.fseventsd/no_log`,
@@ -381,7 +403,7 @@ copies to prune.
 | **`/cue`** | — | Run the configured cue **now**, without the wire. |
 | **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire count and uptime. First stop when debugging. |
 | `/off` | — | Clear the ring and cancel a running cue. |
-| `/set_color` | `r` `g` `b` `w`, `intensity` | Hold a solid colour (not a cue — it does not time out). |
+| `/set_color` | `r` `g` `b` `w` | Hold a solid colour (not a cue — it does not time out). |
 | `/segments` | `factor`, `colors` | Static arcs. For a *timed* segmented cue use `pattern=segment`. |
 | `/fs` | — | List what is on the board, with sizes. |
 | `/fs/get` | `path` | Read a text file back (`code.py`, `*.txt`, `*.json`). **Read-only** — see [below](#changing-the-firmware-without-usb). |
@@ -399,10 +421,10 @@ curl http://192.168.4.1/status
 
 ```bash
 # dim green, six segments, 0.8 s
-curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.4&pattern=segment&segments=6&duration=0.8"
+curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6&duration=0.8"
 
 # change ONE field; everything else carries over
-curl "http://192.168.4.1/config?intensity=0.9"
+curl "http://192.168.4.1/config?brightness=0.35"
 curl "http://192.168.4.1/config?pattern=breathe&period=1.2"
 curl "http://192.168.4.1/config?duration=2.5"
 
@@ -415,7 +437,7 @@ curl "http://192.168.4.1/config?save=1"
 
 ```bash
 curl "http://192.168.4.1/config?mode=follow"        # let the wire own cue length
-curl "http://192.168.4.1/config?brightness=0.25"    # the current cap all cues scale within
+curl "http://192.168.4.1/config?brightness=0.25"    # READ THE POWER SECTION FIRST
 curl "http://192.168.4.1/config?active_low=0"       # opto turned out inverted
 curl "http://192.168.4.1/config?enabled=0"          # disarm the wire while you work on it
 curl "http://192.168.4.1/config?reset=1"            # back to the defaults in code.py
@@ -424,7 +446,7 @@ curl "http://192.168.4.1/config?reset=1"            # back to the defaults in co
 **Manual control and read-back:**
 
 ```bash
-curl "http://192.168.4.1/set_color?w=255&intensity=0.5"
+curl "http://192.168.4.1/set_color?w=255"
 curl http://192.168.4.1/off
 curl http://192.168.4.1/fs                          # what is on the drive
 curl "http://192.168.4.1/fs/get?path=code.py"       # confirm what is actually running
@@ -477,7 +499,8 @@ A board straight from Adafruit already has a populated `lib/`; this copy adds ou
 those files rather than replacing them. Delete the factory-demo libraries off the drive
 (`simpleio`, `adafruit_dotstar`, `adafruit_hid/`, `adafruit_waveform/`) to match this folder.
 
-**Never copy `README.md` to the drive**, and never copy the board's `boot_out.txt` back over itself —
+**Never copy `README.md` or `test_code.py` to the drive**, and never copy the board's
+`boot_out.txt` back over itself —
 it is the board's own record of the installed firmware. Leave the board's `.fseventsd/`,
 `.metadata_never_index` and `.Trashes` in place.
 
@@ -497,6 +520,43 @@ screen /dev/ttyACM0 115200      # native Linux
 ```
 
 `Ctrl-C` in the REPL stops `code.py`; `Ctrl-D` reloads it.
+
+---
+
+## Testing
+
+[`test_code.py`](test_code.py) runs the **real firmware** on a desktop — no board, no
+dependencies, nothing to install:
+
+```bash
+python3 end_effector_metro_code/test_code.py     # exits non-zero on failure
+```
+
+It stubs CircuitPython's modules in-process (`board`, `neopixel`, `digitalio`, the ESP32 driver,
+the HTTP server, `microcontroller.nvm`) and replaces `time.monotonic_ns` with a virtual clock, so
+a 2.5 s cue costs no real time and the suite cannot flake on a slow machine. `code.py` is then
+executed up to — but not including — its `while True:` loop, which leaves every function and route
+handler callable directly.
+
+**86 checks**, covering the things that are painful to discover on hardware:
+
+| | |
+|---|---|
+| The trigger | on at the edge, off when the timer expires, stays on after the line drops, several durations |
+| Polarity & debounce | `active_low` flip does not fire a spurious cue, sub-debounce pulses are ignored, `retrigger`, `follow`, `enabled=0` |
+| Settings | fields compose, bad input keeps the old value, brightness clamps to 0–1, colour is unrounded |
+| Persistence | full round trip through NVM, and a **corrupt record is rejected wholesale** rather than half-loaded |
+| Degradation | **Wi-Fi down → the wire still fires the cue** |
+| Patterns | each renders distinctly, and **every one is lit at phase 0** so a cue has a crisp onset |
+| Cue hygiene | a cue restores what the ring was showing; a manual command cancels it and wins |
+| File access | read-only, refuses `settings.toml`, refuses traversal, no write route |
+| Regressions | settings and endpoints removed in earlier redesigns stay removed |
+
+**What it does not cover:** anything physical — the optocoupler, the real ESP32, LED timing,
+current draw. It checks logic, not electrons. Still bench-test with a jumper on `D2`
+([above](#bench-testing-without-the-robot)) before trusting a build on the arm.
+
+Run it after any edit to `code.py`, before copying to the board.
 
 ---
 

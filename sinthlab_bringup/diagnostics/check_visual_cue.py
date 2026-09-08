@@ -7,7 +7,7 @@ The cue reaches the ring in two steps, set up in two different places:
               This is what the experiment uses, and what this tool checks.
 
     APPEARANCE  set on the board itself over its own Wi-Fi access point, from a laptop or phone:
-                    curl "http://192.168.4.1/config?r=0&g=255&b=0&intensity=0.5&save=1"
+                    curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.2&save=1"
                 The ROS box is on the KUKA network and cannot reach the board, so this tool
                 cannot check or change it — see end_effector_metro_code/README.md.
 

@@ -9,10 +9,10 @@ configured duration. That is deliberate — the trigger line is one bit and cann
 and an experiment cue must not depend on a radio link.
 
 WHAT THE CUE LOOKS LIKE IS NOT SET FROM HERE.
-    Colour, intensity, pattern, segments, duration and rate live on the board and are set over
+    Colour, brightness, pattern, segments, duration and rate live on the board and are set over
     its own Wi-Fi access point with a laptop or phone:
 
-        curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&duration=1.2&save=1"
+        curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.2&save=1"
 
     See end_effector_metro_code/README.md. The board hosts that access point itself; the ROS box
     is on the KUKA network and cannot reach it, which is exactly why the cue's appearance is a

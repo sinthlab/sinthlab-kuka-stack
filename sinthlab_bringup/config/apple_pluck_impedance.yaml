@@ -69,10 +69,10 @@
     # This block carries TIMING ONLY: a trigger travels ROS -> cabinet cue server -> 24 V
     # media-flange line -> optocoupler -> the board, which then runs its cue and stops.
     #
-    # WHAT THE CUE LOOKS LIKE IS NOT SET HERE. Colour, intensity, pattern, segments, duration and
+    # WHAT THE CUE LOOKS LIKE IS NOT SET HERE. Colour, brightness, pattern, segments, duration and
     # rate live on the board and are set over its own Wi-Fi access point (join KUKA_NEOPIXEL from
     # a laptop or phone):
-    #     curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&duration=1.2&save=1"
+    #     curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.2&save=1"
     # The trigger line is one bit and cannot carry a colour, and an experiment cue must not
     # depend on a radio link -- so appearance is a commissioning step, not a per-trial message.
     visual_cue:

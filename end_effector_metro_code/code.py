@@ -11,7 +11,7 @@
 #                      No network is involved, so the trigger keeps working with Wi-Fi down.
 #
 # SETTINGS (the API).  The board hosts its OWN Wi-Fi access point. Join it from a laptop or phone
-#                      and set what the cue looks like -- colour, intensity, pattern, segments,
+#                      and set what the cue looks like -- colour, brightness, pattern, segments,
 #                      duration, rate -- with /config. `save=1` keeps it across reboots.
 #
 # The two are deliberately separate: the wire cannot carry a colour (it is one bit), and the
@@ -41,12 +41,34 @@ LED_PIN = board.D5              # -> Pixel Shifter (3.3 V -> 5 V) -> ring DIN
 CUE_PIN = board.D2              # <- optocoupler output (isolated from the 24 V side)
 
 # ---------------------------------------------------------------------------
-# Safety limit -- deliberately NOT settable over HTTP
+# !!! POWER --- READ BEFORE RAISING `brightness` !!!
 # ---------------------------------------------------------------------------
-# The ring pulls ~3.5 A at 5 V full white. Brightness scales that roughly linearly, so this
-# ceiling is what stops a stray request asking the converter and the 5 V wiring for more than
-# they are sized to deliver. Every cue's `intensity` multiplies WITHIN this cap, never past it.
-MAX_BRIGHTNESS = 0.35           # ~1.2 A worst case
+# `brightness` (0.0-1.0, set over /config) scales the ring's current draw very nearly linearly.
+# It is NOT capped in firmware: you are responsible for keeping it inside what the hardware can
+# actually deliver. At brightness = 1.0, 60 SK6812 RGBW LEDs draw roughly:
+#
+#     w=255 only            60 x ~20 mA  ~= 1.2 A     <- the white channel is the cheap one
+#     r=g=b=255, w=0        60 x ~60 mA  ~= 3.6 A
+#     r=g=b=w=255           60 x ~80 mA  ~= 4.8 A     <- absolute worst case
+#
+# Multiply by `brightness` for the actual draw. Before raising it, check ALL of:
+#
+#   * the Tobsun 24 V->5 V converter's current rating (and its derating when warm);
+#   * the 5 V wiring gauge down the flange bore -- several amps through thin wire means
+#     voltage drop, heat, and colour shift at the far end of the ring;
+#   * that 5 V is injected at ALL FOUR quarter-ring joints. Feeding 60 LEDs through one arc's
+#     traces browns out the far end and overheats the near end;
+#   * the temperature inside the closed casing box. The effector is handled by an animal, so
+#     surface temperature is a subject-safety limit, not just an electronics one;
+#   * how bright a cue actually needs to be. A cue is a signal, not illumination -- the ring is
+#     centimetres from the subject's face, so the lowest brightness that reads reliably is the
+#     right one.
+#
+# NEVER feed the ring from the Metro's own 5 V pin: it comes off the board regulator and cannot
+# source anything like these currents.
+#
+# The default of 0.2 is a deliberately conservative starting point (~0.24 A on the default
+# white-channel cue), not a measured limit for your build.
 
 FRAME_MS = 33                   # ~30 fps for the continuous patterns
 CHASE_LEN = max(1, PHYSICAL_LEDS // 8)
@@ -62,14 +84,14 @@ OFF = (0, 0, 0, 0)
 DEFAULTS = {
     # --- what the cue looks like ---
     "r": 0, "g": 0, "b": 0, "w": 255,   # colour; w is the dedicated white channel
-    "intensity": 1.0,                   # 0..1 scale on the cue, inside the brightness cap below
     "pattern": "flash",                 # flash | solid | breathe | chase | segment
     "segments": 4,                      # lit blocks, for the "segment" pattern
     "duration": 2.0,                    # seconds the cue runs after a trigger
     "period": 0.5,                      # seconds per full cycle -> 2 Hz
 
     # --- how the board behaves ---
-    "brightness": 0.2,                  # board-wide current cap; the cue scales within it
+    "brightness": 0.2,                  # 0..1 -- scales the whole ring. READ THE POWER NOTE
+                                        # ABOVE before raising this.
     "mode": "pulse",                    # pulse : the trigger starts a cue of `duration`
                                         # follow: the cue runs while the line is held
     "active_low": True,                 # opto sinks the pin when the 24 V line is asserted;
@@ -110,13 +132,13 @@ for _ in range(2):
 # storage.remount() in boot.py, which makes CIRCUITPY read-only to the host computer -- see
 # README. NVM has neither that cost nor that risk. Not every build exposes it, so every access
 # is guarded: without NVM the board still works, settings just revert to defaults on reset.
-_NVM_MAGIC = 0xC8
-_NVM_VER = 4
-_NVM_FMT = "<BB" "BBBB" "BBBB" "HHBB"
-# magic, ver | r, g, b, w | intensity, brightness, flags, debounce | dur_cs, per_cs, pattern, segs
-# Note the quantisation of the round trip: intensity and brightness are one byte (~0.4% steps),
-# duration and period are centiseconds (10 ms steps). Both are far finer than anything that
-# matters here, but a value read back after a save will not be bit-identical to what you sent.
+_NVM_MAGIC = 0xC9
+_NVM_VER = 5
+_NVM_FMT = "<BB" "BBBB" "BBBB" "HHB"
+# magic, ver | r, g, b, w | brightness, flags, debounce, segments | dur_cs, per_cs, pattern
+# The round trip quantises: brightness is one byte (~0.4% steps) and duration/period are
+# centiseconds (10 ms steps). Far finer than anything that matters here, but a value read back
+# after a save will not be bit-identical to what you sent.
 _NVM_LEN = struct.calcsize(_NVM_FMT) + 1        # +1 checksum
 
 try:
@@ -136,9 +158,9 @@ def _nvm_pack():
     blob = struct.pack(
         _NVM_FMT, _NVM_MAGIC, _NVM_VER,
         cfg["r"], cfg["g"], cfg["b"], cfg["w"],
-        int(cfg["intensity"] * 255), int(cfg["brightness"] * 255), flags, cfg["debounce_ms"],
+        int(cfg["brightness"] * 255), flags, cfg["debounce_ms"], cfg["segments"],
         min(int(cfg["duration"] * 100), 65535), min(int(cfg["period"] * 100), 65535),
-        PATTERNS.index(cfg["pattern"]), cfg["segments"],
+        PATTERNS.index(cfg["pattern"]),
     )
     return blob + bytes([sum(blob) & 0xFF])
 
@@ -159,14 +181,13 @@ def nvm_load():
         return False
     if (sum(blob[:-1]) & 0xFF) != blob[-1]:
         return False
-    (_, _, r, g, b, w, inten, bright, flags, deb,
-     dur, per, pat, seg) = struct.unpack(_NVM_FMT, blob[:-1])
+    (_, _, r, g, b, w, bright, flags, deb, seg,
+     dur, per, pat) = struct.unpack(_NVM_FMT, blob[:-1])
     if pat >= len(PATTERNS):
         return False                    # reject the WHOLE record rather than load half of it
     cfg.update({
         "r": r, "g": g, "b": b, "w": w,
-        "intensity": inten / 255.0,
-        "brightness": min(bright / 255.0, MAX_BRIGHTNESS),
+        "brightness": min(bright / 255.0, 1.0),
         "pattern": PATTERNS[pat], "segments": max(1, min(seg, PHYSICAL_LEDS // 2)),
         "duration": max(dur / 100.0, 0.05), "period": max(per / 100.0, 0.02),
         "debounce_ms": max(deb, 1),
@@ -195,7 +216,7 @@ pixels.brightness = cfg["brightness"]
 _cue_until_ns = 0                       # 0 = idle; -1 = run until stopped ("follow" mode)
 _cue_start_ns = 0
 _cue_period_ns = 1
-_cue_color = OFF                        # already scaled by the spec's intensity
+_cue_color = OFF
 _cue_pattern = "flash"
 _cue_segments = 4
 _cue_frame_ns = 0
@@ -226,7 +247,11 @@ def _render(phase):
     if _cue_pattern == "solid":
         pixels.fill(_cue_color)
     elif _cue_pattern == "breathe":
-        pixels.fill(_scaled(_cue_color, 0.5 - 0.5 * math.cos(2 * math.pi * phase)))
+        # Starts at FULL and dips, rather than starting dark and fading up. A cue has to be
+        # visible the instant it fires; a rise-first breathe would delay perceived onset by half
+        # a period (0.6 s at the default rate), which is exactly the thing the wire is precise
+        # about. Every pattern is lit at phase 0 for the same reason.
+        pixels.fill(_scaled(_cue_color, 0.5 + 0.5 * math.cos(2 * math.pi * phase)))
     elif _cue_pattern == "chase":
         pixels.fill(OFF)
         head = int(phase * PHYSICAL_LEDS)
@@ -255,10 +280,9 @@ def cue_start(spec, follow=False):
     now = time.monotonic_ns()
     if not cue_active():
         _cue_restore = _snapshot()      # snapshot the pre-cue ring, never a cue frame
-    # Per-cue intensity is folded into the colour rather than into pixels.brightness, so it
-    # cannot escape the board-wide current cap and cannot leak into the next cue.
-    _cue_color = _scaled((spec["r"], spec["g"], spec["b"], spec["w"]),
-                         max(0.0, min(spec["intensity"], 1.0)))
+    # The colour is used exactly as set. Scaling happens once, in pixels.brightness, so the
+    # values you configure are the values that come back from /status -- no rounding surprises.
+    _cue_color = (spec["r"], spec["g"], spec["b"], spec["w"])
     _cue_segments = max(1, min(int(spec["segments"]), PHYSICAL_LEDS // 2))
     _cue_pattern = spec["pattern"] if spec["pattern"] in PATTERNS else "flash"
     _cue_period_ns = max(int(spec["period"] * 1_000_000_000), 20_000_000)    # floor 20 ms
@@ -402,18 +426,17 @@ def _given(request, *names):
     return any(request.query_params.get(n) is not None for n in names)
 
 
-CUE_FIELDS = ("r", "g", "b", "w", "intensity", "pattern", "segments", "duration", "period")
+CUE_FIELDS = ("r", "g", "b", "w", "pattern", "segments", "duration", "period")
 BOARD_FIELDS = ("brightness", "mode", "active_low", "debounce_ms", "retrigger", "enabled")
 
 
 def cfg_text(note=""):
     return ((note + "\n") if note else "") + (
-        "# cue\nr={r}\ng={g}\nb={b}\nw={w}\nintensity={intensity}\n"
+        "# cue\nr={r}\ng={g}\nb={b}\nw={w}\n"
         "pattern={pattern}\nsegments={segments}\nduration={duration}\nperiod={period}\n"
         "# board\nbrightness={brightness}\nmode={mode}\nactive_low={active_low}\n"
         "debounce_ms={debounce_ms}\nretrigger={retrigger}\nenabled={enabled}\n"
-    ).format(**cfg) + "max_brightness={}\nnvm={}\n".format(
-        MAX_BRIGHTNESS, "available" if _nvm else "unavailable")
+    ).format(**cfg) + "nvm={}\n".format("available" if _nvm else "unavailable")
 
 
 # --- /config : read or change EVERYTHING -------------------------------------
@@ -422,7 +445,7 @@ def cfg_text(note=""):
 # point from a laptop or phone and call it.
 #
 #   http://192.168.4.1/config
-#   http://192.168.4.1/config?r=0&g=255&b=0&w=0&intensity=0.5&pattern=segment&segments=6
+#   http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6
 #   http://192.168.4.1/config?duration=1.2&period=0.3
 #   http://192.168.4.1/config?save=1        keep it across reboots
 #   http://192.168.4.1/config?reset=1       back to the defaults in this file
@@ -441,7 +464,6 @@ def configure(request: Request):
         cfg["g"] = _int(request, "g", cfg["g"])
         cfg["b"] = _int(request, "b", cfg["b"])
         cfg["w"] = _int(request, "w", cfg["w"])
-        cfg["intensity"] = _float(request, "intensity", cfg["intensity"], 0.0, 1.0)
         cfg["pattern"] = _choice(request, "pattern", cfg["pattern"], PATTERNS)
         cfg["segments"] = _int(request, "segments", cfg["segments"], 1, PHYSICAL_LEDS // 2)
         cfg["duration"] = _float(request, "duration", cfg["duration"], 0.05, 300.0)
@@ -449,7 +471,9 @@ def configure(request: Request):
 
     if _given(request, *BOARD_FIELDS):
         was_active_low = cfg["active_low"]
-        cfg["brightness"] = _float(request, "brightness", cfg["brightness"], 0.0, MAX_BRIGHTNESS)
+        # Not capped -- see the POWER note at the top of this file. Raising this is the
+        # operator's decision, and it is the one setting that can damage hardware.
+        cfg["brightness"] = _float(request, "brightness", cfg["brightness"], 0.0, 1.0)
         cfg["mode"] = _choice(request, "mode", cfg["mode"], MODES)
         cfg["debounce_ms"] = _int(request, "debounce_ms", cfg["debounce_ms"], 1, 200)
         cfg["active_low"] = _bool(request, "active_low", cfg["active_low"])
@@ -478,7 +502,7 @@ def set_color(request: Request):
     cue_stop(restore=False)             # a manual command wins over an in-flight cue
     color = (_int(request, "r", 0), _int(request, "g", 0),
              _int(request, "b", 0), _int(request, "w", 0))
-    pixels.fill(_scaled(color, _float(request, "intensity", 1.0, 0.0, 1.0)))
+    pixels.fill(color)
     pixels.show()
     return Response(request, "Set to {}\n".format(color))
 
