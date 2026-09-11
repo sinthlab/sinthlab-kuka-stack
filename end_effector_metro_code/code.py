@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------------------------
 # HOW IT WORKS
 # ---------------------------------------------------------------------------------------------
-# TRIGGER (the wire).  Sunrise asserts a 24 V media-flange output -> optocoupler -> CUE_PIN.
+# TRIGGER (the wire).  Shorting X76 contacts 1-2 at the robot base pulls CUE_PIN to GND.
 #                      The board runs its configured cue for its configured duration, then stops.
 #                      On and off with a timer. That is the whole behaviour.
 #                      No network is involved, so the trigger keeps working with Wi-Fi down.
@@ -15,7 +15,7 @@
 #                      duration, rate -- with /config. `save=1` keeps it across reboots.
 #
 # The two are deliberately separate: the wire cannot carry a colour (it is one bit), and the
-# experiment must never depend on a radio link. So the cabinet says WHEN, and the board -- already
+# experiment must never depend on a radio link. So the switch says WHEN, and the board -- already
 # configured by hand -- decides WHAT.
 #
 # See README.md.
@@ -38,7 +38,7 @@ from adafruit_httpserver import Server, Request, Response
 ORDER = neopixel.GRBW
 PHYSICAL_LEDS = 60
 LED_PIN = board.D5              # -> Pixel Shifter (3.3 V -> 5 V) -> ring DIN
-CUE_PIN = board.D2              # <- optocoupler output (isolated from the 24 V side)
+CUE_PIN = board.D2              # <- tool connector pin 9 (CTR1_1, via X76 contact 1)
 
 # ---------------------------------------------------------------------------
 # !!! POWER --- READ BEFORE RAISING `brightness` !!!
@@ -94,7 +94,7 @@ DEFAULTS = {
                                         # ABOVE before raising this.
     "mode": "pulse",                    # pulse : the trigger starts a cue of `duration`
                                         # follow: the cue runs while the line is held
-    "active_low": True,                 # opto sinks the pin when the 24 V line is asserted;
+    "active_low": True,                 # shorting X76 1-2 pulls the pin to GND;
                                         # the pull-up then makes "idle" = HIGH, so an
                                         # unplugged connector reads as "no cue"
     "debounce_ms": 5,

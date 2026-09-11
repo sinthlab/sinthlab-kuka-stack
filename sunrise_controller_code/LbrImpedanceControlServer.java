@@ -2,24 +2,8 @@ package lbr_fri_ros2;
 
 import static com.kuka.roboticsAPI.motionModel.BasicMotions.positionHold;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
 
 import javax.inject.Inject;
 
@@ -36,7 +20,6 @@ import com.kuka.connectivity.fastRobotInterface.FRIConfiguration;
 import com.kuka.connectivity.fastRobotInterface.FRISession;
 import com.kuka.connectivity.fastRobotInterface.IFRISessionListener;
 import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
-import com.kuka.roboticsAPI.controllerModel.Controller;
 
 /**
  * LbrImpedanceControlServer
@@ -44,11 +27,6 @@ import com.kuka.roboticsAPI.controllerModel.Controller;
  * Hardware-native Cartesian Impedance Control application for the KUKA Sunrise cabinet.
  * This runs pure Cartesian Impedance locally at 1000Hz while listening to joint
  * position targets via FRI from the ROS 2 driver.
- *
- * It ALSO hosts a small TCP "cue server" (see the CUE SERVER section below) that lets a ROS 2
- * orchestrator pulse a media-flange digital output. That line drives the end effector's NeoPixel
- * cue ring through an optocoupler. FRI carries joint commands only and cannot carry an arbitrary
- * application call, which is why the cue rides its own socket rather than the FRI channel.
  */
 public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     // Injectable dependencies
@@ -132,57 +110,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
     private double[] damping_vals_ = { 0.3, 0.7, 1.0 };
-
-    // =======================================================================================
-    // CUE SERVER -- media-flange digital output, driven from ROS 2 over a TCP socket
-    // =======================================================================================
-    // WHY A SOCKET AND NOT FRI: FRI carries joint commands and robot state; it has no channel for
-    // "run a cue now" unless boolean FRI I/O is declared in the Sunrise project AND the ROS side
-    // gains a matching command interface (that part lives in lbr_ros2_control, which we do not
-    // own). A socket keeps the whole feature inside code we control.
-    //
-    // TIMING: the ack below carries a cabinet-side timestamp, so the ROS orchestrator can bracket
-    // the cue between its own send time and the ack. That bounds the ROS->cabinet leg, which is the
-    // ONLY leg where this approach differs from FRI I/O -- everything downstream (cabinet I/O
-    // cycle, optocoupler, the board's debounce, the LED refresh) is common to both and is what
-    // actually dominates. Calibrate that fixed offset once with a scope; do not assume it.
-    //
-    // SAFETY: this whole subsystem is isolated from the motion application. Every socket and I/O
-    // operation is caught, the threads are daemons, and a failure here logs and retries -- it must
-    // never be able to disturb positionHold() or the FRI session.
-    private static final int CUE_PORT = 30300;              // FRI uses 30200; keep these distinct
-    private static final int CUE_DEFAULT_PULSE_MS = 50;     // comfortably clears the board's 5 ms
-                                                            // debounce; the board owns cue LENGTH
-                                                            // in "pulse" mode
-    private static final int CUE_MAX_PULSE_MS = 10000;      // ceiling for "follow" mode, where the
-                                                            // pulse width IS the cue length
-    private static final int CUE_TICK_MS = 1;               // deassert-timer resolution
-
-    // The media-flange I/O group is looked up by REFLECTION, not imported.
-    //
-    // com.kuka.generated.ioAccess.MediaFlangeIOGroup is generated per-project by Sunrise
-    // Workbench from the station's I/O configuration. Importing it directly makes the whole
-    // application fail to compile on any project where the media flange is not configured --
-    // which would let an OPTIONAL cue feature block the motion control that is the point of this
-    // file. Reflection keeps that dependency at runtime: no media flange, no cue, everything else
-    // unaffected.
-    //
-    // It also makes the setter name a string you can change in one place, and lets the app PRINT
-    // the setters your flange actually exposes when the configured one is missing -- see
-    // bindCueOutput(). That turns "which method do I call?" from a guess into a log line.
-    private static final String MEDIA_FLANGE_CLASS = "com.kuka.generated.ioAccess.MediaFlangeIOGroup";
-    private static final String CUE_OUTPUT_SETTER = "setOutputX3Pin1";
-
-    private Object media_flange_;           // the generated IOGroup instance, or null
-    private Method cue_output_setter_;      // its boolean setter, or null
-
-    private volatile boolean cue_running_ = false;
-    private ServerSocket cue_server_socket_;
-    private Thread cue_accept_thread_;
-    private Thread cue_pulse_thread_;
-    // Deassert deadline from System.nanoTime(); 0 means "output is not asserted".
-    private final AtomicLong cue_deassert_ns_ = new AtomicLong(0L);
-    private final AtomicLong cue_seq_ = new AtomicLong(0L);
 
     /**
      * Prompts the user on the SmartPAD to configure the connection.
@@ -292,318 +219,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         getLogger().info("FRI connection established.");
     }
 
-    /**
-     * Binds the media-flange output, if this project has one. Never throws.
-     *
-     * On failure it logs WHY and, when the I/O group exists but the configured setter does not,
-     * lists every setter the group actually has -- so adapting to your flange variant means
-     * reading the cabinet log and changing CUE_OUTPUT_SETTER, not guessing.
-     */
-    private void bindCueOutput() {
-        try {
-            Class<?> group = Class.forName(MEDIA_FLANGE_CLASS);
-            Controller controller = lbr_.getController();
-            Constructor<?> ctor = group.getConstructor(Controller.class);
-            Object instance = ctor.newInstance(controller);
-
-            // Matched by NAME with a single argument, so this works whether the generated setter
-            // takes a primitive boolean or a java.lang.Boolean.
-            Method setter = null;
-            List<String> available = new ArrayList<String>();
-            Method[] methods = group.getMethods();
-            for (int i = 0; i < methods.length; i++) {
-                Method m = methods[i];
-                if (m.getParameterTypes().length != 1) {
-                    continue;
-                }
-                if (m.getName().startsWith("set")) {
-                    available.add(m.getName());
-                }
-                if (m.getName().equals(CUE_OUTPUT_SETTER)) {
-                    setter = m;
-                }
-            }
-
-            if (setter == null) {
-                Collections.sort(available);
-                getLogger().error("Media flange has no '" + CUE_OUTPUT_SETTER
-                        + "'. Set CUE_OUTPUT_SETTER to one of: " + available);
-                return;
-            }
-
-            media_flange_ = instance;
-            cue_output_setter_ = setter;
-            getLogger().info("Cue output bound to " + MEDIA_FLANGE_CLASS + "."
-                    + CUE_OUTPUT_SETTER + "()");
-        } catch (ClassNotFoundException e) {
-            getLogger().warn("No media flange I/O in this project (" + MEDIA_FLANGE_CLASS
-                    + " not generated). The cue server will run but drive nothing."
-                    + " Add the media flange in Sunrise Workbench's Station Setup, save, and"
-                    + " let Workbench regenerate com.kuka.generated.ioAccess.");
-        } catch (Exception e) {
-            getLogger().error("Could not bind the media flange output: " + e.toString()
-                    + " -- the cue server will run but drive nothing.");
-        }
-    }
-
-    /** Drives the cue line. A no-op, logged once at bind time, if there is no media flange. */
-    private void setCueOutput(boolean on) {
-        if (cue_output_setter_ == null) {
-            return;
-        }
-        try {
-            cue_output_setter_.invoke(media_flange_, Boolean.valueOf(on));
-        } catch (Exception e) {
-            // An I/O fault must not propagate into the motion application.
-            getLogger().error("Cue output write failed: " + e.toString());
-        }
-    }
-
-    /**
-     * Asserts the cue line for pulse_ms and schedules its release.
-     *
-     * The deadline is published BEFORE the output is asserted so the timer thread can never
-     * observe an asserted output with no deadline (which would latch the cue on). Overlapping
-     * requests simply extend the deadline rather than racing.
-     */
-    private void assertCue(int pulse_ms) {
-        int ms = Math.max(1, Math.min(pulse_ms, CUE_MAX_PULSE_MS));
-        long deadline = System.nanoTime() + (long) ms * 1000000L;
-        if (deadline == 0L) {
-            deadline = 1L;      // 0 is the sentinel for "not asserted"; nanoTime() may be negative
-        }
-        cue_deassert_ns_.set(deadline);
-        setCueOutput(true);
-    }
-
-    /** Releases the cue line immediately. */
-    private void releaseCue() {
-        cue_deassert_ns_.set(0L);
-        setCueOutput(false);
-    }
-
-    /**
-     * Handles one command line. Protocol is line-oriented ASCII, deliberately trivial:
-     *
-     *   CUE [ms]   assert the line for [ms] (default CUE_DEFAULT_PULSE_MS), then release
-     *   OFF        release the line now
-     *   PING       liveness check
-     *   STATUS     report the line state
-     *
-     * Every reply ends with a sequence number and a cabinet timestamp:
-     *
-     *   OK <seq> <nanoTime_ns> <wallClock_ms>
-     *
-     * <seq> lets the ROS side detect a dropped or duplicated cue -- the failure mode that
-     * silently corrupts behavioural data instead of announcing itself. <nanoTime_ns> is monotonic
-     * and is the one to use for intervals; <wallClock_ms> is only meaningful if the cabinet's
-     * clock is synchronised, which it generally is not.
-     */
-    private String handleCueCommand(String line) {
-        String cmd = line.trim();
-        if (cmd.length() == 0) {
-            return null;                    // ignore blank lines (keep-alives)
-        }
-        String upper = cmd.toUpperCase();
-        long seq = cue_seq_.incrementAndGet();
-        String stamp = " " + seq + " " + System.nanoTime() + " " + System.currentTimeMillis();
-
-        if (upper.equals("PING")) {
-            return "PONG" + stamp;
-        }
-        if (upper.equals("OFF")) {
-            releaseCue();
-            return "OK" + stamp;
-        }
-        if (upper.equals("STATUS")) {
-            return "OK" + stamp + " asserted=" + (cue_deassert_ns_.get() != 0L)
-                   + " default_ms=" + CUE_DEFAULT_PULSE_MS;
-        }
-        if (upper.equals("CUE") || upper.startsWith("CUE ")) {
-            int ms = CUE_DEFAULT_PULSE_MS;
-            if (upper.length() > 4) {
-                try {
-                    ms = Integer.parseInt(cmd.substring(4).trim());
-                } catch (NumberFormatException e) {
-                    return "ERR" + stamp + " bad pulse length";
-                }
-            }
-            assertCue(ms);
-            return "OK" + stamp + " pulse_ms=" + Math.max(1, Math.min(ms, CUE_MAX_PULSE_MS));
-        }
-        return "ERR" + stamp + " unknown command";
-    }
-
-    /**
-     * Serves one connected client until it disconnects. One client at a time is served -- the
-     * experiment orchestrator. Keep the connection OPEN across trials: a fresh TCP handshake per
-     * cue would add a round trip to the very latency this design is trying to keep small.
-     */
-    private void serveCueClient(Socket socket) {
-        BufferedReader in = null;
-        Writer out = null;
-        try {
-            socket.setTcpNoDelay(true);     // ESSENTIAL: Nagle would buffer these tiny writes and
-                                            // add tens of milliseconds to a timing-critical path
-            socket.setKeepAlive(true);      // let the OS reap a peer that vanished without a FIN
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream(), "US-ASCII"));
-            out = new OutputStreamWriter(socket.getOutputStream(), "US-ASCII");
-            getLogger().info("Cue client connected from " + socket.getRemoteSocketAddress());
-
-            String line;
-            while (cue_running_ && (line = in.readLine()) != null) {
-                String reply = handleCueCommand(line);
-                if (reply != null) {
-                    out.write(reply);
-                    out.write("\n");
-                    out.flush();
-                }
-            }
-        } catch (SocketException e) {
-            getLogger().info("Cue client disconnected: " + e.getMessage());
-        } catch (IOException e) {
-            getLogger().warn("Cue client I/O error: " + e.toString());
-        } finally {
-            // Deliberately does NOT release the cue.
-            //
-            // An earlier version released here, reasoning that a vanished client must not leave
-            // the line latched on. That protection was already redundant -- assertCue() always
-            // sets a deassert deadline and the timer thread always clears it, so the line drops
-            // within CUE_MAX_PULSE_MS no matter what the client does -- and it actively broke the
-            // most natural client shape: connect, send CUE, read the ack, disconnect. That
-            // one-shot pattern had its pulse killed the instant it hung up, which is a silent,
-            // baffling failure. The timer is the guarantee; the socket is not.
-            closeQuietly(in);
-            closeQuietly(out);
-            closeQuietly(socket);
-        }
-    }
-
-    private void closeQuietly(java.io.Closeable c) {
-        if (c != null) {
-            try {
-                c.close();
-            } catch (IOException e) {
-                // nothing useful to do
-            }
-        }
-    }
-
-    private void closeQuietly(Socket s) {
-        if (s != null) {
-            try {
-                s.close();
-            } catch (IOException e) {
-                // nothing useful to do
-            }
-        }
-    }
-
-    // ServerSocket only implements Closeable from Java 7 onward; its own overload keeps this
-    // compiling on the older Sunrise toolchains.
-    private void closeQuietly(ServerSocket s) {
-        if (s != null) {
-            try {
-                s.close();
-            } catch (IOException e) {
-                // nothing useful to do
-            }
-        }
-    }
-
-    /**
-     * Starts the cue server: an accept loop and a deassert timer, both daemon threads.
-     *
-     * Failure to start is logged and swallowed. The experiment must still run without a cue ring.
-     */
-    private void startCueServer() {
-        bindCueOutput();        // logs and continues if there is no media flange in this project
-        try {
-            cue_server_socket_ = new ServerSocket();
-            cue_server_socket_.setReuseAddress(true);
-            cue_server_socket_.bind(new InetSocketAddress(CUE_PORT));
-        } catch (IOException e) {
-            getLogger().error("Cue server could not bind port " + CUE_PORT + ": " + e.toString()
-                              + " -- continuing WITHOUT the cue path.");
-            cue_server_socket_ = null;
-            return;
-        }
-
-        cue_running_ = true;
-        setCueOutput(false);        // known state at startup
-
-        cue_pulse_thread_ = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (cue_running_) {
-                    try {
-                        long deadline = cue_deassert_ns_.get();
-                        if (deadline != 0L && System.nanoTime() >= deadline) {
-                            // CAS so a cue that re-armed in the meantime is not cut short
-                            if (cue_deassert_ns_.compareAndSet(deadline, 0L)) {
-                                setCueOutput(false);
-                            }
-                        }
-                        Thread.sleep(CUE_TICK_MS);
-                    } catch (InterruptedException e) {
-                        return;
-                    } catch (Exception e) {
-                        getLogger().error("Cue timer error: " + e.toString());
-                    }
-                }
-            }
-        }, "cue-pulse-timer");
-        cue_pulse_thread_.setDaemon(true);
-        cue_pulse_thread_.start();
-
-        cue_accept_thread_ = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (cue_running_) {
-                    try {
-                        Socket socket = cue_server_socket_.accept();
-                        serveCueClient(socket);
-                    } catch (IOException e) {
-                        if (cue_running_) {
-                            getLogger().warn("Cue accept failed: " + e.toString());
-                            try {
-                                Thread.sleep(200);      // do not spin on a persistent fault
-                            } catch (InterruptedException ie) {
-                                return;
-                            }
-                        }
-                    } catch (Exception e) {
-                        getLogger().error("Cue server error: " + e.toString());
-                    }
-                }
-            }
-        }, "cue-accept");
-        cue_accept_thread_.setDaemon(true);
-        cue_accept_thread_.start();
-
-        getLogger().info("Cue server listening on TCP " + CUE_PORT
-                         + " (CUE [ms] | OFF | PING | STATUS), default pulse "
-                         + CUE_DEFAULT_PULSE_MS + " ms.");
-    }
-
-    /** Stops the cue server and guarantees the output is left low. */
-    private void stopCueServer() {
-        cue_running_ = false;
-        try {
-            releaseCue();
-        } catch (Exception e) {
-            getLogger().error("Cue release on shutdown failed: " + e.toString());
-        }
-        closeQuietly(cue_server_socket_);
-        if (cue_accept_thread_ != null) {
-            cue_accept_thread_.interrupt();
-        }
-        if (cue_pulse_thread_ != null) {
-            cue_pulse_thread_.interrupt();
-        }
-        getLogger().info("Cue server stopped.");
-    }
-
     @Override
     public void initialize() {
         // Attach the end-effector tool so the controller accounts for its load in gravity
@@ -614,20 +229,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         getLogger().info("Attached tool template '" + EE_TOOL_TEMPLATE + "' to the flange.");
 
         request_user_config();
-
-        // Started BEFORE the FRI handshake so the cue path is already answering while
-        // configure_fri() blocks for up to 60 s waiting for the ROS 2 client.
-        //
-        // Belt and braces: startCueServer() already handles a failed bind, but the whole call is
-        // caught as well. The stated rule for this subsystem is that it can never stop the
-        // experiment running, and that has to hold for an unanticipated failure too.
-        try {
-            startCueServer();
-        } catch (Exception e) {
-            getLogger().error("Cue server failed to start: " + e.toString()
-                              + " -- continuing WITHOUT the cue path.");
-        }
-
         configure_fri();
     }
 
@@ -642,9 +243,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     
     @Override
     public void dispose() {
-        // Stop the cue path first, so the output is guaranteed low before anything else tears
-        // down -- an application abort must never leave the ring latched on.
-        stopCueServer();
         if (fri_session_ != null) {
             getLogger().info("Disposing FRI session.");
             fri_session_.close();

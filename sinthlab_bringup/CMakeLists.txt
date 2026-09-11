@@ -14,7 +14,7 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   orchestrators/restricted_plane_orchestrator.py
   orchestrators/maze_orchestrator.py
   diagnostics/check_maze.py
-  diagnostics/check_visual_cue.py
+  diagnostics/check_cue_wiring.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})

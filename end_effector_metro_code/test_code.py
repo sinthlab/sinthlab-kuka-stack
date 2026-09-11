@@ -19,7 +19,7 @@ HOW IT WORKS
     Nothing here is imported by the firmware, and this file is NEVER copied to the board.
 
 WHAT IT DOES NOT COVER
-    Anything physical: the optocoupler, the real ESP32, actual LED timing, current draw. It
+    Anything physical: the flange wiring, the real ESP32, actual LED timing, current draw. It
     checks logic and state machines, not electrons. Bench-test with a jumper on D2 as well --
     see README.md.
 """

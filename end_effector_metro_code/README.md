@@ -13,8 +13,9 @@ NeoPixel ring** (Adafruit 2874, Ø157) seated in the cover as a **visual cue** f
 
 ## How it works
 
-**The trigger is on/off with a timer.** The cabinet asserts a 24 V media-flange line; the board
-runs its configured cue for its configured duration, then stops. That is the entire behaviour.
+**The trigger is on/off with a timer.** When **X76 contacts 1 and 2 are shorted** at the robot
+base, the short travels up the media flange to the tool connector and pulls `D2` low; the board runs
+its configured cue for its configured duration, then stops. That is the entire behaviour.
 
 **What the cue looks like is a setting, changed over the board's own Wi-Fi.** Join the board's
 access point from a laptop or phone and call `/config`:
@@ -26,28 +27,30 @@ curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6&dur
 | | **Trigger** — the wire | **Settings** — the API |
 |---|---|---|
 | Carries | one edge: "now" | colour, brightness, pattern, segments, duration, rate |
-| Path | Sunrise → 24 V flange line → optocoupler → `D2` | your laptop → the board's own access point |
+| Path | switch at base → X76 1/2 → flange → tool pins 9/10 → `D2` | your laptop → the board's own access point |
 | When | every trial | once, at commissioning |
 | Needs a network | **no** | yes, but only yours — not the robot's |
 
 The two are separate on purpose. The trigger line is **one bit** and cannot carry a colour, and an
-experiment cue must not depend on a radio link. So **the cabinet says *when*, and the board —
-already configured by hand — decides *what*.**
+experiment cue must not depend on a radio link. So **the switch says *when*, and the board — already
+configured by hand — decides *what*.**
 
 ```
-  ROS orchestrator ──TCP :30300──► cabinet ──► 24 V ──► opto ──► D2 ──► ring on, then off
-                                   (timing only)
+  switch at robot base ── X76 1/2 ══ media flange ══ tool pins 9/10 ──► D2 ──► ring on, then off
+  (timing only)
 
-  your laptop ──joins KUKA_NEOPIXEL──► http://192.168.4.1/config  (what it looks like)
+  your laptop ──joins KUKA_NEOPIXEL──► http://192.168.4.1/config   (what it looks like)
 ```
 
 The board hosts its **own** access point and never joins another network. Wi-Fi bring-up is wrapped
 in `try`/`except`, so a dead ESP32 or a bad credential drops it to trigger-only operation, running
 the settings saved in NVM — it cannot stop the ring cueing.
 
-> ### Status — built and tested, not yet wired
-> No cue has run on real hardware. `visual_cue.enabled` ships as `false` in every experiment
-> config.
+> ### Status — firmware running, trigger path not yet commissioned
+> The board has booted on real hardware (`nvm=available`, access point up) and has driven the ring
+> from the cabinet's 24 V. The trigger wiring through X76 is untested, and no computer-controlled
+> switch is fitted yet — see [Driving the trigger](#driving-the-trigger-from-ros-2). Until then,
+> demos fire the cue over Wi-Fi with the [demo trigger](#demo-trigger-over-wi-fi).
 
 ---
 
@@ -77,32 +80,22 @@ the settings saved in NVM — it cannot stop the ring cueing.
 | **Wi-Fi** | ESP32 **co-processor over SPI** — *not* native Wi-Fi (this is why the code uses `adafruit_esp32spi`, not `wifi`) |
 | **LED ring** | 60 × 5050 **RGBW**, Adafruit [2874](https://www.adafruit.com/product/2874), bought as 4 quarter-arcs |
 | **Ring data** | `board.D5` → **Pixel Shifter** ([6066](https://www.adafruit.com/product/6066), 3.3 V → 5 V) → ring `DIN` |
-| **Cue input** | `board.D2` ← **optocoupler** output, isolated from the 24 V media-flange line |
-| **Power** | 24 V media flange → Tobsun 24 V→5 V → board **and** ring (5 V injected at all 4 quarter joints) |
+| **Cue input** | `board.D2` ← tool connector pin 9, via X76 contact 1 at the robot base (internal pull-up, active low) |
+| **Power** | cabinet 24 V via the X650/X651 data cable → tool pins 1/2 → Tobsun 24 V→5 V → board **and** ring (5 V injected at all 4 quarter joints) |
 
 ```
-                        ┌─────────── MEDIA FLANGE (electric) ───────────┐
-                        │   24 V power pair        24 V digital output  │
-                        └────────┬──────────────────────────┬───────────┘
-                                 │                          │
-                  ┌──────────────▼───────────────┐   ┌──────▼───────┐
-                  │ Tobsun 24 V → 5 V converter  │   │ Optocoupler  │  galvanic
-                  └───┬──────────────────────┬───┘   └──────┬───────┘  isolation
-                  5 V │                  5 V │              │ logic level
-                      │                      │              │
-             ┌────────▼─────────┐            │              │
-             │ Metro M4 AirLift │◄───────────┼──────────────┘  into D2
-             │  ├ SAMD51 (code) │            │
-             │  └ ESP32 (Wi-Fi) │            │  (5 V injected at each of
-             └────────┬─────────┘            │   the ring's 4 quarter joints)
-                 D5   │ 3.3 V data           │
-             ┌────────▼─────────┐            │
-             │  Pixel Shifter   │            │
-             └────────┬─────────┘            │
-                 5 V data                    │
-             ┌────────▼─────────────────────▼──┐
-             │ NeoPixel ring — 60 × RGBW, GRBW │
-             └─────────────────────────────────┘
+   MEDIA FLANGE (Inside electric) — a pass-through, no electronics
+   │
+   ├─ tool pins 1/2  ── 24 V from the cabinet ──► Tobsun 24 V → 5 V ──┬──► Metro M4 AirLift
+   │                                                                 │     ├ SAMD51 (code)
+   │                                                                 │     └ ESP32 (Wi-Fi)
+   │                                                                 │
+   │                                                                 └──► NeoPixel ring
+   │                                                                      (5 V at all 4 quarter joints)
+   │
+   └─ tool pins 9/10 ── CTR1, shorted at X76 1-2 by the trigger switch ──► Metro D2 / GND
+
+   Metro D5 ── 3.3 V data ──► Pixel Shifter ── 5 V data ──► ring DIN
 ```
 
 > **⚡ Current is not capped in firmware — see [Power](#power--read-before-raising-brightness).**
@@ -114,42 +107,49 @@ the settings saved in NVM — it cannot stop the ring cueing.
 
 ## The cue trigger — wiring
 
-The cabinet asserts a **24 V digital output on the media flange**; the optocoupler isolates it and
-presents a logic level to `D2`. Isolation is the point: the 24 V industrial side and the 3.3 V
-microcontroller side share no ground, so cabinet switching noise cannot reach the SAMD51.
+The trigger is a **contact closure**. Shorting X76 contacts 1 and 2 at the robot base connects `D2`
+to `GND` through the media flange's CTR1 pair; the Metro's internal pull-up holds `D2` high the rest
+of the time.
 
 ```
-  cabinet / Sunrise app                    │ galvanic isolation │        Metro M4
-                                           │                    │
-  media-flange DO ──24 V──►┤LED    photo-transistor├──────────► D2   (Pull.UP, active LOW)
-  media-flange 0 V ────────┤                       ├────────────GND
+   robot base                  media flange (pass-through)             end effector
+
+   X76 contact 1 ──┐                                                ┌── tool pin 9  (BK) ──► D2
+                   ├─ switch ═══════ CTR1 shielded pair ════════════┤
+   X76 contact 2 ──┘                                                └── tool pin 10 (BU) ──► GND
+
+   X76 contact 3 ── CTR1 drain — bond here only; tool pin 11 (WH) stays insulated
 ```
 
-**Polarity — `active_low` (default `1`) expects:**
+| Tool connector | Colour | Connect to |
+|---|---|---|
+| pin **9** (CTR1_1) | BK | Metro **`D2`** |
+| pin **10** (CTR1_2) | BU | Metro **`GND`** |
+| pin 11 (CTR1_3, drain) | WH | insulated — the drain is bonded at the base |
 
-| Opto side | Connect to |
-|---|---|
-| Input LED anode (via its series resistor) | media-flange 24 V digital **output** |
-| Input LED cathode | media-flange **0 V** |
-| Output transistor collector | Metro **`D2`** |
-| Output transistor emitter | Metro **`GND`** |
+**Polarity — `active_low` (default `1`):** the internal pull-up holds `D2` high, so **idle = HIGH**
+and **cue asserted = LOW**. This is the safe polarity: an unplugged connector, an open switch, or a
+broken wire all read as *no cue* rather than a stuck-on cue.
 
-The Metro's **internal pull-up** holds `D2` high when the opto is dark, so **idle = HIGH** and
-**cue asserted = LOW**. This is the safe polarity: an unplugged connector, an unpowered cabinet, or a
-broken wire all read as *no cue* rather than a stuck-on cue. If your optocoupler board inverts (many
-industrial modules have their own output driver), **flip it over Wi-Fi without opening the
-effector**:
+**No optocoupler is needed** as long as the switch is a floating contact — a jumper, or a relay's
+dry contacts. The only voltage in the loop is the Metro's own 3.3 V. Anything that *outputs* a
+voltage onto X76 1/2 is different: 24 V on `D2` destroys the SAMD51, so that must go through an
+optocoupler — and since optocoupler output stages often invert, flip polarity over Wi-Fi rather than
+opening the effector:
 
 ```bash
-curl "http://192.168.4.1/config?active_low=0"     # switches the pin to an internal pull-down
+curl "http://192.168.4.1/config?active_low=0"   # switches the pin to an internal pull-down
 ```
 
 The firmware resynchronises the debouncer as part of the change, so flipping polarity does not
 itself look like an edge and fire a spurious cue.
 
+For a production build, add an external **4.7 kΩ pull-up** from `D2` to 3.3 V. The internal pull-up
+is weak, and the line runs several metres past seven joint drives.
+
 ### Bench-testing without the robot
 
-You do not need the cabinet to verify the firmware. With the board on USB:
+You do not need the robot to verify the firmware. With the board on USB:
 
 ```
 jumper D2 ──► GND     = cue asserted  (ring flashes)
@@ -285,7 +285,7 @@ curl http://192.168.4.1/cue                                      # try it withou
 |---|---|---|
 | `brightness` | 0.0–1.0 | scales the whole ring. **Not capped — [read this](#power--read-before-raising-brightness).** |
 | `mode` | `pulse` `follow` | who owns the cue's length — `duration`, or the wire |
-| `active_low` | 0 / 1 | trigger polarity — **flip this to match your optocoupler without opening the box** |
+| `active_low` | 0 / 1 | trigger polarity — **flip this if the trigger reads inverted, without opening the box** |
 | `debounce_ms` | 1–200 | how long the input must hold a level |
 | `retrigger` | 0 / 1 | may a new edge restart an in-flight cue |
 | `enabled` | 0 / 1 | arm/disarm the wire entirely |
@@ -469,7 +469,7 @@ curl "http://192.168.4.1/config?save=1"
 ```bash
 curl "http://192.168.4.1/config?mode=follow"        # let the wire own cue length
 curl "http://192.168.4.1/config?brightness=0.25"    # READ THE POWER SECTION FIRST
-curl "http://192.168.4.1/config?active_low=0"       # opto turned out inverted
+curl "http://192.168.4.1/config?active_low=0"       # trigger reads inverted
 curl "http://192.168.4.1/config?enabled=0"          # disarm the wire while you work on it
 curl "http://192.168.4.1/config?reset=1"            # back to the defaults in code.py
 ```
@@ -583,7 +583,7 @@ handler callable directly.
 | File access | read-only, refuses `settings.toml`, refuses traversal, no write route |
 | Regressions | settings and endpoints removed in earlier redesigns stay removed |
 
-**What it does not cover:** anything physical — the optocoupler, the real ESP32, LED timing,
+**What it does not cover:** anything physical — the flange wiring, the real ESP32, LED timing,
 current draw. It checks logic, not electrons. Still bench-test with a jumper on `D2`
 ([above](#bench-testing-without-the-robot)) before trusting a build on the arm.
 
@@ -688,166 +688,123 @@ exception tracebacks only ever appear on serial.
 
 ## Driving the trigger from ROS 2
 
-**The whole software chain is built.** What remains is the physical wiring.
+### How the short reaches the board
+
+This arm's **Media flange Inside electric** is a pass-through: whatever is connected at the robot
+base appears at the tool connector. The trigger uses the shielded pair **CTR1**:
 
 ```
-  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
-  │  Metro:  D2 asserted  →  ring runs the configured cue              │
-  └────────────────────────────────────────────────────────────────────┘
-                                   ▲
-                        24 V media-flange digital output
-                                   ▲
-  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
-  │  Sunrise cue server — a TCP listener inside                        │
-  │  LbrImpedanceControlServer.java that pulses the flange output      │
-  └────────────────────────────────────────────────────────────────────┘
-                                   ▲
-  ┌─ ✓ BUILT ──────────────────────────────────────────────────────────┐
-  │  VisualCue action in sinthlab_bringup, fired beside AudioCue at    │
-  │  all 8 cue sites across the 4 experiments                          │
-  └────────────────────────────────────────────────────────────────────┘
+   X76 contact 1 ── CTR1_1 ══ flange ══ tool connector pin 9  (BK) ──► Metro D2
+   X76 contact 2 ── CTR1_2 ══ flange ══ tool connector pin 10 (BU) ──► Metro GND
 ```
 
-**Why a socket and not FRI I/O.** FRI carries joint commands and robot state; it has no channel for
-"run a cue now" unless boolean FRI I/O is declared in the Sunrise project **and** a matching command
-interface is added to `lbr_ros2_control` — which is upstream, and we do not edit upstream. The
-socket keeps the whole feature inside code we own.
+Shorting contacts 1 and 2 at the base pulls D2 to ground through the whole harness. The firmware's
+`active_low` default and D2's internal pull-up mean **a bare contact is a valid trigger** — no power
+and no optocoupler. Full pinout in
+[`end_effector_design/README.md`](../end_effector_design/README.md#tool-connector-pinout).
 
-### The cue protocol
+### What closes the switch
 
-Line-oriented ASCII on **TCP 30300** (FRI uses 30200 — kept distinct). Every reply carries a
-sequence number and two cabinet timestamps: `OK <seq> <nanoTime_ns> <wallClock_ms>`.
+**Not the cabinet.** The flange has no cabinet-driven I/O and the Sunrise project has no generated
+I/O groups, so Sunrise has no output that could drive X76.
 
-| Command | Effect |
-|---|---|
-| `CUE [ms]` | assert the flange output for `[ms]` (default **50 ms**, ceiling 10 s), then release |
-| `OFF` | release now |
-| `PING` | liveness check |
-| `STATUS` | report whether the line is asserted |
+**A switch driven by the ROS computer — not chosen yet.** The likely answer is a **USB relay with dry
+contacts**: a jumper wire the computer can open and close. Its contacts go to X76 1/2 in place of a
+hand-held jumper.
 
-- **50 ms default** comfortably clears the board's 5 ms debounce. In `pulse` mode the board owns
-  the cue length, so the pulse only has to be an edge; in `follow` mode the pulse width **is** the
-  cue length, which is what the 10 s ceiling is for.
-- **`<seq>`** lets the ROS side detect a dropped or duplicated cue — the failure mode that silently
-  corrupts behavioural data instead of announcing itself.
-- **`<nanoTime_ns>`** is monotonic; use it for intervals. `<wallClock_ms>` is only meaningful if the
-  cabinet's clock is synchronised, which it generally is not.
-- **Hold the connection open** across trials. A fresh TCP handshake per cue adds a round trip to
-  exactly the latency this design keeps small. A one-shot client (connect, `CUE`, read, hang up)
-  works correctly too — the pulse is bounded by the cabinet's own deassert timer, not by the
-  socket — but the server serves **one client at a time**, so a second connection waits until the
-  first disconnects.
+> **Optocoupler or not?** Only if the switch *outputs a voltage*. A floating relay contact does not,
+> and needs none. Anything that puts 24 V onto X76 1/2 must go through an optocoupler — 24 V on `D2`
+> destroys the SAMD51, whose pins are 3.3 V.
+
+For a production build, add an external **4.7 kΩ pull-up** from D2 to 3.3 V at the board. The
+internal pull-up is weak, and the line runs several metres past seven joint drives.
 
 ### Commissioning it
 
-[`cue_client_test.py`](../sunrise_controller_code/cue_client_test.py) drives the line with no ROS
-and no dependencies:
+Short X76 1–2 by hand and watch what the firmware saw:
 
 ```bash
-python3 sunrise_controller_code/cue_client_test.py <cabinet-ip>            # interactive
-python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --cue 2000 # one 2 s pulse
-python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --latency  # network leg only
+python3 sinthlab_bringup/diagnostics/check_cue_wiring.py      # from a laptop on KUKA_NEOPIXEL
 ```
 
-Bring it up in this order, so a failure tells you *where* it is:
-
-1. `--cue 2000` with a **meter on the flange pin** — proves the cabinet half and your
-   `setCueOutput()` pin choice.
-2. Same, with the **optocoupler wired to `D2`** but the ring's `curl .../status` open — proves the
-   isolation stage and the polarity (`trigger_asserted` should follow the cabinet).
-3. Same, with the **ring connected** — proves the whole chain.
-
-### On timestamping the cue against motion
-
-A correction worth stating plainly: **FRI boolean I/O would not have given you a cue "timestamped
-with the motion" either.** It timestamps the *command*. Everything downstream — cabinet I/O cycle,
-optocoupler, the board's `debounce_ms`, `pixels.show()` (~2.4 ms for 60 RGBW LEDs) — is **identical
-for both approaches** and is what dominates, at roughly **8 ms, mostly deterministic**.
-
-The socket differs from FRI I/O in one leg only:
-
-| | ROS → cabinet |
-|---|---|
-| **FRI I/O** | rides the existing 100 Hz channel → **0–10 ms quantisation, bounded**, and you know which cycle |
-| **Socket** | sub-millisecond typical on a wired LAN, but the sender is **WSL2, not an RT OS** → an unbounded jitter tail |
-
-Three things make the socket route rigorous:
-
-1. **Log the send time in the ROS timebase**, into the same `robot_trajectory_*.csv` as the motion —
-   same clock by construction, no cross-timebase mapping.
-2. **Use the ack.** `[t_send, t_ack]` brackets the cabinet-side action, which bounds precisely the
-   leg where the socket is weaker. This closes the gap; the server already returns it.
-3. **Calibrate the fixed downstream offset once** with a scope on the flange output against a
-   ROS-logged event. **FRI I/O would need this too.**
-
-> **If you are recording neurally, skip all of it.** Split the same 24 V line into the acquisition
-> system's digital input. The cue then lands in the neural timebase with microsecond accuracy and
-> no software in the path, and the ROS timestamp becomes a convenience rather than the truth.
+It pre-flights the board — catching `enabled=0`, a cue too dim or short to see, and **inverted
+polarity** — then announces every edge. The full sequence, including the continuity checks that must
+come first, is the
+[commissioning checklist](../end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order).
 
 ### The ROS side
 
 [`sinthlab_bringup/actions/visual_cue.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
-mirrors `AudioCue` and fires alongside it at every cue site — all four experiments, eight sites. It
-sends **timing only**, so there is nothing per cue site to configure:
+mirrors `AudioCue` and is called beside it at every cue site — all four experiments, eight sites.
+Two parameters in the shared `visual_cue` block drive it: `enabled` turns visual cues on or off, and
+`remote_test_trigger` picks how they fire — `true` over Wi-Fi ([below](#demo-trigger-over-wi-fi)),
+`false` over the wire. **The wire path is a safe no-op until the switch is fitted:** `start()`
+completes immediately, and `VisualCue.warmup()` warns once. The experiments run unchanged.
+
+When the relay arrives, implement `VisualCue._close_switch()` and set `remote_test_trigger: false` —
+nothing else changes. Keep the closure short (it only has to outlast the board's 5 ms debounce; the
+board's own `duration` decides how long the ring stays lit), and make sure it can never raise or
+block the orchestrator.
+
+### Demo trigger over Wi-Fi
+
+For demos and recordings the experiments can fire the cue over the board's access point, with no
+wire at all. In the experiment's YAML:
 
 ```yaml
 visual_cue:
-  enabled: false                # <-- flip to true once the ring is wired
-  host: "172.31.1.147"          # cabinet IP on the KUKA network (the FRI peer)
-  port: 30300
-  pulse_ms: 0                   # 0 = bare trigger; the board's own `duration` owns the length.
-                                # Set this only if the board is in "follow" mode.
+  enabled: true                 # ships false
+  remote_test_trigger: true     # already true in all four configs
 ```
 
-Every trigger runs the same board-side cue — that is the design, not a limitation of the action.
-Appearance is a **commissioning step** done once over the board's access point, because the wire
-cannot carry a colour and the experiment must not depend on a radio.
+Join the ROS computer to **`KUKA_NEOPIXEL`** — its Ethernet link to the robot is separate — and
+check the link from the shell you launch from with `curl http://192.168.4.1/status`. Each cue site
+then sends `GET /cue`, the same call as `curl http://192.168.4.1/cue`, and the board runs its
+configured cue.
 
-Three properties that matter:
+- **It never stalls a trial.** Requests go out one at a time from a background thread, and
+  `start()` returns at once.
+- **Everything is logged.** At startup, whether the board answered; then each cue with its
+  round-trip time, or why it failed.
+- **A late cue is dropped, not shown.** A cue still waiting behind a slow request after 0.5 s is
+  skipped and logged.
+- **Not for experiments.** The Wi-Fi delay varies from cue to cue. Align trial data to the wire,
+  never to this.
 
-- **`enabled: false` is the shipped default.** Every visual cue is a no-op until you turn it on, so
-  the experiments run unchanged before the ring is wired. No orchestrator edits either way.
-- **Nothing blocks.** Short timeouts, guarded sockets, and `on_complete` fires even when the cue
-  server is unreachable, which warns **once**. A missing cue is bad; a stalled orchestrator is worse.
-- **One shared connection** across all cue sites, opened at `warmup()` and silently reconnected if
-  the cabinet application restarts.
+The code is one self-contained file:
+[`visual_cue_remote.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
 
-Check the path from the ROS box with
-[`check_visual_cue.py`](../sinthlab_bringup/diagnostics/check_visual_cue.py):
+### On timestamping the cue against motion
 
-```bash
-python3 sinthlab_bringup/diagnostics/check_visual_cue.py config/maze_params.yaml --fire 3
-```
+Log the ROS time at which `_close_switch()` fires; that puts the cue on the same clock as the
+trajectory. What it does *not* tell you is when the light appeared. Between the two sit the switch's
+closing time (a few milliseconds for a mechanical relay, microseconds for a solid-state one), the
+board's debounce (`debounce_ms`, 5 ms by default) and one LED refresh (~2.4 ms for 60 RGBW pixels).
+That offset is mostly fixed: **measure it once with a photodiode and a scope** rather than assuming
+it.
 
-### Wi-Fi is not on this path
+### The wire does not need Wi-Fi
 
-The board's AP exists for setup and debugging. Do **not** put the experiment cue on it: a single
-Wi-Fi interface cannot be joined to `KUKA_NEOPIXEL` and the KUKA network at once, and an
-experiment cue should not depend on a radio link when a wire is already running to the flange.
-
-### If you need cues faster than you can arm them
-
-Arming is an HTTP round trip. For back-to-back cues tens of milliseconds apart, arm the *next* cue
-during the *current* one — `VisualCue.arm()` is separate from `start()` precisely so an
-orchestrator can do that. If cues must be independent and simultaneous, the answer is a second
-trigger line into another free pin, with the firmware holding one armed spec per line.
+The wire trigger never touches the radio. A dead ESP32 or a missing access point leaves it working,
+running the settings saved in NVM. The [demo trigger](#demo-trigger-over-wi-fi) is the opposite: it
+is *only* the radio.
 
 ---
 
 ## Known limitations
 
-1. **Nothing is wired yet.** The full software chain is built and tested, but no cue has run on
-   real hardware. `visual_cue.enabled` ships as `false`.
-2. **The ROS box cannot see the board.** By design — the board hosts its own access point and the
-   ROS box is on the KUKA network. So the cue's appearance cannot be checked or changed from the
-   experiment host, and `check_visual_cue.py` verifies the trigger path only.
+1. **The wire is not commissioned yet.** No wire-triggered cue has run on real hardware, and
+   `visual_cue.enabled` ships as `false`. Demos use the [Wi-Fi demo trigger](#demo-trigger-over-wi-fi).
+2. **Appearance is not set from ROS.** The experiments only ever say *now* — over the wire or over
+   Wi-Fi. Set what the cue looks like from any machine joined to the board's access point.
 3. **One cue appearance at a time.** Every trigger runs the same configured cue; the wire carries
    one bit and cannot select between looks. Different cues per event would need a second trigger
    line into another free pin, with the firmware holding one setting per line.
-4. **`CUE_PIN` and the optocoupler polarity are unverified against the real flange.** `D2` and the
-   opto pinout in [The cue trigger](#the-cue-trigger--wiring) are assumptions. Confirm them against
-   your optocoupler board and your media-flange variant's datasheet, and bench-test with a jumper
-   first. Polarity itself is recoverable over Wi-Fi (`/config?active_low=0`); the pin choice is not.
+4. **`CUE_PIN = board.D2` is unverified on real hardware.** The tool-connector pinout comes from the
+   KUKA media-flange manual, not from a measurement. Run the
+   [commissioning checklist](../end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order)
+   — continuity first, then the jumper test with `check_cue_wiring.py` — **before closing the
+   effector casing**: polarity can be fixed over Wi-Fi afterwards, the pin choice cannot.
 5. **Settings persistence depends on `microcontroller.nvm` being present in the build.** If it is
    absent, `/config?save=1` says so and settings revert to `DEFAULTS` on reset.
 6. **No code upload over Wi-Fi.** Deliberate — see

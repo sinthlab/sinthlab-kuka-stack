@@ -84,40 +84,6 @@ the conditions under which it would be worth revisiting.
 Follow [these steps](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr_fri_ros2_stack/doc/hardware_setup.html#install-applications-to-the-robot)
 to install the application to the robot.
 
-### Media flange I/O (visual cue)
-`LbrImpedanceControlServer.java` pulses a **media‑flange digital output** to fire the end effector's
-NeoPixel cue ring (see [§6.7](#67-endeffector-board--the-visual-cue)).
-
-**The app compiles and runs without any of this.** `com.kuka.generated.ioAccess.MediaFlangeIOGroup`
-is generated per‑project by Sunrise Workbench, so importing it directly would let an *optional* cue
-feature block the motion control that is the point of the file. It is therefore resolved by
-**reflection at runtime**: no media flange, no cue, everything else unaffected. The cabinet log says
-which case you are in at startup.
-
-To actually drive the line:
-
-1. **Add the media flange in Sunrise Workbench's Station Setup**, save, and let Workbench regenerate
-   `com.kuka.generated.ioAccess`. Until then the log reads:
-   `No media flange I/O in this project (… not generated). The cue server will run but drive nothing.`
-2. **Point it at the pin you wired.** The generated setter name depends on your flange variant, so
-   set the `CUE_OUTPUT_SETTER` constant near the top of the file. You do not have to guess: if the
-   configured name is missing, the app **logs every setter your flange actually exposes**:
-   ```
-   Media flange has no 'setOutputX3Pin1'. Set CUE_OUTPUT_SETTER to one of:
-       [setLEDBlue, setOutputX3Pin11, setOutputX3Pin12]
-   ```
-   On success it logs `Cue output bound to …MediaFlangeIOGroup.setOutputX3Pin1()`.
-3. **Verify before wiring the effector**, with the arm idle and the app running:
-   ```bash
-   python3 sunrise_controller_code/cue_client_test.py <cabinet-ip> --cue 2000
-   ```
-   Put a meter or a scope on the pin. The cabinet log shows `Cue server listening on TCP 30300`
-   when the app starts.
-
-> **The cue server serves one client at a time.** The accept loop blocks on the connected client
-> until it disconnects, so opening a second connection while the orchestrator is attached will
-> simply wait. Close one before opening another.
-
 ### Tool Load Data (payload calibration)
 The cabinet must know the end‑effector's mass, or the compliant control modes (Cartesian / joint
 impedance) refuse to activate. With an uncalibrated tool the experiment launch aborts with:
@@ -921,51 +887,55 @@ The [apple‑pluck end effector](end_effector_design/README.md) carries its own 
 **visual cue** for the subject. Its CircuitPython firmware lives in
 [`end_effector_metro_code/`](end_effector_metro_code/README.md).
 
-**The cue is on and off with a timer.** A trigger travels down the same media flange the arm
-already uses; the board runs its configured cue for its configured duration, then stops:
+**The cue is on and off with a timer.** The board runs its configured cue whenever **X76 contacts 1
+and 2 are shorted** at the robot base; the short travels up through the media flange to the tool
+connector and pulls the board's `D2` low:
 
 ```
-   orchestrator ──TCP :30300──► Sunrise cue server ──► 24 V media-flange digital output
-   (VisualCue action)              (in LbrImpedance-              │
-                                    ControlServer.java)     optocoupler (isolation)
-                                                                  │
-                                                          Metro M4 ── D2 asserted
-                                                                  │
-                                                          ring on, then off
+   switch at robot base ── X76 contacts 1/2 ══ media flange ══ tool pins 9/10 ──► Metro D2
+                                                                                  ring on, then off
 ```
 
-**Why a socket and not FRI.** FRI carries joint commands and robot state; it has no channel for
-"run a cue now" unless boolean FRI I/O is declared in the Sunrise project **and** a matching command
-interface is added to `lbr_ros2_control` — which is upstream, and we do not edit upstream. The
-socket keeps the whole feature inside code we own.
+**Power reaches the effector the same way:** the cabinet's 24 V comes down the X650/X651 data cable
+to **tool pins 1/2**, into the Tobsun converter, down to the 5 V rail. Full pinout in
+[`end_effector_design/README.md`](end_effector_design/README.md#tool-connector-pinout).
 
-**The cue server** runs as two daemon threads inside the Sunrise application, fully isolated from
-the motion: every socket and I/O operation is caught, and a failure logs and retries rather than
-disturbing `positionHold()` or the FRI session. Line‑oriented ASCII on **TCP 30300**:
+**The cabinet does not trigger the cue.** This arm has the **Media flange Inside electric**, a
+pass‑through with no cabinet‑driven I/O, and the Sunrise project has no generated I/O groups
+(`src/com/kuka/generated/` does not exist). The Sunrise application plays no part in the cue.
 
-| Command | Reply | Effect |
-|---|---|---|
-| `CUE [ms]` | `OK <seq> <ns> <ms>` | assert the line for `[ms]` (default 50), then release |
-| `OFF` | `OK …` | release now |
-| `PING` | `PONG …` | liveness |
-| `STATUS` | `OK … asserted=<bool>` | line state |
+**The switch is driven from the ROS computer, and is not chosen yet.** The likely answer is a **USB
+relay with dry contacts** — in effect a jumper wire the computer can open and close. Until one is
+fitted:
 
-The **`<seq>`** counter lets the ROS side spot a dropped or duplicated cue — the failure mode that
-silently corrupts behavioural data instead of announcing itself. The **cabinet timestamp** in every
-reply lets an orchestrator bracket the cue between its own send time and the ack.
+- **Commission by hand:** short X76 1–2 with a jumper and watch the result with
+  [`check_cue_wiring.py`](sinthlab_bringup/diagnostics/check_cue_wiring.py). Step by step in the
+  [commissioning checklist](end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order).
+- **The experiments are unaffected.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
+  is called beside `AudioCue` at all eight cue sites. On the wire path it is a **safe no‑op**:
+  it completes immediately, and warns once if `visual_cue.enabled` is true.
+- **When the relay arrives,** implement `VisualCue._close_switch()` and set
+  `visual_cue.remote_test_trigger: false`; nothing else changes. A floating relay contact needs
+  **no optocoupler** — only a switch that *outputs a voltage* would. If the arm box runs WSL2 (the
+  `AudioCue` warmup suggests it does), the relay's USB device has to be attached into WSL with
+  `usbipd-win`.
 
-> **On timing.** That bracket bounds the ROS→cabinet leg, which is the *only* leg where this
-> differs from FRI boolean I/O. Everything downstream — the cabinet I/O cycle, the optocoupler, the
-> board's debounce, the LED refresh — is common to both and is what actually dominates (~8 ms,
-> mostly deterministic). Neither approach tells you when the LED lit; **calibrate that fixed offset
-> once with a scope** rather than assuming it.
+**For demos and recordings, fire the cue over Wi‑Fi instead — no wire needed.** In the
+experiment's YAML set:
 
-**The ROS side.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py) mirrors
-`AudioCue` and fires beside it at all eight cue sites across the four experiments. It never blocks:
-short timeouts, guarded sockets, `on_complete` fires even when the cue server is down, and an
-unreachable server warns once. `visual_cue.enabled: false` (the default) makes every visual cue a
-no‑op, so the experiments run unchanged before the ring is wired. Check the path from the ROS box
-with [`check_visual_cue.py`](sinthlab_bringup/diagnostics/check_visual_cue.py).
+```yaml
+visual_cue:
+  enabled: true                 # ships false
+  remote_test_trigger: true     # already true in all four configs
+```
+
+Then join the ROS computer to the board's **`KUKA_NEOPIXEL`** Wi‑Fi (its Ethernet link to the
+robot is separate) and check the link from the shell you launch from:
+`curl http://192.168.4.1/status`. Each cue site now sends `GET http://192.168.4.1/cue` — the same as
+running that `curl` by hand — from a background thread, so a slow or missing board never stalls a
+trial. Every cue is logged with its round‑trip time, and a failed one says why. **Not for
+experiments:** the Wi‑Fi delay varies from cue to cue, so never align trial data to it. Code:
+[`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
 
 #### Changing what the cue looks like
 
@@ -990,9 +960,9 @@ rate live **on the board** and are set over the board's **own Wi‑Fi access poi
    the per‑colour current table.
 
 The split is deliberate: the trigger line is **one bit** and cannot carry a colour, and an
-experiment cue must not depend on a radio link. So the cabinet says *when*, and the board — already
-configured by hand — decides *what*. The ROS box is on the KUKA network and cannot reach the board
-at all, which is why appearance is a commissioning step rather than a per‑trial message.
+experiment cue must not depend on a radio link. So the switch says *when*, and the board — already
+configured by hand — decides *what*. Even the Wi‑Fi test trigger only says *now*: appearance
+stays a commissioning step, not a per‑trial message.
 
 > **Full settings reference, wiring, patterns, and the commissioning order are in
 > [`end_effector_metro_code/README.md`](end_effector_metro_code/README.md).**

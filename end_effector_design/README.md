@@ -77,7 +77,7 @@ The apple is three printed parts that stack on the cover; the **base** is the el
 
 ## Power / data flow
 ```
-24 V (media flange) ─► Tobsun 24 V→5 V ─► 5 V ─┬─► Metro M4 AirLift board
+24 V (cabinet, via X650/X651) ─► Tobsun 24 V→5 V ─► 5 V ─┬─► Metro M4 AirLift board
                                                  ├─► NeoPixel ring   (via Pixel Shifter: 3.3 V data → 5 V)
                                                  ├─► DRV2605L driver ─► ERM/LRA motor (actuator, apple cavity)
                                                  └─► pressure sensor (apple cavity)
@@ -89,9 +89,142 @@ The apple is three printed parts that stack on the cover; the **base** is the el
 The **Metro M4 Express AirLift** runs everything: it drives the NeoPixel ring through the **Pixel
 Shifter** (its 3.3 V data needs shifting to 5 V), commands the **DRV2605L** over I²C to run the
 haptic **actuator** (an ERM/LRA motor in the apple), and reads the **pressure sensor**. The
-**Tobsun converter** steps the arm's 24 V down to 5 V; that **5 V rail is distributed from it** out
+**Tobsun converter** steps that 24 V down to 5 V; that **5 V rail is distributed from it** out
 to every board and up the centre riser (ring + apple) through channels in the base. All five boards
 live in the base; only the ERM motor + pressure sensor sit up in the apple cavity.
+
+## The media flange is a pass-through — the as-built wiring
+
+This robot has the **Media flange Inside electric**: two supply voltages, two analog/CAT5
+interfaces, an internal connector, and **no electronics of its own** (KUKA media-flange manual V10,
+20 Oct 2021, §2.1.9). It is a conduit from interface A1 at the rear of the base frame (Fig. 5-1) to
+the tool connector at the wrist.
+
+**As found on this arm:**
+
+```
+   [ robot base, interface A1, rear of base frame ]
+
+     X31  ══ robot data cable ══► Sunrise cabinet          (already connected)
+
+     X651 ══ KUKA data cable X650/X651 ══► cabinet         CONNECTED
+          └─ carries 24 V + GND (pins 5/6) and EtherCAT (pins 9-12), Fig. 5-63
+                                     │
+     X76  ── your trigger wiring ────┤                     WAS CAPPED — 12+3 bypack fitted
+                                     ▼
+   [ tool connector at the flange face ]   16-way breakout, ~44 cm
+```
+
+Three consequences that shape the whole design:
+
+1. **The 24 V is already there, from the cabinet.** The X650/X651 data cable puts 24 V on X651
+   pin 5 and GND on pin 6, which the flange passes to **tool connector pins 1/2**. Verified in
+   practice: the Metro board and the ring have both been run from it. No external PSU is needed.
+   (KUKA's parts list for this flange calls for a *connector bypack* on X651 rather than the data
+   cable, so this is an off-book but functionally clean configuration — the pin roles line up.)
+2. **EtherCAT is live at the wrist**, on tool pins 3-6. Keep those insulated. It is also the best
+   trigger path this robot could have — an EtherCAT slave at the tool would give cabinet-native
+   timing and a return channel for sensors — but that is a hardware decision, parked for now.
+3. **The cabinet cannot drive a cue line through the flange itself.** The manual's list of flanges
+   with configurable I/O (§7.1) does not include Inside electric, so no `MediaFlangeIOGroup` is
+   generated and Sunrise has no flange output to assert. The trigger is driven by whatever you
+   land on **X76**, whose CTR pairs pass to tool pins 9-16.
+
+### Tool connector pinout
+
+The breakout is **12× AWG26 signal + 4× AWG18 power**, arriving as three 2-wire bundles and two
+3-wire bundles (each 3-wire group is a shielded pair plus its drain).
+
+| Tool pin | Colour | Signal | Via | Rating / use |
+|---|---|---|---|---|
+| **1** | RD | **Power1** | X651 5 | 60 V / 8 A — **live 24 V from the cabinet** |
+| **2** | BK | **GND1** | X651 6 | |
+| 3 | YE | CAT5 TXP | X651 9 | **live EtherCAT — insulate** |
+| 4 | OG | CAT5 TXN | X651 11 | **live EtherCAT — insulate** |
+| 5 | WH | CAT5 RXP | X651 10 | **live EtherCAT — insulate** |
+| 6 | BU | CAT5 RXN | X651 12 | **live EtherCAT — insulate** |
+| 7 | RD | Power2 | X76 A | 60 V / 5 A — unused; fallback supply if the cabinet 24 V ever won't carry the ring |
+| 8 | BK | GND2 | X76 B | |
+| **9** | BK | **CTR1_1** | X76 1 | **cue trigger** (shielded pair) |
+| **10** | BU | **CTR1_2** | X76 2 | |
+| 11 | WH | CTR1_3 | X76 3 | drain — bond at ONE end only |
+| 12 | GN | CTR2_4 | X76 4 | spare pair — haptic trigger |
+| 13 | YE | CTR2_5 | X76 5 | |
+| 14 | WH | CTR2_6 | X76 6 | drain |
+| 15 | RD | CTR3_7 | X76 7 | spare pair — **reserve for the force sensor** |
+| 16 | BU | CTR3_8 | X76 8 | |
+
+> **Colour is ambiguous — meter it.** WH, BU and RD each appear three times. The bundle grouping
+> disambiguates, but map the breakout to X651/X76 with a continuity test before landing anything.
+> The manual is also internally inconsistent here: the connection table says "6× AWG28" on X76
+> while the wiring diagram (Fig. 5-39) labels eight CTR conductors. The meter settles it.
+
+> **Why convert locally rather than feed 5 V down Power1?** Voltage drop. AWG18
+> over the robot's internal harness plus the 44 cm breakout drops roughly 0.5 V at the ring's worst
+> case — and the drop *varies with how much of the ring is lit*, so cue colour would shift with cue
+> settings. Converting at the tool keeps the ring on a stiff 5 V, and the 24 V feed carries ~1.25 A
+> instead of ~4.8 A for the same power. Measure the real round-trip resistance (short Power1 to
+> GND1 at the tool, measure across X651 5–6) before revisiting this.
+
+### Commissioning the trigger — do it in this order
+
+Each step proves one thing and has a stop condition. Do not skip ahead.
+
+**0. Prep — arm de-energised.** Mount the tool connector **flush** (4× M2×16, 0.35 N·m; if it is
+not flush, contact is not guaranteed and every later step will lie to you). Individually insulate
+all 16 breakout wires; uninsulate only what each step needs. **Pins 3–6 stay capped permanently —
+live EtherCAT.** X651 remains plugged into the cabinet, so pins 1/2 and 3–6 may be live whenever the
+cabinet has power.
+
+**1. Crimp X76.** Contacts **1**, **2**, **3**, and **9** (screen). Leave A/B/C and 4–8 empty.
+Do not terminate the far end yet — it depends on step 4.
+
+**2. Ring it out — arm de-energised.** Two measurements, because one is not enough:
+
+| At the base | At the tool | Proves |
+|---|---|---|
+| short X76 **1 ↔ 2** | continuity **pin 9 ↔ pin 10** | both conductors are through |
+| short X76 **1 ↔ 3** | continuity **pin 9 ↔ pin 11** | contact 1 really is pin 9, i.e. **no swap** |
+
+The first test passes identically whether or not 1 and 2 are swapped; only the second catches it.
+A swap does not matter for a bare contact closure but is fatal for an optocoupler's LED.
+While you are here, short tool 9 to tool 10 and measure across X76 1–2 for the **round-trip
+resistance** — that number is still unmeasured and every voltage-drop estimate depends on it.
+
+**3. Passive jumper test — no optocoupler, no source, no voltage.** Wire tool pin 9 → Metro **D2**
+and tool pin 10 → Metro **GND**. The firmware's `active_low` default plus D2's internal pull-up
+means a bare short is a valid trigger.
+
+```bash
+ros2 run sinthlab_bringup check_cue_wiring.py          # or: python3 diagnostics/check_cue_wiring.py
+```
+
+It pre-flights the board (catches `enabled=0`, an invisible cue, and **inverted polarity**), then
+announces every edge as you make and break the short at X76. This is the step that finally verifies
+`CUE_PIN = board.D2` against real hardware — the last unverified assumption in the firmware.
+
+> **Stop condition:** no edges means wiring, not firmware. The tool prints the likely causes ranked.
+
+**4. Fit the computer-controlled switch.** The cabinet cannot drive the trigger — the Sunrise
+project has no generated I/O groups — so it will be a switch driven by the ROS computer, most likely
+a **USB relay with dry contacts**. Its contacts replace your jumper on X76 1/2; step 3's tool-end
+wiring is already final, and a floating contact needs **no optocoupler** in the circuit. See
+[§6.7 in the top-level README](../README.md#67-endeffector-board--the-visual-cue).
+
+### Handling limits from the manual
+
+- **Tool connector: max 100 mating cycles.** Do not prototype by repeatedly unplugging it.
+- Connect/disconnect **de-energised only**, and insulate every unused cable end — a loose end shorts
+  and damages the flange.
+- The connector must sit **flush** with the flange face or contact is not guaranteed.
+  4× **M2×16**, torque **0.35 N·m** (class 8.8) per §12.1.
+- Minimum breakout bending radius **5.85 mm**; strain-relieve on the tool side.
+- IP54 requires sealing between flange and tool. Flange (230 g) and tool-connector weights are
+  accounted for automatically by Sunrise.
+- **Stopping distances:** the manual's tables (§4.16.3, §4.16.5) list which flanges they cover, and
+  plain *Inside electric* is in neither — only the NE and NE II variants are. It is 230 g with the
+  same payload table as the Basic-flange, so those figures very probably apply, but confirm with
+  KUKA before relying on them in a risk assessment.
 
 ## Components (dimensions locked from datasheets)
 | Item | Part / link | Size (mm) | Drives parameter |

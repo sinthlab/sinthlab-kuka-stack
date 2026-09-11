@@ -101,19 +101,15 @@
       duration_ms: 500
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
-    # This block carries TIMING ONLY: a trigger travels ROS -> cabinet cue server -> 24 V
-    # media-flange line -> optocoupler -> the board, which then runs its cue and stops.
+    # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
     #
-    # WHAT THE CUE LOOKS LIKE IS NOT SET HERE. Colour, brightness, pattern, segments, duration and
-    # rate live on the board and are set over its own Wi-Fi access point (join KUKA_NEOPIXEL from
-    # a laptop or phone):
-    #     curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.2&save=1"
-    # The trigger line is one bit and cannot carry a colour, and an experiment cue must not
-    # depend on a radio link -- so appearance is a commissioning step, not a per-trial message.
+    #   enabled               master switch; false = no visual cues at all.
+    #   remote_test_trigger   true  = fire each cue over Wi-Fi (GET http://192.168.4.1/cue).
+    #                                 FOR DEMOS/RECORDINGS: join this computer to the board's
+    #                                 KUKA_NEOPIXEL network first. The delay varies, so never
+    #                                 align trial data to it.
+    #                         false = the X76 wire at the robot base. No switch is wired to this
+    #                                 computer yet, so nothing fires (a warning says so).
     visual_cue:
-      enabled: false                # <-- flip to true once the ring is wired and commissioned
-      host: "172.31.1.147"          # cabinet IP on the KUKA network (the FRI peer)
-      port: 30300
-      pulse_ms: 0                   # 0 = bare trigger; the board's own `duration` owns the
-                                    # length. Set this only if the board is in "follow" mode,
-                                    # where the pulse width IS the cue length.
+      enabled: false
+      remote_test_trigger: true

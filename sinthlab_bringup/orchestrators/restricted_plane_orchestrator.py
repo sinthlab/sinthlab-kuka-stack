@@ -34,7 +34,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             automatically_declare_parameters_from_overrides=True,
         )
         AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
-        VisualCue.warmup(self)  # open the cabinet cue socket so the first cue isn't delayed
+        VisualCue.warmup(self)  # logs which visual-cue trigger is active (Wi-Fi test or wire)
 
         self.trial_count = 0
 

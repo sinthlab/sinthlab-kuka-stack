@@ -1,37 +1,46 @@
 #!/usr/bin/env python3
-"""Visual cue — triggers the end effector's NeoPixel ring. Mirrors AudioCue.
+"""Visual cue — fires the end effector's NeoPixel ring. Mirrors AudioCue.
 
-    orchestrator ──TCP :30300──► Sunrise cue server ──► 24 V media-flange output
-                              ──► optocoupler ──► Metro M4 ──► ring on, then off
+However it is fired, the board runs its configured cue: on, then off after its own `duration`.
+This action only decides WHEN. `visual_cue.remote_test_trigger` decides HOW:
 
-This action sends **timing only**: one trigger, and the board runs its configured cue for its
-configured duration. That is deliberate — the trigger line is one bit and cannot carry a colour,
-and an experiment cue must not depend on a radio link.
+  true   Wi-Fi -- a TEST trigger for demos and recordings. See visual_cue_remote.py.
 
-WHAT THE CUE LOOKS LIKE IS NOT SET FROM HERE.
-    Colour, brightness, pattern, segments, duration and rate live on the board and are set over
-    its own Wi-Fi access point with a laptop or phone:
+             this computer ── joined to KUKA_NEOPIXEL ──► GET http://192.168.4.1/cue
 
-        curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&duration=1.2&save=1"
+  false  The wire -- the experiment trigger. See end_effector_design/README.md.
 
-    See end_effector_metro_code/README.md. The board hosts that access point itself; the ROS box
-    is on the KUKA network and cannot reach it, which is exactly why the cue's appearance is a
-    commissioning step rather than a per-trial message.
+             switch at robot base ── X76 contacts 1/2 ══ media flange ══ tool pins 9/10 ──► Metro D2
 
-NOTHING HERE BLOCKS THE EXPERIMENT. Short timeouts, guarded sockets, and `on_complete` fires even
-when the cue server is unreachable. A missing cue is bad; a stalled orchestrator is worse.
+THE WIRE'S SWITCH IS NOT CHOSEN YET
+
+    The cabinet cannot close it: this arm's Media flange Inside electric has no cabinet-driven I/O,
+    and the Sunrise project has no generated I/O groups at all. So the switch must be driven from
+    this computer -- most likely a USB relay with dry contacts, which is simply a jumper wire the
+    computer can open and close.
+
+    Until that hardware exists the wire path is a SAFE NO-OP: start() calls on_complete immediately,
+    and one warning is logged per process. While commissioning, short X76 1-2 by hand and watch the
+    result with sinthlab_bringup/diagnostics/check_cue_wiring.py. When the switch is chosen,
+    implement _close_switch() below; every orchestrator already calls start() at the right moment.
+
+WHAT THE CUE LOOKS LIKE IS NOT SET FROM HERE. Colour, brightness, pattern, segments and duration
+live on the board and are set over its own Wi-Fi access point -- see
+end_effector_metro_code/README.md.
 """
 from __future__ import annotations
 
-import socket
-import threading
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Optional
 
 from rclpy.node import Node as rclpyNode
 
-DEFAULT_PORT = 30300
-_CONNECT_TIMEOUT_S = 1.0
-_COMMAND_TIMEOUT_S = 0.5
+from sinthlab_bringup.actions.visual_cue_remote import DEFAULT_BOARD, RemoteCueTrigger
+
+_NOT_WIRED = (
+    "visual_cue.enabled is true, but no trigger switch is wired to this computer yet, so visual "
+    "cues will NOT fire. For a demo, set visual_cue.remote_test_trigger: true to fire them over the "
+    "board's Wi-Fi; to test the wire, short X76 contacts 1-2 by hand. "
+    "See end_effector_design/README.md.")
 
 
 def optional_param(node: rclpyNode, name: str, default):
@@ -43,144 +52,71 @@ def optional_param(node: rclpyNode, name: str, default):
     return default
 
 
-class _CueLink:
-    """Shared, lazily-opened connection to the cabinet's cue server.
-
-    One connection per host is shared by every VisualCue in a node: the server serves one client
-    at a time, and a fresh TCP handshake per cue would add a round trip to the path this design
-    keeps short. Reconnection is attempted on demand — never in a retry loop that could stall a
-    caller.
-    """
-
-    _instances: Dict[Tuple[str, int], "_CueLink"] = {}
-    _registry_lock = threading.Lock()
-
-    @classmethod
-    def for_host(cls, host: str, port: int) -> "_CueLink":
-        with cls._registry_lock:
-            key = (host, port)
-            if key not in cls._instances:
-                cls._instances[key] = _CueLink(host, port)
-            return cls._instances[key]
-
-    def __init__(self, host: str, port: int) -> None:
-        self._host, self._port = host, port
-        self._sock: Optional[socket.socket] = None
-        self._f = None
-        self._io_lock = threading.Lock()
-        self._warned = False
-
-    def _connect(self) -> bool:
-        try:
-            s = socket.create_connection((self._host, self._port), timeout=_CONNECT_TIMEOUT_S)
-            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)   # Nagle would add tens of ms
-            s.settimeout(_COMMAND_TIMEOUT_S)
-            self._sock = s
-            self._f = s.makefile("rw", encoding="ascii", newline="\n")
-            return True
-        except OSError:
-            self._sock, self._f = None, None
-            return False
-
-    def _drop(self) -> None:
-        for obj in (self._f, self._sock):
-            try:
-                if obj is not None:
-                    obj.close()
-            except OSError:
-                pass
-        self._sock, self._f = None, None
-
-    def command(self, text: str) -> Optional[str]:
-        """Send one command and return the reply, or None on any failure. Never raises."""
-        with self._io_lock:
-            for _ in (0, 1):        # one silent reconnect: the cabinet app may have restarted
-                if self._f is None and not self._connect():
-                    return None
-                try:
-                    self._f.write(text + "\n")
-                    self._f.flush()
-                    reply = self._f.readline()
-                    if reply:
-                        return reply.strip()
-                    self._drop()    # clean EOF — the server closed on us
-                except OSError:
-                    self._drop()
-            return None
-
-    def warn_once(self, node: rclpyNode, msg: str) -> None:
-        if not self._warned:
-            self._warned = True
-            node.get_logger().warn(msg)
-
-
 class VisualCue:
-    """Fires the ring's configured cue when start() is called.
+    """Fires the ring's configured cue when start() is called. See the module doc for the two paths.
 
-    Parameters, all under a single shared `visual_cue` block — there is nothing per cue site to
-    configure, because every trigger runs the same board-side cue:
+    Parameters, under a single shared `visual_cue` block:
+        enabled              bool  false (the default) makes every visual cue a silent no-op
+        remote_test_trigger  bool  true: fire over the board's Wi-Fi (demos only)
+                                   false (the default): the X76 wire, a no-op until a switch is fitted
+        remote_board         str   where the Wi-Fi trigger sends, default 192.168.4.1
 
-        enabled   bool  false (the default) makes every visual cue a no-op
-        host      str   cabinet IP on the KUKA network — the FRI peer
-        port      int   cue server port (default 30300)
-        pulse_ms  int   0 (default) = a bare trigger; the board's `duration` owns the length.
-                        Set this only if the board is in `follow` mode, where the pulse width
-                        IS the cue length.
-
-    `label` is for the log line, so you can tell which cue site fired.
+    `label` names the cue site in log lines.
     """
+
+    _warned = False                             # one warning per process, not one per cue site per trial
+    _remote: Optional[RemoteCueTrigger] = None  # one Wi-Fi sender per process, shared by every cue site
 
     @staticmethod
     def warmup(node: rclpyNode) -> None:
-        """Open the connection once at startup so the first real cue does not pay for it.
-
-        Mirrors AudioCue.warmup(). Only ever logs — never raises.
-        """
+        """Mirrors AudioCue.warmup(). Says which trigger is in use. Never raises, never blocks."""
         if not optional_param(node, "visual_cue.enabled", False):
             return
-        host = optional_param(node, "visual_cue.host", None)
-        if host is None:
-            return
-        port = int(optional_param(node, "visual_cue.port", DEFAULT_PORT))
-        reply = _CueLink.for_host(str(host), port).command("PING")
-        if reply is None:
-            node.get_logger().warn(
-                f"Cue server unreachable at {host}:{port} — visual cues will not fire. "
-                "Is the Sunrise application running? (it logs 'Cue server listening on TCP')")
+        if optional_param(node, "visual_cue.remote_test_trigger", False):
+            VisualCue._remote_trigger(node).check()
         else:
-            node.get_logger().info(f"Visual cue ready at {host}:{port} ({reply})")
+            VisualCue._warn_once(node)
+
+    @classmethod
+    def _remote_trigger(cls, node: rclpyNode) -> RemoteCueTrigger:
+        if cls._remote is None:
+            board = str(optional_param(node, "visual_cue.remote_board", DEFAULT_BOARD))
+            cls._remote = RemoteCueTrigger(node, board)
+        return cls._remote
+
+    @classmethod
+    def _warn_once(cls, node: rclpyNode) -> None:
+        if not cls._warned:
+            cls._warned = True
+            node.get_logger().warn(_NOT_WIRED)
 
     def __init__(self, node: rclpyNode, *, label: str = "cue",
                  on_complete: Callable[[], None]) -> None:
         self._node = node
         self._label = label
         self._on_complete = on_complete
-
         self._enabled = bool(optional_param(node, "visual_cue.enabled", False))
-        self._host = str(optional_param(node, "visual_cue.host", ""))
-        self._port = int(optional_param(node, "visual_cue.port", DEFAULT_PORT))
-        self._pulse_ms = int(optional_param(node, "visual_cue.pulse_ms", 0))
-
-        self._link = _CueLink.for_host(self._host, self._port) if self._host else None
-        self.last_reply: Optional[str] = None
+        self._remote_test = bool(optional_param(node, "visual_cue.remote_test_trigger", False))
 
     def start(self) -> None:
-        if self._enabled and self._link is not None:
-            cmd = "CUE" if self._pulse_ms <= 0 else f"CUE {self._pulse_ms}"
-            reply = self._link.command(cmd)
-            self.last_reply = reply
-            if reply is None:
-                self._link.warn_once(
-                    self._node,
-                    f"Cue server unreachable at {self._host}:{self._port} — continuing without "
-                    "the visual cue. This warning is shown once.")
-            elif reply.startswith("OK"):
-                # Logged so the cue and the motion share the ROS timebase in the trial record,
-                # and so the cabinet's sequence number is available to spot a dropped cue.
-                self._node.get_logger().info(f"Visual cue ({self._label}): {reply}")
+        if self._enabled:
+            if self._remote_test:
+                VisualCue._remote_trigger(self._node).fire(self._label)
             else:
-                self._node.get_logger().warn(f"Visual cue rejected: {reply}")
+                self._close_switch()
         self._shutdown()
+
+    def _close_switch(self) -> None:
+        """Short X76 contacts 1 and 2 briefly.   >>> IMPLEMENT WHEN THE SWITCH IS CHOSEN <<<
+
+        The board is in `pulse` mode by default, so the closure only has to outlast its 5 ms
+        debounce — about 50 ms is plenty — and the board's own `duration` decides how long the
+        ring stays lit. Log the ROS time here: it is the cue's timestamp in the trial record.
+
+        Must never raise and must never block the orchestrator for long. A missing cue is bad;
+        a stalled experiment is worse.
+        """
+        VisualCue._warn_once(self._node)
 
     def _shutdown(self) -> None:
         if self._on_complete is not None:
