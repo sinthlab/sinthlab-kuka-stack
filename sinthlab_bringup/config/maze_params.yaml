@@ -157,7 +157,9 @@
 
     # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
     # are OFFSETS (metres) from the anchored start, EXACTLY matching the relative maze rails below
-    # (keep both relative). The maze is in the Y-Z plane, so the X offset is 0 (on the locked plane)
+    # (keep both relative). They are placed on the maze fixture's own anchor -- taken after its
+    # anchor_settle_sec -- so they sit exactly on the rails. The maze is in the Y-Z plane, so the X
+    # offset is 0 (on the locked plane)
     # and Y/Z carry the position. Which junctions get a cue is explained at the arrays themselves.
     checkpoint_monitor:
       update_rate: 100
@@ -177,7 +179,7 @@
       checkpoint_z:      [-0.110, -0.220]
       checkpoint_radius: [ 0.040,  0.040]
       goal_x: 0.000        # on the plane
-      goal_y:  0.150       # far (+Y) end of the BOTTOM goal row R10
+      goal_y:  0.150       # far (+Y) end of the BOTTOM goal row R5
       goal_z: -0.220
       goal_radius: 0.03
       debug_log_enabled: true

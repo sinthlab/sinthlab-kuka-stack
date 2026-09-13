@@ -122,6 +122,17 @@ class MoveRestrictedOnAPlaneAction:
             f"Virtual fixture ACTIVE: profile='{self.active_profile}' config={self.profile_config}"
         )
         
+    def anchor_position(self):
+        """Base-frame EE position the fixture is anchored on, or None until it has anchored this trial.
+
+        Anything else placed relative to the start -- the maze checkpoints and goal -- must use THIS
+        origin rather than capturing its own. With anchor_settle_sec the fixture anchors seconds after
+        starting, once the arm has sagged (~4 cm), so an earlier capture sits that far off the rails.
+        """
+        if self._initial_transform is None:
+            return None
+        return np.array(self._initial_transform[0:3, 3], dtype=float)
+
     def start(self) -> None:
         if self._active:
             self._node.get_logger().warn("MoveRestrictedOnAPlaneAction is already active.")

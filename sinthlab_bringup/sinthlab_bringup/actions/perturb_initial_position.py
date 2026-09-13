@@ -31,12 +31,9 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         self._polar_plane = "horizontal"
         if node.has_parameter(self._param_prefix + "polar_plane"):
             self._polar_plane = str(node.get_parameter(self._param_prefix + "polar_plane").value).strip().lower()
-        # Joint-space completion (inherited) needs this flag; perturbation defaults to the anchor.
-        self._wait_for_physical_arrival = False
-        if node.has_parameter(self._param_prefix + "wait_for_physical_arrival"):
-            self._wait_for_physical_arrival = bool(
-                node.get_parameter(self._param_prefix + "wait_for_physical_arrival").value
-            )
+        # Joint-space completion (inherited) reads the same optional arrival settings; by default the
+        # perturbation completes on the commanded anchor.
+        self._read_arrival_params(node)
         # Placeholder until resolved from the live start pose.
         self._joint_pos_target = np.zeros(7)
 

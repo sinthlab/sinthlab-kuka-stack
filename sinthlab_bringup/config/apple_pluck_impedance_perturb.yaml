@@ -113,6 +113,12 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       wait_for_physical_arrival: true  # wait for the MEASURED arm home, so the next trial can't start perturbed
+      # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
+      # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), and the joint test
+      # used to leave this move waiting forever after some pulls. If the arm is held off, carry on after
+      # the timeout (a warning says how far off it was).
+      cartesian_move_tolerance: 0.03      # apple within 3 cm of the start counts as arrived [m]
+      physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     audio_cue_play:          # trial-start cue: monkey begins reaching, before the perturbation

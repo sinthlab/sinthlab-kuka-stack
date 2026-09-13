@@ -6,6 +6,10 @@ reward callback (`on_reward(i)`) each time the EE first enters an unvisited chec
 the EE enters the goal sphere it fires `on_complete`. Like the displacement monitor it only observes
 — it commands no motion; the operator drives the compliant arm through the maze. `stop()` lets an
 external timeout halt it.
+
+In relative mode, pass `origin_provider` (the maze fixture's `anchor_position`) so checkpoints and
+the goal are placed on exactly the origin the rails use. Without it the monitor anchors on its own
+first tick -- which, when the fixture waits for the arm to settle, is ~4 cm above the rails.
 """
 from __future__ import annotations
 
@@ -22,10 +26,13 @@ from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_
 
 class CheckpointMonitor:
     def __init__(self, node: rclpyNode, *, param_prefix: str = "",
-                 on_complete: Callable[[], None], on_reward: Optional[Callable[[int], None]] = None) -> None:
+                 on_complete: Callable[[], None], on_reward: Optional[Callable[[int], None]] = None,
+                 origin_provider: Optional[Callable[[], Optional[np.ndarray]]] = None) -> None:
         self._node = node
         self._on_complete = on_complete
         self._on_reward = on_reward
+        # Returns the base-frame origin the maze rails are anchored on, or None until they are.
+        self._origin_provider = origin_provider
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
 
         self._ready = False
@@ -107,13 +114,23 @@ class CheckpointMonitor:
                 self._node.get_logger().warn("TF lookup failed; waiting for transform")
             return
 
-        # Anchor the checkpoint/goal offsets at the start EE on the first tick of the trial (relative
-        # mode). The monitor starts right after move_to_start + the quiet window, so the arm is still
-        # at the start pose here -- this IS the maze origin.
+        # Anchor the checkpoint/goal offsets (relative mode). With an origin_provider, use the SAME
+        # origin as the rails -- the fixture anchors only after its settle, so wait until it has; nothing
+        # can be rewarded before then because the arm is still at the start. Without one, fall back to
+        # the EE on the first tick.
         if self._relative and self._origin is None:
-            self._origin = p.copy()
+            if self._origin_provider is not None:
+                origin = self._origin_provider()
+                if origin is None:
+                    return
+                self._origin = np.asarray(origin, dtype=float).copy()
+                source = "the maze fixture's anchor"
+            else:
+                self._origin = p.copy()
+                source = "the start EE"
             self._node.get_logger().info(
-                f"Checkpoints anchored at start EE {np.round(self._origin, 3)} (relative)."
+                f"Checkpoints anchored at {source} {np.round(self._origin, 3)} (relative); "
+                f"EE is {np.round(p - self._origin, 3)} from it."
             )
         off = self._origin if (self._relative and self._origin is not None) else np.zeros(3)
 

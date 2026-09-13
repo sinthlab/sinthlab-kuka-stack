@@ -81,6 +81,9 @@ class MazeOrchestratorNode(rclpyNode):
         self.checkpoint_monitor = CheckpointMonitor(
             self, param_prefix="checkpoint_monitor",
             on_complete=self.on_goal_reached, on_reward=self.on_checkpoint_reward,
+            # Place checkpoints + goal on the rails' own origin (anchored after the settle), not a
+            # separate first-tick capture ~4 cm above it -- that offset made the goal unreachable.
+            origin_provider=self.maze_fixtures.anchor_position,
         )
         self.safety = SafetyStopMonitor(self, param_prefix="maze_safety", on_trip=self.on_safety_trip)
         self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
