@@ -202,6 +202,7 @@ re-runs on every save. Bring-up is ordered so the primary path never depends on 
 while True:
     poll_trigger()          # debounced edge detect on D2  -> may start/stop a cue
     cue_service()           # advance the flash animation   -> non-blocking
+    led_test_service()      # step /led_test, if running    -> non-blocking
     if server is not None:
         server.poll()       # handle at most one HTTP request -> non-blocking
 ```
@@ -436,6 +437,7 @@ copies to prune.
 | `/off` | — | Clear the ring and cancel a running cue. |
 | `/set_color` | `r` `g` `b` `w` | Hold a solid colour (not a cue — it does not time out). |
 | `/segments` | `factor`, `colors` | Static arcs. For a *timed* segmented cue use `pattern=segment`. |
+| `/led_test` | `from`, `to` (pixel 0–59), `step` (seconds per colour, 0.05–5, default 0.25), `loop=1` | **Diagnostics.** Lights one LED at a time in red, green, blue, then white, walking the ring. `/status` shows `led_test_pixel` while it runs; `/off` stops it. |
 | `/fs` | — | List what is on the board, with sizes. |
 | `/fs/get` | `path` | Read a text file back (`code.py`, `*.txt`, `*.json`). **Read-only** — see [below](#changing-the-firmware-without-usb). |
 
@@ -482,6 +484,27 @@ curl http://192.168.4.1/off
 curl http://192.168.4.1/fs                          # what is on the drive
 curl "http://192.168.4.1/fs/get?path=code.py"       # confirm what is actually running
 ```
+
+**Finding where a partly-dark ring stops:**
+
+```bash
+curl http://192.168.4.1/led_test                            # every LED, 4 colours each (~1 minute)
+curl "http://192.168.4.1/led_test?from=43&to=48&step=1"     # slowly, across the joint into the last arc
+curl "http://192.168.4.1/led_test?from=46&to=46&loop=1"     # hold one LED cycling while you probe it
+curl http://192.168.4.1/status | grep led_test              # which pixel is lit right now
+curl http://192.168.4.1/off                                 # stop
+```
+
+The ring is four arcs of 15 LEDs: pixels **0–14, 15–29, 30–44, 45–59**, in data order (the arc the data
+wire lands on is pixel 0). Reading the result:
+
+- **One LED lit at a time draws almost nothing**, so a pixel that stays dark in this test is *not* the
+  supply sagging under load. It is a data joint, a dead LED, or an arc with no 5 V of its own.
+- **An arc with data but no 5 V/GND can light its *first* LED dimly** — powered through the data
+  line — while the rest of it stays dark. If the dark section starts one LED into an arc, measure
+  5 V across that arc's pads before suspecting the LEDs.
+- **5 V present, but the walk stops at the same pixel every time:** that LED passes no data on. The
+  first LED next to a soldered joint is the usual casualty of soldering heat.
 
 ### `/segments` format
 
@@ -569,7 +592,7 @@ a 2.5 s cue costs no real time and the suite cannot flake on a slow machine. `co
 executed up to — but not including — its `while True:` loop, which leaves every function and route
 handler callable directly.
 
-**86 checks**, covering the things that are painful to discover on hardware:
+**121 checks**, covering the things that are painful to discover on hardware:
 
 | | |
 |---|---|
@@ -580,6 +603,7 @@ handler callable directly.
 | Degradation | **Wi-Fi down → the wire still fires the cue** |
 | Patterns | each renders distinctly, and **every one is lit at phase 0** so a cue has a crisp onset |
 | Cue hygiene | a cue restores what the ring was showing; a manual command cancels it and wins |
+| LED test | exactly one LED lit per step, every LED through all four colours in order, `from`/`to`/`loop`, and a cue or manual command stops it without leaving a test pixel behind |
 | File access | read-only, refuses `settings.toml`, refuses traversal, no write route |
 | Regressions | settings and endpoints removed in earlier redesigns stay removed |
 

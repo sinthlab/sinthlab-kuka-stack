@@ -91,9 +91,8 @@ impedance) refuse to activate. With an uncalibrated tool the experiment launch a
 [lbr_fri_ros2::StateGuard]: External torque not in limits for joint lbr_A2. Measured: 2.4 Nm, limit: 2 Nm
 ... External torque limits exceeded. Perform load data calibration!
 ```
-The iiwa has **no SmartPad "load data determination" wizard** like the KR robots — you define a
-**tool** in Sunrise Workbench, then run the built‑in **Determine** routine on the SmartPad
-(Sunrise OS ≥ 1.16; ours is 1.17).
+You define a **tool** in Sunrise Workbench, then let the controller measure its mass and centre of
+mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ours is 1.17).
 
 1. **Define the tool** in Sunrise Workbench — open the project's `RoboticsAPI.data.xml` and add a
    tool under `objectTemplates`. Keep the TCP at the flange (all‑zero transform) so the FRI control
@@ -112,17 +111,24 @@ The iiwa has **no SmartPad "load data determination" wizard** like the KR robots
    </objectTemplates>
    ```
    `defaultMotionFrameRef` must match the frame name exactly. **Synchronize** the project to the controller.
-2. **Determine the load** on the SmartPad: **Main Menu → Start‑up → Tool/Base Management →
-   `SinthLabIiwa7EE` → Edit → Load Data → Determine**. Be in **T1**, **disconnect the tool's cables**
-   (the arm swings the tool through joints A5/A6/A7), and keep the swing space clear.
+2. **Determine the load** on the smartPAD, in **T1**: at the **Robot** level select the **Load data**
+   tile → pick `SinthLabIiwa7EE` → hold the enabling switch → **Determining the load data** →
+   **Apply**. Then **synchronize** the project so Sunrise Workbench keeps the values.
+   - Only the wrist moves: A7 goes to 0° then to −90°, and A6 swings ±95° (A1–A4 stay put). Tick
+     **Restricted motion range for axis 6** (±15° around the start) if the effector could hit the arm.
+   - Start from a pose well away from singularities, and make sure nothing on the tool can move: tie
+     down cables and any battery pack. Loose parts, or anyone touching the robot, falsify the result.
+   - **Below 1 kg KUKA calls the mass measurement unreliable.** Weigh the effector, enter the mass in
+     the tool's `loadData`, synchronize, then choose **Use existing mass** so only the centre of mass
+     is measured.
 3. **Attach the tool in the FRI app** so the cabinet actually compensates it: in
    `sunrise_controller_code/LbrImpedanceControlServer.java`, create the tool
    (`createFromTemplate("SinthLabIiwa7EE")`), `attachTo(lbr_.getFlange())`, and move the **tool**
    instead of the bare flange. Without this the guard still trips even after Determine.
 
-> Determine writes the mass / COM to the controller's copy of the tool — copy the values back into
-> `RoboticsAPI.data.xml` if you want the project/repo to retain them. Re‑run after any change to the
-> end‑effector. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
+> **Apply** stores the mass / COM on the controller; synchronizing copies them back into the project's
+> `RoboticsAPI.data.xml`. Re‑run after any change to the end‑effector — a different apple height or a
+> moved battery pack counts. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
 > set it to match if the arm is mounted otherwise.
 
 ---

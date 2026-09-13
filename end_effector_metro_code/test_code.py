@@ -562,15 +562,87 @@ def test_file_server_is_read_only():
           not any(r.startswith(("/fs/put", "/fs/upload", "/fs/write")) for r in fw.server.routes))
 
 
+def test_led_test():
+    section("/led_test walks every LED through red, green, blue, white, one at a time")
+    fw = load()
+    red, green, blue, white = (255, 0, 0, 0), (0, 255, 0, 0), (0, 0, 255, 0), (0, 0, 0, 255)
+
+    def lit():
+        return [(i, fw.pixels[i]) for i in range(60) if fw.pixels[i] != (0, 0, 0, 0)]
+
+    t0 = CLOCK["ns"]
+    call(fw, "/led_test", step=0.5)
+    check("the handler returns at once (nothing sleeps)", CLOCK["ns"] == t0)
+    check("starts on pixel 0, red, everything else dark", lit() == [(0, red)], lit())
+    status = call(fw, "/status")
+    check("/status reports the pixel and colour",
+          "led_test_pixel=0" in status and "led_test_colour=red" in status)
+    advance(0.3)
+    fw.led_test_service()
+    check("each colour holds for `step`", lit() == [(0, red)], lit())
+
+    seen = [(0, red)]
+    advance(0.2)                                # finish the first 0.5 s step
+    for _ in range(60 * 4 - 1):
+        fw.led_test_service()
+        now = lit()
+        if len(now) != 1:
+            break
+        seen.append(now[0])
+        advance(0.5)
+    check("exactly one LED lit at every step", len(seen) == 240, f"{len(seen)} single-LED steps")
+    check("every LED shows red, green, blue, white, in order",
+          seen == [(i, c) for i in range(60) for c in (red, green, blue, white)])
+    fw.led_test_service()
+    check("ends dark and idle after the last LED", not fw.led_test_active() and lit() == [], lit())
+    check("/status goes back to idle", "led_test_pixel=-1" in call(fw, "/status"))
+
+    call(fw, "/led_test", **{"from": 47, "to": 45, "step": 99})
+    check("from/to in either order", lit() == [(45, red)], lit())
+    check("step is clamped to 5 s", fw._lt_step_ns == 5_000_000_000, fw._lt_step_ns)
+
+    call(fw, "/led_test", **{"from": 46, "to": 46, "step": 0.1, "loop": 1})
+    cycle = []
+    for _ in range(8):
+        cycle.append(lit()[0])
+        advance(0.1)
+        fw.led_test_service()
+    check("loop=1 keeps cycling one LED", cycle == [(46, c) for c in (red, green, blue, white)] * 2,
+          cycle)
+    call(fw, "/off")
+    check("/off stops it and clears the ring", not fw.led_test_active() and lit() == [])
+
+    call(fw, "/led_test")
+    call(fw, "/set_color", w=9)
+    advance(1.0)
+    fw.led_test_service()
+    check("/set_color stops it and wins", not fw.led_test_active() and fw.pixels[59] == (0, 0, 0, 9))
+    call(fw, "/led_test")
+    call(fw, "/segments", factor=2, colors="1,2,3.4,5,6")
+    check("/segments stops it", not fw.led_test_active())
+
+    call(fw, "/off")
+    call(fw, "/config", r=0, g=0, b=0, w=255, pattern="solid", duration=0.5)
+    call(fw, "/led_test", **{"from": 10, "to": 10, "loop": 1})
+    trigger_on(fw)
+    check("a wire cue stops the test and runs", fw.cue_active() and not fw.led_test_active())
+    advance(0.6)
+    fw.cue_service()
+    fw.led_test_service()
+    check("the ring is dark after the cue, not left on a test pixel", lit() == [], lit())
+    trigger_off(fw)
+
+
 def test_surface_is_the_documented_one():
     section("The API surface is the documented one")
     fw = load()
     check("routes", sorted(fw.server.routes) ==
-          ["/config", "/cue", "/fs", "/fs/get", "/off", "/segments", "/set_color", "/status"],
+          ["/config", "/cue", "/fs", "/fs/get", "/led_test", "/off", "/segments", "/set_color",
+           "/status"],
           sorted(fw.server.routes))
     body = call(fw, "/status")
     for field in ("trigger_pin_raw", "trigger_asserted", "trigger_debounced", "wire_fired",
-                  "cue_active", "uptime_s", "nvm"):
+                  "cue_active", "uptime_s", "nvm", "led_test_pixel", "led_test_colour"):
         check(f"/status reports {field}", field + "=" in body)
     # things removed in earlier redesigns; their return would be a regression
     for gone in ("armed", "arm_seq", "profiles", "N_PROFILES", "_decode_select",
@@ -595,6 +667,7 @@ def main():
         test_patterns,
         test_cue_is_non_destructive,
         test_file_server_is_read_only,
+        test_led_test,
         test_surface_is_the_documented_one,
     ):
         NVM.nvm[:] = bytearray(256)             # each test starts from a blank board

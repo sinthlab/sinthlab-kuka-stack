@@ -303,6 +303,8 @@ def cue_start(spec, follow=False):
     """Run a cue spec. follow=True means 'until cue_stop()', ignoring the spec's duration."""
     global _cue_until_ns, _cue_start_ns, _cue_period_ns, _cue_color
     global _cue_pattern, _cue_segments, _cue_frame_ns, _cue_step, _cue_restore
+    led_test_stop()                     # a cue always wins over the LED test; stopping it first
+                                        # also keeps a test frame out of the snapshot below
     now = time.monotonic_ns()
     if not cue_active():
         _cue_restore = _snapshot()      # snapshot the pre-cue ring, never a cue frame
@@ -352,6 +354,83 @@ def cue_service():
             return
         _cue_frame_ns = now
     _render(phase)
+
+
+# ---------------------------------------------------------------------------
+# LED test -- walk every pixel through red, green, blue, white   (/led_test)
+# ---------------------------------------------------------------------------
+# One pixel lit at a time, each colour held for `step` seconds, everything else dark. It is the
+# right tool for a ring that is partly dark, for two reasons:
+#
+#   * it draws ONE LED's current, so a pixel that stays dark here is not the supply sagging under
+#     load -- it is a data joint, a dead LED, or an arc with no 5 V/GND of its own;
+#   * /status reports led_test_pixel while it runs, so the index where the ring goes dark is a
+#     number you read, not a count you make by eye.
+#
+# Non-blocking like the cue engine: led_test_service() steps it from the main loop. Anything else
+# that drives the ring -- a cue, /off, /set_color, /segments -- stops it.
+LED_TEST_COLOURS = (("red", (255, 0, 0, 0)), ("green", (0, 255, 0, 0)),
+                    ("blue", (0, 0, 255, 0)), ("white", (0, 0, 0, 255)))
+_lt_pixel = -1                          # -1 = idle
+_lt_colour = 0                          # index into LED_TEST_COLOURS
+_lt_first = 0
+_lt_last = PHYSICAL_LEDS - 1
+_lt_step_ns = 250_000_000
+_lt_next_ns = 0
+_lt_loop = False
+
+
+def led_test_active():
+    return _lt_pixel >= 0
+
+
+def _lt_draw():
+    pixels.fill(OFF)
+    pixels[_lt_pixel] = LED_TEST_COLOURS[_lt_colour][1]
+    pixels.show()
+    print("led_test: pixel {} {}".format(_lt_pixel, LED_TEST_COLOURS[_lt_colour][0]))
+
+
+def led_test_start(first, last, step_s, loop):
+    global _lt_pixel, _lt_colour, _lt_first, _lt_last, _lt_step_ns, _lt_next_ns, _lt_loop
+    cue_stop(restore=False)
+    _lt_first, _lt_last, _lt_loop = first, last, loop
+    _lt_step_ns = int(step_s * 1_000_000_000)
+    _lt_pixel, _lt_colour = first, 0
+    _lt_next_ns = time.monotonic_ns() + _lt_step_ns
+    _lt_draw()
+
+
+def led_test_stop(clear=True):
+    global _lt_pixel
+    if _lt_pixel < 0:
+        return
+    _lt_pixel = -1
+    if clear:
+        pixels.fill(OFF)
+        pixels.show()
+
+
+def led_test_service():
+    """Advance the LED test. Call every pass of the main loop."""
+    global _lt_pixel, _lt_colour, _lt_next_ns
+    if _lt_pixel < 0:
+        return
+    now = time.monotonic_ns()
+    if now < _lt_next_ns:
+        return
+    _lt_next_ns = now + _lt_step_ns     # timed from now: a slow pass cannot queue a burst of steps
+    _lt_colour += 1
+    if _lt_colour == len(LED_TEST_COLOURS):
+        _lt_colour = 0
+        _lt_pixel += 1
+        if _lt_pixel > _lt_last:
+            if not _lt_loop:
+                led_test_stop()
+                print("led_test: done")
+                return
+            _lt_pixel = _lt_first
+    _lt_draw()
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +606,7 @@ def fire_cue(request: Request):
 # --- /set_color : solid colour on the whole ring ----------------------------
 def set_color(request: Request):
     cue_stop(restore=False)             # a manual command wins over an in-flight cue
+    led_test_stop(clear=False)          # ...and over the LED test
     color = (_int(request, "r", 0), _int(request, "g", 0),
              _int(request, "b", 0), _int(request, "w", 0))
     pixels.fill(color)
@@ -538,6 +618,7 @@ def set_color(request: Request):
 #   http://<board>/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255
 def set_multi_segments(request: Request):
     cue_stop(restore=False)
+    led_test_stop(clear=False)
     factor = _int(request, "factor", 1, 1, PHYSICAL_LEDS)
     colors_str = request.query_params.get("colors", "")
     pixels.fill(OFF)
@@ -563,9 +644,31 @@ def set_multi_segments(request: Request):
 # --- /off : clear the ring and cancel any running cue -----------------------
 def set_off(request: Request):
     cue_stop(restore=False)
+    led_test_stop(clear=False)
     pixels.fill(OFF)
     pixels.show()
     return Response(request, "NeoPixels are now OFF\n")
+
+
+# --- /led_test : light each LED red, green, blue, white, one at a time -------
+# Finds where a partly-dark ring stops. Watch the ring and read led_test_pixel from /status when
+# it goes dark: that index is the fault. The ring is 4 arcs of 15 -- pixels 0-14, 15-29, 30-44,
+# 45-59, in data order. /off stops the test.
+#   http://192.168.4.1/led_test                         all 60, 0.25 s per colour (~1 minute)
+#   http://192.168.4.1/led_test?from=43&to=48&step=1    slowly, across the joint into the last arc
+#   http://192.168.4.1/led_test?from=46&to=46&loop=1    hold one LED cycling while you probe it
+def led_test(request: Request):
+    first = _int(request, "from", 0, 0, PHYSICAL_LEDS - 1)
+    last = _int(request, "to", PHYSICAL_LEDS - 1, 0, PHYSICAL_LEDS - 1)
+    if last < first:
+        first, last = last, first
+    step = _float(request, "step", 0.25, 0.05, 5.0)
+    loop = _bool(request, "loop", False)
+    led_test_start(first, last, step, loop)
+    return Response(request, (
+        "LED test: pixels {}-{}, red/green/blue/white, {} s each{}\n"
+        "watch the ring; /status shows led_test_pixel; /off stops it\n"
+    ).format(first, last, step, ", looping" if loop else ""))
 
 
 # --- /status : what is the board doing? First stop when a cue "does not work"
@@ -574,11 +677,13 @@ def status(request: Request):
         "# state\nleds={}\npatterns={}\nip={}\n"
         "cue_active={}\nwire_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
+        "led_test_pixel={}\nled_test_colour={}\n"
         "nvm_restored_at_boot={}\nuptime_s={:.1f}\n"
     ).format(
         PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
         cue_active(), fired, nvm_writes,
         cue_in.value, trigger_asserted(), _trig_state,
+        _lt_pixel, LED_TEST_COLOURS[_lt_colour][0] if led_test_active() else "-",
         _nvm_loaded, time.monotonic_ns() / 1e9,
     ))
 
@@ -654,6 +759,7 @@ ROUTES = (
     ("/set_color", set_color),
     ("/segments", set_multi_segments),
     ("/off", set_off),
+    ("/led_test", led_test),
     ("/fs", fs_list),
     ("/fs/get", fs_get),
 )
@@ -712,6 +818,7 @@ while True:
     try:
         poll_trigger()
         cue_service()
+        led_test_service()      # idle unless /led_test is running
         if server is not None:
             server.poll()
     except Exception as e:
