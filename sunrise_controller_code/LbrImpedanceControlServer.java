@@ -79,8 +79,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Stiff (firm walls)",
         "Maze compliant (uniform 400)",
         "Maze walls (X lock, Y/Z firm)",
-        "Maze walls + easy guiding (rot 120)",
-        "Maze walls, rolled EE (rot 120)"
+        "Maze walls + easy guiding (rot 120)"
     };
     private double[][] stiffness_vals_ = {
         { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
@@ -90,11 +89,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // fixture experiments: uniform guide
         { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }, // firm everywhere
         { 400.0, 400.0, 400.0, 300.0, 300.0, 300.0 },    // maze: compliant uniform guide
-        // MAZE (vertical Y-Z plane, restricted_axis "x"): ANISOTROPIC, for the UN-ROLLED effector
-        // (maze start A7 -15.7). With the rolled start use "Maze walls, rolled EE (rot 120)" below.
-        //   These are FLANGE axes: at that start X (2500) pointed ~vertical, Y (1000) sideways and
-        //   Z (1000) along the tool axis, into the plane -- X was not the radial axis.
-        //   1000 = firm corridor walls (~10 N per cm of penetration).
+        // MAZE (vertical Y-Z plane, restricted_axis "x"): ANISOTROPIC and the one to use.
+        //   X 2500 = lock the radial axis -> the plane is enforced by the CABINET, hard.
+        //   Y/Z 1000 = firm corridor walls (~10 N per cm of penetration).
         // The corridor INTERIOR still feels free: there the fixture's projection returns the measured
         // pose, so spring error ~ 0 and force ~ 0 regardless of these numbers. Only the walls and the
         // locked axis see a real error. This is why a uniform profile could never win -- 400 made the
@@ -109,14 +106,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         //   what made the old maze start feel like treacle), so this is the one knob that reduces drag
         //   on guiding WITHOUT weakening the plane or the walls.
         // Trade-off: the tool may twist a little more -- watch the apple angle.
-        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }, // maze: firm constraints, easy guiding
-        // MAZE with the end effector ROLLED (A7 93.4 in maze_params.yaml, turned to hide the ring's dead
-        // quarter). The stiffness axes are the FLANGE axes, so they roll with the effector: at the old
-        // A7 (-15.7) flange X pointed ~down and Y ~sideways; after the roll X points sideways and Y ~up.
-        // Swapping X and Y here puts the stiffness back where the profile above had it in the world:
-        // ~2500 against VERTICAL motion, ~1000 sideways, 1000 along the tool axis (into the plane).
-        // Everything else is identical to "Maze walls + easy guiding (rot 120)".
-        { 1000.0, 2500.0, 1000.0, 120.0, 120.0, 120.0 }  // maze, rolled EE: X/Y swapped, easy guiding
+        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }  // maze: firm constraints, easy guiding
     };
     private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
     private double[] damping_vals_ = { 0.3, 0.7, 1.0 };

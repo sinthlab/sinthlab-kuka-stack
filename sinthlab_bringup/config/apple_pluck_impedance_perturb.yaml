@@ -31,12 +31,12 @@
       # notes and knobs for this pose are there. Keep all four copies identical.
       target_joint_position:
       - 0.0
-      - -13.6
+      - -15.5
       - 0.0
-      - -85.5
+      - -94.3
       - 0.0
-      - 43.1
-      - 90.0
+      - 36.2
+      - 0.0
       joint_move_tolerance: 0.01  # tight: commanded anchor must be home -> consistent perturbation origin
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
@@ -63,7 +63,7 @@
       #   polar_theta_deg  direction in that plane. frontal: 0 = +Y (sideways), 90 = up, 180 = -Y
       #                    (the other side), 270 = down.
       #   Checked from the start pose: every frontal direction at r = 0.05 and 0.10 m solves exactly
-      #   (IK residual < 0.1 mm, condition number <= 12.6).
+      #   (IK residual < 0.1 mm, condition number <= 13.3).
       polar_r_m: 0.05
       polar_theta_deg: 0.0
       polar_plane: frontal
@@ -75,7 +75,7 @@
       #   a_max 5  / j_max 20   -> 0.46 s, peak 0.20 m/s
       #   a_max 10 / j_max 50   -> 0.34 s, peak 0.28 m/s
       #   a_max 20 / j_max 150  -> 0.23 s, peak 0.40 m/s
-      #   (v_max 20 or 80 instead of 40 changes none of these.) r = 0.10 m: 0.91 s at the defaults.
+      #   (v_max 20 or 80 instead of 40 changes none of these.) r = 0.10 m: 0.92 s at the defaults.
       # The physical apple follows the anchor through the impedance spring, so it lags a very fast move.
       move_to_pos_v_max:  # peak joint speed [deg/s], per joint
       - 40.0
@@ -95,12 +95,12 @@
       # Same pose as move_to_start (see the notes in apple_pluck_impedance.yaml).
       target_joint_position:
       - 0.0
-      - -13.6
+      - -15.5
       - 0.0
-      - -85.5
+      - -94.3
       - 0.0
-      - 43.1
-      - 90.0
+      - 36.2
+      - 0.0
       joint_move_tolerance: 0.15  # looser: the measured arm under impedance won't hit 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0

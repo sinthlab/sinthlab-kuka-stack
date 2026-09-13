@@ -270,9 +270,8 @@ recoils when pushed off its commanded anchor.
 
 **Start pose — the apple points at the monkey.** The effector is tilted **25° below horizontal** toward
 the monkey (+X), so the monkey pulls the apple toward itself and the NeoPixel ring faces it. Flange
-≈ (0.40, 0, 0.80) m, apple ≈ (0.56, 0, 0.73) m in `lbr_link_0`, reached with the in-plane posture
-`[0, −13.6, 0, −85.5, 0, 43.1, 90]`. The last joint (A7 = 90°) turns the effector about its own axis
-so the ring's dead quarter sits bottom-left, out of sight; the maze start is rolled the same way. It was solved by IK against the iiwa7 URDF, and the arm can be
+≈ (0.40, 0, 0.75) m, apple ≈ (0.56, 0, 0.68) m in `lbr_link_0`, reached with the in-plane posture
+`[0, −15.5, 0, −94.3, 0, 36.2, 0]`. It was solved by IK against the iiwa7 URDF, and the arm can be
 pulled at least 0.30 m toward the monkey before nearing a joint limit or singularity. A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
@@ -615,18 +614,15 @@ Work up the ladder and stop at the first rung that feels wrong.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Maze walls, rolled EE (rot 120)`** — `{1000, 2500, 1000, 120, 120, 120}` |
+   | Cartesian stiffness (K diagonal) | **`Maze walls + easy guiding (rot 120)`** — `{2500, 1000, 1000, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
-   > **Use the rolled-EE profile.** The cabinet's stiffness axes are the *flange* axes, so they turn with
-   > the effector. The maze start rolls the effector (A7 = 93.4°) to hide the ring's dead quarter, and
-   > `{1000, 2500, 1000}` then gives ~2450 N/m against vertical motion, ~1000 sideways and ~1050 into the
-   > plane — the feel the maze was tuned to. The older `Maze walls` profiles (`{2500, 1000, 1000}`) assume
-   > the un-rolled effector and feel inverted with this start. Uniform profiles could never win: 400 made
-   > the walls mushy, 3000 made everything heavy.
+   > **Use an anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
+   > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
+   > never win: 400 made the walls mushy, 3000 made everything heavy.
    >
-   > The two un-rolled `Maze walls` profiles differ **only in rotational stiffness** (300 vs 120), to A/B the
-   > one knob that matters for feel; the rolled-EE profile uses 120. The maze's constraints are all *translational* (X = the plane, Y/Z =
+   > Two maze profiles ship, differing **only in rotational stiffness** (300 vs 120) so you can A/B the
+   > one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
    > the rails), so orientation stiffness defines nothing about the maze — it only stops the tool
    > twisting. But holding orientation *while translating* is the expensive motion, so dropping it to
    > 120 reduces guiding effort **without** softening the plane or the rails. Trade-off: the tool may
