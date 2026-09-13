@@ -11,7 +11,8 @@
 
     move_to_start:
       update_rate: 200
-      # Tool points down -Z. Matches the apple-pluck/perturb start exactly.
+      # Tool points down -Z: the original apple-pluck start (apple pluck and perturb now start with the
+      # apple pointing at the monkey -- see apple_pluck_impedance.yaml).
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       joint_move_tolerance: 0.01

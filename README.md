@@ -268,6 +268,15 @@ go straight to the FRI position command — no IK), while the KUKA cabinet runs 
 natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
 recoils when pushed off its commanded anchor.
 
+**Start pose — the apple points at the monkey.** The effector is tilted **25° below horizontal** toward
+the monkey (+X), so the monkey pulls the apple toward itself and the NeoPixel ring faces it. Flange
+≈ (0.40, 0, 0.75) m, apple ≈ (0.56, 0, 0.68) m in `lbr_link_0`, reached with the in-plane posture
+`[0, −15.5, 0, −94.3, 0, 36.2, 0]`. It was solved by IK against the iiwa7 URDF, and the arm can be
+pulled at least 0.30 m toward the monkey before nearing a joint limit or singularity. A **pluck** is any
+**0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
+the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
+pose in `config/apple_pluck_impedance.yaml`.
+
 **Steps to run:**
 1. Check that `update_rate` in
    `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
@@ -290,9 +299,9 @@ recoils when pushed off its commanded anchor.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
    ```
-4. The arm moves to the start. Wait for the beep, then pull the end effector gently to trigger the
-   0.2 m displacement threshold. A second beep plays, and the arm awaits physical recoil before
-   restarting.
+4. The arm moves to the start. At the beep (and a **green** ring, if the visual cue is on) pull the
+   apple toward you; **0.1 m** in any direction counts. A second beep and a **red** ring confirm it,
+   the arm holds for a moment, then returns to the start.
 
 ### Scenario 2 — Move Restricted on a Plane
 This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
@@ -352,6 +361,31 @@ This scenario builds upon the Apple Pluck physics (cabinet‑side Cartesian impe
 introduces a sudden, programmatic Cartesian spatial shift right before the user acts, to study the
 response to mechanical perturbation.
 
+It uses the **same start pose** as Apple Pluck (apple pointing at the monkey). The pluck threshold is
+**0.2 m** in any direction, measured from where the arm settles after the perturbation.
+
+**Tuning the perturbation** — `perturb_start` in `config/apple_pluck_impedance_perturb.yaml`:
+
+| Knob | Effect |
+|---|---|
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. |
+| `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
+| `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
+| `move_to_pos_a_max`, `move_to_pos_j_max` | **How fast.** On a short move the acceleration and jerk limits set the duration. |
+| `move_to_pos_v_max` | Per-joint speed cap. It never binds on a 5–10 cm perturbation. |
+| `start_delay_sec` | Wait after the start cue before the perturbation begins [s]. Default `1.5`. |
+
+Measured from the start pose at r = 0.05 m (motion of the impedance anchor):
+
+| `a_max` / `j_max` | Duration | Peak apple speed |
+|---|---|---|
+| 2 / 5 *(default)* | 0.73 s | 0.13 m/s |
+| 5 / 20 | 0.46 s | 0.20 m/s |
+| 10 / 50 | 0.34 s | 0.28 m/s |
+| 20 / 150 | 0.23 s | 0.40 m/s |
+
+The physical apple follows the anchor through the impedance spring, so it lags a very fast perturbation.
+
 **Steps to run:**
 1. Check that `update_rate` in
    `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
@@ -370,8 +404,9 @@ response to mechanical perturbation.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
    ```
-4. The arm acts exactly as the standard pluck, but automatically jerks to the side approximately
-   1.5 seconds prior to the readiness cue.
+4. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
+   the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.2 m** in
+   any direction counts.
 
 ### Scenario 4 — Maze
 The operator (or animal) drives the compliant arm along a network of **linear rails** in a **vertical
@@ -931,22 +966,26 @@ experiment's YAML set:
 
 ```yaml
 visual_cue:
-  enabled: true                 # ships false
-  remote_test_trigger: true     # already true in all four configs
+  enabled: true                 # on in the apple pluck, perturb and maze configs
+  remote_test_trigger: true
+  colours:                      # optional, per cue site: [r, g, b, w]
+    play: [0, 255, 0, 0]        # trial start: green
+    snap: [255, 0, 0, 0]        # threshold reached: red
 ```
 
 Then join the ROS computer to the board's **`KUKA_NEOPIXEL`** Wi‑Fi (its Ethernet link to the
 robot is separate) and check the link from the shell you launch from:
 `curl http://192.168.4.1/status`. Each cue site now sends `GET http://192.168.4.1/cue` — the same as
 running that `curl` by hand — from a background thread, so a slow or missing board never stalls a
-trial. Every cue is logged with its round‑trip time, and a failed one says why. **Not for
+trial. Every cue is logged with its round‑trip time, and a failed one says why. Each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at threshold, goal and timeout, blue for maze rewards. **Not for
 experiments:** the Wi‑Fi delay varies from cue to cue, so never align trial data to it. Code:
 [`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
 
 #### Changing what the cue looks like
 
-**Not from ROS, and not in this repo's YAML.** Colour, brightness, pattern, segments, duration and
-rate live **on the board** and are set over the board's **own Wi‑Fi access point**:
+**On the board, not in ROS**, apart from a per‑event colour for Wi‑Fi cues (`visual_cue.colours`
+above). Brightness, pattern, segments, duration, rate and the default colour live **on the board** and
+are set over the board's **own Wi‑Fi access point**:
 
 1. Join **`KUKA_NEOPIXEL`** from a laptop or phone (the board hosts it; it never joins another
    network). The board is always at **`192.168.4.1`**.
@@ -967,8 +1006,8 @@ rate live **on the board** and are set over the board's **own Wi‑Fi access poi
 
 The split is deliberate: the trigger line is **one bit** and cannot carry a colour, and an
 experiment cue must not depend on a radio link. So the switch says *when*, and the board — already
-configured by hand — decides *what*. Even the Wi‑Fi test trigger only says *now*: appearance
-stays a commissioning step, not a per‑trial message.
+configured by hand — decides *what*. The Wi‑Fi test trigger adds only a colour per event: pattern, duration and brightness stay a
+commissioning step.
 
 > **Full settings reference, wiring, patterns, and the commissioning order are in
 > [`end_effector_metro_code/README.md`](end_effector_metro_code/README.md).**

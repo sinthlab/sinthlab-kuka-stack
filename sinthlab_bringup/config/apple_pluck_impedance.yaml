@@ -6,21 +6,37 @@
       update_rate: 200
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      cartesian_axis: z
+      # How far the apple must be pulled from its start to count as a pluck. `norm` is the straight-line
+      # distance in any direction: the apple points at the monkey and is pulled toward it, so no single
+      # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
+      cartesian_axis: norm
       cartesian_displacement_threshold_m: 0.1
       force_release_shutdown_delay_sec: 0.8
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     move_to_start:
       update_rate: 200
+      # START POSE -- the apple points AT the monkey (+X), tilted 25 deg down, so the NeoPixel ring faces
+      # the monkey too. Solved by IK against the iiwa7 URDF (lbr_link_0 -> lbr_link_ee):
+      #   flange (0.40, 0, 0.75) m, apple centre ~(0.56, 0, 0.68) m, symmetric in-plane posture.
+      #   6D condition number 11.5; every joint >= 24.7 deg from its limit; the arm can be pulled at
+      #   least 0.30 m toward the monkey (along +X or along the apple) before nearing a limit or singularity.
+      # KNOBS -- edit move_to_start AND move_to_start_recover, here and in the other apple-pluck YAML:
+      #   A6 (6th value)  tilt. +10 -> 35 deg down (apple ~0.53, 0.63); -10 -> 15 deg down (apple ~0.58,
+      #                   0.73). The apple pivots about the wrist.
+      #   A7 (7th value)  turns the effector about its own axis without moving the apple, e.g. to put the
+      #                   ring's dead quarter out of the monkey's view.
+      #   height          [0, -13.6, 0, -85.5, 0, 43.1, 0]  -> apple ~5 cm higher (z ~0.73)
+      #                   [0, -16.4, 0, -102.2, 0, 29.2, 0] -> apple ~5 cm lower (z ~0.63; A4 17 deg from its limit)
+      #                   Lower than that, this posture cannot point the apple forward and down.
       target_joint_position:
-      - 0
-      - 10
-      - 0
-      - -80
-      - 0
-      - 90
-      - 0
+      - 0.0
+      - -15.5
+      - 0.0
+      - -94.3
+      - 0.0
+      - 36.2
+      - 0.0
       joint_move_tolerance: 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
@@ -36,14 +52,15 @@
       debug_log_rate_hz: 2.0
     move_to_start_recover:
       update_rate: 200
+      # Same pose as move_to_start (see the notes there).
       target_joint_position:
-      - 0
-      - 10
-      - 0
-      - -80
-      - 0
-      - 90
-      - 0
+      - 0.0
+      - -15.5
+      - 0.0
+      - -94.3
+      - 0.0
+      - 36.2
+      - 0.0
       joint_move_tolerance: 0.15
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
@@ -76,5 +93,11 @@
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
     visual_cue:
-      enabled: false
+      enabled: true
       remote_test_trigger: true
+      # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
+      # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
+      # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
+      colours:
+        play: [0, 255, 0, 0]       # trial start -- green
+        snap: [255, 0, 0, 0]       # pull threshold reached -- red

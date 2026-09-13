@@ -777,14 +777,21 @@ wire at all. In the experiment's YAML:
 
 ```yaml
 visual_cue:
-  enabled: true                 # ships false
-  remote_test_trigger: true     # already true in all four configs
+  enabled: true                 # on in the apple pluck, perturb and maze configs
+  remote_test_trigger: true
+  colours:                      # optional: [r, g, b, w] per cue site
+    play: [0, 255, 0, 0]        # green
+    snap: [255, 0, 0, 0]        # red
 ```
 
 Join the ROS computer to **`KUKA_NEOPIXEL`** — its Ethernet link to the robot is separate — and
 check the link from the shell you launch from with `curl http://192.168.4.1/status`. Each cue site
-then sends `GET /cue`, the same call as `curl http://192.168.4.1/cue`, and the board runs its
-configured cue.
+then sends `GET /cue`. A site with a colour configured first sets it with `/config?r=0&g=255&b=0&w=0`,
+then sends `/cue`. There is no `save=1`, so nothing is written to flash, and it needs nothing the
+firmware on the board does not already have. The board keeps that colour until the next cue sets
+another, or a reboot restores its saved colour. Pattern, duration and brightness still come from the
+board's settings. The cue sites are `play` and `snap` in apple pluck and perturb, and
+`play`, `reward`, `goal` and `timeout` in the maze.
 
 - **It never stalls a trial.** Requests go out one at a time from a background thread, and
   `start()` returns at once.
@@ -817,13 +824,15 @@ is *only* the radio.
 
 ## Known limitations
 
-1. **The wire is not commissioned yet.** No wire-triggered cue has run on real hardware, and
-   `visual_cue.enabled` ships as `false`. Demos use the [Wi-Fi demo trigger](#demo-trigger-over-wi-fi).
-2. **Appearance is not set from ROS.** The experiments only ever say *now* — over the wire or over
-   Wi-Fi. Set what the cue looks like from any machine joined to the board's access point.
-3. **One cue appearance at a time.** Every trigger runs the same configured cue; the wire carries
-   one bit and cannot select between looks. Different cues per event would need a second trigger
-   line into another free pin, with the firmware holding one setting per line.
+1. **The wire is not commissioned yet.** No wire-triggered cue has run on real hardware. Demos use
+   the [Wi-Fi demo trigger](#demo-trigger-over-wi-fi), which the apple pluck, perturb and maze configs
+   enable.
+2. **Only colour comes from ROS, and only over Wi-Fi.** Before a Wi-Fi cue, ROS sets its colour with
+   `/config` (in RAM, never saved). Pattern, duration and brightness are always the board's settings,
+   set from any machine joined to its access point.
+3. **The wire has one appearance.** It carries one bit, so every wire-triggered cue is the configured
+   cue. Per-event colours work over Wi-Fi only; giving the wire the same would need a second trigger
+   line into another free pin, with the firmware holding one colour per line.
 4. **`CUE_PIN = board.D2` is unverified on real hardware.** The tool-connector pinout comes from the
    KUKA media-flange manual, not from a measurement. Run the
    [commissioning checklist](../end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order)

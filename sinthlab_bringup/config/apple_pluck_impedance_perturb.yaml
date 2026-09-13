@@ -7,7 +7,10 @@
       update_rate: 200
       base_frame: lbr_link_0
       ee_frame: lbr_link_ee
-      cartesian_axis: z
+      # How far the apple must be pulled from its start to count as a pluck. `norm` is the straight-line
+      # distance in any direction: the apple points at the monkey and is pulled toward it, so no single
+      # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
+      cartesian_axis: norm
       cartesian_displacement_threshold_m: 0.2
       # Wait for the arm to settle into the post-perturbation rest pose before locking the
       # displacement baseline (the monitor starts right after the perturbation move completes).
@@ -24,13 +27,15 @@
     # If you edit the home pose, change it in BOTH blocks.
     move_to_start:
       update_rate: 200
-      target_joint_position:  # home pose [deg] (keep in sync with move_to_start_recover)
+      # Same start as apple_pluck_impedance.yaml -- apple pointing at the monkey, 25 deg down; the
+      # notes and knobs for this pose are there. Keep all four copies identical.
+      target_joint_position:
       - 0.0
-      - 10.0
+      - -15.5
       - 0.0
-      - -80.0
+      - -94.3
       - 0.0
-      - 90.0
+      - 36.2
       - 0.0
       joint_move_tolerance: 0.01  # tight: commanded anchor must be home -> consistent perturbation origin
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
@@ -47,16 +52,32 @@
       debug_log_rate_hz: 2.0
     perturb_start:
       update_rate: 200
-      # Perturbation specified in POLAR (r, theta) relative to the start EE position. The joint
-      # target is solved (position IK seeded at start) at run time, each trial.
-      #   polar_plane: horizontal -> X-Y (theta from +X, CCW toward +Y)
-      #                sagittal   -> X-Z (theta from +X, CCW toward +Z)
-      #                frontal    -> Y-Z (theta from +Y, CCW toward +Z)
-      polar_r_m: 0.05          # perturbation distance from the start EE position [m]
-      polar_theta_deg: 0.0     # direction within polar_plane [deg]
-      polar_plane: horizontal  # horizontal | sagittal | frontal
+      # WHERE -- a POLAR offset (r, theta) from the start EE position, re-solved every trial by position
+      # IK seeded at the start posture.
+      #   polar_r_m        how far [m]. The apple points at the monkey, so keep it small.
+      #   polar_plane      the plane theta turns in:
+      #                      frontal    Y-Z, the plane FACING the monkey (theta from +Y toward +Z). The
+      #                                 apple never moves toward or away from the monkey.
+      #                      horizontal X-Y (theta from +X toward +Y); theta 0 = toward the monkey.
+      #                      sagittal   X-Z (theta from +X toward +Z); theta 0 = toward the monkey.
+      #   polar_theta_deg  direction in that plane. frontal: 0 = +Y (sideways), 90 = up, 180 = -Y
+      #                    (the other side), 270 = down.
+      #   Checked from the start pose: every frontal direction at r = 0.05 and 0.10 m solves exactly
+      #   (IK residual < 0.1 mm, condition number <= 13.3).
+      polar_r_m: 0.05
+      polar_theta_deg: 0.0
+      polar_plane: frontal
       joint_move_tolerance: 0.01
-      move_to_pos_v_max:  # peak joint speed [deg/s]; raise a/j_max below for a snappier perturbation
+      # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. On a move this
+      # short the joints travel a few degrees, so ACCELERATION and JERK set the duration and the speed cap
+      # never binds. Measured from the start pose, r = 0.05 m:
+      #   a_max 2  / j_max 5    -> 0.73 s, peak 0.13 m/s   (these defaults)
+      #   a_max 5  / j_max 20   -> 0.46 s, peak 0.20 m/s
+      #   a_max 10 / j_max 50   -> 0.34 s, peak 0.28 m/s
+      #   a_max 20 / j_max 150  -> 0.23 s, peak 0.40 m/s
+      #   (v_max 20 or 80 instead of 40 changes none of these.) r = 0.10 m: 0.92 s at the defaults.
+      # The physical apple follows the anchor through the impedance spring, so it lags a very fast move.
+      move_to_pos_v_max:  # peak joint speed [deg/s], per joint
       - 40.0
       - 40.0
       - 40.0
@@ -64,20 +85,21 @@
       - 40.0
       - 40.0
       - 40.0
-      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
-      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      start_delay_sec: 1.5  # delay after the audio cue before the perturbation move begins [s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2] -- raise for a snappier perturbation
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3] -- raise together with a_max
+      start_delay_sec: 1.5  # delay after the start cue before the perturbation move begins [s]
       debug_log_enabled: false
       debug_log_rate_hz: 2.0
     move_to_start_recover:  # same home as move_to_start, but waits for the PHYSICAL arm to return
       update_rate: 200
-      target_joint_position:  # home pose [deg] (keep in sync with move_to_start)
+      # Same pose as move_to_start (see the notes in apple_pluck_impedance.yaml).
+      target_joint_position:
       - 0.0
-      - 10.0
+      - -15.5
       - 0.0
-      - -80.0
+      - -94.3
       - 0.0
-      - 90.0
+      - 36.2
       - 0.0
       joint_move_tolerance: 0.15  # looser: the measured arm under impedance won't hit 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s]
@@ -111,5 +133,11 @@
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
     visual_cue:
-      enabled: false
+      enabled: true
       remote_test_trigger: true
+      # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
+      # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
+      # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
+      colours:
+        play: [0, 255, 0, 0]       # trial start -- green
+        snap: [255, 0, 0, 0]       # pull threshold reached -- red

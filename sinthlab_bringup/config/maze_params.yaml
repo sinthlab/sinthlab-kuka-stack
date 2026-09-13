@@ -144,8 +144,16 @@
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
     visual_cue:
-      enabled: false
+      enabled: true
       remote_test_trigger: true
+      # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
+      # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
+      # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
+      colours:
+        play: [0, 255, 0, 0]       # go -- green
+        reward: [0, 0, 255, 0]     # checkpoint reward -- blue
+        goal: [255, 0, 0, 0]       # maze solved (end) -- red
+        timeout: [255, 0, 0, 0]    # timed out (end) -- red
 
     # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
     # are OFFSETS (metres) from the anchored start, EXACTLY matching the relative maze rails below

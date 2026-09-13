@@ -2,7 +2,8 @@
 """Visual cue — fires the end effector's NeoPixel ring. Mirrors AudioCue.
 
 However it is fired, the board runs its configured cue: on, then off after its own `duration`.
-This action only decides WHEN. `visual_cue.remote_test_trigger` decides HOW:
+This action decides WHEN; over Wi-Fi it can also give each cue site its own colour
+(`visual_cue.colours.<label>`). `visual_cue.remote_test_trigger` decides HOW:
 
   true   Wi-Fi -- a TEST trigger for demos and recordings. See visual_cue_remote.py.
 
@@ -24,13 +25,14 @@ THE WIRE'S SWITCH IS NOT CHOSEN YET
     result with sinthlab_bringup/diagnostics/check_cue_wiring.py. When the switch is chosen,
     implement _close_switch() below; every orchestrator already calls start() at the right moment.
 
-WHAT THE CUE LOOKS LIKE IS NOT SET FROM HERE. Colour, brightness, pattern, segments and duration
-live on the board and are set over its own Wi-Fi access point -- see
-end_effector_metro_code/README.md.
+WHAT THE CUE LOOKS LIKE is set on the board -- brightness, pattern, segments, duration and the
+default colour -- over its own Wi-Fi access point; see end_effector_metro_code/README.md. The one
+thing set from here is an optional colour per cue site, and only the Wi-Fi trigger can send it: the
+wire is one bit, so a wire cue always shows the board's configured colour.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from rclpy.node import Node as rclpyNode
 
@@ -60,6 +62,9 @@ class VisualCue:
         remote_test_trigger  bool  true: fire over the board's Wi-Fi (demos only)
                                    false (the default): the X76 wire, a no-op until a switch is fitted
         remote_board         str   where the Wi-Fi trigger sends, default 192.168.4.1
+        colours.<label>      int[] [r, g, b] or [r, g, b, w] (0-255) for the cue site named `label`,
+                                   set on the board just before each Wi-Fi cue (RAM only, never saved).
+                                   Absent = whatever colour the board has at that moment.
 
     `label` names the cue site in log lines.
     """
@@ -97,11 +102,31 @@ class VisualCue:
         self._on_complete = on_complete
         self._enabled = bool(optional_param(node, "visual_cue.enabled", False))
         self._remote_test = bool(optional_param(node, "visual_cue.remote_test_trigger", False))
+        self._colour = self._read_colour(node, label) if self._enabled else None
+
+    @staticmethod
+    def _read_colour(node: rclpyNode, label: str) -> Optional[Tuple[int, int, int, int]]:
+        """visual_cue.colours.<label> as (r, g, b, w), or None to use the board's configured colour."""
+        name = f"visual_cue.colours.{label}"
+        raw = optional_param(node, name, None)
+        if raw is None:
+            return None
+        try:
+            vals = [int(v) for v in raw]
+        except (TypeError, ValueError):
+            vals = []
+        if len(vals) not in (3, 4):
+            node.get_logger().warn(
+                f"{name} must be [r, g, b] or [r, g, b, w] with values 0-255, got {raw!r}. "
+                "This cue will use the board's configured colour.")
+            return None
+        vals += [0] * (4 - len(vals))
+        return tuple(max(0, min(255, v)) for v in vals)
 
     def start(self) -> None:
         if self._enabled:
             if self._remote_test:
-                VisualCue._remote_trigger(self._node).fire(self._label)
+                VisualCue._remote_trigger(self._node).fire(self._label, self._colour)
             else:
                 self._close_switch()
         self._shutdown()
