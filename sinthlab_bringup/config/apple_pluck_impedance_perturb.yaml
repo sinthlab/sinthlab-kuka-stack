@@ -11,7 +11,7 @@
       # distance in any direction: the apple points at the monkey and is pulled toward it, so no single
       # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
       cartesian_axis: norm
-      cartesian_displacement_threshold_m: 0.2
+      cartesian_displacement_threshold_m: 0.1   # same as apple_pluck_impedance.yaml
       # Wait for the arm to settle into the post-perturbation rest pose before locking the
       # displacement baseline (the monitor starts right after the perturbation move completes).
       baseline_settle_sec: 1.0

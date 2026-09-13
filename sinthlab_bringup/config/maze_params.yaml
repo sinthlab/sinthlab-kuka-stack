@@ -4,17 +4,20 @@
     # streams the rail-constrained equilibrium to kuka_clik_controller. The CABINET
     # (LbrImpedanceControlServer) provides the compliance and holds the arm to the rails.
     #
-    # >>> USE THE "Maze walls + easy guiding (rot 120)" SmartPad profile.
-    # It is anisotropic {2500, 1000, 1000, 120, 120, 120}. X 2500 locks the radial axis so the plane is
-    # enforced in hardware; Y/Z 1000 hold the arm firmly on the rails; rot 120 is the knob that makes
-    # guiding light. Uniform profiles could never win: 400 gave walls too weak to feel (4 N/cm), 3000
-    # was dominated by TRACKING LAG.
+    # >>> USE THE "Maze walls, rolled EE (rot 120)" SmartPad profile -- {1000, 2500, 1000, 120, 120, 120}.
+    # The cabinet's stiffness axes are the FLANGE axes, so they turn with the end effector. The start below
+    # rolls the effector (A7 93.4) to hide the ring's dead quarter, which puts flange X sideways, Y ~vertical
+    # and Z along the tool axis (into the maze plane). In the world this profile gives ~2450 N/m against
+    # vertical motion, ~1000 sideways and ~1050 into the plane -- the feel the maze was tuned to with the
+    # original "Maze walls + easy guiding (rot 120)" {2500, 1000, 1000, 120, 120, 120} at the old A7 (-15.7):
+    # ~2300 vertical, ~1200 sideways, ~1000 into the plane. (Its notes said X locks the radial axis; at the
+    # maze start X was actually ~vertical.) rot 120 is the knob that makes guiding light. Uniform profiles
+    # could never win: 400 gave walls too weak to feel (4 N/cm), 3000 was dominated by TRACKING LAG.
     #
-    # The sister profile "Maze walls (X lock, Y/Z firm)" is identical except rot 300 -- keep it for an
-    # A/B if the tool twists more than the experiment allows. Rotational stiffness defines NOTHING
-    # about the maze (its constraints are all translational), but holding orientation while translating
-    # is the expensive motion, so it is the one lever that reduces effort without softening the plane
-    # or the rails.
+    # The two "Maze walls" profiles WITHOUT "rolled EE" are for the un-rolled effector; with this start they
+    # feel inverted (stiff sideways, soft vertically). Rotational stiffness defines NOTHING about the maze
+    # (its constraints are all translational), but holding orientation while translating is the expensive
+    # motion, so it is the one lever that reduces effort without softening the plane or the rails.
     #
     # Tracking lag is a separate lever: the raised clamps (kuka_clik_controller.max_linear_velocity +
     # max_target_step_m below) are what stop the rails feeling heavy when you move fast.
@@ -96,9 +99,8 @@
       #     The cabinet's stiffness axes turn with the flange, so this roll changed which way each one
       #     points: stiffness X (2500) went from ~straight down to sideways (base +Y), Y (1000) from
       #     sideways to ~straight up, and Z (1000) stays along the tool axis (base +X, into the plane).
-      #     So walls against SIDEWAYS motion are now the stiff ones and walls against VERTICAL motion the
-      #     softer ones -- the reverse of before. Swap the X/Y values of the "Maze walls" profiles in
-      #     LbrImpedanceControlServer.java to get the old feel back.
+      #     With the original "Maze walls" profiles that inverts the feel (stiff sideways, soft vertically),
+      #     so use "Maze walls, rolled EE (rot 120)", which swaps X/Y back -- see the top of this file.
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, 93.4]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded

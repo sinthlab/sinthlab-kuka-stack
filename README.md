@@ -363,7 +363,8 @@ introduces a sudden, programmatic Cartesian spatial shift right before the user 
 response to mechanical perturbation.
 
 It uses the **same start pose** as Apple Pluck (apple pointing at the monkey). The pluck threshold is
-**0.2 m** in any direction, measured from where the arm settles after the perturbation.
+**0.1 m** in any direction (the same as Apple Pluck), measured from where the arm settles after the
+perturbation.
 
 **Tuning the perturbation** — `perturb_start` in `config/apple_pluck_impedance_perturb.yaml`:
 
@@ -406,7 +407,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
    ```
 4. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
-   the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.2 m** in
+   the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
    any direction counts.
 
 ### Scenario 4 — Maze
@@ -614,15 +615,18 @@ Work up the ladder and stop at the first rung that feels wrong.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Maze walls + easy guiding (rot 120)`** — `{2500, 1000, 1000, 120, 120, 120}` |
+   | Cartesian stiffness (K diagonal) | **`Maze walls, rolled EE (rot 120)`** — `{1000, 2500, 1000, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
 
-   > **Use an anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
-   > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
-   > never win: 400 made the walls mushy, 3000 made everything heavy.
+   > **Use the rolled-EE profile.** The cabinet's stiffness axes are the *flange* axes, so they turn with
+   > the effector. The maze start rolls the effector (A7 = 93.4°) to hide the ring's dead quarter, and
+   > `{1000, 2500, 1000}` then gives ~2450 N/m against vertical motion, ~1000 sideways and ~1050 into the
+   > plane — the feel the maze was tuned to. The older `Maze walls` profiles (`{2500, 1000, 1000}`) assume
+   > the un-rolled effector and feel inverted with this start. Uniform profiles could never win: 400 made
+   > the walls mushy, 3000 made everything heavy.
    >
-   > Two maze profiles ship, differing **only in rotational stiffness** (300 vs 120) so you can A/B the
-   > one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
+   > The two un-rolled `Maze walls` profiles differ **only in rotational stiffness** (300 vs 120), to A/B the
+   > one knob that matters for feel; the rolled-EE profile uses 120. The maze's constraints are all *translational* (X = the plane, Y/Z =
    > the rails), so orientation stiffness defines nothing about the maze — it only stops the tool
    > twisting. But holding orientation *while translating* is the expensive motion, so dropping it to
    > 120 reduces guiding effort **without** softening the plane or the rails. Trade-off: the tool may
