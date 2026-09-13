@@ -27,15 +27,15 @@
     # If you edit the home pose, change it in BOTH blocks.
     move_to_start:
       update_rate: 200
-      # Same start as apple_pluck_impedance.yaml -- apple pointing at the monkey, 25 deg down; the
+      # Same start as apple_pluck_impedance.yaml -- apple pointing at the monkey, 15 deg down; the
       # notes and knobs for this pose are there. Keep all four copies identical.
       target_joint_position:
       - 0.0
-      - -15.5
+      - -17.0
       - 0.0
-      - -94.3
+      - -98.4
       - 0.0
-      - 36.2
+      - 23.6
       - 0.0
       joint_move_tolerance: 0.01  # tight: commanded anchor must be home -> consistent perturbation origin
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
@@ -63,7 +63,7 @@
       #   polar_theta_deg  direction in that plane. frontal: 0 = +Y (sideways), 90 = up, 180 = -Y
       #                    (the other side), 270 = down.
       #   Checked from the start pose: every frontal direction at r = 0.05 and 0.10 m solves exactly
-      #   (IK residual < 0.1 mm, condition number <= 13.3).
+      #   (IK residual < 0.1 mm, condition number <= 17.3).
       polar_r_m: 0.05
       polar_theta_deg: 0.0
       polar_plane: frontal
@@ -95,11 +95,11 @@
       # Same pose as move_to_start (see the notes in apple_pluck_impedance.yaml).
       target_joint_position:
       - 0.0
-      - -15.5
+      - -17.0
       - 0.0
-      - -94.3
+      - -98.4
       - 0.0
-      - 36.2
+      - 23.6
       - 0.0
       joint_move_tolerance: 0.15  # looser: the measured arm under impedance won't hit 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s]
