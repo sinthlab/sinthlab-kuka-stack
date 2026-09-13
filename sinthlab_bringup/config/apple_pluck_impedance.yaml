@@ -16,25 +16,26 @@
       debug_log_rate_hz: 2.0
     move_to_start:
       update_rate: 200
-      # START POSE -- the apple points AT the monkey (+X), tilted 15 deg down, so the NeoPixel ring faces
+      # START POSE -- the apple points AT the monkey (+X), tilted 25 deg down, so the NeoPixel ring faces
       # the monkey too. Solved by IK against the iiwa7 URDF (lbr_link_0 -> lbr_link_ee):
-      #   flange (0.40, 0, 0.75) m, apple centre ~(0.57, 0, 0.70) m, symmetric in-plane posture.
-      #   A6 is 23.6 deg (was 36.2 at 25 deg tilt): a straighter wrist, because the effector was touching
-      #   the arm. Lower than ~21 deg the wrist nears its singularity at A6 = 0.
-      #   6D condition number 14.9 (~20 while pulled); every joint >= 20.6 deg from its limit; the arm can
-      #   be pulled at least 0.30 m toward the monkey before nearing a limit.
+      #   flange (0.40, 0, 0.75) m, apple centre ~(0.56, 0, 0.68) m, symmetric in-plane posture.
+      #   6D condition number 11.5; every joint >= 24.7 deg from its limit; the arm can be pulled at
+      #   least 0.30 m toward the monkey (along +X or along the apple) before nearing a limit or singularity.
       # KNOBS -- edit move_to_start AND move_to_start_recover, here and in the other apple-pluck YAML:
-      #   A6 (6th value)  tilt: +5 -> 20 deg down (A6 28.6, apple ~0.56, 0.68); +10 -> 25 deg down (A6 33.6,
-      #                   apple ~0.55, 0.66). The apple pivots about the wrist.
-      #   A7 (7th value)  turns the effector about its own axis without moving the apple.
-      #   height          [0, -8.6, 0, -84.5, 0, 29.0, 0] -> apple ~5 cm higher (~0.62, 0.76), 15 deg down
+      #   A6 (6th value)  tilt. +10 -> 35 deg down (apple ~0.53, 0.63); -10 -> 15 deg down (apple ~0.58,
+      #                   0.73). The apple pivots about the wrist.
+      #   A7 (7th value)  turns the effector about its own axis without moving the apple, e.g. to put the
+      #                   ring's dead quarter out of the monkey's view.
+      #   height          [0, -13.6, 0, -85.5, 0, 43.1, 0]  -> apple ~5 cm higher (z ~0.73)
+      #                   [0, -16.4, 0, -102.2, 0, 29.2, 0] -> apple ~5 cm lower (z ~0.63; A4 17 deg from its limit)
+      #                   Lower than that, this posture cannot point the apple forward and down.
       target_joint_position:
       - 0.0
-      - -17.0
+      - -15.5
       - 0.0
-      - -98.4
+      - -94.3
       - 0.0
-      - 23.6
+      - 36.2
       - 0.0
       joint_move_tolerance: 0.01
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
@@ -54,11 +55,11 @@
       # Same pose as move_to_start (see the notes there).
       target_joint_position:
       - 0.0
-      - -17.0
+      - -15.5
       - 0.0
-      - -98.4
+      - -94.3
       - 0.0
-      - 23.6
+      - 36.2
       - 0.0
       joint_move_tolerance: 0.15
       move_to_pos_v_max:  # peak joint speed [deg/s]

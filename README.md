@@ -268,11 +268,10 @@ go straight to the FRI position command — no IK), while the KUKA cabinet runs 
 natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
 recoils when pushed off its commanded anchor.
 
-**Start pose — the apple points at the monkey.** The effector is tilted **15° below horizontal** toward
+**Start pose — the apple points at the monkey.** The effector is tilted **25° below horizontal** toward
 the monkey (+X), so the monkey pulls the apple toward itself and the NeoPixel ring faces it. Flange
-≈ (0.40, 0, 0.75) m, apple ≈ (0.57, 0, 0.70) m in `lbr_link_0`, reached with the in-plane posture
-`[0, −17.0, 0, −98.4, 0, 23.6, 0]`. The wrist (A6 = 23.6°) is kept fairly straight so the effector
-stays clear of the arm. It was solved by IK against the iiwa7 URDF, and the arm can be
+≈ (0.40, 0, 0.75) m, apple ≈ (0.56, 0, 0.68) m in `lbr_link_0`, reached with the in-plane posture
+`[0, −15.5, 0, −94.3, 0, 36.2, 0]`. It was solved by IK against the iiwa7 URDF, and the arm can be
 pulled at least 0.30 m toward the monkey before nearing a joint limit or singularity. A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
