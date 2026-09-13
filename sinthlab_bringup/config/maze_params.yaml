@@ -91,7 +91,15 @@
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
       #     while holding this orientation at z=0.9.)
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]
+      # >>> A7 ROLL (93.4, was -15.7): turns the effector about its own axis so the ring's dead quarter
+      #     sits BOTTOM-LEFT as seen from the front. Position, tool axis and A1-A6 are unchanged.
+      #     The cabinet's stiffness axes turn with the flange, so this roll changed which way each one
+      #     points: stiffness X (2500) went from ~straight down to sideways (base +Y), Y (1000) from
+      #     sideways to ~straight up, and Z (1000) stays along the tool axis (base +X, into the plane).
+      #     So walls against SIDEWAYS motion are now the stiff ones and walls against VERTICAL motion the
+      #     softer ones -- the reverse of before. Swap the X/Y values of the "Maze walls" profiles in
+      #     LbrImpedanceControlServer.java to get the old feel back.
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, 93.4]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory
@@ -109,7 +117,7 @@
       debug_log_rate_hz: 2.0
     move_to_start_recover:
       update_rate: 200
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # same as move_to_start
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, 93.4]  # same as move_to_start
       joint_move_tolerance: 0.15
       wait_for_physical_arrival: true  # next trial must not start from a half-recovered pose
       cartesian_move_tolerance: 0.05
