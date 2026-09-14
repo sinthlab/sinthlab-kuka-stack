@@ -1016,6 +1016,20 @@ commissioning step.
 ---
 
 ## 7. Troubleshooting
+- **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
+  ROS were doing, reproduce the problem, and read the summary:
+  ```bash
+  ros2 run sinthlab_bringup record_fri_session.py      # second terminal, BEFORE the launch; Ctrl-C when done
+  ```
+  It prints each notable event as it happens: FRI session, connection-quality, safety and drive changes;
+  gaps in the robot state stream; controller overruns and their loop time; the commanded joints jumping;
+  the arm lagging its commanded pose; high external torque; A6 near the wrist singularity; and the trial
+  steps. It saves `fri_session.csv`, `events.txt` and `summary.txt`.
+  - Overruns that start right **after** the session leaves `COMMANDING_ACTIVE` mean the cabinet dropped
+    FRI: check the FRI send period chosen on the smartPAD is `10` ms, and the Ethernet link to the cabinet.
+  - Overruns **without** a session change point at the laptop missing its deadlines: close other load
+    (browsers, video, the recording software), and disconnect other networks (such as the ring's Wi-Fi)
+    to test whether they are the cause.
 - **RViz shows nothing / Gazebo crashes immediately.** The graphics library may be trying to use a
   GPU that isn't available. Force software rendering, then relaunch:
   ```bash
