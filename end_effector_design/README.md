@@ -682,6 +682,125 @@ ball requires. So:
 - **Do not reduce the wall count to save time** on the plate or tier 1. Walls and solid skins are
   doing the structural work; infill percentage is the least important number in the table.
 
+### Bambu Studio, step by step (H2D)
+
+Sizes, so you know what you are looking at on the plate:
+
+| Part | Footprint | Height | Material | Prints with |
+|---|---|---|---|---|
+| `flange_plate` | Ø124 | 16 | PETG | — |
+| `base_tier1` | Ø188 | 33 | PETG | — |
+| `base_tier2` | Ø188 | 32 | PETG | — |
+| `cover` | Ø188 | 14 | PETG | — |
+| `apple_stem` | Ø44 | 113.5 | PETG | **fused with `apple_ball`** |
+| `apple_ball` | Ø45 | 27.4 | TPU 95A | **fused with `apple_stem`** |
+| `apple_cap` | Ø43 | 22.5 | TPU 95A | — |
+| `casing` | 198 × 198 | 74 | *not printed* | acrylic, by hand |
+
+#### 0. Before you open Bambu Studio
+
+- **Dry the PETG.** 65 °C for 6–8 h. This matters more than any slicer setting — see above.
+- **Use the textured PEI plate for PETG.** PETG bonds *too well* to smooth PEI and can tear the
+  coating off. If you only have smooth PEI, put a glue-stick layer down as a release agent.
+- **TPU must come off the external spool holder, not the AMS.** Soft filament buckles in the AMS
+  path.
+- Optional but worth it for `base_tier1` and `flange_plate`: fit the **0.6 mm nozzle**. Fatter
+  extrusions bond better between layers, which is precisely the failure mode being designed against.
+  Nothing in this design needs finer than 0.6 — the smallest features are Ø3.4 holes.
+
+#### 1. Make a process preset once, reuse it
+
+Load any part, then in the right-hand parameter panel:
+
+- **Quality → Layer height** `0.20`
+- **Strength → Wall loops** `8`
+- **Strength → Top shell layers** `8` · **Bottom shell layers** `8`
+- **Strength → Sparse infill density** `50 %` · **Sparse infill pattern** `Gyroid`
+- **Others → Brim type** `Outer brim only`, **Brim width** `5 mm`
+
+Save it as a preset (the 💾 next to the process dropdown) called something like
+`0.20 Structural PETG`. Now each part below is just "load this preset, change these two things".
+
+#### 2. Filament preset
+
+Duplicate the Bambu PETG profile and save it as `PETG - high strength`:
+
+- **Filament → Nozzle temperature** `250 °C` (both layers)
+- **Filament → Bed temperature** `80 °C`
+- **Cooling → Minimum fan speed** `20 %` · **Maximum fan speed** `30 %`
+- **Cooling → Keep fan always on** OFF
+
+The low fan is deliberate. Part cooling makes PETG look nicer and bond worse, and every structural
+part here fails along layer boundaries.
+
+#### 3. Per part
+
+**`flange_plate`** — highest-stressed part.
+1. Import, **Place on bed**. It lands mating-face down, which is what you want.
+2. Process: `0.20 Structural PETG`, change **Sparse infill density → 60 %**.
+3. No supports. The M6 head wells are flat-bottomed and print fine.
+
+**`base_tier1`** — the part that broke last time.
+1. Import, **Place on bed** (floor down).
+2. Process: `0.20 Structural PETG` as-is (8 walls, 8/8 shells, 50 %).
+3. No supports needed: the trenches, channels and bore ports are all open-topped or short bridges.
+4. Print it **alone on the plate**. It is the one part where a failed layer matters.
+
+**`base_tier2`** — same shape, much lower load.
+1. Import, **Place on bed**.
+2. Process: `0.20 Structural PETG`, then reduce **Wall loops → 5**, **Top/Bottom shell layers → 6**,
+   **Sparse infill density → 30 %**.
+
+**`cover`**
+1. Import, **Place on bed** (ring groove facing up).
+2. Process: **Wall loops 4**, **Top/Bottom 5**, **Sparse infill 25 %**.
+3. Use an **opaque** filament. The cover is the light barrier behind the ring — a translucent one
+   will glow.
+
+**`apple_cap`** — TPU, prints alone.
+1. Import. It arrives at assembly height; **Place on bed** drops it. It should sit **skirt down,
+   dome up**. Check this — dome-down needs supports and ruins the press-fit surface.
+2. Assign the **TPU filament / nozzle**.
+3. **Wall loops 3**, **Top/Bottom 4**, **Sparse infill 15 %**, **Layer height 0.20**.
+4. **Speed → set everything ≤ 30 mm/s.** TPU does not survive fast corners.
+5. Retraction near zero in the TPU filament profile.
+
+#### 4. The fused apple — the only tricky one
+
+`apple_stem` (PETG) and `apple_ball` (TPU) are modelled in one coordinate frame and **must stay
+aligned**. Do not import them separately and let auto-arrange move them.
+
+1. **File → Import → Import 3MF/STL**, select **both** `apple_stem.stl` and `apple_ball.stl` at once.
+2. When asked *"Multiple objects detected — load as a single object with multiple parts?"* choose
+   **Yes**. Their relative positions are now locked.
+3. In the object list, expand the object. Assign:
+   - `apple_stem` → the **PETG** nozzle
+   - `apple_ball` → the **TPU** nozzle
+4. **Place on bed.** The stem's Ø24 centring spigot lands first — a small footprint for a 131 mm
+   tall print, so: **Others → Brim type `Outer brim only`, Brim width `8 mm`.**
+5. Process changes for this plate:
+   - **Quality → Layer height `0.15`** (more layers, more bond area at the root)
+   - **Strength → Sparse infill density `100 %`** — the shaft is Ø14 with a Ø9 bore, so it is nearly
+     all perimeter anyway
+   - In the **PETG filament preset for this plate only**: **Minimum and Maximum fan speed `0 %`**.
+     Layer adhesion up the shaft is the whole ball game here.
+6. **Print it alone on the plate.** Nothing else should be stealing layer time.
+7. No supports. The ball's lower cup is fused to the shaft and its overhang is progressive.
+
+> **If it still snaps at the shaft root:** printed upright, the layers lie perpendicular to the
+> bending stress — the worst possible orientation, and one no slicer setting fully fixes. Fall back
+> to printing `apple_stem` **separately, lying flat** (strong axis, needs supports under the flange)
+> and fitting the ball mechanically. The Ø22 armature flange carries the pull in *bearing*, not
+> adhesion, so a separately printed ball costs nothing structurally.
+
+#### 5. Check on the first layer
+
+- **Brim stuck down all the way round** on the apple print — that part is top-heavy.
+- **No gaps at the Ø30 bore wall** on `base_tier1`. It is a 4 mm ring and the first layer is where
+  under-extrusion shows.
+- If the first layer looks glassy and translucent rather than matte, the bed is too hot or the
+  filament is wet.
+
 ## Safety (animal subject + electronics)
 - Lightweight keeps tool inertia low (better impedance behavior; gentler on contact) — the electronics
   add mass, so re-check the FRI load data / tool calibration after fitting (main repo README §2).
