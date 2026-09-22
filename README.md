@@ -1025,6 +1025,21 @@ commissioning step.
   gaps in the robot state stream; controller overruns and their loop time; the commanded joints jumping;
   the arm lagging its commanded pose; high external torque; A6 near the wrist singularity; and the trial
   steps. It saves `fri_session.csv`, `events.txt` and `summary.txt`.
+- **Before trusting any timestamp for neural alignment.** The cabinet clock in `<ns>/lbr_state` is
+  what trial data will be aligned to the Blackrock NSP with (see
+  [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md)), and it is **not NTP-disciplined** — it
+  was measured ~11 min fast on 2026-09-22. That offset is harmless (trials are anchored by the sync
+  pulse, so only the clock's *rate* matters), but the rate has to be measured:
+  ```bash
+  ros2 run sinthlab_bringup check_clock_drift.py                 # 5 minutes, namespace /lbr
+  ros2 run sinthlab_bringup check_clock_drift.py --seconds 900   # longer = tighter drift estimate
+  ```
+  It reports four things: whether `time_stamp_nano_sec` actually carries sub-second information (if
+  it is constant, the timestamp is useless for alignment and the recording design has to change);
+  the drift in ppm and how many ms that accumulates over a trial, a block and a session; the absolute
+  offset; and any step discontinuity, which would corrupt alignment silently. Exit code is non-zero
+  if the resolution check fails or a step is found.
+
   - Overruns that start right **after** the session leaves `COMMANDING_ACTIVE` mean the cabinet dropped
     FRI: check the FRI send period chosen on the smartPAD is `10` ms, and the Ethernet link to the cabinet.
   - Overruns **without** a session change point at the laptop missing its deadlines: close other load
