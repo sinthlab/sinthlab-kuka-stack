@@ -16,6 +16,7 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   diagnostics/check_maze.py
   diagnostics/check_cue_wiring.py
   diagnostics/record_fri_session.py
+  diagnostics/check_clock_drift.py
 )
 foreach(_script ${SINTHLAB_BRINGUP_PY_SCRIPTS})
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_script})
