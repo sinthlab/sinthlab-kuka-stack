@@ -170,6 +170,16 @@ def validate(path) -> bool:
 
     # ---- EVENTS ----
     print("\n [EVENTS]")
+    if meta and meta.get("partial"):
+        # The trial never reached stop_and_save(): Ctrl-C, a crash, or an abort. The data up to that
+        # point is real and the checks above still apply -- but demanding the full event sequence
+        # from it would just be reporting the interruption ten times over.
+        got_p = [row[head.index("event")].strip() for row in body if row[head.index("event")].strip()]
+        r.note(f"{len(got_p)} events: {', '.join(got_p) if got_p else '(none)'}")
+        r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
+        r.note("Everything before that point is valid; event-sequence checks are skipped.")
+        print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
+        return not r.bad
     ie, ia = head.index("event"), head.index("event_arg")
     seq = [(k, row[ie].strip(), row[ia].strip()) for k, row in enumerate(body) if row[ie].strip()]
     got = [tok for _, tok, _ in seq]

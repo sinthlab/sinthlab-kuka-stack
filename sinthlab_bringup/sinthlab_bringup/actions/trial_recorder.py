@@ -139,8 +139,11 @@ class TrialRecorder:
         """Open a new file. `sidecar` holds anything constant for the trial (baseline,
         perturbation, maze_geometry) -- it is merged into the JSON verbatim."""
         if self._active:
-            self._node.get_logger().warn("TrialRecorder already running; ignoring start()")
-            return
+            # Do NOT silently ignore this. Ignoring it left the previous trial's file open and the
+            # new trial appending to it -- two trials in one CSV, and no sidecar for either.
+            self._node.get_logger().warn("TrialRecorder: start() while still recording; "
+                                         "closing the previous trial first")
+            self.stop_and_save()
         os.makedirs(self._save_dir, exist_ok=True)
         stamp = time.strftime("%Y%m%d_%H%M%S")
         self._path = os.path.join(self._save_dir, f"robot_trajectory_{stamp}.csv")
@@ -164,6 +167,12 @@ class TrialRecorder:
         }
         self._sidecar.update(sidecar)
         self._active = True
+        # Write the sidecar NOW, not only at stop. A trial that is interrupted -- Ctrl-C, a crash,
+        # an abort -- still leaves a CSV, and without this it is an orphan with no metadata and no
+        # matching filename. `partial` stays true until the trial completes, so an interrupted run
+        # identifies itself instead of looking like a finished one with events missing.
+        self._sidecar["partial"] = True
+        self._write_sidecar()
         self._node.get_logger().info(
             f"TrialRecorder: recording {self._experiment} trial {trial_index} -> "
             f"{os.path.basename(self._path)}")
@@ -192,21 +201,20 @@ class TrialRecorder:
             "fri_ns": int(m.time_stamp_nano_sec) if m else None,
         })
         self._pending = (event, arg)
+        self._write_sidecar()   # ~10 small writes a trial; keeps the sidecar current if we are killed
 
     def stop_and_save(self) -> Optional[str]:
         if not self._active:
             return None
         self._active = False
         self._sidecar["clock_sync"]["end"] = self._clock_triple()
-        # The event log: every mark() with the time it ACTUALLY happened, not the sample it landed
-        # on. This is what a TTL pulse lines up against.
-        self._sidecar["events"] = self._events
+        self._sidecar["partial"] = False
+        self._sidecar["samples"] = self._rows
         path = self._path
         try:
             if self._fh:
                 self._fh.close()
-            with open(path[:-4] + ".meta.json", "w") as f:
-                json.dump(self._sidecar, f, indent=2, default=str)
+            self._write_sidecar()
             self._node.get_logger().info(
                 f"TrialRecorder: {self._rows} samples -> {os.path.basename(path)} (+ .meta.json)")
         except Exception as exc:
@@ -253,6 +261,19 @@ class TrialRecorder:
                 self._fh.flush()
         except Exception:
             pass  # never take the node down over a recording failure
+
+    def _write_sidecar(self) -> None:
+        """(Re)write the sidecar beside the CSV. Always the same stem as self._path, so the two can
+        never disagree -- they did once, because the sidecar was only written at stop and an
+        interrupted trial left a CSV with no partner."""
+        if not self._path:
+            return
+        try:
+            self._sidecar["events"] = self._events
+            with open(self._path[:-4] + ".meta.json", "w") as f:
+                json.dump(self._sidecar, f, indent=2, default=str)
+        except Exception as exc:
+            self._node.get_logger().warn(f"TrialRecorder: sidecar write failed: {exc}")
 
     # ------------------------------------------------------------------ metadata
 

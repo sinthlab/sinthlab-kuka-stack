@@ -179,7 +179,7 @@ The apple is three printed parts that stack on the cover; the **base** is the el
                       Bolt the plate to the robot BARE, then drop the base on: the printed base never
                       carries the M6 clamp load, and you never reach past boards to a flange bolt.
         │  cable bundle up the Ø30 base centre
-  (1a) BASE TIER 1    (Ø188 × 29) Ø30 central bore — the flange bundle lands HERE. ONE open
+  (1a) BASE TIER 1    (Ø188 × 33) Ø30 central bore — the flange bundle lands HERE. ONE open
                       compartment, r 18 → 88, flat floor. Standing in it: 4× Ø12 screw pillars on a
                       SYMMETRIC Ø150 bolt circle (45/135/225/315).
                       Sunk INTO the floor (so wiring runs UNDER the boards):

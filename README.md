@@ -947,21 +947,38 @@ to **tool pins 1/2**, into the Tobsun converter, down to the 5 V rail. Full pino
 pass‑through with no cabinet‑driven I/O, and the Sunrise project has no generated I/O groups
 (`src/com/kuka/generated/` does not exist). The Sunrise application plays no part in the cue.
 
-**The switch is driven from the ROS computer, and is not chosen yet.** The likely answer is a **USB
-relay with dry contacts** — in effect a jumper wire the computer can open and close. Until one is
-fitted:
+**The wire path is an RS‑422 serial link, not a relay — decided and on order.** The earlier plan was
+a USB relay closing X76 1–2 as a dry contact. That was the right answer while the firmware was frozen
+and the wire was only ever going to carry a contact closure. Two things changed it: the effector is
+being reopened (so firmware *can* be redeployed), and the force/pressure sensor needs a data channel
+off the tool anyway. Once a differential link is on the flange, a relay is both **redundant and two
+orders of magnitude slower** — a mechanical contact is 5–15 ms against ~80 µs of wire time.
 
-- **Commission by hand:** short X76 1–2 with a jumper and watch the result with
-  [`check_cue_wiring.py`](sinthlab_bringup/diagnostics/check_cue_wiring.py). Step by step in the
-  [commissioning checklist](end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order).
-- **The experiments are unaffected.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
-  is called beside `AudioCue` at all eight cue sites. On the wire path it is a **safe no‑op**:
-  it completes immediately, and warns once if `visual_cue.enabled` is true.
-- **When the relay arrives,** implement `VisualCue._close_switch()` and set
-  `visual_cue.remote_test_trigger: false`; nothing else changes. A floating relay contact needs
-  **no optocoupler** — only a switch that *outputs a voltage* would. If the arm box runs WSL2 (the
-  `AudioCue` warmup suggests it does), the relay's USB device has to be attached into WSL with
-  `usbipd-win`.
+| | |
+|---|---|
+| ROS box | **StarTech ICUSB422IS** — isolated USB↔RS‑422, 2500 Vrms, FTDI FT232RL |
+| Tool | **MIKROE‑2821 RS485 3 Click** — SN65HVD31, full duplex, 3.3 V |
+| Link | shielded twisted pair on the CTR pairs through the flange |
+
+Notes that survive from the relay plan:
+
+- **No optocoupler on the inbound path.** The only voltage in the trigger loop is the Metro's own
+  3.3 V through D2's pull‑up; a floating contact has nothing to isolate. The *outbound* direction is
+  different — anything the Metro drives toward a 24 V cabinet input does need one.
+- **`latency_timer` must be set to 1.** FTDI defaults to 16 ms of buffering, which would hand back
+  exactly the delay the serial link was chosen to avoid. See §8.
+- **The experiments are unaffected meanwhile.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
+  is called beside `AudioCue` at all eight cue sites. On the wire path it is a **safe no‑op**: it
+  completes immediately and warns once if `visual_cue.enabled` is true.
+- **When the link is up,** implement `VisualCue._close_switch()` (now a serial write, not a contact)
+  and set `visual_cue.remote_test_trigger: false`. If the arm box runs WSL2, the adapter needs
+  `usbipd-win attach`.
+
+> **Worth building at the same time: a firmware echo.** The link is full duplex, so the Metro can
+> write an ack **at the moment it calls `pixels.show()`**. That turns cue delivery from unmeasured
+> into a per‑trial timestamp accurate to ~2 ms, with no extra hardware — which is what cue‑locked
+> neural analysis needs. The firmware already has the right shape: `cue_start()` lights the ring
+> *before* the `/cue` handler returns, so the existing Wi‑Fi RTT already brackets the light.
 
 **For demos and recordings, fire the cue over Wi‑Fi instead — no wire needed.** In the
 experiment's YAML set:
@@ -1021,93 +1038,112 @@ commissioning step.
 > Full schema, per-column definitions and the implementation plan live in
 > [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md). This section is the summary.
 
-### What is recorded today
+### One CSV + one JSON sidecar per trial, for every experiment
 
-| Experiment | File | Rate | Columns |
-|---|---|---|---|
-| Maze | `analysis/robot_trajectory_<date>_<time>.csv` | 100 Hz | 9 |
-| Apple pluck | **nothing** | — | — |
-| Perturb | **nothing** | — | — |
-
-`TrajectoryRecorder` is constructed in exactly one place — `MoveRestrictedOnAPlaneAction.__init__`,
-which `MoveInMazeAction` inherits. The apple-pluck and perturb orchestrators never build one, and no
-launch file records a rosbag. Everything else — the snap, checkpoint rewards, goal/timeout, cue
-round-trip times, safety trips — exists only as text in `~/.ros/log/`.
-
-The current maze file is:
-
-```
-time, x, y, z, rel_a, rel_b, corridor, off_rail, rail_dist
-```
-
-`time` is `time.time()` sampled inside the Python callback, so it carries callback jitter and cannot
-be aligned to anything better than that. `analysis/plot_trajectory.py` reads these files.
-
-### What is planned
-
-One CSV **plus a JSON sidecar** per trial, for all three experiments, sharing a 41-column core:
+Implemented; verified on hardware for the recording path itself, the 100 Hz rate and the cabinet
+clock. Full schema and per-column definitions: [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md).
 
 | | Apple pluck | Perturb | Maze |
 |---|---|---|---|
-| Columns | **42** | **42** | **47** |
+| **Before** | nothing at all | nothing at all | 9 cols, started at the go cue |
+| **Now** | **42 cols** | **42 cols** | **47 cols** |
 | Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
 | Events | 10 | 12 | 13 |
-| Sidecar extras | `baseline` | `baseline`, `perturbation` | `maze_geometry` |
+| Sidecar extras | `threshold_m` | `perturbation` | `maze_geometry` |
 | Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
-**The 41-column core:**
+Two of the three experiments recorded **nothing** before this. The maze wrote 9 columns starting at
+the go cue, which is why old maze CSVs begin mid-trial.
+
+**The 41-column core**
 
 | Block | Cols | Contents |
 |---|---|---|
-| Time | 5 | `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` |
-| EE pose | 7 | `x y z` + quaternion `qx qy qz qw` |
-| Joints | 21 | `meas_A1..A7`, `cmd_A1..A7`, `ext_A1..A7` — radians and Nm |
+| Time | 5 | `t`, `t_wall`, `t_ros`, **`fri_s`, `fri_ns`** |
+| EE pose | 7 | `x y z` + quaternion |
+| Joints | 21 | `meas_A1..A7`, `cmd_A1..A7`, `ext_A1..A7` — rad and Nm |
 | FRI health | 6 | `tracking`, `session`, `quality`, `safety`, `drive`, `control` |
 | Events | 2 | `event`, `event_arg` |
 
-Why each block earns its place:
+Why each earns its place:
 
-- **`fri_s` / `fri_ns`** is the cabinet's own clock and the anchor for aligning to the Blackrock NSP.
-  Measured 2026-09-22: populated, quantised to the 10 ms sample period, **< 0.1 ppm drift**, no
-  discontinuities. Verify on any new setup with `check_clock_drift.py` (§8 below).
-- **The quaternion** is currently discarded. The apple can be pulled off-axis and that is unmeasured.
+- **`fri_s`/`fri_ns`** is the cabinet's own clock — the anchor for aligning to the Blackrock NSP.
+- **The quaternion** was discarded before; the apple can be pulled off-axis and that went unmeasured.
 - **`cmd − meas`** is the impedance droop — under Cartesian impedance the arm lags its equilibrium by
   `F / k`, and that lag is signal, not error. It is what diagnosed the A2 gravity sag.
-- **`ext_A1..A7`** measures a pull with no force sensor fitted. A steady non-zero value at rest means
-  un-modelled tool mass.
-- **FRI health per sample** makes a bad trial self-diagnosing: anything other than session
-  `COMMANDING_ACTIVE`, safety `NORMAL_OPERATION`, drive `ACTIVE` for any part of a trial means the
-  trial is suspect.
+- **`ext_A1..A7`** measures a pull with no force sensor fitted.
+- **FRI health per sample** makes a bad trial self-diagnosing.
+- **`disp_m`** (pluck/perturb) is the dependent variable of the experiment, and was previously only
+  printed at debug rate. Recording it per sample is also what lets the threshold crossing be
+  interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
 
-### Per experiment
+### The cabinet clock, measured
 
-**Apple pluck** — adds `disp_m`, the EE displacement from the baseline locked at `armed`, every
-sample. This is the dependent variable of the experiment and today it is computed every tick and
-only printed at debug rate. Recording it per sample is also what lets the threshold crossing be
-interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
-Events: `trial_start` · `at_start` · `quiet_end` · `cue_go` · **`armed`** · **`snap`** (arg =
-displacement) · `cue_snap` · `freeze` · `recover_start` · `trial_end`. Reaction time is
-`snap − armed`.
+`check_clock_drift.py` on the real arm, 29 996 samples over 300 s:
 
-**Perturb** — the same, plus `perturb_delay_start` and `perturb_applied` events. The applied
-perturbation vector is constant within a trial and goes in the sidecar rather than a column.
+| | |
+|---|---|
+| Populated | yes — real Unix epoch |
+| Resolution | **quantised to 10.000 ms**, exactly the FRI sample period |
+| Sample spacing | median 10.000 ms, **p99 10.000 ms** |
+| Drift vs the ROS box | **< 0.1 ppm** |
+| Discontinuities | none |
+| Absolute offset | ~15 min ahead — **harmless**, it is the *rate* that matters |
 
-**Maze** — keeps its maze columns (plus a new `rail_nearest`) and gains 13 events: `trial_start` · `prestart_done` ·
-`at_start` · `fixture_active` · `cue_go` · `maze_armed` · **`checkpoint`** (arg = index) · `goal` /
-`timeout` / `safety_trip` · `release_wait` · `released` · `trial_end`.
-Two changes worth knowing:
+The stamp is an exact, jitter-free **sample grid**, not a free-running clock. It says which sample
+with no ambiguity; sub-sample event timing comes from interpolating the signal, not from reading the
+clock. Drift is a non-issue — an hour accumulates under 0.4 ms.
 
-- Recording currently starts at `on_go_complete()`, which is why existing maze CSVs begin at the go
-  cue. It should start at `start_trial()` with the cue marked as an event — analysis can trim, it
-  cannot un-discard.
-- The sidecar carries `maze_geometry` **as it was at record time**. Today `plot_trajectory.py` reads
-  rails from the current `maze_params.yaml`, so an old run silently plots against the wrong maze.
+### Cue delivery is measured, not assumed
 
-### Sidecar
+`AudioCue.on_complete` fires when `Popen` **returns** — about 49 ms in on WSL2, and roughly **290 ms
+before any sound** (the Windows process takes ~340 ms to spawn). Audio and visual therefore fire in
+the same callback but arrive ~340 ms apart. Two events close that gap:
 
-Everything constant within a trial: experiment name, trial index, session and subject id, all four
-clocks sampled together at trial start *and* end, FRI state, active controllers, git SHA, start pose,
-baseline, perturbation vector, maze geometry, and the full resolved ROS parameter dump.
+| Event | Fired when | Arg | |
+|---|---|---|---|
+| `cue_audio_end` | the beep process exits | lifetime, s | **observed** — `[console]::Beep` blocks for exactly `duration_ms`, so the sound's START is `end − duration_ms` |
+| `cue_visual_ack` | the board answers a Wi-Fi cue | round trip, ms | **observed** — the firmware calls `pixels.show()` *inside* the `/cue` handler and replies after, so an ack means the ring is already lit |
+
+There is **no photodiode and no microphone**. Robot events (snap, checkpoints, goal) align to neural
+data well under 10 ms; cue-locked analysis still depends on the two markers above, or on the firmware
+echo described in §6.7.
+
+### Sync to the Blackrock NSP
+
+The hook is in place and waiting for the DIO. `TrialRecorder(..., on_event=fn)` calls `fn(token, arg)`
+**synchronously inside `mark()`, before anything else**, so a pulse leaves at the same instant the
+event is logged — one call site, so the two cannot drift apart in a later edit.
+
+```python
+CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
+         "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9}
+TrialRecorder(..., on_event=lambda tok, arg: dio.pulse(CODES[tok]) if tok in CODES else None)
+```
+
+**Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
+is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Send a
+*code* rather than a bare pulse so each one self-identifies — a dropped pulse then shows up instead
+of silently mispairing every subsequent trial.
+
+### The sidecar
+
+Everything constant within a trial: experiment, trial index, session and subject id, all four clocks
+sampled together at trial start **and** end, FRI state, active controllers, git SHA, start pose,
+baseline, perturbation, maze geometry, and the full resolved parameter dump.
+
+Two fields worth knowing:
+
+- **`events`** — every `mark()` with the moment it *actually* happened (`t`, `t_wall`, `t_ros`,
+  `fri_s`, `fri_ns`) and the CSV row it landed on. The CSV column is quantised to the 10 ms grid;
+  this is not. Use the column to **find** an event, the sidecar to **time** it. This is what a TTL
+  pulse lines up against.
+- **`partial`** — true until the trial completes. The sidecar is written at `start()` and kept current
+  on every event, so an interrupted trial still has one and identifies itself rather than looking
+  like a finished trial with events missing.
+
+- **`maze_geometry`** embeds the corridors as they were *at record time*. Without it a six-month-old
+  run silently plots against whatever `maze_params.yaml` says today.
 
 ### Working with the data
 

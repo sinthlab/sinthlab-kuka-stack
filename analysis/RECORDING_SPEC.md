@@ -1,7 +1,9 @@
 # Trial data recording — specification
 
-Status: **proposed, not implemented.** Audit of the current state is in §1; everything from §2 on is
-the design.
+Status: **implemented** (§8). §1 is the audit of what existed before, kept because it is the reason
+for most of the decisions that follow. Verified on hardware for the recording path, the 100 Hz rate
+and the cabinet clock; the full event sequence and `stop_and_save()` are still to be exercised on a
+completed trial.
 
 ---
 
@@ -23,11 +25,11 @@ core. Per-experiment columns are appended, never substituted, so one analysis pa
 **The 41-column core:** time ×5 (`t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns`) · pose ×7 (xyz +
 quaternion) · joints ×21 (`meas`/`cmd`/`ext` × A1–A7) · FRI health ×6 · events ×2.
 
-## 1. What exists today
+## 1. What existed before this
 
 | Experiment | File written | Rate | Columns |
 |---|---|---|---|
-| Maze | `analysis/robot_trajectory_<date>_<time>.csv` | 100 Hz | 9 |
+| Maze | `analysis/robot_trajectory_<date>_<time>.csv`, from the **go cue** | 100 Hz | 9 |
 | Apple pluck | **nothing** | — | — |
 | Perturb | **nothing** | — | — |
 
