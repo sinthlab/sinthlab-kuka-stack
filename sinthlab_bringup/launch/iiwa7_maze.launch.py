@@ -1,9 +1,15 @@
 """Maze-exploration experiment. Thin wrapper over experiment_base.launch.py."""
+import os
+
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+
+# Names the recording folder: analysis/expt_<this file's name>_<timestamp>/
+RUN_NAME = "iiwa7_maze"
 
 
 def generate_launch_description():
@@ -19,6 +25,7 @@ def generate_launch_description():
                     "params_file": PathJoinSubstitution(
                         [FindPackageShare("sinthlab_bringup"), "config", "maze_params.yaml"]
                     ),
+                    "run_name": RUN_NAME,
                     "orchestrator": "maze_orchestrator.py",
                     # Joint controller active for the exact-posture start/recover moves; CLIK loaded
                     # inactive and switched in by the orchestrator for the corridor fixtures.

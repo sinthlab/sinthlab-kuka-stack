@@ -1,9 +1,15 @@
 """Perturbation experiment. Thin wrapper over experiment_base.launch.py."""
+import os
+
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+
+# Names the recording folder: analysis/expt_<this file's name>_<timestamp>/
+RUN_NAME = "iiwa7_apple_pluck_impedance_perturb"
 
 
 def generate_launch_description():
@@ -19,6 +25,7 @@ def generate_launch_description():
                     "params_file": PathJoinSubstitution(
                         [FindPackageShare("sinthlab_bringup"), "config", "apple_pluck_impedance_perturb.yaml"]
                     ),
+                    "run_name": RUN_NAME,
                     "orchestrator": "perturb_orchestrator.py",
                     "ctrl": "lbr_joint_position_command_controller",
                 }.items(),

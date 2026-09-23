@@ -58,9 +58,11 @@ def load_csv(path):
         out[name] = np.array(vals)
     if ie is not None:
         for k, r in enumerate(body):
-            tok = r[ie].strip() if ie < len(r) else ""
-            if tok:
-                events.append((k, tok, r[ia].strip() if ia is not None and ia < len(r) else ""))
+            cell = r[ie].strip() if ie < len(r) else ""
+            if cell:
+                args = (r[ia].strip() if ia is not None and ia < len(r) else "").split("|")
+                for j, tok in enumerate(cell.split("|")):
+                    events.append((k, tok, args[j] if j < len(args) else ""))
     out["_events"] = events
     return out
 
@@ -166,7 +168,8 @@ def main() -> int:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv")))
+    files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv"))
+                   + glob.glob(os.path.join(HERE, "expt_*", "robot_trajectory_*.csv")))
     if not files:
         print("No trajectory CSV files found next to this script.")
         return 1

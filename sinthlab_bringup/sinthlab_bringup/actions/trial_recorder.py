@@ -99,7 +99,15 @@ class TrialRecorder:
                  on_event: Optional[Callable[[str, object], None]] = None) -> None:
         self._node = node
         self._experiment = experiment
-        self._save_dir = os.path.expanduser(save_dir)
+        # One folder per launch, not a flat dump. `run_name` comes from a ROS param when the launch
+        # file sets one; otherwise the node name, which is already experiment-specific.
+        run = None
+        if node.has_parameter("run_name"):
+            run = str(node.get_parameter("run_name").value or "").strip() or None
+        if not run:
+            run = node.get_name().replace("_orchestrator", "")
+        self._save_dir = os.path.join(os.path.expanduser(save_dir),
+                                      f"expt_{run}_{time.strftime('%Y%m%d_%H%M%S')}")
         self._extra_header = list(extra_header) if extra_header else []
         self._extra_fn = extra_fn
         self._session_id = session_id or time.strftime("%Y%m%d_%H%M%S")
@@ -123,7 +131,10 @@ class TrialRecorder:
         self._path: Optional[str] = None
         self._t0: Optional[float] = None
         self._rows = 0
-        self._pending: Optional[tuple] = None
+        # A LIST, not one slot. Several marks routinely land between two 10 ms samples -- snap,
+        # cue_snap and freeze all fire in the same callback -- and a single slot silently kept only
+        # the last of them. They are joined with "|" into the one CSV cell they share.
+        self._pending: list = []
         self._events: list = []
         self._last_msg: Optional[LBRState] = None
         self._sidecar: dict = {}
@@ -152,7 +163,7 @@ class TrialRecorder:
         self._writer.writerow(CORE_HEADER + self._extra_header)
         self._t0 = None
         self._rows = 0
-        self._pending = None
+        self._pending = []
         self._events = []
         self._sidecar = {
             "schema_version": SCHEMA_VERSION,
@@ -200,12 +211,19 @@ class TrialRecorder:
             "fri_s": int(m.time_stamp_sec) if m else None,
             "fri_ns": int(m.time_stamp_nano_sec) if m else None,
         })
-        self._pending = (event, arg)
+        self._pending.append((event, arg))
         self._write_sidecar()   # ~10 small writes a trial; keeps the sidecar current if we are killed
 
     def stop_and_save(self) -> Optional[str]:
         if not self._active:
             return None
+        # trial_end is marked and stop_and_save() called in the same breath, so without this the
+        # final event never reaches a row -- the file closes before the next sample arrives.
+        if self._pending and self._last_msg is not None:
+            try:
+                self._on_state(self._last_msg)
+            except Exception:
+                pass
         self._active = False
         self._sidecar["clock_sync"]["end"] = self._clock_triple()
         self._sidecar["partial"] = False
@@ -238,8 +256,9 @@ class TrialRecorder:
             T = self._fk(q)
             qx, qy, qz, qw = _quat_from_matrix(T)
 
-            ev, arg = self._pending if self._pending else ("", "")
-            self._pending = None
+            ev = "|".join(e for e, _ in self._pending)
+            arg = "|".join("" if a is None else str(a) for _, a in self._pending)
+            self._pending = []
 
             row = [f"{wall - self._t0:.4f}", f"{wall:.6f}", f"{ros:.6f}",
                    msg.time_stamp_sec, msg.time_stamp_nano_sec,
@@ -250,7 +269,7 @@ class TrialRecorder:
             row += [f"{v:.3f}" for v in msg.external_torque]
             row += [f"{msg.tracking_performance:.4f}", msg.session_state, msg.connection_quality,
                     msg.safety_state, msg.drive_state, msg.control_mode, ev,
-                    "" if arg is None else arg]
+                    arg]
             if self._extra_fn is not None:
                 row += list(self._extra_fn(T))
 

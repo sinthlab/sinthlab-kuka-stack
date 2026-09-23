@@ -26,6 +26,13 @@ def generate_launch_description():
         "params_file",
         description="Experiment parameter YAML loaded onto the orchestrator.",
     )
+    run_name = DeclareLaunchArgument(
+        "run_name",
+        default_value="",
+        description="Names the recording folder: analysis/expt_<run_name>_<timestamp>/. The "
+                    "experiment wrappers pass their own launch-file stem. Empty falls back to the "
+                    "orchestrator's node name.",
+    )
     orchestrator = DeclareLaunchArgument(
         "orchestrator",
         description="Orchestrator executable to run (e.g. apple_pluck_orchestrator.py).",
@@ -95,6 +102,7 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
+            {"run_name": LaunchConfiguration("run_name")},
         ],
     )
     # Hold the orchestrator back by `startup_delay` s so the controller is active before it streams.
@@ -105,7 +113,8 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            params_file,
+                        run_name,
+params_file,
             orchestrator,
             robot_type,
             robot_name,

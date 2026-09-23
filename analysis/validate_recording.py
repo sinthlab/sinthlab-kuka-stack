@@ -87,7 +87,8 @@ def col(head, body, name, cast=float):
 
 def validate(path) -> bool:
     r = Report(os.path.basename(path))
-    print(f"\n=== {r.name} ===")
+    rel = os.path.relpath(path, HERE)
+    print(f"\n=== {rel} ===")
     head, body = read(path)
     meta_path = path[:-4] + ".meta.json"
     meta = None
@@ -174,16 +175,35 @@ def validate(path) -> bool:
         # The trial never reached stop_and_save(): Ctrl-C, a crash, or an abort. The data up to that
         # point is real and the checks above still apply -- but demanding the full event sequence
         # from it would just be reporting the interruption ten times over.
-        got_p = [row[head.index("event")].strip() for row in body if row[head.index("event")].strip()]
+        got_p = ([e["event"] for e in meta.get("events", [])]
+                 or [row[head.index("event")].strip() for row in body if row[head.index("event")].strip()])
         r.note(f"{len(got_p)} events: {', '.join(got_p) if got_p else '(none)'}")
         r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
         r.note("Everything before that point is valid; event-sequence checks are skipped.")
         print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
         return not r.bad
-    ie, ia = head.index("event"), head.index("event_arg")
-    seq = [(k, row[ie].strip(), row[ia].strip()) for k, row in enumerate(body) if row[ie].strip()]
+    # The sidecar event log is authoritative: it has every mark() with the moment it happened.
+    # The CSV cell is the same information collapsed onto the 10 ms sample grid -- several events
+    # can share one row (joined with "|"), so read it only when there is no sidecar.
+    if meta and meta.get("events"):
+        seq = [(int(e.get("row", 0)), e["event"], e.get("arg")) for e in meta["events"]]
+        src = "sidecar"
+    else:
+        ie, ia = head.index("event"), head.index("event_arg")
+        seq = [(k, tok, row[ia].strip())
+               for k, row in enumerate(body) if row[ie].strip()
+               for tok in row[ie].strip().split("|")]
+        src = "CSV column"
     got = [tok for _, tok, _ in seq]
-    r.note(f"{len(seq)} events: {', '.join(got) if got else '(none)'}")
+    r.note(f"{len(seq)} events (from the {src}): {', '.join(got) if got else '(none)'}")
+    if src == "sidecar" and "event" in head:
+        ie2 = head.index("event")
+        in_csv = {t for row in body if row[ie2].strip() for t in row[ie2].strip().split("|")}
+        dropped = [t for t in got if t not in in_csv]
+        if dropped:
+            r.note(f"the CSV column is missing {len(dropped)}: {', '.join(dropped)}")
+            r.note("  -> written by a recorder that kept only ONE event per sample. The sidecar is")
+            r.note("     complete, so the trial is fine; newer files join them with '|' in the cell.")
     for tok in ORDER.get(exp, []):
         r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
     idx = [got.index(tok) for tok in ORDER.get(exp, []) if tok in got]
@@ -192,6 +212,17 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
+    if exp in ("apple_pluck", "perturb") and "disp_m" in head:
+        vals = [v for v in col(head, body, "disp_m") if v is not None]
+        peak = max(vals) if vals else 0.0
+        thr = (meta or {}).get("threshold_m")
+        if thr:
+            r.check(("snap" in got) == (peak >= float(thr)),
+                    f"disp_m peak {peak*1000:.1f} mm vs threshold {float(thr)*1000:.0f} mm is "
+                    f"consistent with snap {'present' if 'snap' in got else 'absent'}")
+        else:
+            r.note(f"disp_m peak {peak*1000:.1f} mm (no threshold_m in the sidecar to compare)")
+
     if exp in ("apple_pluck", "perturb") and "snap" in got and "armed" in got:
         ta = t[seq[got.index("armed")][0]]
         ts = t[seq[got.index("snap")][0]]
@@ -223,7 +254,8 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="validate every trial in the folder")
     a = ap.parse_args()
 
-    files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv")))
+    files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv"))
+                   + glob.glob(os.path.join(HERE, "expt_*", "robot_trajectory_*.csv")))
     if a.file:
         files = [a.file if os.path.isabs(a.file) else os.path.join(HERE, a.file)]
     elif not a.all:
