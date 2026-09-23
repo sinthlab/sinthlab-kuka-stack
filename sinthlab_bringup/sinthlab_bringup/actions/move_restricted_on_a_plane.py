@@ -21,7 +21,12 @@ class MoveRestrictedOnAPlaneAction:
     by updating a target Pose based on physical pushes, mapping it to geometric 
     rails, and streaming it to the CLIK controller (FRI position mode).
     """
-    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None,
+                 own_recorder: bool = True) -> None:
+        # own_recorder=False when the ORCHESTRATOR owns a TrialRecorder instead (the maze does).
+        # The old TrajectoryRecorder wrote 9 columns starting at the go cue; TrialRecorder writes the
+        # full schema from trial start. Both must never run at once or a trial produces two files.
+        self._own_recorder = own_recorder
         self._node = node
         self._on_complete = on_complete
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
@@ -58,7 +63,7 @@ class MoveRestrictedOnAPlaneAction:
         )
         
         self.last_measured_joints = np.zeros(self.robot.ndof)
-        self.recorder = TrajectoryRecorder() # Setup modular recorder
+        self.recorder = TrajectoryRecorder() if own_recorder else None
         
         # Which fixture geometry is active. Required, never defaulted: every failure to load a fixture
         # degrades into "publish the measured pose unchanged", i.e. equilibrium == arm -> zero spring
@@ -143,7 +148,8 @@ class MoveRestrictedOnAPlaneAction:
         self._published_xyz = None
         self._anchor_elapsed = 0.0
         
-        self.recorder.start(extra_header=self._record_extra_header())  # start modular recorder
+        if self.recorder is not None:
+            self.recorder.start(extra_header=self._record_extra_header())
         
         # CRITICAL FIX: Wipe the old commanded position from the previous trial!
         # This forces the script to re-orient itself to the exact joint positions
@@ -157,7 +163,8 @@ class MoveRestrictedOnAPlaneAction:
         self._active = False
         
         # Save recorded trajectory automatically on stop using the modular recorder
-        self.recorder.stop_and_save(self._node.get_logger())
+        if self.recorder is not None:
+            self.recorder.stop_and_save(self._node.get_logger())
             
         self._node.get_logger().info("Restricted Plane Action stopped.")
 
@@ -331,8 +338,9 @@ The KUKA cabinet runs Cartesian impedance (LbrImpedanceControlServer), so this n
         self._publish_pose(target_pose)
 
         # Record the real (measured) Cartesian trajectory at the state rate
-        measured_T = self._fk_func(self.last_measured_joints)
-        self.recorder.record_pose(measured_T, self._record_extra(measured_T))
+        if self.recorder is not None:
+            measured_T = self._fk_func(self.last_measured_joints)
+            self.recorder.record_pose(measured_T, self._record_extra(measured_T))
 
     def _compute_cabinet_target(self, msg: LBRState) -> np.ndarray:
         """

@@ -22,6 +22,11 @@ class WaitAction:
         self._name = name
         self._timer = None
 
+
+    def duration_sec(self) -> float:
+        """How long this wait is configured for, for the trial log."""
+        return self._duration_sec
+
     def start(self) -> None:
         if self._timer is not None:
             self._node.get_logger().warn(f"WaitAction '{self._name}' is already running.")

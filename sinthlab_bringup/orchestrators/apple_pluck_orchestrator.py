@@ -9,6 +9,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
+from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 
 
 class ApplePluckOrchestratorNode(rclpyNode):
@@ -35,7 +36,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         self.audio_cue = AudioCue(
-            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete
+            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
+            on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
         )
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
@@ -53,6 +55,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self, param_prefix="apple_pluck_impedance_control_displacement",
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
+            on_armed=self.on_monitor_armed,   # baseline locked -> mark it; reaction time = snap - armed
         )
         # At threshold, freeze the equilibrium on the arm's current pose so it stops pulling back
         # (the "give") but stays supported — NOT limp. Held for the monitor's
@@ -62,41 +65,75 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
 
+        # Trial data. Until now this experiment recorded NOTHING -- see analysis/RECORDING_SPEC.md.
+        # disp_m is the dependent variable and is sampled here every state message, so the threshold
+        # crossing can be interpolated offline to finer than the 10 ms cabinet stamp.
+        self.recorder = TrialRecorder(
+            self, experiment="apple_pluck",
+            extra_header=["disp_m"],
+            extra_fn=lambda _T: [f"{self.monitor.current_disp():.6f}"],
+        )
+
+        # --- cue delivery, as observed rather than assumed -------------------------------------
+        # AudioCue.on_complete fires when Popen RETURNS (~49 ms on WSL2), which is ~290 ms before
+        # any sound. The beep process blocks for exactly duration_ms, so its EXIT gives the real
+        # end and the start follows by subtraction. The visual ack comes back after the firmware
+        # has already called pixels.show(), so it brackets the light.
+        VisualCue.set_result_sink(
+            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
+
         self.get_logger().info("=== AUTOMATED MULTI-TRIAL EXPERIMENT INITIALIZED ===")
         self.start_trial()
 
     def start_trial(self):
         self.trial_count += 1
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        # Record the WHOLE trial, approach included -- analysis can trim, it cannot un-discard.
+        self.recorder.start(trial_index=self.trial_count,
+                            threshold_m=self.monitor.threshold_m())
+        self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()
 
     def on_move_complete(self):
         self.get_logger().info("Arm returned to start. Waiting for a quiet window...")
+        self.recorder.mark("at_start")
         self.quiet_window.start()
 
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
+        self.recorder.mark("quiet_end")
         self.audio_cue.start()
         self.visual_cue.start()
+        self.recorder.mark("cue_go")
 
     def on_audio_complete(self):
         self.get_logger().info("Audio cue played. Initiating Displacement Monitor.")
         self.monitor.start()
 
+    def on_monitor_armed(self):
+        # Baseline locked: this is the moment the animal may pull. Reaction time is snap - armed.
+        self.recorder.mark("armed")
+
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")
+        self.recorder.mark("snap", round(self.monitor.current_disp(), 6))
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
+        self.recorder.mark("cue_snap")
         self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
+        self.recorder.mark("freeze")
 
     def on_monitor_complete(self):
         # Dwell elapsed: stop holding and return to start for the next trial.
         self.get_logger().info("Apple plucked! Returning to start.")
+        self.recorder.mark("recover_start")
         self.freeze_hold.stop()
         self.move_recover.start()
 
     def on_recover_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
+        self.recorder.mark("trial_end", self.trial_count)
+        self.recorder.stop_and_save()
         self.start_trial()
 
 

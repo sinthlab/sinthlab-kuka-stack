@@ -44,7 +44,12 @@ _HINT = "Is this computer joined to the board's Wi-Fi (KUKA_NEOPIXEL)?"
 class RemoteCueTrigger:
     """Sends GET /cue to the board from one background thread. Share one instance per process."""
 
-    def __init__(self, node: rclpyNode, board: str = DEFAULT_BOARD) -> None:
+    def __init__(self, node: rclpyNode, board: str = DEFAULT_BOARD, on_result=None) -> None:
+        # on_result(label, ok, rtt_ms) fires when the board answers. The firmware lights the ring
+        # INSIDE the /cue handler -- cue_start() -> _render() -> pixels.show() -- and only then
+        # returns the response, so an ack means the LEDs are already on. It is a round trip, not a
+        # one-way time, but it is a hard upper bound on when the cue fired, per trial.
+        self._on_result = on_result
         self._log = node.get_logger()
         self._board = board
         self._jobs: queue.SimpleQueue = queue.SimpleQueue()
@@ -94,6 +99,11 @@ class RemoteCueTrigger:
                 return
 
         ms = (time.monotonic() - sent_at) * 1000
+        if self._on_result is not None and label is not None:
+            try:
+                self._on_result(label, True, ms)
+            except Exception:
+                pass
         if label is None:
             self._log.info(f"Visual cue board reachable at {self._board} ({ms:.0f} ms).")
         else:

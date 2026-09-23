@@ -71,6 +71,11 @@ class CartesianImpedanceDisplacementMonitor:
             )
 
         # Runtime state
+        # Latest displacement, refreshed every tick. The recorder reads this so `disp_m` lands in
+        # the trial CSV -- it is the dependent variable of the experiment and until now it only ever
+        # reached the debug log. Recording it per sample is also what lets the threshold crossing be
+        # interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
+        self._last_disp: float = 0.0
         self._baseline: Optional[TransformStamped] = None
         self._settle_elapsed = 0.0
         self._stopping = False
@@ -122,6 +127,7 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         self._baseline = None
+        self._last_disp = 0.0
         self._settle_elapsed = 0.0
         self._stopping = False
         self._shutdown_requested = False
@@ -131,6 +137,23 @@ class CartesianImpedanceDisplacementMonitor:
 
         self._ready = True
         self._node.get_logger().info("Displacement monitor activated for new trial.")
+
+    def current_disp(self) -> float:
+        """Displacement from the locked baseline as of the last tick, in metres.
+
+        Read by TrialRecorder once per sample. Returns 0.0 before the baseline is locked, which is
+        correct: there is nothing to be displaced from yet."""
+        return self._last_disp
+
+    def baseline_xyz(self) -> Optional[tuple]:
+        """The pose `current_disp()` is measured from, for the trial sidecar. None until armed."""
+        if self._baseline is None:
+            return None
+        t = self._baseline.transform.translation
+        return (float(t.x), float(t.y), float(t.z))
+
+    def threshold_m(self) -> float:
+        return self._disp_threshold_m
 
     def stop(self) -> None:
         """Disarm the monitor (e.g. on an external safety abort) without firing its callbacks."""
@@ -171,6 +194,7 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         disp = self._axis_disp_m(ts_now, self._baseline, self._disp_axis)
+        self._last_disp = disp
         if self._debug_log_enabled and not self._stopping and self._dbg.tick(self._dt):
             self._node.get_logger().info(
                 f"EE disp={disp:.4f} m (axis={self._disp_axis}, thr={self._disp_threshold_m:.4f} m)"

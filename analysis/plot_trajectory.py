@@ -35,24 +35,98 @@ PARAMS = os.path.join(HERE, "..", "sinthlab_bringup", "config", "maze_params.yam
 
 
 def load_csv(path):
-    """Return {column: np.array}. Missing/short columns simply do not appear."""
+    """Return {column: np.array}, plus "_events" -> [(row, token, arg), ...].
+
+    Reads both schemas: the 9-column files written before analysis/RECORDING_SPEC.md and the
+    42/47-column ones written since. `event` is text, so it is pulled out separately rather than
+    coerced to NaN like every other column."""
     with open(path) as f:
         rows = list(csv.reader(f))
-    head, body = rows[0], rows[1:]
-    out = {}
+    head, body = [h.strip() for h in rows[0]], rows[1:]
+    out, events = {}, []
+    ie = head.index("event") if "event" in head else None
+    ia = head.index("event_arg") if "event_arg" in head else None
     for i, name in enumerate(head):
+        if i == ie:
+            continue
         vals = []
         for r in body:
             try:
                 vals.append(float(r[i]))
             except (ValueError, IndexError):
                 vals.append(np.nan)
-        out[name.strip()] = np.array(vals)
+        out[name] = np.array(vals)
+    if ie is not None:
+        for k, r in enumerate(body):
+            tok = r[ie].strip() if ie < len(r) else ""
+            if tok:
+                events.append((k, tok, r[ia].strip() if ia is not None and ia < len(r) else ""))
+    out["_events"] = events
     return out
 
 
-def load_rails(profile=None):
-    """Read the active maze rails from maze_params.yaml. Returns [] if unavailable."""
+def time_col(d):
+    """Elapsed-time column under either schema: "time" before RECORDING_SPEC.md, "t" since."""
+    for k in ("t", "time"):
+        if k in d:
+            return d[k]
+    return np.arange(len(next(iter(d.values()))), dtype=float) * 0.01
+
+
+def load_sidecar(csv_path):
+    """The .meta.json written beside a trial, or None for an older recording."""
+    try:
+        import json
+        with open(csv_path[:-4] + ".meta.json") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def plot_displacement(ax, chosen, sidecar):
+    """disp_m against time -- the view for apple pluck and perturb, which have no maze coordinates
+    and until now got an empty first panel. The threshold and the armed/snap moments are what make
+    the trial readable: reaction time is the gap between the two markers."""
+    for path in chosen:
+        d = load_csv(path)
+        if "disp_m" not in d:
+            continue
+        t, disp = time_col(d), d["disp_m"] * 1000.0
+        single = len(chosen) == 1
+        ax.plot(t, disp, lw=1.4, zorder=3,
+                label="displacement" if single else os.path.basename(path)[18:-4])
+        marks = {"armed": ("tab:blue", "^"), "snap": ("tab:red", "v"),
+                 "cue_go": ("tab:green", "|"), "perturb_applied": ("tab:purple", "D")}
+        seen = set()
+        for row, tok, _arg in d["_events"]:
+            if tok in marks and row < len(t):
+                c, m = marks[tok]
+                ax.scatter([t[row]], [disp[row]], color=c, marker=m, s=90, zorder=6,
+                           label=(tok if single and tok not in seen else None))
+                ax.axvline(t[row], color=c, lw=0.8, alpha=0.35, zorder=2)
+                seen.add(tok)
+    thr = (sidecar or {}).get("threshold_m")
+    if thr:
+        ax.axhline(float(thr) * 1000.0, color="0.4", ls="--", lw=1.2, zorder=2,
+                   label=f"threshold {float(thr)*1000:.0f} mm")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("displacement from baseline (mm)")
+    ax.set_title("Pull — displacement vs time")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8, loc="best")
+
+
+def load_rails(profile=None, sidecar=None):
+    """Maze rails, PREFERRING the geometry recorded in the trial's sidecar.
+
+    maze_params.yaml is whatever the maze looks like TODAY. A run from six months ago plotted
+    against it is silently wrong: the path is real and the rails drawn under it are not. The sidecar
+    carries the geometry that was live when the run happened, so it wins when present; the YAML is
+    the fallback for older recordings, which have nothing else."""
+    if sidecar and isinstance(sidecar.get("maze_geometry"), dict):
+        rails = [tuple(map(float, c)) for c in sidecar["maze_geometry"].get("corridors", [])]
+        if rails:
+            return rails, sidecar.get("params")
     try:
         import yaml
     except Exception:
@@ -103,15 +177,26 @@ def main() -> int:
     else:
         chosen = [max(files, key=os.path.getmtime)]
 
-    rails_info = load_rails()
+    sidecar = load_sidecar(chosen[-1])
+    rails_info = load_rails(sidecar=sidecar)
     rails, params = (rails_info if rails_info else ([], None))
-    has_maze = all("rel_a" in load_csv(c) for c in chosen[:1])
+    probe = load_csv(chosen[-1])
+    has_maze = "rel_a" in probe
+    has_disp = "disp_m" in probe
+    if sidecar:
+        src = "sidecar" if sidecar.get("maze_geometry") else "maze_params.yaml"
+        print(f"  {sidecar.get('experiment')} trial {sidecar.get('trial_index')} "
+              f"(schema v{sidecar.get('schema_version')}), rails from {src}")
+    if not has_maze:
+        rails, params = [], None      # nothing to draw them against
 
     fig = plt.figure(figsize=(15, 6.5))
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_subplot(1, 2, 2, projection="3d")
 
-    # ---- maze view -------------------------------------------------------------------------
+    # ---- panel 1: maze view, or the pull for pluck/perturb ----------------------------------
+    if has_disp and not has_maze:
+        plot_displacement(ax1, chosen, sidecar)
     for (amn, amx, bmn, bmx) in rails:
         ax1.plot([amn, amx], [bmn, bmx], color="0.75", lw=6, solid_capstyle="round", zorder=1)
     if params:
@@ -122,10 +207,10 @@ def main() -> int:
                     zorder=5, label="goal")
         ax1.scatter([0], [0], marker="s", s=90, color="tab:blue", zorder=5, label="start")
 
-    for path in chosen:
+    for path in (chosen if has_maze else []):
         d = load_csv(path)
         if "rel_a" not in d:
-            print(f"  {os.path.basename(path)}: no maze columns (older recording) -- skipping maze view")
+            print(f"  {os.path.basename(path)}: no maze columns -- skipping maze view")
             continue
         a_, b_ = d["rel_a"], d["rel_b"]
         off = d.get("off_rail", np.zeros_like(a_))
@@ -135,25 +220,27 @@ def main() -> int:
         if m.any():
             ax1.scatter(a_[m], b_[m], s=6, color="tab:red", zorder=6,
                         label=None if len(chosen) > 1 else "off rail")
-    ax1.set_xlabel("a  (sideways, m from start)")
-    ax1.set_ylabel("b  (up/down, m from start)")
-    ax1.set_title("Maze view — rails in grey")
+    if has_maze:
+        ax1.set_xlabel("a  (sideways, m from start)")
+        ax1.set_ylabel("b  (up/down, m from start)")
+        ax1.set_title("Maze view — rails in grey")
     # Bound the axes explicitly from rails+data and use adjustable="box": with "datalim" the equal
     # aspect is free to expand the limits to fill whatever shape the subplot ends up, which blew the
     # view up to +/-1 m once the 3-D panel changed the layout.
     _a = [v for r in rails for v in r[:2]] or [0.0]
     _b = [v for r in rails for v in r[2:]] or [0.0]
-    for path in chosen:
+    for path in (chosen if has_maze else []):
         _d = load_csv(path)
         if "rel_a" in _d:
             _a += [np.nanmin(_d["rel_a"]), np.nanmax(_d["rel_a"])]
             _b += [np.nanmin(_d["rel_b"]), np.nanmax(_d["rel_b"])]
-    pad = 0.05
-    ax1.set_xlim(min(_a) - pad, max(_a) + pad)
-    ax1.set_ylim(min(_b) - pad, max(_b) + pad)
-    ax1.set_aspect("equal", adjustable="box")
-    ax1.grid(alpha=0.3)
-    ax1.legend(fontsize=8, loc="best")
+    if has_maze:
+        pad = 0.05
+        ax1.set_xlim(min(_a) - pad, max(_a) + pad)
+        ax1.set_ylim(min(_b) - pad, max(_b) + pad)
+        ax1.set_aspect("equal", adjustable="box")
+        ax1.grid(alpha=0.3)
+        ax1.legend(fontsize=8, loc="best")
 
     # ---- 3-D Cartesian path, rotated so the Y-Z plane faces the viewer, animated ------------
     d = load_csv(chosen[-1])
@@ -175,6 +262,19 @@ def main() -> int:
             ax2.scatter([xr], [ay + cm["goal_y"]], [az + cm["goal_z"]],
                         marker="*", s=260, color="tab:green")
     ax2.scatter([x[0]], [y[0]], [z[0]], marker="s", s=60, color="tab:blue", label="start")
+    # Trial events on the path itself, so "where was the arm when this happened" needs no cross-
+    # referencing against a log file.
+    ev_style = {"snap": ("tab:red", "v", 110), "armed": ("tab:blue", "^", 80),
+                "checkpoint": ("tab:orange", "o", 90), "goal": ("tab:green", "*", 220),
+                "timeout": ("tab:brown", "X", 110), "safety_trip": ("black", "X", 130),
+                "perturb_applied": ("tab:purple", "D", 80)}
+    shown = set()
+    for row, tok, _arg in d.get("_events", []):
+        if tok in ev_style and row < len(x):
+            c, m, sz = ev_style[tok]
+            ax2.scatter([x[row]], [y[row]], [z[row]], color=c, marker=m, s=sz, zorder=8,
+                        label=(tok if tok not in shown else None))
+            shown.add(tok)
     ax2.set_xlabel("X (m)  — locked")
     ax2.set_ylabel("Y (m)  — sideways")
     ax2.set_zlabel("Z (m)  — height")
@@ -220,7 +320,8 @@ def main() -> int:
         trail.set_3d_properties(z[: i + 1])
         head.set_data([x[i]], [y[i]])
         head.set_3d_properties([z[i]])
-        txt = (f"t   {d['time'][i] - d['time'][0]:6.1f} s\n"
+        _tc = time_col(d)
+        txt = (f"t   {_tc[i] - _tc[0]:6.1f} s\n"
                f"Y {y[i]:+.3f}  Z {z[i]:+.3f}\n"
                f"X drift {1000 * (x[i] - x0):+5.0f} mm")
         if "rail_dist" in d:
@@ -241,7 +342,8 @@ def main() -> int:
 
     # ---- a couple of numbers worth knowing -------------------------------------------------
     d0 = load_csv(chosen[-1])
-    dur = d0["time"][-1] - d0["time"][0]
+    _t0 = time_col(d0)
+    dur = _t0[-1] - _t0[0]
     dist = float(np.nansum(np.hypot(np.diff(d0["x"]), np.hypot(np.diff(d0["y"]), np.diff(d0["z"])))))
     msg = f"{os.path.basename(chosen[-1])}   {dur:.1f} s   path {dist:.2f} m"
     if "rail_dist" in d0:

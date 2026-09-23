@@ -97,3 +97,12 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
 
     def _describe_target(self) -> str:
         return f"POLAR r={self._polar_r_m:.3f} m, theta={self._polar_theta_deg:.1f} deg, plane={self._polar_plane}"
+
+    def perturbation_spec(self) -> dict:
+        """The perturbation as applied, for the trial sidecar (analysis/RECORDING_SPEC.md §6).
+
+        Constant within a trial, so it belongs in metadata rather than a per-sample column. Polar
+        rather than a cartesian vector because that is how it is configured and resolved -- the
+        cartesian offset depends on the live start pose and the chosen plane."""
+        return {"r_m": self._polar_r_m, "theta_deg": self._polar_theta_deg,
+                "plane": self._polar_plane}

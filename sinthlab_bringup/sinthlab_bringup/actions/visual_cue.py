@@ -82,11 +82,27 @@ class VisualCue:
         else:
             VisualCue._warn_once(node)
 
+    # Where board acknowledgements go. The RemoteCueTrigger is a class-level singleton shared by
+    # every cue site, so the sink is class-level too; an orchestrator registers once.
+    _result_sink = None
+
+    @classmethod
+    def set_result_sink(cls, fn) -> None:
+        """fn(label, ok, rtt_ms) is called when the board acknowledges a cue.
+
+        The firmware lights the ring inside the /cue handler and answers afterwards, so an ack means
+        the LEDs are already on -- it brackets the actual cue. Register this from an orchestrator to
+        get `cue_visual_ack` into the trial record."""
+        cls._result_sink = fn
+
     @classmethod
     def _remote_trigger(cls, node: rclpyNode) -> RemoteCueTrigger:
         if cls._remote is None:
             board = str(optional_param(node, "visual_cue.remote_board", DEFAULT_BOARD))
-            cls._remote = RemoteCueTrigger(node, board)
+            cls._remote = RemoteCueTrigger(
+                node, board,
+                on_result=lambda lbl, ok, ms: (cls._result_sink(lbl, ok, ms)
+                                               if cls._result_sink else None))
         return cls._remote
 
     @classmethod

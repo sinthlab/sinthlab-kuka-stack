@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import subprocess
+import time
+import threading
 from typing import Callable, Optional
 
 from rclpy.node import Node as rclpyNode
@@ -26,7 +28,17 @@ class AudioCue:
             if node is not None:
                 node.get_logger().debug("Audio warmup beep failed (non-WSL2 host?).")
 
-    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None]) -> None:
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None],
+                 on_finished: Callable[[float], None] = None) -> None:
+        # on_finished(duration_s) fires when the beep process EXITS -- i.e. when the sound actually
+        # stopped. `[console]::Beep` blocks for exactly duration_ms, so the sound's START is
+        # (finish - duration_ms) and can be recovered from it.
+        #
+        # This matters because on_complete() fires the instant Popen returns, which on WSL2 is
+        # ~49 ms in and roughly 290 ms BEFORE any sound comes out (the Windows process itself takes
+        # ~340 ms to spawn). Nothing else in the system observes the audio at all, so without this
+        # the trial record has no idea when the animal was actually cued.
+        self._on_finished = on_finished
         self._node = node
         self._on_complete = on_complete
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
@@ -48,7 +60,7 @@ class AudioCue:
     def _play_sound(self) -> None:
         try:
             # Popen is non-blocking
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 [
                     "powershell.exe",
                     "-NoProfile",
@@ -56,8 +68,23 @@ class AudioCue:
                     f"[console]::Beep({self._frequency},{self._duration})"
                 ]
             )
+            if self._on_finished is not None:
+                # Wait off-thread: the orchestrator must never block on a sound.
+                t0 = time.monotonic()
+                threading.Thread(target=self._await_exit, args=(proc, t0),
+                                 name="audio_cue_wait", daemon=True).start()
         except Exception as exc:
             self._node.get_logger().warn(f"Console beep failed: {exc}")
+
+    def _await_exit(self, proc, t0: float) -> None:
+        try:
+            proc.wait(timeout=30.0)
+        except Exception:
+            return
+        try:
+            self._on_finished(time.monotonic() - t0)
+        except Exception as exc:
+            self._node.get_logger().warn(f"audio on_finished failed: {exc}")
 
     def _shutdown(self) -> None:
         if self._on_complete is not None:

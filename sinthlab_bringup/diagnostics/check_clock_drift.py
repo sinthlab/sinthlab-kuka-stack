@@ -122,7 +122,19 @@ def report(fri, mono, wall, nsec_vals, sample_time, jump_ms=50.0):
             med = statistics.median(steps)
             print(f"        median step between cabinet stamps: {med*1000:.3f} ms -> {1.0/med:.1f} Hz")
             print(f"        p99 step: {steps[int(0.99*(len(steps)-1))]*1000:.3f} ms")
-        print("        sub-millisecond resolution; safe to align on.")
+        # How fine is the stamp actually? Distinct values alone do not tell you -- 100 of them
+        # spread over a second is a 10 ms grid, not a sub-ms clock.
+        d = sorted(set(nsec_vals))
+        quantum_ns = min(b - a for a, b in zip(d, d[1:])) if len(d) > 1 else 0
+        print(f"        smallest gap between distinct stamp values: {quantum_ns/1e6:.3f} ms")
+        if quantum_ns >= 0.5 * st * 1e9:
+            print(f"        -> the stamp is QUANTISED TO THE SAMPLE PERIOD ({st*1000:.1f} ms). It is an")
+            print("           exact, jitter-free SAMPLE GRID, not a free-running sub-ms clock. Good for")
+            print("           alignment: it says which sample, exactly. But an event falling between")
+            print("           samples is known only to +/-half a period from the stamp alone -- recover")
+            print("           sub-ms event times by interpolating the signal, not by reading the clock.")
+        else:
+            print(f"        -> finer than the sample period; true sub-ms clock. Safe to align on directly.")
 
     # Find steps FIRST: one step makes the drift fit meaningless, and reporting a contaminated
     # slope as if it were a crystal rate would be worse than reporting nothing.

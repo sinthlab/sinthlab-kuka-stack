@@ -1,5 +1,5 @@
 // =====================================================================
-//  Apple-pluck end-effector for the KUKA LBR iiwa7   (parametric DRAFT v0.14)
+//  Apple-pluck end-effector for the KUKA LBR iiwa7   (parametric DRAFT v0.15)
 //  sinthlab-kuka-stack / end_effector_design
 //
 //  ELECTRONICS HUB that bolts to the iiwa7 *media flange (electric)*, routes its
@@ -322,7 +322,20 @@ ring_groove_h  = 4.5;   // top-facing groove depth to seat the ring [mm] (LEDs f
 ring_wire_d    = 6.0;   // lead pass-through under the groove, one per quarter junction [mm]
 
 /* [Cover plate] */
-cover_plate_t  = 6.0;   // cover thickness [mm] — opaque (same material as the base)
+cover_plate_t  = 9.0;   // cover thickness [mm] — opaque (same material as the base).
+                        // 6.0 was too thin in THREE independent places, all found together:
+                        //  * BENDING. The apple stem bolts to this plate on a Ø36 circle, so its
+                        //    screws carry 78 N each -- 5.6x what the base-to-flange screws see,
+                        //    because the same 4.2 N.m is reacted across a third of the diameter.
+                        //    Just outboard of the Ø44 boss the plate drops to 6 mm and the stress
+                        //    jumps 2.9 -> 15.9 MPa, a safety factor of 3.1 before you allow for the
+                        //    part being flat-printed. At 9 mm it is 7.1 MPa, SF 7.1.
+                        //  * RING GROOVE. A 4.5 mm groove in a 6 mm plate left 1.5 mm of floor.
+                        //  * CASING PILOT. A 5 mm insert bore in a 6 mm plate left 1.0 mm.
+                        // 9 mm gives 4.5 and 4.0 mm respectively. Costs ~70 g.
+cover_boss_fillet = 4.0; // fillet where the apple-stem boss meets the plate [mm]. The step used to
+                        // be a sharp 90 deg corner exactly where the bending stress peaks -- the
+                        // same crack initiator that the base fillets were added to remove.
 
 /* [Base <-> cover fastening screws] */
 cover_screw_n       = 4;     // screws joining the cover down to the base
@@ -399,7 +412,9 @@ case_box_side  = 198;   // outer square side [mm] (encloses the Ø188 base: ~2 m
 case_box_wall  = 3;     // wall & top-plate thickness [mm]
 case_top_bore  = 44.8;  // centre hole Ø in the top [mm] (clears the Ø44 apple-core boss poking through)
 disc_screw_n   = 3;     // clamp screws down into the cover (through the top face)
-disc_screw_bcd = 56;    // clamp bolt-circle Ø [mm] (just outside the boss / apple-core joint)
+disc_screw_bcd = 64;    // clamp bolt-circle Ø [mm]. Moved out from 56: at r=28 the Ø4.6 insert bore
+                        // ran from r 25.7, and the new boss fillet reaches r 26 -- they overlapped.
+                        // r=32 clears the fillet by 3.7 mm and stays well inside the ring groove.
 disc_screw_a0  = 60;    // first clamp-screw angle [deg] (clocked between the 3 apple-core joint screws)
 disc_screw_depth = 5;   // clamp pilot depth into the cover (< cover_plate_t) [mm]
 case_preview   = true;  // show the casing box (transparent) in the assembly preview
@@ -682,6 +697,15 @@ module base_cover() {
             cylinder(h = cover_t, d = base_d);                            // lid plate (opaque, same as base)
             translate([0, 0, cover_t - eps])                              // apple-core joint boss (sits inside the ring)
                 cylinder(h = sj_flange_t, d = sj_flange_d);
+            // Fillet into the plate. This corner carries the whole pull moment out of the boss and
+            // into the cover, and a square step here is where it would crack.
+            rotate_extrude()
+                translate([sj_flange_d/2, cover_t])
+                    difference() {
+                        square([cover_boss_fillet, cover_boss_fillet]);
+                        translate([cover_boss_fillet, cover_boss_fillet])
+                            circle(r = cover_boss_fillet);
+                    }
         }
         translate([0, 0, -eps])                                           // central bore (wiring up to the apple)
             cylinder(h = face_top + 2*eps, d = apple_bore_d);

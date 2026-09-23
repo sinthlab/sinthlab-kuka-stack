@@ -28,8 +28,9 @@ the conditions under which it would be worth revisiting.
 - [4. Simulation & Visualization (no hardware)](#4-simulation--visualization-no-hardware)
 - [5. Running Experiments on Hardware](#5-running-experiments-on-hardware)
 - [6. Software Architecture](#6-software-architecture)
-- [7. Troubleshooting](#7-troubleshooting)
-- [8. Development & Contributing](#8-development--contributing)
+- [7. Data Collected](#7-data-collected)
+- [8. Troubleshooting](#8-troubleshooting)
+- [9. Development & Contributing](#9-development--contributing)
 - [Acknowledgement](#acknowledgement)
 - [Appendix — FRI torque mode (not adopted)](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out)
 
@@ -1015,7 +1016,125 @@ commissioning step.
 
 ---
 
-## 7. Troubleshooting
+## 7. Data Collected
+
+> Full schema, per-column definitions and the implementation plan live in
+> [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md). This section is the summary.
+
+### What is recorded today
+
+| Experiment | File | Rate | Columns |
+|---|---|---|---|
+| Maze | `analysis/robot_trajectory_<date>_<time>.csv` | 100 Hz | 9 |
+| Apple pluck | **nothing** | — | — |
+| Perturb | **nothing** | — | — |
+
+`TrajectoryRecorder` is constructed in exactly one place — `MoveRestrictedOnAPlaneAction.__init__`,
+which `MoveInMazeAction` inherits. The apple-pluck and perturb orchestrators never build one, and no
+launch file records a rosbag. Everything else — the snap, checkpoint rewards, goal/timeout, cue
+round-trip times, safety trips — exists only as text in `~/.ros/log/`.
+
+The current maze file is:
+
+```
+time, x, y, z, rel_a, rel_b, corridor, off_rail, rail_dist
+```
+
+`time` is `time.time()` sampled inside the Python callback, so it carries callback jitter and cannot
+be aligned to anything better than that. `analysis/plot_trajectory.py` reads these files.
+
+### What is planned
+
+One CSV **plus a JSON sidecar** per trial, for all three experiments, sharing a 41-column core:
+
+| | Apple pluck | Perturb | Maze |
+|---|---|---|---|
+| Columns | **42** | **42** | **47** |
+| Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
+| Events | 10 | 12 | 13 |
+| Sidecar extras | `baseline` | `baseline`, `perturbation` | `maze_geometry` |
+| Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
+
+**The 41-column core:**
+
+| Block | Cols | Contents |
+|---|---|---|
+| Time | 5 | `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` |
+| EE pose | 7 | `x y z` + quaternion `qx qy qz qw` |
+| Joints | 21 | `meas_A1..A7`, `cmd_A1..A7`, `ext_A1..A7` — radians and Nm |
+| FRI health | 6 | `tracking`, `session`, `quality`, `safety`, `drive`, `control` |
+| Events | 2 | `event`, `event_arg` |
+
+Why each block earns its place:
+
+- **`fri_s` / `fri_ns`** is the cabinet's own clock and the anchor for aligning to the Blackrock NSP.
+  Measured 2026-09-22: populated, quantised to the 10 ms sample period, **< 0.1 ppm drift**, no
+  discontinuities. Verify on any new setup with `check_clock_drift.py` (§8 below).
+- **The quaternion** is currently discarded. The apple can be pulled off-axis and that is unmeasured.
+- **`cmd − meas`** is the impedance droop — under Cartesian impedance the arm lags its equilibrium by
+  `F / k`, and that lag is signal, not error. It is what diagnosed the A2 gravity sag.
+- **`ext_A1..A7`** measures a pull with no force sensor fitted. A steady non-zero value at rest means
+  un-modelled tool mass.
+- **FRI health per sample** makes a bad trial self-diagnosing: anything other than session
+  `COMMANDING_ACTIVE`, safety `NORMAL_OPERATION`, drive `ACTIVE` for any part of a trial means the
+  trial is suspect.
+
+### Per experiment
+
+**Apple pluck** — adds `disp_m`, the EE displacement from the baseline locked at `armed`, every
+sample. This is the dependent variable of the experiment and today it is computed every tick and
+only printed at debug rate. Recording it per sample is also what lets the threshold crossing be
+interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
+Events: `trial_start` · `at_start` · `quiet_end` · `cue_go` · **`armed`** · **`snap`** (arg =
+displacement) · `cue_snap` · `freeze` · `recover_start` · `trial_end`. Reaction time is
+`snap − armed`.
+
+**Perturb** — the same, plus `perturb_delay_start` and `perturb_applied` events. The applied
+perturbation vector is constant within a trial and goes in the sidecar rather than a column.
+
+**Maze** — keeps its maze columns (plus a new `rail_nearest`) and gains 13 events: `trial_start` · `prestart_done` ·
+`at_start` · `fixture_active` · `cue_go` · `maze_armed` · **`checkpoint`** (arg = index) · `goal` /
+`timeout` / `safety_trip` · `release_wait` · `released` · `trial_end`.
+Two changes worth knowing:
+
+- Recording currently starts at `on_go_complete()`, which is why existing maze CSVs begin at the go
+  cue. It should start at `start_trial()` with the cue marked as an event — analysis can trim, it
+  cannot un-discard.
+- The sidecar carries `maze_geometry` **as it was at record time**. Today `plot_trajectory.py` reads
+  rails from the current `maze_params.yaml`, so an old run silently plots against the wrong maze.
+
+### Sidecar
+
+Everything constant within a trial: experiment name, trial index, session and subject id, all four
+clocks sampled together at trial start *and* end, FRI state, active controllers, git SHA, start pose,
+baseline, perturbation vector, maze geometry, and the full resolved ROS parameter dump.
+
+### Working with the data
+
+```bash
+python3 analysis/plot_trajectory.py                  # newest trial
+python3 analysis/plot_trajectory.py --save out.gif   # animated, headless-safe
+python3 analysis/validate_recording.py --all         # exit 1 if any trial is unsound
+```
+
+**`plot_trajectory.py`** draws two panels. The first is the maze view for maze runs, or — new —
+`disp_m` against time for pluck and perturb, with the threshold line and the `armed` / `snap`
+markers, so reaction time is the gap between them. The second is the 3-D Cartesian path with trial
+events marked on it, so "where was the arm when this happened" needs no cross-referencing against a
+log. Maze rails come from the trial's **sidecar** when present and fall back to `maze_params.yaml`
+for older recordings. Both schemas load, so existing 9-column files still plot.
+
+**`validate_recording.py`** is to a recording what `check_layout.py` is to the CAD: schema, sample
+rate and gaps, cabinet-clock monotonicity, FRI session/safety/drive healthy for the *whole* trial,
+every expected event present once and in order, sidecar complete. Non-zero exit, so it can gate a
+batch analysis.
+
+### Where files go
+
+`analysis/`, which is **gitignored for `*.csv`** — recorded data is not version controlled. Sidecars
+should be added to the ignore list when the recorder lands.
+
+## 8. Troubleshooting
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
   ROS were doing, reproduce the problem, and read the summary:
   ```bash
@@ -1053,7 +1172,7 @@ commissioning step.
 
 ---
 
-## 8. Development & Contributing
+## 9. Development & Contributing
 - This stack follows an **underlay → overlay** structure. It reuses
   [`lbr_fri_ros2_stack`](https://github.com/lbr-stack/lbr_fri_ros2_stack)[^1], which in turn has
   ROS 2 as its underlay — so our code imports classes and functions from `lbr_fri_ros2_stack`.

@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.common_threshold import get_required_param
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
@@ -75,9 +76,31 @@ class MazeOrchestratorNode(rclpyNode):
         # Audio and visual cues fire together at each site. The visual cue sends TIMING only --
         # what the ring shows is configured on the board itself. It is a no-op when
         # `visual_cue.enabled` is false, so the experiment runs unchanged before the ring is wired.
-        self.go_cue = AudioCue(self, param_prefix="audio_cue_play", on_complete=self.on_go_complete)
+        self.go_cue = AudioCue(
+            self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
+            # self.recorder does not exist yet -- it needs maze_fixtures, built below. That is fine:
+            # the lambda resolves it at CALL time, which is when a beep ends, long after __init__.
+            on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
+        )
         self.go_cue_visual = VisualCue(self, label="play", on_complete=lambda: None)
-        self.maze_fixtures = MoveInMazeAction(self, param_prefix="")
+        self.maze_fixtures = MoveInMazeAction(self, param_prefix="", own_recorder=False)
+
+        # Trial data. Replaces the fixture's own 9-column TrajectoryRecorder, which started at the
+        # GO CUE -- that is why every existing maze CSV begins mid-trial, and why matching a run
+        # against video needed a manual offset. This records from trial start and marks the cue.
+        self.recorder = TrialRecorder(
+            self, experiment="maze",
+            extra_header=self.maze_fixtures.record_extra_header(),
+            extra_fn=self.maze_fixtures.record_extra,
+        )
+
+        # --- cue delivery, as observed rather than assumed -------------------------------------
+        # AudioCue.on_complete fires when Popen RETURNS (~49 ms on WSL2), which is ~290 ms before
+        # any sound. The beep process blocks for exactly duration_ms, so its EXIT gives the real
+        # end and the start follows by subtraction. The visual ack comes back after the firmware
+        # has already called pixels.show(), so it brackets the light.
+        VisualCue.set_result_sink(
+            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
         self.checkpoint_monitor = CheckpointMonitor(
             self, param_prefix="checkpoint_monitor",
             on_complete=self.on_goal_reached, on_reward=self.on_checkpoint_reward,
@@ -111,6 +134,9 @@ class MazeOrchestratorNode(rclpyNode):
         self.start_trial()
 
     def start_trial(self):
+        self.recorder.start(trial_index=self.trial_count + 1,
+                            maze_geometry=self.maze_fixtures.maze_geometry())
+        self.recorder.mark("trial_start", self.trial_count + 1)
         self.trial_count += 1
         self._trial_ending = False
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
@@ -149,24 +175,29 @@ class MazeOrchestratorNode(rclpyNode):
         self.move_to_start.start()
 
     def on_prestart_complete(self):
+        self.recorder.mark("prestart_done")
         # Waypoint reached; from here the maze start is reliably reachable. Never repeated.
         self.get_logger().info("At pre-start waypoint. Moving to the maze start...")
         self.move_to_start.start()
 
     def on_move_complete(self):
+        self.recorder.mark("at_start")
         self.get_logger().info("Arm at exact maze start. Switching to CLIK for the fixtures...")
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
+        self.recorder.mark("fixture_active")
         self.get_logger().info("On CLIK. Waiting for a quiet window...")
         self.quiet_window.start()
 
     def on_quiet_window_complete(self):
+        self.recorder.mark("cue_go")
         self.get_logger().info("Quiet window complete. Sounding go cue.")
         self.go_cue.start()
         self.go_cue_visual.start()
 
     def on_go_complete(self):
+        self.recorder.mark("maze_armed")
         self.get_logger().info("Go! Maze fixtures + checkpoint monitor active; timeout + safety armed.")
         self.maze_fixtures.start()
         self.checkpoint_monitor.start()
@@ -175,6 +206,7 @@ class MazeOrchestratorNode(rclpyNode):
 
     def on_checkpoint_reward(self, index):
         self.get_logger().info(f"Reward at checkpoint {index}.")
+        self.recorder.mark("checkpoint", index)
         self.reward_cue.start()
         self.reward_cue_visual.start()
 
@@ -193,6 +225,8 @@ class MazeOrchestratorNode(rclpyNode):
         if self._trial_ending:
             return
         self._trial_ending = True
+        # goal | timeout | safety -- whichever won the race
+        self.recorder.mark(reason if reason != "safety" else "safety_trip")
         self.timeout.stop()
         self.checkpoint_monitor.stop()
         self.safety.stop()
@@ -212,9 +246,11 @@ class MazeOrchestratorNode(rclpyNode):
             self.timeout_cue.start()
             self.timeout_cue_visual.start()
         # Return to start only once the operator lets go (external force ~ 0).
+        self.recorder.mark("release_wait")
         self.force_release.start()
 
     def on_force_released(self):
+        self.recorder.mark("released")
         self.get_logger().info("Arm released. Switching to joint controller to recover.")
         self.switch_to_joint.start()
 
@@ -223,6 +259,8 @@ class MazeOrchestratorNode(rclpyNode):
 
     def on_recover_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
+        self.recorder.mark("trial_end", self.trial_count)
+        self.recorder.stop_and_save()
         self.start_trial()
 
 

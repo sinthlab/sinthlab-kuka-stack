@@ -7,6 +7,26 @@ DC-DC converter, and two small breakouts, with wiring extending to an **ERM/LRA 
 **pressure sensor** in the apple. Authored in **OpenSCAD** so it's text-based, parametric, and
 version-controlled.
 
+> **v0.15 — the COVER was the real weak link**
+> Tracing the pull path properly: **the apple stem bolts to the cover on a Ø36 circle, so its screws
+> carry 78 N each — 5.6× what the base-to-flange screws see.** The same 4.2 N·m reacted across a
+> third of the diameter. The cover at 6 mm was thin in three independent places at once:
+>
+> | | was | now |
+> |---|---|---|
+> | bending just outside the Ø44 boss | 15.9 MPa, **SF 3.1** | 7.1 MPa, **SF 7.1** |
+> | material under the ring groove | **1.5 mm** | 4.5 mm |
+> | material under the casing insert | **1.0 mm** | 4.0 mm |
+> | boss-to-plate step | **sharp 90°** | **R4 fillet** |
+>
+> All four fixed by `cover_plate_t` **6 → 9 mm** plus the fillet, for about **70 g**. The casing clamp
+> circle moved Ø56 → Ø64 so its inserts clear the new fillet. SF 3.1 was before allowing for the part
+> being flat-printed, where layer-direction strength is nearer 60–70% of bulk — so the real margin was
+> closer to 2, on the joint that carries the most force in the whole tool.
+>
+> Print settings changed with it: the cover is now **6 walls / 8 shells / 40 %**, and tier 2 nudged to
+> **6 / 6-6 / 35 %**. Neither tier is decoration — the full moment passes through both.
+>
 > **v0.14 — STRENGTH, after the v0.6 prototype broke at the base↔flange joint**
 > The screws were never the problem: a 20 N pull at the apple is 4.19 N·m at that joint, which is only
 > ~14 N per M3 on the tension side. **The printed material around them was.** What changed:
@@ -636,6 +656,27 @@ in the stack; the stem + fused ball is one printed part (reprint to change the a
 Geometry did not break the last one on its own. A flat-printed disc under a bending moment fails
 **along its layer lines**, and every number below is aimed at that.
 
+### Every tier is in the pull path
+
+Worth being explicit, because it is easy to assume only the bottom of the stack is structural. A pull
+at the apple travels **apple → stem → cover → tier 2 → tier 1 → flange plate → robot**. All 4.2 N·m
+of it passes through every one of those joints. What differs is the lever each joint reacts it on:
+
+| Joint | Bolt circle | Force per screw |
+|---|---|---|
+| **apple stem → cover** | **Ø36** | **78 N** |
+| cover → tier 2 | Ø120 | 18 N |
+| tier 2 → tier 1 | Ø150 | 14 N |
+| tier 1 → flange plate | Ø100 | 14 N |
+
+**The most-loaded joint in the tool is the apple stem to the cover**, at 5.6× the screw force of the
+one that actually broke — purely because the same moment is reacted across a third of the diameter.
+That is why the cover is printed structural and why v0.15 took it from 6 mm to 9 mm.
+
+Tier 2 carries the same moment but on a 10 mm floor spanning only 15 mm from pillar to tier screw,
+which works out at **SF ≈ 24**. It does not need the full structural profile — but it is not
+free-standing decoration either, so do not go below the settings in the table.
+
 ### The three things that matter most
 
 1. **Dry the filament.** PETG is hygroscopic and wet PETG loses a large fraction of its layer
@@ -654,8 +695,8 @@ Geometry did not break the last one on its own. A flat-printed disc under a bend
 |---|---|---|---|---|---|---|
 | **flange_plate** | PETG (**PAHT-CF / PET-CF if you have it**) | 0.20 mm | **8** | **8 / 8** | **60 %** gyroid | Highest-stressed part. Mating face down. |
 | **base_tier1** | PETG (**PAHT-CF / PET-CF if you have it**) | 0.20 mm | **8** | **8 / 8** | **50 %** gyroid | **This is the one that broke.** Floor down on the plate. |
-| **base_tier2** | PETG | 0.20 mm | 5 | 6 / 6 | 30 % gyroid | Carries far less. |
-| **cover** | PETG | 0.20 mm | 4 | 5 / 5 | 25 % gyroid | Opaque — do not use a translucent filament. |
+| **base_tier2** | PETG | 0.20 mm | **6** | **6 / 6** | **35 %** gyroid | In the load path (see below), but with large margins. |
+| **cover** | PETG | 0.20 mm | **6** | **8 / 8** | **40 %** gyroid | **The apple bolts to this.** Opaque filament — not translucent. |
 | **apple_stem** | PETG | **0.15 mm** | 6 | 6 / 6 | **100 %** | See below — this one is orientation-critical. |
 | **apple_ball / apple_cap** | TPU 95A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 30 mm/s), retraction near zero. |
 
@@ -691,7 +732,7 @@ Sizes, so you know what you are looking at on the plate:
 | `flange_plate` | Ø124 | 16 | PETG | — |
 | `base_tier1` | Ø188 | 33 | PETG | — |
 | `base_tier2` | Ø188 | 32 | PETG | — |
-| `cover` | Ø188 | 14 | PETG | — |
+| `cover` | Ø188 | 17 | PETG | — |
 | `apple_stem` | Ø44 | 113.5 | PETG | **fused with `apple_ball`** |
 | `apple_ball` | Ø45 | 27.4 | TPU 95A | **fused with `apple_stem`** |
 | `apple_cap` | Ø43 | 22.5 | TPU 95A | — |
@@ -746,14 +787,16 @@ part here fails along layer boundaries.
 3. No supports needed: the trenches, channels and bore ports are all open-topped or short bridges.
 4. Print it **alone on the plate**. It is the one part where a failed layer matters.
 
-**`base_tier2`** — same shape, much lower load.
+**`base_tier2`** — same shape, lower stress but still in the pull path.
 1. Import, **Place on bed**.
 2. Process: `0.20 Structural PETG`, then reduce **Wall loops → 5**, **Top/Bottom shell layers → 6**,
    **Sparse infill density → 30 %**.
 
-**`cover`**
+**`cover`** — **more structural than it looks; the apple bolts to it.**
 1. Import, **Place on bed** (ring groove facing up).
-2. Process: **Wall loops 4**, **Top/Bottom 5**, **Sparse infill 25 %**.
+2. Process: **Wall loops 6**, **Top/Bottom 8**, **Sparse infill 40 %**. The top and bottom shells are
+   the ones doing the work here: a plate in bending behaves like an I-beam and the solid skins carry
+   almost all of it, so shell count buys more than infill percentage.
 3. Use an **opaque** filament. The cover is the light barrier behind the ring — a translucent one
    will glow.
 
