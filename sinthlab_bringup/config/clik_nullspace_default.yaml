@@ -13,4 +13,4 @@
     #       config/apple_pluck_impedance.yaml, apple_pluck_impedance_perturb.yaml,
     #       virtual_fixtures_params.yaml
     # The maze starts with the tool pointing along +X and uses clik_nullspace_maze.yaml instead.
-    nullspace_desired_configuration: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
+    nullspace_desired_configuration: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # preferred arm posture A1..A7 [deg]

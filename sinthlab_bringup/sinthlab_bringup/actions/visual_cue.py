@@ -116,9 +116,15 @@ class VisualCue:
         self._node = node
         self._label = label
         self._on_complete = on_complete
+        self.reload()
+
+    def reload(self) -> None:
+        """Re-read enabled / remote_test_trigger / this site's colour. All are live parameters: an
+        orchestrator calls this at a trial boundary after a change (see helpers/live_params.py)."""
+        node = self._node
         self._enabled = bool(optional_param(node, "visual_cue.enabled", False))
         self._remote_test = bool(optional_param(node, "visual_cue.remote_test_trigger", False))
-        self._colour = self._read_colour(node, label) if self._enabled else None
+        self._colour = self._read_colour(node, self._label) if self._enabled else None
 
     @staticmethod
     def _read_colour(node: rclpyNode, label: str) -> Optional[Tuple[int, int, int, int]]:

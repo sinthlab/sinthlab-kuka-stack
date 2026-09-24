@@ -42,3 +42,12 @@ def get_required_param(node: rclpyNode, name: str):
     if p is None or p.value is None:
         raise ValueError(f"Required parameter '{name}' is unset or None; provide a concrete value.")
     return p.value
+
+
+def get_optional_param(node: rclpyNode, name: str, default):
+    """Fetch a parameter that may be absent from the YAML, falling back to `default`."""
+    if node.has_parameter(name):
+        value = node.get_parameter(name).value
+        if value is not None:
+            return value
+    return default

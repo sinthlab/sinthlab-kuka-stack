@@ -14,7 +14,8 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.common_threshold import get_required_param
+from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
+from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
@@ -71,7 +72,8 @@ class MazeOrchestratorNode(rclpyNode):
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
         self.quiet_window = WaitAction(
-            self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
+            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         # Audio and visual cues fire together at each site. The visual cue sends TIMING only --
         # what the ring shows is configured on the board itself. It is a no-op when
@@ -88,10 +90,15 @@ class MazeOrchestratorNode(rclpyNode):
         # Trial data. Replaces the fixture's own 9-column TrajectoryRecorder, which started at the
         # GO CUE -- that is why every existing maze CSV begins mid-trial, and why matching a run
         # against video needed a manual offset. This records from trial start and marks the cue.
+        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
+        # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
+        self.control = ExperimentControl(self, "maze")
+        self.control.on_reload(self._reload_live)
         self.recorder = TrialRecorder(
             self, experiment="maze",
             extra_header=self.maze_fixtures.record_extra_header(),
             extra_fn=self.maze_fixtures.record_extra,
+            on_event=self.control.on_event,
         )
 
         # --- cue delivery, as observed rather than assumed -------------------------------------
@@ -261,7 +268,16 @@ class MazeOrchestratorNode(rclpyNode):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
-        self.start_trial()
+        self.control.begin_trial(self.start_trial)   # holds here instead if paused
+
+    def _reload_live(self):
+        """Re-read the live parameters (helpers/live_params.py). Runs between trials only."""
+        for cue in (self.go_cue, self.reward_cue, self.goal_cue, self.timeout_cue,
+                    self.go_cue_visual, self.reward_cue_visual, self.goal_cue_visual,
+                    self.timeout_cue_visual):
+            cue.reload()
+        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
 
 
 def main(args=None) -> None:

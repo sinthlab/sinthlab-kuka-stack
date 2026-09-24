@@ -27,6 +27,10 @@ class WaitAction:
         """How long this wait is configured for, for the trial log."""
         return self._duration_sec
 
+    def set_duration(self, duration_sec: float) -> None:
+        """Change the wait for its NEXT start() (live parameters, e.g. quiet_window_sec)."""
+        self._duration_sec = float(duration_sec)
+
     def start(self) -> None:
         if self._timer is not None:
             self._node.get_logger().warn(f"WaitAction '{self._name}' is already running.")

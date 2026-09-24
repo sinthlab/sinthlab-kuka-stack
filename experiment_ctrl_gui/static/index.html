@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KUKA Experiment Control</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>KUKA Experiment Control</h1>
+      <p class="sub">sinthlab · LBR iiwa7 · ROS 2 Jazzy</p>
+    </div>
+  </div>
+  <div class="pills">
+    <span class="pill" id="pill-ros" title="ROS connection">ROS …</span>
+    <span class="pill" id="pill-robot" title="FRI session state and lbr_state rate">Robot …</span>
+    <span class="pill" id="pill-run" title="Experiment state">Idle</span>
+  </div>
+</header>
+
+<div class="banner hidden" id="banner"></div>
+
+<main class="layout">
+  <!-- ============ left: choose + control ============ -->
+  <section class="col col-left">
+    <div class="card">
+      <h2>Experiment</h2>
+      <div id="exp-list" class="exp-list" role="radiogroup" aria-label="Experiment"></div>
+    </div>
+
+    <div class="card">
+      <h2>Run</h2>
+      <div class="controls">
+        <button id="btn-start" class="btn primary">▶ Start</button>
+        <button id="btn-pause" class="btn">⏸ Pause after trial</button>
+        <button id="btn-stop-trial" class="btn warn">■ Stop after trial</button>
+        <button id="btn-stop" class="btn danger">■ Stop now</button>
+        <button id="btn-restart" class="btn">↻ Restart</button>
+      </div>
+      <p class="note">Stop is Ctrl-C to the launch, not an emergency stop. <strong>The SmartPad E-stop is the
+        E-stop.</strong></p>
+      <dl class="kv" id="run-info"></dl>
+      <div class="row-actions">
+        <button id="btn-validate" class="btn small" disabled>Validate recording</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Before you start</h2>
+      <ol class="checklist" id="checklist"></ol>
+    </div>
+  </section>
+
+  <!-- ============ centre: status + parameters ============ -->
+  <section class="col col-mid">
+    <div class="card status-card">
+      <div class="status-head">
+        <div class="big">
+          <span class="label">Trial</span>
+          <span id="st-trial" class="num">–</span>
+        </div>
+        <div class="big grow">
+          <span class="label">Phase</span>
+          <span id="st-phase" class="phase">not running</span>
+        </div>
+        <div class="big">
+          <span class="label">In phase</span>
+          <span id="st-phase-t" class="num">–</span>
+        </div>
+      </div>
+      <ol class="steps" id="steps"></ol>
+      <div id="pending" class="pending hidden"></div>
+      <details class="events" open>
+        <summary>Trial events <span class="muted" id="ev-count"></span></summary>
+        <ol id="events" class="event-list"></ol>
+      </details>
+    </div>
+
+    <div class="card params-card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
+        <button class="tab" data-tab="run" role="tab">Per-run <span class="count" id="n-run"></span></button>
+        <button class="tab" data-tab="fixed" role="tab">Fixed <span class="count" id="n-fixed"></span></button>
+        <div class="tab-tools">
+          <input id="param-filter" type="search" placeholder="Filter parameters" aria-label="Filter parameters">
+          <button id="btn-reset-edits" class="btn small">Reset edits</button>
+        </div>
+      </div>
+      <p class="tab-help" id="tab-help"></p>
+      <div id="params" class="params"></div>
+    </div>
+  </section>
+
+  <!-- ============ logs ============ -->
+  <section class="col col-log">
+    <div class="card log-card">
+      <div class="log-head">
+        <h2>Log</h2>
+        <div class="log-tools">
+          <div class="seg" id="log-levels">
+            <button data-level="all" class="on">All</button>
+            <button data-level="warn">Warn+</button>
+            <button data-level="error">Error</button>
+            <button data-level="gui">Dashboard</button>
+          </div>
+          <input id="log-filter" type="search" placeholder="Search log" aria-label="Search log">
+          <label class="chk"><input type="checkbox" id="log-follow" checked> Follow</label>
+          <button id="btn-log-clear" class="btn small">Clear view</button>
+        </div>
+      </div>
+      <div id="log" class="log" role="log" aria-live="polite"></div>
+      <p class="muted small" id="log-path"></p>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="tip" class="tip" role="tooltip"></div>
+<script src="app.js"></script>
+</body>
+</html>

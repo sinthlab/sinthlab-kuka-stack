@@ -2,20 +2,20 @@
   ros__parameters:
     # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
     # MoveToPositionJointSpace action; the cabinet (LbrImpedanceControlServer) provides compliance.
-    apple_pluck_impedance_control_displacement:
-      update_rate: 200
-      base_frame: lbr_link_0
-      ee_frame: lbr_link_ee
+    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
+      update_rate: 200  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       # How far the apple must be pulled from its start to count as a pluck. `norm` is the straight-line
       # distance in any direction: the apple points at the monkey and is pulled toward it, so no single
       # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
-      cartesian_axis: norm
-      cartesian_displacement_threshold_m: 0.1
-      force_release_shutdown_delay_sec: 0.8
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
-    move_to_start:
-      update_rate: 200
+      cartesian_axis: norm  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
+      cartesian_displacement_threshold_m: 0.1  # pull from the baseline that counts as success (snap) [m]
+      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then recover [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    move_to_start:  # joint-space move to the trial start pose
+      update_rate: 200  # loop rate of this action [Hz]
       # START POSE -- the apple points AT the monkey (+X), tilted 25 deg down, so the NeoPixel ring faces
       # the monkey too. Solved by IK against the iiwa7 URDF (lbr_link_0 -> lbr_link_ee):
       #   flange (0.40, 0, 0.75) m, apple centre ~(0.56, 0, 0.68) m, symmetric in-plane posture.
@@ -29,7 +29,7 @@
       #   height          [0, -13.6, 0, -85.5, 0, 43.1, 0]  -> apple ~5 cm higher (z ~0.73)
       #                   [0, -16.4, 0, -102.2, 0, 29.2, 0] -> apple ~5 cm lower (z ~0.63; A4 17 deg from its limit)
       #                   Lower than that, this posture cannot point the apple forward and down.
-      target_joint_position:
+      target_joint_position:  # start pose, joint angles A1..A7 [deg]
       - 0.0
       - -15.5
       - 0.0
@@ -37,7 +37,7 @@
       - 0.0
       - 36.2
       - 0.0
-      joint_move_tolerance: 0.01
+      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
       - 40.0
@@ -48,12 +48,12 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
-    move_to_start_recover:
-      update_rate: 200
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    move_to_start_recover:  # joint-space move back to the start at the end of each trial
+      update_rate: 200  # loop rate of this action [Hz]
       # Same pose as move_to_start (see the notes there).
-      target_joint_position:
+      target_joint_position:  # recover pose A1..A7 [deg], same as move_to_start
       - 0.0
       - -15.5
       - 0.0
@@ -61,7 +61,7 @@
       - 0.0
       - 36.2
       - 0.0
-      joint_move_tolerance: 0.15
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
       - 40.0
@@ -72,21 +72,31 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      wait_for_physical_arrival: true
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
       # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), and the joint test
       # used to leave this move waiting forever after some pulls. If the arm is held off, carry on after
       # the timeout (a warning says how far off it was).
       cartesian_move_tolerance: 0.03      # apple within 3 cm of the start counts as arrived [m]
       physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
-    audio_cue_play:
-      frequency_hz: 1500
-      duration_ms: 1500
-    audio_cue_snap:
-      frequency_hz: 2000
-      duration_ms: 500
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    audio_cue_play:  # trial-start (go) tone
+      frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
+      duration_ms: 1500  # trial-start (go) tone: length [ms]
+    audio_cue_snap:  # threshold-reached tone
+      frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
+      duration_ms: 500  # threshold-reached tone: length [ms]
+
+    # ---- LIVE parameters: the dashboard (experiment_ctrl_gui) or `ros2 param set` may change these
+    # while the experiment runs; they apply from the NEXT trial. So may the cue blocks
+    # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
+    # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
+    quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
+    audio_cue:  # switch for every beep
+      enabled: true            # false = no beeps at all; the trial sequence is unchanged
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false           # send event codes to the Blackrock NSP -- needs the DIO (README §7)
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
@@ -98,12 +108,12 @@
     #                                 align trial data to it.
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
-    visual_cue:
-      enabled: true
-      remote_test_trigger: true
+    visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
+      enabled: true  # master switch for the ring; false = no visual cues at all
+      remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
       # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
       # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
       # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
-      colours:
+      colours:  # RGBW colour per cue site, each channel 0-255 (Wi-Fi trigger only)
         play: [0, 255, 0, 0]       # trial start -- green
         snap: [255, 0, 0, 0]       # pull threshold reached -- red

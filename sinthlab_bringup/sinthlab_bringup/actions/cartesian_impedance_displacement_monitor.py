@@ -155,6 +155,18 @@ class CartesianImpedanceDisplacementMonitor:
     def threshold_m(self) -> float:
         return self._disp_threshold_m
 
+    def reload(self) -> None:
+        """Re-read the live pull parameters -- threshold, dwell and settle (helpers/live_params.py).
+        Called by the orchestrator at a trial boundary, while the monitor is idle."""
+        node, pre = self._node, self._param_prefix
+        self._disp_threshold_m = float(get_required_param(node, pre + "cartesian_displacement_threshold_m"))
+        self._release_shutdown_delay = max(0.0, float(get_required_param(node, pre + "force_release_shutdown_delay_sec")))
+        if node.has_parameter(pre + "baseline_settle_sec"):
+            self._baseline_settle_sec = max(0.0, float(node.get_parameter(pre + "baseline_settle_sec").value))
+        self._node.get_logger().info(
+            f"Displacement monitor: disp_thr={self._disp_threshold_m:.4f} m, "
+            f"dwell={self._release_shutdown_delay:.2f} s, settle={self._baseline_settle_sec:.2f} s")
+
     def stop(self) -> None:
         """Disarm the monitor (e.g. on an external safety abort) without firing its callbacks."""
         self._ready = False

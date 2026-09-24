@@ -5,3 +5,6 @@ analysis/*.csv
 analysis/*.meta.json
 analysis/expt_*/
 docs/
+# Dashboard (experiment_ctrl_gui): per-run parameter copies and launch logs, one per Start.
+experiment_ctrl_gui/runs/
+experiment_ctrl_gui/logs/

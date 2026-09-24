@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from rclpy.node import Node as rclpyNode
 import rclpy
 
-from sinthlab_bringup.helpers.common_threshold import get_required_param
+from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
 
 
 class AudioCue:
@@ -43,15 +43,26 @@ class AudioCue:
         self._on_complete = on_complete
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
 
+        self.reload()
+        self._played = False
+
+    def reload(self) -> None:
+        """Re-read this cue's parameters. All three are live: an orchestrator calls this at a trial
+        boundary after a change (see helpers/live_params.py).
+
+        `audio_cue.enabled` is one switch for every beep. Off, start() stays silent but still calls
+        on_complete, so the trial sequence is unchanged -- only on_finished (the measured end of
+        the sound) does not fire, because there is no sound to measure."""
+        node = self._node
         self._frequency = int(get_required_param(node, self._param_prefix + "frequency_hz"))
         self._duration = int(get_required_param(node, self._param_prefix + "duration_ms"))
-
-        self._played = False
+        self._enabled = bool(get_optional_param(node, "audio_cue.enabled", True))
 
     def start(self) -> None:
         if self._played:
             self._played = False # allow replay
-        self._play_sound()
+        if self._enabled:
+            self._play_sound()
         self._shutdown()
     
     # This is a very specific implementation for WSL2

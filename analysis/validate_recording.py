@@ -252,11 +252,15 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--file", help="specific CSV (default: newest here)")
     ap.add_argument("--all", action="store_true", help="validate every trial in the folder")
+    ap.add_argument("--folder", help="validate every trial in this expt_* folder (one launch)")
     a = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv"))
                    + glob.glob(os.path.join(HERE, "expt_*", "robot_trajectory_*.csv")))
-    if a.file:
+    if a.folder:
+        folder = a.folder if os.path.isabs(a.folder) else os.path.join(HERE, a.folder)
+        files = sorted(glob.glob(os.path.join(folder, "robot_trajectory_*.csv")))
+    elif a.file:
         files = [a.file if os.path.isabs(a.file) else os.path.join(HERE, a.file)]
     elif not a.all:
         files = files[-1:] if files else []

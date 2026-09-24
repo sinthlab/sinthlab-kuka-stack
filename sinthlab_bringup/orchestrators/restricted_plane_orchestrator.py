@@ -11,6 +11,8 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
+from sinthlab_bringup.helpers.common_threshold import get_optional_param
+from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
@@ -47,7 +49,8 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
         self.quiet_window = WaitAction(
-            self, duration_sec=2.0, on_complete=self.on_quiet_window_complete, name="quiet_window"
+            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         self.audio_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete
@@ -79,15 +82,24 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
 
+        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
+        # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
+        self.control = ExperimentControl(self, "restricted_plane")
+        self.control.on_reload(self._reload_live)
+
         self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
         self.start_trial()
 
     def start_trial(self):
         self.trial_count += 1
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        # This experiment has no TrialRecorder (the fixture action records its own trajectory), so
+        # its events go to the control directly -- same tokens, same status topic and NSP codes.
+        self.control.on_event("trial_start", self.trial_count)
         self.move_to_start.start()  # joint controller is active at the start of every trial
 
     def on_move_complete(self):
+        self.control.on_event("at_start")
         self.get_logger().info("Arm at exact start posture. Switching to CLIK for the fixture...")
         self.switch_to_fixture.start()
 
@@ -97,17 +109,20 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
+        self.control.on_event("cue_go")
         self.audio_cue.start()
         self.visual_cue.start()
 
     def on_audio_complete(self):
         self.get_logger().info("Audio cue played. Virtual fixtures + displacement monitor + safety active.")
+        self.control.on_event("armed")
         self.restricted_plane.start()
         self.monitor.start()
         self.safety.start()
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
+        self.control.on_event("snap")
         self.restricted_plane.stop()
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
@@ -115,6 +130,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def on_safety_trip(self, reason: str):
         # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to recovery.
         self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+        self.control.on_event("safety_trip")
         self.safety.stop()
         self.monitor.stop()
         self.restricted_plane.stop()
@@ -127,11 +143,20 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
+        self.control.on_event("recover_start")
         self.move_recover.start()
 
     def on_recover_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
-        self.start_trial()
+        self.control.on_event("trial_end", self.trial_count)
+        self.control.begin_trial(self.start_trial)   # holds here instead if paused
+
+    def _reload_live(self):
+        """Re-read the live parameters (helpers/live_params.py). Runs between trials only."""
+        for cue in (self.audio_cue, self.audio_cue_snap, self.visual_cue, self.visual_cue_snap):
+            cue.reload()
+        self.monitor.reload()
+        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
 
 
 def main(args=None):

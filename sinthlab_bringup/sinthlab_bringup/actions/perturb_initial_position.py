@@ -26,16 +26,24 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
     def _configure_target(self, node: rclpyNode) -> None:
         # Polar perturbation: the joint target is resolved at run time (see _resolve_target),
         # not read from a static target_joint_position.
-        self._polar_r_m = float(get_required_param(node, self._param_prefix + "polar_r_m"))
-        self._polar_theta_deg = float(get_required_param(node, self._param_prefix + "polar_theta_deg"))
-        self._polar_plane = "horizontal"
-        if node.has_parameter(self._param_prefix + "polar_plane"):
-            self._polar_plane = str(node.get_parameter(self._param_prefix + "polar_plane").value).strip().lower()
+        self._read_polar(node)
         # Joint-space completion (inherited) reads the same optional arrival settings; by default the
         # perturbation completes on the commanded anchor.
         self._read_arrival_params(node)
         # Placeholder until resolved from the live start pose.
         self._joint_pos_target = np.zeros(7)
+
+    def _read_polar(self, node: rclpyNode) -> None:
+        self._polar_r_m = float(get_required_param(node, self._param_prefix + "polar_r_m"))
+        self._polar_theta_deg = float(get_required_param(node, self._param_prefix + "polar_theta_deg"))
+        self._polar_plane = "horizontal"
+        if node.has_parameter(self._param_prefix + "polar_plane"):
+            self._polar_plane = str(node.get_parameter(self._param_prefix + "polar_plane").value).strip().lower()
+
+    def reload(self) -> None:
+        """Re-read r / theta / plane -- live parameters (helpers/live_params.py), applied at a trial
+        boundary. The joint target is re-solved from them at the next start() anyway."""
+        self._read_polar(self._node)
 
     def _resolve_target(self) -> None:
         """Offset the live start EE position by (r, theta) in the configured plane, then IK to joints."""

@@ -2,75 +2,78 @@
 # managers regardless of their namespace.
 /**/controller_manager:
   ros__parameters:
-    update_rate: 100
-    enforce_command_limits: true # can be removed from Kilted onward
+    update_rate: 100  # ros2_control loop rate [Hz]; one FRI message every 10 ms
+    enforce_command_limits: true  # clamp commands to the URDF joint limits (default from Kilted on)
 
     # ROS 2 control broadcasters
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
+    joint_state_broadcaster:  # joint positions/velocities for TF and RViz
+      type: joint_state_broadcaster/JointStateBroadcaster  # publishes /joint_states
 
-    force_torque_broadcaster:
-      type: force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster
+    force_torque_broadcaster:  # broadcasts the estimated external wrench
+      type: force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster  # publishes the estimated EE wrench
 
     # LBR ROS 2 control broadcasters
-    estimated_wrench_interface:
-      type: lbr_ros2_control/EstimatedWrenchInterface
+    estimated_wrench_interface:  # estimates the EE wrench from external joint torques
+      type: lbr_ros2_control/EstimatedWrenchInterface  # EE wrench estimated from external joint torques
 
-    lbr_state_broadcaster:
-      type: lbr_ros2_control/LBRStateBroadcaster
+    lbr_state_broadcaster:  # the full FRI state, including the cabinet clock
+      type: lbr_ros2_control/LBRStateBroadcaster  # publishes <ns>/lbr_state (FRI state, cabinet clock)
 
     # LBR ROS 2 control controllers.
     # lbr_joint_position_command_controller -> apple-pluck / perturb (joint positions -> FRI)
-    lbr_joint_position_command_controller:
-      type: lbr_ros2_control/LBRJointPositionCommandController
+    lbr_joint_position_command_controller:  # apple pluck / perturb, and every start / recover move
+      type: lbr_ros2_control/LBRJointPositionCommandController  # joint positions straight to FRI
 
     # ROS 2 control controllers
     # kuka_clik_controller -> restricted-plane + maze (Cartesian equilibrium -> IK -> joint positions).
     # Spawned INACTIVE by the launch; the orchestrator switches to it for the fixture phase.
-    kuka_clik_controller:
-      type: kuka_clik_controller/KukaClikController
+    kuka_clik_controller:  # restricted plane / maze fixture phase
+      type: kuka_clik_controller/KukaClikController  # Cartesian equilibrium -> IK -> joint positions
 
 # ROS 2 control broadcasters
 /**/force_torque_broadcaster:
   ros__parameters:
-    frame_id: lbr_link_ee # note: frame_id must equal estimated_wrench_interface.wrench_estimator.chain_tip; namespace: https://github.com/ros2/rviz/issues/1103
-    sensor_name: estimated_wrench_interface # note: name must equal estimated_wrench_interface node name (chained)
+    # Must equal estimated_wrench_interface.wrench_estimator.chain_tip. No namespace prefix:
+    # https://github.com/ros2/rviz/issues/1103
+    frame_id: lbr_link_ee  # frame the published wrench is expressed in
+    # Must equal the estimated_wrench_interface node name (the two controllers are chained).
+    sensor_name: estimated_wrench_interface  # which wrench interface to broadcast
 
 # LBR ROS 2 control broadcasters
 /**/estimated_wrench_interface:
   ros__parameters:
-    robot_name: lbr
-    wrench_estimator:
-      chain_root: lbr_link_0
-      chain_tip: lbr_link_ee
-      damping: 0.2
-      force_x_th: 2.0
-      force_y_th: 2.0
-      force_z_th: 2.0
-      torque_x_th: 0.5
-      torque_y_th: 0.5
-      torque_z_th: 0.5
+    robot_name: lbr  # prefix of the robot's joint names
+    wrench_estimator:  # Jacobian-based wrench estimate and its dead band
+      chain_root: lbr_link_0  # base of the Jacobian chain
+      chain_tip: lbr_link_ee  # link the wrench is estimated at
+      damping: 0.2  # damping of the Jacobian pseudo-inverse (robustness near singularities)
+      force_x_th: 2.0  # dead band: |Fx| below this reads 0, above it is reduced by this [N]
+      force_y_th: 2.0  # same, Fy [N]
+      force_z_th: 2.0  # same, Fz [N]
+      torque_x_th: 0.5  # same, torque about X [N m]
+      torque_y_th: 0.5  # same, torque about Y [N m]
+      torque_z_th: 0.5  # same, torque about Z [N m]
 
 /**/lbr_state_broadcaster:
   ros__parameters:
-    robot_name: lbr
+    robot_name: lbr  # prefix of the robot's joint names
 
 # LBR ROS 2 control controllers
 /**/lbr_joint_position_command_controller:
   ros__parameters:
-    robot_name: lbr
+    robot_name: lbr  # prefix of the robot's joint names
 
 # ROS 2 control controllers
 # kuka_clik_controller -> restricted-plane + maze (Cartesian equilibrium -> IK -> joint positions)
 /**/kuka_clik_controller:
   ros__parameters:
-    update_rate: 1000
-    robot_base_link: "lbr_link_0"
-    end_effector_link: "lbr_link_ee"
-    compliance_ref_link: "lbr_link_ee"
-    joints: [lbr_A1, lbr_A2, lbr_A3, lbr_A4, lbr_A5, lbr_A6, lbr_A7]
-    command_interfaces: [position]
-    state_interfaces: [position, velocity]
+    update_rate: 1000  # CLIK controller loop rate [Hz]
+    robot_base_link: "lbr_link_0"  # base of the kinematic chain
+    end_effector_link: "lbr_link_ee"  # link whose pose is commanded
+    compliance_ref_link: "lbr_link_ee"  # link the target pose refers to
+    joints: [lbr_A1, lbr_A2, lbr_A3, lbr_A4, lbr_A5, lbr_A6, lbr_A7]  # joints it commands, in order
+    command_interfaces: [position]  # writes joint positions (FRI position mode)
+    state_interfaces: [position, velocity]  # reads joint position and velocity
     # >>> THE "STIFF WHILE MOVING" KNOB. These cap how fast the commanded EQUILIBRIUM may chase the
     # hand. Inside a fixture the equilibrium tracks the measured pose, so the spring error -- and the
     # force -- is ~zero. But if the operator moves FASTER than these clamps, the equilibrium falls
@@ -78,9 +81,9 @@
     # direction. That, not stiffness, is what made the maze feel stiff at every cabinet profile.
     # 1.0 m/s is comfortably above hand-guiding speed (~0.2-0.3 m/s), leaving only loop-latency lag
     # (force = K * v * latency, a few N) instead of an unbounded one.
-    max_linear_velocity: 1.0
-    max_angular_velocity: 0.5
-    clik_dt: 0.001
-    clik_it_max: 100
-    clik_eps: 1e-4
-    clik_filter_alpha: 0.99
+    max_linear_velocity: 1.0  # cap on how fast the equilibrium may move [m/s]
+    max_angular_velocity: 0.5  # cap on how fast the equilibrium may rotate [rad/s]
+    clik_dt: 0.001  # IK integration step per iteration [s]
+    clik_it_max: 100  # max IK iterations per control cycle
+    clik_eps: 1e-4  # stop iterating once the pose error is below this
+    clik_filter_alpha: 0.99  # new = alpha * IK + (1 - alpha) * previous; 1 = no smoothing

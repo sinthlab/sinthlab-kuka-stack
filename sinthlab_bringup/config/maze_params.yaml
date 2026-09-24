@@ -33,12 +33,12 @@
     #   X in [0.50, 0.75], Y in [-0.25, +0.25]  at z = 0.50
     # (below X~0.50 the wrist folds back and the pose becomes unreachable). The whole maze lives inside
     # that box with margin. If you move the maze, re-run the reach check before trusting it.
-    state_topic: "lbr_state"
-    base_link: "lbr_link_0"
-    end_effector_link: "lbr_link_ee"
+    state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
+    base_link: "lbr_link_0"  # URDF base link the fixture works in
+    end_effector_link: "lbr_link_ee"  # URDF end-effector link the fixture constrains
 
     # Whole-experiment timeout [s]; on expiry the arm waits for release then returns to start.
-    timeout_sec: 60.0
+    timeout_sec: 60.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
 
     # PRE-START WAYPOINT -- run ONCE at startup, before the first move to the maze start.
     #
@@ -55,24 +55,25 @@
     #
     # Only the FIRST trial uses it; afterwards the arm is already at the maze start, so the recovery
     # move goes straight there and the trial loop is not slowed down.
-    move_to_prestart:
-      update_rate: 200
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]
-      joint_move_tolerance: 0.15   # loose: this is only a waypoint, not the experiment start
+    move_to_prestart:  # waypoint before the first maze start, only from a near-straight arm
+      update_rate: 200  # loop rate of this action [Hz]
+      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # pre-start waypoint A1..A7 [deg]
+      # Loose: this is only a waypoint, not the experiment start
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       # The waypoint is used ONLY when the arm starts in a near-singular ("straight") posture. The test
       # is max(|A2|,|A4|,|A6|) < this many degrees -- verified against the Jacobian to agree exactly
       # with "smallest singular value < 0.05". Mechanical zero scores 0 deg; the maze start scores 79.5
       # and the plane start 90, so neither triggers it. Without this check the arm was detouring to the
       # plane start on every fresh launch, even when already sitting at the maze start.
-      extended_if_bend_below_deg: 12.0
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      extended_if_bend_below_deg: 12.0  # use the waypoint only if max(|A2|,|A4|,|A6|) is below this [deg]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
-    move_to_start:
-      update_rate: 200
+    move_to_start:  # joint-space move to the trial start pose
+      update_rate: 200  # loop rate of this action [Hz]
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
       # this joint array is the one knob that positions the whole maze — change it and the maze follows.
       # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
@@ -91,7 +92,7 @@
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
       #     while holding this orientation at z=0.9.)
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory
@@ -99,39 +100,50 @@
       #     i.e. the arm was still ~2x outside tolerance and the whole maze was then offset from it.
       #     Tolerance is 0.03 rad (~1.7 deg, ~2 cm at the EE) rather than 0.01: under cabinet impedance
       #     there is always some steady-state joint error, and 0.01 would never be met, hanging the move.
-      joint_move_tolerance: 0.03
-      wait_for_physical_arrival: true
+      joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
-      move_to_pos_a_max: 2.0  # [rad/s^2]
-      move_to_pos_j_max: 5.0  # [rad/s^3]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
-    move_to_start_recover:
-      update_rate: 200
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # same as move_to_start
-      joint_move_tolerance: 0.15
-      wait_for_physical_arrival: true  # next trial must not start from a half-recovered pose
-      cartesian_move_tolerance: 0.05
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-      move_to_pos_a_max: 2.0
-      move_to_pos_j_max: 5.0
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    move_to_start_recover:  # joint-space move back to the start at the end of each trial
+      update_rate: 200  # loop rate of this action [Hz]
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # recover pose A1..A7 [deg], same as move_to_start
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      # Next trial must not start from a half-recovered pose
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.05  # EE within this of the target counts as physically arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # Audio cues
     audio_cue_play:                 # "go" cue at trial start
-      frequency_hz: 1500
-      duration_ms: 1500
+      frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
+      duration_ms: 1500  # trial-start (go) tone: length [ms]
     audio_cue_reward:               # reward at each checkpoint
-      frequency_hz: 1800
-      duration_ms: 300
+      frequency_hz: 1800  # checkpoint-reward tone: pitch [Hz]
+      duration_ms: 300  # checkpoint-reward tone: length [ms]
     audio_cue_goal:                 # maze solved
-      frequency_hz: 2200
-      duration_ms: 600
+      frequency_hz: 2200  # maze-solved tone: pitch [Hz]
+      duration_ms: 600  # maze-solved tone: length [ms]
     audio_cue_timeout:              # timed out
-      frequency_hz: 800
-      duration_ms: 800
+      frequency_hz: 800  # timed-out tone: pitch [Hz]
+      duration_ms: 800  # timed-out tone: length [ms]
+
+    # ---- LIVE parameters: the dashboard (experiment_ctrl_gui) or `ros2 param set` may change these
+    # while the experiment runs; they apply from the NEXT trial. So may the cue blocks
+    # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
+    # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
+    quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
+    audio_cue:  # switch for every beep
+      enabled: true            # false = no beeps at all; the trial sequence is unchanged
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false           # send event codes to the Blackrock NSP -- needs the DIO (README §7)
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
@@ -143,13 +155,13 @@
     #                                 align trial data to it.
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
-    visual_cue:
-      enabled: true
-      remote_test_trigger: true
+    visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
+      enabled: true  # master switch for the ring; false = no visual cues at all
+      remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
       # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
       # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
       # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
-      colours:
+      colours:  # RGBW colour per cue site, each channel 0-255 (Wi-Fi trigger only)
         play: [0, 255, 0, 0]       # go -- green
         reward: [0, 0, 255, 0]     # checkpoint reward -- blue
         goal: [255, 0, 0, 0]       # maze solved (end) -- red
@@ -161,11 +173,11 @@
     # anchor_settle_sec -- so they sit exactly on the rails. The maze is in the Y-Z plane, so the X
     # offset is 0 (on the locked plane)
     # and Y/Z carry the position. Which junctions get a cue is explained at the arrays themselves.
-    checkpoint_monitor:
-      update_rate: 100
-      base_frame: lbr_link_0
-      ee_frame: lbr_link_ee
-      relative_to_start: true
+    checkpoint_monitor:  # maze checkpoints (reward once each, any order) and the goal
+      update_rate: 100  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      relative_to_start: true  # checkpoint and goal coordinates are offsets from the anchored start
       # CHECKPOINTS ONLY WHERE A TURN DECISION IS ACTUALLY MADE -- both forks.
       #
       #   ( a  ,  b  )  the choice
@@ -174,16 +186,18 @@
       #
       # The midpoint of the descent rail is deliberately NOT a checkpoint: nothing branches there, so
       # there is nothing to decide. Every other junction is a forced corner and gets no cue either.
-      checkpoint_x:      [ 0.000,  0.000]
-      checkpoint_y:      [-0.150, -0.150]
-      checkpoint_z:      [-0.110, -0.220]
-      checkpoint_radius: [ 0.040,  0.040]
-      goal_x: 0.000        # on the plane
-      goal_y:  0.150       # far (+Y) end of the BOTTOM goal row R5
-      goal_z: -0.220
-      goal_radius: 0.03
-      debug_log_enabled: true
-      debug_log_rate_hz: 2.0
+      checkpoint_x:      [ 0.000,  0.000]  # checkpoint X, one entry per checkpoint [m]
+      checkpoint_y:      [-0.150, -0.150]  # checkpoint Y, one entry per checkpoint [m]
+      checkpoint_z:      [-0.110, -0.220]  # checkpoint Z, one entry per checkpoint [m]
+      checkpoint_radius: [ 0.040,  0.040]  # reward when the EE comes within this of the checkpoint [m]
+      # On the plane
+      goal_x: 0.000  # goal X [m]
+      # Far (+Y) end of the BOTTOM goal row R5
+      goal_y:  0.150  # goal Y [m]
+      goal_z: -0.220  # goal Z [m]
+      goal_radius: 0.03  # the goal is reached within this distance [m]
+      debug_log_enabled: true  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
@@ -191,26 +205,26 @@
     # The maze footprint reaches ~0.45 m from start (the bottom-left corner), so 0.55 m clears it; normal hand motion is
     # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
-    maze_safety:
-      update_rate: 100
-      base_frame: lbr_link_0
-      ee_frame: lbr_link_ee
-      max_displacement_m: 0.55
-      max_speed_mps: 0.7
+    maze_safety:  # runaway stop: abort to recovery if the arm goes too far or too fast
+      update_rate: 100  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      max_displacement_m: 0.55  # abort if the EE gets farther than this from the trial start [m]
+      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s]
       # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
       # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
       # stays appropriate here even with the raised CLIK clamp -- watch for false trips.
-      speed_trip_samples: 5
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # Wait for the operator to let go (external force ~ 0) before recovering to start.
-    force_release:
-      update_rate: 100
-      release_force_threshold_newton: 3.0
-      release_duration_sec: 1.0
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+    force_release:  # waits for the operator to let go before recovering
+      update_rate: 100  # loop rate of this action [Hz]
+      release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
+      release_duration_sec: 1.0  # ... continuously for this long [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # =============================== MAZE GEOMETRY (VERTICAL Y-Z plane) ===============================
     # restricted_axis "x" locks the robot's RADIAL (in/out) axis and frees Y (sideways) + Z (up/down),
@@ -247,46 +261,47 @@
     #   maze        -> the real thing.
     #
     # Work up the ladder and stop at the first one that feels wrong -- that names the culprit.
-    virtual_fixture_profile: "maze"
-    virtual_fixtures:
+    virtual_fixture_profile: "maze"  # which block under virtual_fixtures is active
+    virtual_fixtures:  # fixture geometries; virtual_fixture_profile picks the active one
       # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
       # first is kuka_clik_controller.max_linear_velocity): at 0.01 m/tick and ~100 Hz state the
       # equilibrium could only chase the hand at 1 m/s, but combined with the CLIK clamp it was the
       # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
       # against spikes without throttling normal guiding.
-      max_target_step_m: 0.05
+      max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
       # Anchor the maze where the arm RESTS, not where it was commanded. A free axis carries no
       # restoring force, so the arm settles a few cm below the commanded start; anchoring on the
       # commanded pose put the whole maze that far above it and the checkpoints were missed (CP1 by
       # ~1 cm against a 3 cm radius). 3 s captures most of the settle without stalling the trial.
-      anchor_settle_sec: 3.0
-      anchor_on_measured: true
+      anchor_settle_sec: 3.0  # wait this long after the fixture starts before anchoring it [s]
+      anchor_on_measured: true  # anchor on the measured pose (true) rather than the commanded one
       # --- rung 1: open rectangle, X locked, Y/Z free. Deliberately smaller than the full envelope
       #     (a +/-0.20, b -0.18..+0.14) so a drifting arm meets a wall rather than running to the
       #     workspace limit. Note this is a BOX, not a rail -- the only rung that is. ---
-      free_plane:
-        type: "maze"
-        restricted_axis: "x"
-        corridor_frame: "relative"
-        corridor_a_min: [-0.20]
-        corridor_a_max: [ 0.20]
-        corridor_b_min: [-0.18]
-        corridor_b_max: [ 0.14]
+      free_plane:  # diagnostic rung 1: X locked, one open rectangle (walls only at its edge)
+        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
+        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
+        corridor_frame: "relative"  # relative = offsets from the anchored start; absolute = base frame
+        corridor_a_min: [-0.20]  # a (1st free axis) lower bound, per rail [m]
+        corridor_a_max: [ 0.20]  # a (1st free axis) upper bound, per rail [m]
+        corridor_b_min: [-0.18]  # b (2nd free axis) lower bound, per rail [m]
+        corridor_b_max: [ 0.14]  # b (2nd free axis) upper bound, per rail [m]
 
       # --- rung 2: a single horizontal LINE along Y (thin in Z = one wall pair). ---
-      single_line:
-        type: "maze"
-        restricted_axis: "x"
-        corridor_frame: "relative"
-        corridor_a_min: [-0.06]
-        corridor_a_max: [ 0.19]
-        corridor_b_min: [-0.02]
-        corridor_b_max: [ 0.02]
+      single_line:  # diagnostic rung 2: one horizontal rail
+        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
+        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
+        corridor_frame: "relative"  # relative = offsets from the anchored start; absolute = base frame
+        corridor_a_min: [-0.06]  # a (1st free axis) lower bound, per rail [m]
+        corridor_a_max: [ 0.19]  # a (1st free axis) upper bound, per rail [m]
+        corridor_b_min: [-0.02]  # b (2nd free axis) lower bound, per rail [m]
+        corridor_b_max: [ 0.02]  # b (2nd free axis) upper bound, per rail [m]
 
       # --- rung 3: the real maze ---
-      maze:
-        type: "maze"
-        restricted_axis: "x"        # lock the radial X axis; free Y (sideways) + Z (up/down)
+      maze:  # the maze: linear rails in the vertical Y-Z plane
+        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
+        # Lock the radial X axis; free Y (sideways) + Z (up/down)
+        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
         corridor_frame: "relative"  # corridor coords are OFFSETS from the start EE (a=Y, b=Z)
         # ZERO-WIDTH (LINEAR) SEGMENTS. A horizontal leg has b_min == b_max, a vertical leg has
         # a_min == a_max, so each "corridor" is a LINE, not a box. The projection then always pulls the
@@ -332,7 +347,7 @@
         #     ros2 run sinthlab_bringup check_maze.py
         #
         #                R1     R2     R3     R4     R5     R6
-        corridor_a_min: [ 0.00,  0.15, -0.30, -0.15, -0.30, -0.30]
-        corridor_a_max: [ 0.15,  0.15,  0.15, -0.15,  0.15, -0.30]
-        corridor_b_min: [ 0.00, -0.11, -0.11, -0.22, -0.22, -0.22]
-        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.22, -0.11]
+        corridor_a_min: [ 0.00,  0.15, -0.30, -0.15, -0.30, -0.30]  # a (1st free axis) lower bound, per rail [m]
+        corridor_a_max: [ 0.15,  0.15,  0.15, -0.15,  0.15, -0.30]  # a (1st free axis) upper bound, per rail [m]
+        corridor_b_min: [ 0.00, -0.11, -0.11, -0.22, -0.22, -0.22]  # b (2nd free axis) lower bound, per rail [m]
+        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.22, -0.11]  # b (2nd free axis) upper bound, per rail [m]

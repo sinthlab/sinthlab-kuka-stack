@@ -17,6 +17,12 @@ The repo also carries the physical end of the rig: the parametric
 over a hardwired media‑flange line, whose **appearance is configured on the board over its own
 Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue).
 
+Experiments can be run from the terminal or from the
+[**experiment control dashboard**](experiment_ctrl_gui/README.md), a local web page. It covers:
+picking an experiment, editing its parameters, Start / Stop / Restart / Pause, changing cues and
+other live settings between trials, and following the status and log. See
+[§5](#running-from-the-dashboard).
+
 FRI **torque** mode (ROS-side impedance) was evaluated on hardware and **not adopted** — see the
 [appendix](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out) for what was learned and
 the conditions under which it would be worth revisiting.
@@ -229,6 +235,48 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 >
 > ⚠️ **Safety first.** On the first run of any scenario, operate in **T1** (reduced speed) with a
 > hand on the E‑stop. The arm is actively controlled the moment a SmartPad application is running.
+
+### Running from the dashboard
+The [experiment control dashboard](experiment_ctrl_gui/README.md) runs the same launches as the
+commands below, with the parameters and status on one page:
+
+```bash
+~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/run_gui.sh     # then open http://localhost:8080
+python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo   # try it without the robot
+```
+
+1. Pick the experiment. Follow its **Before you start** checklist for the SmartPad selections.
+2. Review the parameters. **Live** ones can also change while it runs. **Per-run** ones cover
+   everything else in the experiment YAML, including the start/recover poses and the maze geometry.
+   They are editable now and locked for the run once started. Start and recover are edited together.
+   For Restricted Plane and Maze the CLIK redundancy posture follows an edited start pose. **Fixed**
+   (read-only) is only what is not in the experiment YAML: the SmartPad / FRI selections, launch
+   arguments and controller configuration.
+3. **▶ Start** within the ~60 s the SmartPad app waits for ROS. Then watch the trial phase, the
+   event list and the log.
+4. While it runs, change live settings (cues on/off, colours, tones, quiet window, NSP sync,
+   threshold, perturbation, maze timeout). **They apply from the next trial**, never mid-trial, and
+   each trial's sidecar records the values it used.
+5. **⏸ Pause after trial** holds the arm at the start between trials. **■ Stop after trial** ends
+   cleanly with every trial complete. **■ Stop now** is Ctrl-C; the trial in progress is saved as
+   `partial`. **↻ Restart** does Stop now and then Start again.
+
+Stop is Ctrl-C to the launch, **not an emergency stop** — the SmartPad E-stop is. The dashboard never
+edits the package YAMLs: per-run edits go into a copy passed as the launch's `params_file` argument,
+which every experiment launch now accepts (`ros2 launch … params_file:=/path/to.yaml`). The maze and
+restricted-plane launches also accept `clik_nullspace_cfg:=` (a path under the package, or an
+absolute path).
+
+The same controls from a terminal, e.g. for apple pluck:
+```bash
+ros2 topic echo /lbr/experiment_status                                          # where the run is
+ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false            # live: next trial
+ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"
+```
+A `ros2 param set` on anything that is not live is **rejected with the reason**. Before this, it was
+silently accepted and had no effect, because orchestrators read their parameters once at start-up.
+The list of live parameters is in
+[`helpers/live_params.py`](sinthlab_bringup/sinthlab_bringup/helpers/live_params.py).
 
 ### Scenario quick reference
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
@@ -773,6 +821,15 @@ flowchart LR
   | `MoveRestrictedOnAPlaneAction` / `MoveInMaze` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → recover |
   | `AudioCue` / `WaitAction` | play a tone cue / one‑shot delay |
+  | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, the live-parameter gate, and the NSP event hook |
+
+  **Outside control.** Every orchestrator creates one
+  [`ExperimentControl`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py) and ends each
+  trial with `control.begin_trial(self.start_trial)` rather than calling `start_trial()` directly.
+  That call is where a pause holds the arm at the start, and where accepted live-parameter changes
+  are applied: `_reload_live()` calls `reload()` on the cue, monitor and perturbation actions. So a
+  change never lands mid-trial. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
+  is built on these interfaces, and anything else can use them too.
 
   **Start-up guard (maze).** `MoveToPositionJointSpace` exposes `latest_measured_joints()`, so the
   orchestrator can ask *where the arm physically is* before committing to a move. The maze uses this to
@@ -1194,15 +1251,21 @@ echo described in §6.7.
 
 ### Sync to the Blackrock NSP
 
-The hook is in place and waiting for the DIO. `TrialRecorder(..., on_event=fn)` calls `fn(token, arg)`
-**synchronously inside `mark()`, before anything else**, so a pulse leaves at the same instant the
-event is logged — one call site, so the two cannot drift apart in a later edit.
+The hook is wired and waiting for the DIO. Every orchestrator passes
+`TrialRecorder(..., on_event=self.control.on_event)`, and `mark()` calls it **synchronously, before
+anything else**, so a pulse leaves at the same instant the event is logged. There is one call site,
+so the two cannot drift apart in a later edit. The codes are in
+[`helpers/experiment_control.py`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py):
 
 ```python
-CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
-         "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9}
-TrialRecorder(..., on_event=lambda tok, arg: dio.pulse(CODES[tok]) if tok in CODES else None)
+NSP_CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
+             "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9}
 ```
+
+Sending is switched by **`nsp_sync.enabled`** in each experiment YAML. It is a live parameter, so the
+dashboard can toggle it between trials. Until the DIO arrives, `ExperimentControl._pulse()` warns
+once that nothing is being sent. When the DIO arrives, implement the pulse in `_pulse()`; nothing
+else changes.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Send a
@@ -1335,7 +1398,7 @@ arm had been pushed off. It is always populated, on-rail or not.
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `perturbation` | Perturb: the applied offset vector. Constant per trial, hence metadata not a column. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
-| `params` | Full resolved ROS parameter dump for the orchestrator node. |
+| `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
 | `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |
 
 ### Sizing
@@ -1455,14 +1518,25 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-Two offline checks run without hardware and are worth using before a deploy:
+Four offline checks run without hardware and are worth using before a deploy:
 ```bash
 # maze geometry: rails, connectivity, reachability, CLIK nullspace, duplicate YAML keys
 ros2 run sinthlab_bringup check_maze.py
 
 # cue ring firmware: the real code.py against stubbed CircuitPython, on a virtual clock
 python3 sinthlab-kuka-stack/end_effector_metro_code/test_code.py
+
+# every YAML parameter has a one-line description (the dashboard's help is read from these)
+python3 sinthlab-kuka-stack/experiment_ctrl_gui/check_param_docs.py
+
+# the dashboard, against a simulated experiment (no ROS needed)
+python3 sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 ```
+
+**Documenting a parameter.** Every key in `sinthlab_bringup/config/*.yaml` carries a one-line
+description on its own line: what it is, with units, e.g. `polar_r_m: 0.05  # perturbation distance
+from the start [m]`. Longer reasoning goes in comment lines directly above the key. The dashboard
+shows both, under each parameter and in its hover help. Add a new parameter the same way.
 
 ---
 

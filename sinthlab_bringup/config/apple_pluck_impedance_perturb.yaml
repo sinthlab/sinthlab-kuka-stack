@@ -3,21 +3,22 @@
     # Perturb drives a joint position controller (LBRJointPositionCommandController) via the
     # MoveToPositionJointSpace / PerturbInitialPosition actions; the cabinet
     # (LbrImpedanceControlServer) provides the compliance.
-    apple_pluck_impedance_control_displacement:
-      update_rate: 200
-      base_frame: lbr_link_0
-      ee_frame: lbr_link_ee
+    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
+      update_rate: 200  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       # How far the apple must be pulled from its start to count as a pluck. `norm` is the straight-line
       # distance in any direction: the apple points at the monkey and is pulled toward it, so no single
       # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
-      cartesian_axis: norm
-      cartesian_displacement_threshold_m: 0.1   # same as apple_pluck_impedance.yaml
+      cartesian_axis: norm  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
+      # Same as apple_pluck_impedance.yaml
+      cartesian_displacement_threshold_m: 0.1  # pull from the baseline that counts as success (snap) [m]
       # Wait for the arm to settle into the post-perturbation rest pose before locking the
       # displacement baseline (the monitor starts right after the perturbation move completes).
-      baseline_settle_sec: 1.0
-      force_release_shutdown_delay_sec: 0.8
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      baseline_settle_sec: 1.0  # wait after the monitor starts before locking the baseline [s]
+      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then recover [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
     # move_to_start and move_to_start_recover share the same home pose ON PURPOSE but differ in how
     # completion is judged (so they are NOT redundant copies):
     #   move_to_start        -> tight tol, commanded-only: finishes as soon as the COMMANDED anchor is
@@ -25,11 +26,11 @@
     #   move_to_start_recover -> looser tol + wait_for_physical_arrival: waits for the MEASURED arm to
     #                           physically return (so the next trial can't start at the perturbed pose).
     # If you edit the home pose, change it in BOTH blocks.
-    move_to_start:
-      update_rate: 200
+    move_to_start:  # joint-space move to the trial start pose
+      update_rate: 200  # loop rate of this action [Hz]
       # Same start as apple_pluck_impedance.yaml -- apple pointing at the monkey, 25 deg down; the
       # notes and knobs for this pose are there. Keep all four copies identical.
-      target_joint_position:
+      target_joint_position:  # start pose, joint angles A1..A7 [deg]
       - 0.0
       - -15.5
       - 0.0
@@ -37,7 +38,8 @@
       - 0.0
       - 36.2
       - 0.0
-      joint_move_tolerance: 0.01  # tight: commanded anchor must be home -> consistent perturbation origin
+      # Tight: commanded anchor must be home -> consistent perturbation origin
+      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
       move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
       - 40.0
       - 40.0
@@ -48,10 +50,10 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
-    perturb_start:
-      update_rate: 200
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    perturb_start:  # the perturbation: polar offset from the start, jerk-limited joint move
+      update_rate: 200  # loop rate of this action [Hz]
       # WHERE -- a POLAR offset (r, theta) from the start EE position, re-solved every trial by position
       # IK seeded at the start posture.
       #   polar_r_m        how far [m]. The apple points at the monkey, so keep it small.
@@ -64,10 +66,10 @@
       #                    (the other side), 270 = down.
       #   Checked from the start pose: every frontal direction at r = 0.05 and 0.10 m solves exactly
       #   (IK residual < 0.1 mm, condition number <= 13.3).
-      polar_r_m: 0.05
-      polar_theta_deg: 0.0
-      polar_plane: frontal
-      joint_move_tolerance: 0.01
+      polar_r_m: 0.05  # perturbation distance from the start [m]
+      polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
+      polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)
+      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
       # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. On a move this
       # short the joints travel a few degrees, so ACCELERATION and JERK set the duration and the speed cap
       # never binds. Measured from the start pose, r = 0.05 m:
@@ -85,15 +87,15 @@
       - 40.0
       - 40.0
       - 40.0
-      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2] -- raise for a snappier perturbation
-      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3] -- raise together with a_max
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       start_delay_sec: 1.5  # delay after the start cue before the perturbation move begins [s]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
     move_to_start_recover:  # same home as move_to_start, but waits for the PHYSICAL arm to return
-      update_rate: 200
+      update_rate: 200  # loop rate of this action [Hz]
       # Same pose as move_to_start (see the notes in apple_pluck_impedance.yaml).
-      target_joint_position:
+      target_joint_position:  # recover pose A1..A7 [deg], same as move_to_start
       - 0.0
       - -15.5
       - 0.0
@@ -101,7 +103,8 @@
       - 0.0
       - 36.2
       - 0.0
-      joint_move_tolerance: 0.15  # looser: the measured arm under impedance won't hit 0.01
+      # Looser: the measured arm under impedance won't hit 0.01
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
       - 40.0
@@ -112,21 +115,32 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      wait_for_physical_arrival: true  # wait for the MEASURED arm home, so the next trial can't start perturbed
+      # Wait for the MEASURED arm home, so the next trial can't start perturbed
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
       # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), and the joint test
       # used to leave this move waiting forever after some pulls. If the arm is held off, carry on after
       # the timeout (a warning says how far off it was).
       cartesian_move_tolerance: 0.03      # apple within 3 cm of the start counts as arrived [m]
       physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
-      debug_log_enabled: false
-      debug_log_rate_hz: 2.0
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
     audio_cue_play:          # trial-start cue: monkey begins reaching, before the perturbation
-      frequency_hz: 1500
-      duration_ms: 1500
+      frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
+      duration_ms: 1500  # trial-start (go) tone: length [ms]
     audio_cue_snap:          # threshold-reached cue (pull success). (The post-perturbation "pull" cue was removed.)
-      frequency_hz: 2000
-      duration_ms: 500
+      frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
+      duration_ms: 500  # threshold-reached tone: length [ms]
+
+    # ---- LIVE parameters: the dashboard (experiment_ctrl_gui) or `ros2 param set` may change these
+    # while the experiment runs; they apply from the NEXT trial. So may the cue blocks
+    # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
+    # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
+    quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
+    audio_cue:  # switch for every beep
+      enabled: true            # false = no beeps at all; the trial sequence is unchanged
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false           # send event codes to the Blackrock NSP -- needs the DIO (README §7)
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
@@ -138,12 +152,12 @@
     #                                 align trial data to it.
     #                         false = the X76 wire at the robot base. No switch is wired to this
     #                                 computer yet, so nothing fires (a warning says so).
-    visual_cue:
-      enabled: true
-      remote_test_trigger: true
+    visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
+      enabled: true  # master switch for the ring; false = no visual cues at all
+      remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
       # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
       # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
       # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
-      colours:
+      colours:  # RGBW colour per cue site, each channel 0-255 (Wi-Fi trigger only)
         play: [0, 255, 0, 0]       # trial start -- green
         snap: [255, 0, 0, 0]       # pull threshold reached -- red
