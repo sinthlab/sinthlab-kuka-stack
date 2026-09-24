@@ -17,17 +17,18 @@ The repo also carries the physical end of the rig: the parametric
 over a hardwired media‑flange line, whose **appearance is configured on the board over its own
 Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue).
 
-Experiments can be run from the terminal or from the
-[**experiment control dashboard**](experiment_ctrl_gui/README.md), a local web page. It covers:
-picking an experiment, editing its parameters, Start / Stop / Restart / Pause, changing cues and
-other live settings between trials, and following the status and log. See
-[§5](#running-from-the-dashboard).
+**To run an experiment, start with the
+[experiment control dashboard](#quick-start-the-experiment-dashboard)**, a local web page for
+picking an experiment, editing its parameters, Start / Pause / Stop, changing cues between trials,
+and following the status and log. Every experiment can also be run from a terminal
+([§5](#5-running-experiments-on-hardware)).
 
 FRI **torque** mode (ROS-side impedance) was evaluated on hardware and **not adopted** — see the
 [appendix](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out) for what was learned and
 the conditions under which it would be worth revisiting.
 
 ## Table of Contents
+- [Quick start: the experiment dashboard](#quick-start-the-experiment-dashboard)
 - [1. Hardware Setup (KUKA Arm)](#1-hardware-setup-kuka-arm)
 - [2. Windows Laptop Setup](#2-windows-laptop-setup)
 - [3. Building the Stack](#3-building-the-stack)
@@ -39,6 +40,199 @@ the conditions under which it would be worth revisiting.
 - [9. Development & Contributing](#9-development--contributing)
 - [Acknowledgement](#acknowledgement)
 - [Appendix — FRI torque mode (not adopted)](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out)
+
+---
+
+## Quick start: the experiment dashboard
+
+The quickest way to run an experiment is the **experiment control dashboard**, a local web page on
+the ROS computer. From it you:
+
+- pick one of the four experiments;
+- check or change its parameters;
+- Start, Pause, Stop and Restart it;
+- change cues and other live settings between trials;
+- follow the trial, its events and the full log.
+
+Every experiment can still be run from a terminal instead: see
+[§5](#5-running-experiments-on-hardware) and [Without the dashboard](#without-the-dashboard). How the
+dashboard is built is in [`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md).
+
+> ⚠️ **Stop is not an emergency stop.** It sends Ctrl-C to the launch. **The SmartPad E-stop is the
+> E-stop.** On the first run of any experiment, work in **T1** with a hand on it.
+
+### Start the dashboard
+On the ROS computer wired to the arm, with the workspace built ([§3](#3-building-the-stack)):
+
+```bash
+~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/run_gui.sh     # then open http://localhost:8080
+```
+
+Under WSL2 a Windows browser works, because Windows forwards `localhost` to WSL. `run_gui.sh`
+sources ROS 2 and the workspace first. The page needs nothing extra installed and loads nothing
+from the internet.
+
+**Try it without the robot first.** This runs a simulated experiment with the same controls;
+nothing is launched and nothing connects to the arm:
+
+```bash
+python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
+```
+
+| Option | Effect |
+|---|---|
+| `--port 8081` | serve on another port |
+| `--robot-name lbr` | the arm's ROS namespace (default `lbr`) |
+| `--demo` | simulated robot: nothing is launched |
+| `--host 0.0.0.0` | serve beyond this computer. **Anyone who can reach the port can start the robot.** Prefer an SSH tunnel: `ssh -L 8080:localhost:8080 <ros-box>` |
+
+### The page
+- **Left column:** the experiment list, the **Run** controls, and a **Before you start** checklist
+  with the SmartPad selections for the chosen experiment.
+- **Middle column:** the **status**, then the **parameters**. Status shows the trial number, the
+  current phase, the trial's steps, and a list of every event.
+- **Log:** on the right on a wide screen, below on a narrow one.
+- **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
+  run state.
+
+### Running an experiment
+1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze.
+2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping. The app then waits
+   about 60 s for ROS.
+3. **Check the parameters** ([below](#live-per-run-and-fixed-parameters)). Edited rows get an
+   `edited` badge, and ↺ puts one back to the YAML value. Hover over any parameter for its full
+   help.
+4. **▶ Start.** This runs `ros2 launch sinthlab_bringup <experiment>.launch.py`, plus your edited
+   parameters if you changed any. The status card then follows each trial, e.g.
+   `start → at start → quiet → go cue → armed → threshold → recover → end`.
+5. **Change live settings** on the **Live** tab at any time. A change applies **from the next
+   trial**; the trial in progress is never changed. Until then the row shows a purple
+   `next trial → …` badge, and the log records when the change was accepted and when it was applied.
+6. **⏸ Pause after trial** lets the current trial finish. The arm recovers to the start and **holds
+   there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
+   changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
+7. **Stop:**
+   - **■ Stop after trial:** finishes this trial, returns to the start, then stops cleanly, so every
+     trial on disk is complete. **Use this one.**
+   - **■ Stop now:** Ctrl-C at once. The trial in progress is saved with `"partial": true`.
+   - **↻ Restart:** Stop now, then Start again with the current edits.
+8. **Validate recording** checks this run's data folder
+   (`analysis/validate_recording.py --folder …`) and prints the result in the log.
+
+**The log** is the launch's own output from every node, colour-coded by level. Filter it by level or
+text, or turn off *Follow* to scroll back. It is also saved to `experiment_ctrl_gui/logs/`.
+
+**An experiment started in a terminal** is picked up automatically. Live changes and pause work
+from the page; stop it with Ctrl-C in its own terminal.
+
+### Live, Per-run and Fixed parameters
+
+| Tab | When it can change | What is in it |
+|---|---|---|
+| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; the pull threshold and hold; the perturbation; the maze timeout ([full list](#live-parameters)) |
+| **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: start and recover poses, the maze pre-start waypoint, rails, checkpoints and goal, move speeds and tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
+| **Fixed** | Not from the dashboard: at the SmartPad or in the file named | what every experiment shares: SmartPad (FRI) selections, launch arguments, `iiwa7_hardware_controllers.yaml`, the CLIK redundancy posture |
+
+- **Your edits never change the package YAML.** They go into a copy for that run, and every
+  recorded trial's sidecar keeps the full parameter set it ran with, live changes included.
+- **Poses** are 7 joint angles in degrees. They are checked against the iiwa7 joint limits, and a
+  nearly straight (singular) arm is refused.
+  - **Start and recover are edited together**, because the next trial starts where the last one
+    recovered to.
+  - **Restricted Plane and Maze:** the CLIK redundancy posture follows an edited start pose
+    automatically.
+  - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
+    before trusting it.
+- **Amber ⚠ notes** flag parameters other things depend on; **blue 🔗 notes** name what else an
+  edit changes. Rails and checkpoints must keep their number of entries; adding a rail is a YAML
+  edit.
+- **Values are checked** for type, range and allowed choices before they are sent, and again inside
+  the orchestrator. A refused change says why.
+
+### Live parameters
+**Every experiment:**
+
+| Parameter | Meaning |
+|---|---|
+| `quiet_window_sec` | pause at the start pose before the go cue [s] (default 2.0) |
+| `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
+| `audio_cue_*.frequency_hz`, `audio_cue_*.duration_ms` | each tone (37–32767 Hz, 10–10000 ms) |
+| `visual_cue.enabled` | master switch for the NeoPixel ring |
+| `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
+| `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
+| `nsp_sync.enabled` | send event codes to the Blackrock NSP. **The DIO is not wired yet**: when on, it warns once and sends nothing ([§7](#sync-to-the-blackrock-nsp)) |
+
+**Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
+
+| Experiment | Extra live parameters |
+|---|---|
+| Apple Pluck | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
+| Apple Pluck Perturb | the two above, `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m`, `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec` |
+| Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
+| Maze | `timeout_sec` |
+
+These are deliberately **not** live:
+- `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
+  different trial.
+- **Safety limits:** a limit must not be loosened mid-session.
+- **Poses and geometry:** they are verified offline.
+
+### Parameter help
+Each parameter shows a one-line description. **Hover over its name**, or tab to it, for the full
+help:
+- the type, YAML default, and allowed range or choices;
+- whether it is live;
+- the **notes from the YAML**: the reasoning, measurements and knobs;
+- any caution or linked parameters.
+
+Group headings and Fixed rows have the same help. To send someone straight to one parameter's help:
+`http://localhost:8080/?exp=perturb&hover=perturb_start.polar_theta_deg`.
+
+All of it is read from the YAML files themselves, so the page and the files cannot disagree. To
+document a new parameter, see [§9](#9-development--contributing).
+
+### Without the dashboard
+The same controls from a terminal (namespace `lbr`, apple pluck shown). The orchestrator nodes are
+`apple_pluck_orchestrator`, `perturb_orchestrator`, `restricted_plane_orchestrator` and
+`maze_orchestrator`.
+
+```bash
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py                 # start; Ctrl-C stops
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py params_file:=/path/edited.yaml
+
+ros2 topic echo /lbr/experiment_status                                                     # where the run is
+ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false                       # live: next trial
+ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"   # pause after trial
+ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: false}"  # resume
+```
+
+A `ros2 param set` on anything that is not live is **rejected with the reason**, because the
+orchestrator read it once at start-up. The maze and restricted-plane launches also accept
+`clik_nullspace_cfg:=`.
+
+### Files the dashboard writes
+| Where | What |
+|---|---|
+| `experiment_ctrl_gui/runs/<exp>_<time>.yaml` | the edited parameter copy a Start used (only when something was edited), plus `…_clik_nullspace.yaml` when a CLIK start pose was edited |
+| `experiment_ctrl_gui/logs/<exp>_<time>.log` | the full launch output of each run |
+| `analysis/expt_<run_name>_<time>/` | the trial recordings, written by the orchestrator as always ([§7](#7-data-collected)) |
+
+None of these are committed to git.
+
+### If something is wrong
+- **"ROS ✗" in the top bar.** The dashboard was started without ROS sourced, so use `run_gui.sh`.
+  Start, Stop and the log still work, but live changes, pause and robot state need ROS.
+- **"Robot: no state".** Nothing is publishing `/lbr/lbr_state` yet: the launch has not connected
+  to FRI, or the SmartPad app is not running or timed out. Restart the app, then Start.
+- **The run pill stays on "Starting…".** The orchestrator has not reported yet. Look in the log for
+  its first lines or an exception.
+- **A live change is refused.** The message gives the reason: not a live parameter, out of range, or
+  wrong type. A per-run parameter needs Stop, edit, Start.
+- **Stop takes a while.** The nodes shut down in order. After 20 s the dashboard escalates, and the
+  log says so.
+- **"Dashboard disconnected".** The dashboard server stopped. Restart it. If it was running an
+  experiment, that experiment was stopped cleanly when the server stopped.
 
 ---
 
@@ -237,46 +431,10 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 > hand on the E‑stop. The arm is actively controlled the moment a SmartPad application is running.
 
 ### Running from the dashboard
-The [experiment control dashboard](experiment_ctrl_gui/README.md) runs the same launches as the
-commands below, with the parameters and status on one page:
-
-```bash
-~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/run_gui.sh     # then open http://localhost:8080
-python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo   # try it without the robot
-```
-
-1. Pick the experiment. Follow its **Before you start** checklist for the SmartPad selections.
-2. Review the parameters. **Live** ones can also change while it runs. **Per-run** ones cover
-   everything else in the experiment YAML, including the start/recover poses and the maze geometry.
-   They are editable now and locked for the run once started. Start and recover are edited together.
-   For Restricted Plane and Maze the CLIK redundancy posture follows an edited start pose. **Fixed**
-   (read-only) is only what is not in the experiment YAML: the SmartPad / FRI selections, launch
-   arguments and controller configuration.
-3. **▶ Start** within the ~60 s the SmartPad app waits for ROS. Then watch the trial phase, the
-   event list and the log.
-4. While it runs, change live settings (cues on/off, colours, tones, quiet window, NSP sync,
-   threshold, perturbation, maze timeout). **They apply from the next trial**, never mid-trial, and
-   each trial's sidecar records the values it used.
-5. **⏸ Pause after trial** holds the arm at the start between trials. **■ Stop after trial** ends
-   cleanly with every trial complete. **■ Stop now** is Ctrl-C; the trial in progress is saved as
-   `partial`. **↻ Restart** does Stop now and then Start again.
-
-Stop is Ctrl-C to the launch, **not an emergency stop** — the SmartPad E-stop is. The dashboard never
-edits the package YAMLs: per-run edits go into a copy passed as the launch's `params_file` argument,
-which every experiment launch now accepts (`ros2 launch … params_file:=/path/to.yaml`). The maze and
-restricted-plane launches also accept `clik_nullspace_cfg:=` (a path under the package, or an
-absolute path).
-
-The same controls from a terminal, e.g. for apple pluck:
-```bash
-ros2 topic echo /lbr/experiment_status                                          # where the run is
-ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false            # live: next trial
-ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"
-```
-A `ros2 param set` on anything that is not live is **rejected with the reason**. Before this, it was
-silently accepted and had no effect, because orchestrators read their parameters once at start-up.
-The list of live parameters is in
-[`helpers/live_params.py`](sinthlab_bringup/sinthlab_bringup/helpers/live_params.py).
+The [dashboard](#quick-start-the-experiment-dashboard) runs exactly the launches below, with the
+SmartPad checklist, parameters, status and log on one page. The steps below are the terminal way, and
+what the dashboard does for you. The launches accept `params_file:=/path/to.yaml` to run an edited
+parameter copy; the maze and restricted-plane launches also accept `clik_nullspace_cfg:=`.
 
 ### Scenario quick reference
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
@@ -743,41 +901,56 @@ Python state transitions never compromise the 1000 Hz hardware control loops.
 
 ### 6.1 System Overview — data flow
 Both paths end in a joint **position command** over FRI, and the **cabinet's Cartesian impedance
-provides the compliance**. Apple-pluck / perturb send **joint** setpoints via
-`LBRJointPositionCommandController`; restricted-plane / maze send a fixture-constrained **Cartesian
-equilibrium** via `kuka_clik_controller`, which IKs it to joints. Robot state flows *back up* to the
-Python monitors.
+provides the compliance**. Every start and recover move sends **joint** setpoints via
+`LBRJointPositionCommandController`, and so does the whole apple-pluck / perturb trial. For their
+fixture phase, restricted-plane / maze switch to `kuka_clik_controller` and send a fixture-constrained
+**Cartesian equilibrium**, which it IKs to joints. Robot state flows *back up* to the Python actions
+and the recorder, and the operator drives the orchestrator from the dashboard or a terminal.
 
 ```mermaid
 flowchart TB
-    subgraph L3["Layer 3 · Orchestration (Python)"]
-        ORCH["Orchestrator<br/>state machine<br/>(apple_pluck, perturb,<br/>restricted_plane, maze)"]
-        ACT["Modular actions:<br/>MoveToPosition* · PerturbInitialPosition<br/>RestrictedPlane · MoveInMaze<br/>Monitors · AudioCue"]
-    end
-    subgraph L2["Layer 2 · Kinematics (Python)"]
-        OPTAS["optas<br/>FK and<br/>Jacobian"]
-    end
-    subgraph L1["Layer 1 · Real-time control (C++)"]
-        JPC["LBRJointPositionCommandController<br/>joint positions → FRI<br/>(apple-pluck / perturb)"]
-        CLIK["kuka_clik_controller<br/>Cartesian equilibrium → IK → joints<br/>(restricted-plane / maze)"]
-        BCAST["Broadcasters:<br/>lbr_state · force_torque<br/>estimated_wrench"]
-    end
-    subgraph CAB["KUKA Cabinet · 1000 Hz"]
-        APP["LbrImpedanceControlServer<br/>(FRI app)<br/>per-axis Cartesian impedance<br/>POSITION cmd mode"]
-        ARM["iiwa7 arm"]
-    end
+    OPS["Operator<br/>dashboard or terminal"]
+    ORCH["<b>Layer 3</b> · Orchestrator node (one per experiment)<br/>+ ExperimentControl: status · pause · live params"]
+    ACT["<b>Layer 3</b> · Actions<br/>moves · perturbation · freeze · fixture / maze · monitors · cues"]
+    REC["<b>Layer 3</b> · TrialRecorder<br/>CSV + JSON sidecar per trial"]
+    KIN["<b>Layer 2</b> · Kinematics<br/>optas FK · tf2 poses"]
+    JPC["<b>Layer 1</b> · LBRJointPositionCommandController<br/>joint positions → FRI<br/>apple / perturb, every start / recover move"]
+    CLIK["<b>Layer 1</b> · kuka_clik_controller<br/>Cartesian equilibrium → IK → joints<br/>fixture phase (switched in by the orchestrator)"]
+    EE["End-effector cue ring"]
+    APP["<b>Cabinet · 1000 Hz</b> · LbrImpedanceControlServer (FRI app)<br/>per-axis Cartesian impedance · POSITION mode"]
+    ARM["iiwa7 arm"]
+    BCAST["<b>Layer 1</b> · Broadcasters<br/>lbr_state · joint_state · force_torque"]
 
-    ORCH <--> ACT
-    ACT -. "FK /<br/>Jacobian" .-> OPTAS
-    ACT -- "LBRJointPositionCommand<br/>(joint mode)" --> JPC
-    ACT -- "PoseStamped<br/>target_frame" --> CLIK
-    JPC -- "joint position<br/>cmd (FRI)" --> APP
-    CLIK -- "joint position<br/>cmd (FRI)" --> APP
-    APP -- "compliant<br/>motion" --> ARM
-    ARM -- "measured<br/>state" --> APP
-    APP -- "FRI<br/>state" --> BCAST
-    BCAST -- "LBRState /<br/>wrench" --> ACT
+    OPS -- "launch · status · live params · pause" --> ORCH
+    ORCH --> ACT
+    ORCH -- "events" --> REC
+    ACT -. "FK / pose" .-> KIN
+    ACT -- "LBRJointPositionCommand" --> JPC
+    ACT -- "PoseStamped target_frame" --> CLIK
+    ACT -- "cue" --> EE
+    JPC -- "joint position cmd (FRI)" --> APP
+    CLIK -- "joint position cmd (FRI)" --> APP
+    APP <--> ARM
+    APP -- "FRI state" --> BCAST
+    BCAST -- "LBRState · wrench" --> ACT
+    BCAST -- "LBRState (cabinet clock)" --> REC
+
+    classDef l3 fill:#e8f0fe,stroke:#4a6fd0,color:#111
+    classDef l2 fill:#eef7ee,stroke:#4a9a4a,color:#111
+    classDef l1 fill:#fff4e5,stroke:#d08a2a,color:#111
+    classDef hw fill:#f3e8fd,stroke:#8a4ad0,color:#111
+    class ORCH,ACT,REC l3
+    class KIN l2
+    class JPC,CLIK,BCAST l1
+    class APP,ARM,EE hw
 ```
+
+Blue: Layer 3, orchestration (Python). Green: Layer 2, kinematics (Python). Orange: Layer 1,
+real-time control (C++, ros2_control). Purple: hardware.
+
+The actions, one by one, are in the [§6.2 table](#62-composition--the-launch-brings-up-hardware-the-orchestrator-runs-the-experiment).
+The visual cue currently fires over the ring's Wi-Fi (a test trigger); the X76 wire is planned
+([§6.7](#67-end-effector-board--the-visual-cue)).
 
 > **Where the "feel" is decided.** The fixture geometry (Python) says *where* the walls are; the
 > cabinet's **per-axis stiffness** says *how firm* they are; and the **tracking clamps**
@@ -790,10 +963,13 @@ The codebase keeps a hard line between **hardware bring‑up** and **experiment 
 
 ```mermaid
 flowchart LR
-    L["iiwa7_*.launch.py<br/>(thin per-experiment wrapper)"] --> B["experiment_base.launch.py<br/>(shared)"]
-    B --> HW["iiwa7_hardware.launch.py<br/>FRI client · ros2_control · broadcasters"]
-    B --> O["orchestrator node<br/>ROS-side trial state machine"]
-    O --> A["actions:<br/>MoveToPosition* · PerturbInitialPosition<br/>DisplacementMonitor · AudioCue · WaitAction · RestrictedPlane"]
+    D["dashboard or terminal"] -- "ros2 launch<br/>[params_file:=…]<br/>[clik_nullspace_cfg:=…]" --> L["iiwa7_*.launch.py<br/>(thin per-experiment wrapper)"]
+    L --> B["experiment_base.launch.py<br/>(shared)"]
+    B --> HW["iiwa7_hardware.launch.py<br/>FRI client · ros2_control<br/>robot_state_publisher · controller spawners"]
+    B --> O["orchestrator node<br/>trial state machine"]
+    O --> A["actions<br/>(moves · monitors · cues · controller switch)"]
+    O --> C["ExperimentControl<br/>status · pause · live params · NSP hook"]
+    O --> R["TrialRecorder<br/>(not restricted-plane)"]
 ```
 
 - **Launch files own the hardware.** Every experiment launch is a *thin wrapper* (~25 lines) over one
@@ -806,7 +982,7 @@ flowchart LR
   orchestrator to switch to.
 
 - **The orchestrator owns the ROS side.** Each experiment has exactly one orchestrator node (1:1 with
-  its launch) that builds the experiment's **trial state machine**. The three orchestrators are kept
+  its launch) that builds the experiment's **trial state machine**. The four orchestrators are kept
   **independent** (no shared base) so each reads top‑to‑bottom as one self‑contained experiment.
 
 - **Orchestrators are composed only of actions.** An orchestrator holds no inline robot logic; it is a
@@ -816,11 +992,16 @@ flowchart LR
   | Action | Responsibility |
   |--------|----------------|
   | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move, and for the maze's conditional pre-start waypoint |
-  | `MoveToPositionCartesianSpace` | drive to a target via `kuka_clik_controller` (Cartesian → IK) |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
-  | `MoveRestrictedOnAPlaneAction` / `MoveInMaze` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
-  | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → recover |
-  | `AudioCue` / `WaitAction` | play a tone cue / one‑shot delay |
+  | `FreezeAtPoseAction` | at the snap, move the equilibrium onto the arm and hold it there (apple / perturb) |
+  | `SwitchControllerAction` | switch between the joint controller and `kuka_clik_controller` (restricted-plane / maze) |
+  | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
+  | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
+  | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze) |
+  | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze recovers |
+  | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
+  | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
   | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, the live-parameter gate, and the NSP event hook |
 
   **Outside control.** Every orchestrator creates one
@@ -863,19 +1044,25 @@ parse the URDF in `on_init()`.
 ```mermaid
 sequenceDiagram
     actor Op as Operator
-    participant ROS as ROS 2 (WSL2)
-    participant CM as controller_manager
     participant CAB as KUKA cabinet (SmartPad)
+    participant ROS as ros2 launch (dashboard ▶ Start, or terminal)
+    participant CM as controller_manager
+    participant ORCH as Orchestrator
 
-    Op->>ROS: ros2 launch ... (apple_pluck | move_restricted_plane | maze)
+    Op->>CAB: Start LbrImpedanceControlServer, pick the scenario's stiffness profile
+    Note over CAB: waits ~60 s for the FRI client
+    Op->>ROS: ros2 launch sinthlab_bringup iiwa7_*.launch.py
     ROS->>CM: start ros2_control_node (FRI client) + robot_state_publisher
-    Op->>CAB: Start LbrImpedanceControlServer (pick the stiffness profile for the scenario)
-    CAB-->>CM: FRI session established (COMMANDING_ACTIVE)
-    CM->>CM: spawn joint_state_broadcaster
-    Note over CM: only after it activates (URDF received)
-    CM->>CM: spawn estimated_wrench · lbr_state · force_torque · active ctrl
-    Note over CM: apple/perturb → joint_position_command_controller only;<br/>fixtures also load kuka_clik_controller INACTIVE
-    ROS-->>Op: Orchestrator starts trial — arm moves to start pose
+    CM-->>CAB: FRI session → COMMANDING_ACTIVE
+    ROS->>CM: spawn joint_state_broadcaster
+    Note over CM: its spawner exits only once it is ACTIVE,<br/>i.e. the URDF has been received
+    ROS->>CM: spawn estimated_wrench_interface · lbr_state_broadcaster ·<br/>force_torque_broadcaster · lbr_joint_position_command_controller
+    opt restricted-plane / maze
+        ROS->>CM: spawn kuka_clik_controller INACTIVE
+    end
+    ROS->>ORCH: start orchestrator (after startup_delay, default 0 s)
+    ORCH->>ORCH: wait for the first lbr_state, then trial 1 → move to start
+    ORCH-->>Op: experiment_status (dashboard status card)
 ```
 
 ### 6.4 Layers
@@ -900,9 +1087,10 @@ sequenceDiagram
 
 **Layer 3 — State‑machine orchestration (Python)**
 The experimental flows are orchestrated by high‑level `rclpy` nodes (one per experiment), each
-composed entirely of the modular actions catalogued in §6.2 — `MoveToPositionJointSpace` /
-`MoveToPositionCartesianSpace`, `PerturbInitialPosition`, `CartesianImpedanceDisplacementMonitor`,
-`MoveRestrictedOnAPlaneAction` / `MoveInMaze`, `AudioCue`, `WaitAction`. The per‑scenario flows are below.
+composed entirely of the modular actions catalogued in §6.2 — `MoveToPositionJointSpace`,
+`PerturbInitialPosition`, `FreezeAtPoseAction`, `SwitchControllerAction`,
+`MoveRestrictedOnAPlaneAction` / `MoveInMazeAction`, the monitors, `AudioCue`, `VisualCue`, `WaitAction` —
+plus `TrialRecorder` and `ExperimentControl`. The per‑scenario flows are below.
 
 ### 6.5 Control rates — why a 1000 Hz spring but a 10 ms FRI period
 The cabinet's control loop and the FRI network exchange run on **two different clocks** — don't
@@ -935,50 +1123,83 @@ link only streams a position target at 100 Hz. Running the impedance in ROS inst
 spring law to that ~100 Hz link — far coarser and riskier for torque control.
 
 ### 6.6 Experiment State Flows
+Each flow is one trial. The event token each step logs is in brackets (see [§7](#events-per-experiment)).
+Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
+next trial, or holds at the start if a pause was requested.
 
-**Flow 1 — Apple Pluck**
+**Flow 1 — Apple Pluck** (joint controller throughout)
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : Automated trajectory
-    MoveToStart --> QuietWindow : Wait 2.0s
-    QuietWindow --> AudioCue : Trigger audio driver
-    AudioCue --> DisplacementMonitor : Calculate tf2 offset
-    DisplacementMonitor --> Snap : User pulls > 0.2m Z-axis
-    Snap --> WaitRecoil : Wait for cabinet impedance to recoil
-    WaitRecoil --> MoveToStart
+    [*] --> MoveToStart : [trial_start]
+    MoveToStart --> QuietWindow : at start [at_start]
+    QuietWindow --> GoCue : quiet_window_sec (2 s) [quiet_end]
+    GoCue --> Monitor : audio + visual cue [cue_go]
+    Monitor --> Snap : baseline locked [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
+    Snap --> Hold : snap cue [cue_snap], freeze the equilibrium on the arm [freeze]
+    Hold --> Recover : force_release_shutdown_delay_sec (0.8 s) [recover_start]
+    Recover --> NextTrial : apple back within 3 cm [trial_end]
+    NextTrial --> MoveToStart : next trial
+    NextTrial --> Paused : pause requested
+    Paused --> MoveToStart : resume
 ```
 
-**Flow 2 — Restricted Virtual Fixtures**
+**Flow 2 — Restricted Plane** (joint moves, CLIK fixture). No TrialRecorder; the fixture action writes
+its own trajectory CSV.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : Rise to workspace
-    MoveToStart --> QuietWindow : Wait 2.0s
-    QuietWindow --> AudioCue
-    AudioCue --> FixtureConstraint
-    note right of FixtureConstraint
-      Projects the measured pose onto the
-      fixture manifold and streams it as the
-      cabinet-impedance equilibrium (soft walls).
+    [*] --> MoveToStart : [trial_start]
+    MoveToStart --> SwitchToCLIK : at start [at_start]
+    SwitchToCLIK --> QuietWindow
+    QuietWindow --> GoCue : quiet_window_sec [cue_go]
+    GoCue --> Fixture : fixture + monitor + safety on [armed]
+    note right of Fixture
+      Projects the measured pose onto the active
+      fixture (sine rail by default) and streams it
+      as the cabinet-impedance equilibrium.
     end note
-    FixtureConstraint --> SnapThreshold : Pull thresholds broken
-    SnapThreshold --> WaitRecoil
-    WaitRecoil --> MoveToStart
+    Fixture --> Snap : pull ≥ threshold (0.5 m, z) [snap]<br/>fixture off, snap cue
+    Snap --> SwitchToJoint : dwell (force_release_shutdown_delay_sec)
+    Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip]
+    SwitchToJoint --> Recover : [recover_start]
+    Recover --> NextTrial : [trial_end]
+    NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
-**Flow 3 — Perturb Experiment**
+**Flow 3 — Apple Pluck Perturb** (joint controller throughout). The cue comes **before** the
+perturbation: the monkey starts reaching, then the apple is displaced.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : Automated trajectory
-    MoveToStart --> QuietWindow : Wait 2.0s
-    QuietWindow --> PerturbShift : Sudden shift (1.5s delay)
-    PerturbShift --> AudioCue : Trigger audio driver
-    AudioCue --> DisplacementMonitor : Calculate tf2 offset
-    DisplacementMonitor --> Snap : User pulls > threshold
-    Snap --> WaitRecoil : Recoil physics
-    WaitRecoil --> MoveToStart
+    [*] --> MoveToStart : [trial_start]
+    MoveToStart --> QuietWindow : at start [at_start]
+    QuietWindow --> GoCue : quiet_window_sec [quiet_end]
+    GoCue --> PerturbDelay : audio + visual cue [cue_go]
+    PerturbDelay --> Perturb : start_delay_sec (1.5 s) [perturb_delay_start]
+    Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
+    Monitor --> Snap : settle baseline_settle_sec (1 s) [armed]<br/>pull ≥ threshold [snap]
+    Snap --> Hold : snap cue, freeze [freeze]
+    Hold --> Recover : dwell [recover_start]
+    Recover --> NextTrial : apple back within 3 cm [trial_end]
+    NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
----
+**Flow 4 — Maze** (joint moves, CLIK fixture)
+```mermaid
+stateDiagram-v2
+    [*] --> Prestart : first trial only, if the arm is nearly straight
+    [*] --> MoveToStart : [trial_start]
+    Prestart --> MoveToStart : [prestart_done]
+    MoveToStart --> SwitchToCLIK : at start [at_start]
+    SwitchToCLIK --> QuietWindow : [fixture_active]
+    QuietWindow --> GoCue : quiet_window_sec [cue_go]
+    GoCue --> Maze : rails + checkpoints + timeout + safety on [maze_armed]
+    Maze --> Maze : checkpoint reached → reward cue [checkpoint]
+    Maze --> ReleaseWait : goal [goal] or timeout_sec [timeout]<br/>fixture off, goal / timeout cue [release_wait]
+    ReleaseWait --> SwitchToJoint : operator lets go [released]
+    Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip]
+    SwitchToJoint --> Recover
+    Recover --> NextTrial : [trial_end]
+    NextTrial --> MoveToStart : next trial (or hold if paused)
+```
 
 ### 6.7 End-effector board — the visual cue
 
