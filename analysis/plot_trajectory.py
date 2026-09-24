@@ -37,7 +37,7 @@ PARAMS = os.path.join(HERE, "..", "sinthlab_bringup", "config", "maze_params.yam
 def load_csv(path):
     """Return {column: np.array}, plus "_events" -> [(row, token, arg), ...].
 
-    Reads both schemas: the 9-column files written before analysis/RECORDING_SPEC.md and the
+    Reads both schemas: the 9-column files written before README.md section 7, Data Collected and the
     42/47-column ones written since. `event` is text, so it is pulled out separately rather than
     coerced to NaN like every other column."""
     with open(path) as f:
@@ -68,7 +68,7 @@ def load_csv(path):
 
 
 def time_col(d):
-    """Elapsed-time column under either schema: "time" before RECORDING_SPEC.md, "t" since."""
+    """Elapsed-time column under either schema: "time" before README.md section 7, Data Collected, "t" since."""
     for k in ("t", "time"):
         if k in d:
             return d[k]

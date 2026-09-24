@@ -1,6 +1,6 @@
 """Per-trial data recorder -- one CSV + one JSON sidecar per trial, for every experiment.
 
-Design and the full data dictionary: analysis/RECORDING_SPEC.md.
+Design and the full data dictionary: README.md section 7, Data Collected.
 
 Replaces TrajectoryRecorder, which wrote 9 columns for the maze only and nothing at all for the
 apple pluck and perturb experiments. What changed and why:
@@ -48,7 +48,7 @@ from rclpy.node import Node as rclpyNode
 from lbr_fri_idl.msg import LBRState
 
 # Core schema, in file order. Experiment columns are appended after these -- never substituted, so
-# one loader reads every experiment. See RECORDING_SPEC.md §4 and §11.
+# one loader reads every experiment. See README.md section 7, Data Collected §4 and §11.
 CORE_HEADER = (
     ["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
     + ["x", "y", "z", "qx", "qy", "qz", "qw"]

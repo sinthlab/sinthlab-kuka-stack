@@ -732,13 +732,30 @@ and no optocoupler. Full pinout in
 **Not the cabinet.** The flange has no cabinet-driven I/O and the Sunrise project has no generated
 I/O groups, so Sunrise has no output that could drive X76.
 
-**A switch driven by the ROS computer — not chosen yet.** The likely answer is a **USB relay with dry
-contacts**: a jumper wire the computer can open and close. Its contacts go to X76 1/2 in place of a
-hand-held jumper.
+**Driven by the ROS computer, over an RS‑422 serial link — decided, parts on order.** The earlier plan
+was a USB relay closing X76 1/2 as a dry contact. It changed because the pressure sensor needs a data
+channel off the tool anyway, and once a differential link is on the flange a relay is redundant and
+two orders of magnitude slower (5–15 ms mechanical against ~80 µs of wire time). StarTech ICUSB422IS
+on the ROS box, MikroE MIKROE‑2821 at the tool; wiring in
+[`end_effector_design/README.md`](../end_effector_design/README.md) step 4.
 
-> **Optocoupler or not?** Only if the switch *outputs a voltage*. A floating relay contact does not,
-> and needs none. Anything that puts 24 V onto X76 1/2 must go through an optocoupler — 24 V on `D2`
-> destroys the SAMD51, whose pins are 3.3 V.
+**What the firmware will need.** A `busio.UART` on the MikroE's pins, a framed command parser, and a
+handler shaped exactly like `fire_cue` — which already lights the ring *before* it replies:
+
+```python
+def fire_cue(request):
+    cue_start(cfg)             # -> _render(0.0) -> pixels.show()   ring lit HERE
+    return Response(request, ...)   # reply goes out AFTER
+```
+
+Mirror that on serial and write an ack **immediately after `cue_start()` returns**. That ack is a
+per‑trial cue‑delivery timestamp accurate to ~2 ms with no extra hardware, which is what cue‑locked
+neural analysis needs. The ROS side already logs `cue_visual_ack` from the Wi‑Fi path's equivalent.
+
+> **Optocoupler or not?** Not on the inbound trigger: the only voltage in that loop is the Metro's
+> own 3.3 V. The *outbound* direction is different — anything the Metro drives toward a 24 V cabinet
+> input needs one, as does anything that puts a voltage onto X76 1/2. 24 V on `D2` destroys the
+> SAMD51.
 
 For a production build, add an external **4.7 kΩ pull-up** from D2 to 3.3 V at the board. The
 internal pull-up is weak, and the line runs several metres past seven joint drives.

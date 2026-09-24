@@ -15,7 +15,7 @@ The repo also carries the physical end of the rig: the parametric
 [end‑effector design](end_effector_design/README.md) and the
 [end‑effector board firmware](end_effector_metro_code/README.md) — a NeoPixel cue ring triggered
 over a hardwired media‑flange line, whose **appearance is configured on the board over its own
-Wi‑Fi**, see [§6.7](#67-endeffector-board--the-visual-cue).
+Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue).
 
 FRI **torque** mode (ROS-side impedance) was evaluated on hardware and **not adopted** — see the
 [appendix](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out) for what was learned and
@@ -923,7 +923,7 @@ stateDiagram-v2
 
 ---
 
-### 6.7 End‑effector board — the visual cue
+### 6.7 End-effector board — the visual cue
 
 The [apple‑pluck end effector](end_effector_design/README.md) carries its own microcontroller, an
 **Adafruit Metro M4 AirLift**, which drives the 60‑LED RGBW **NeoPixel ring** on the cover as a
@@ -1035,13 +1035,11 @@ commissioning step.
 
 ## 7. Data Collected
 
-> Full schema, per-column definitions and the implementation plan live in
-> [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md). This section is the summary.
-
 ### One CSV + one JSON sidecar per trial, for every experiment
 
-Implemented; verified on hardware for the recording path itself, the 100 Hz rate and the cabinet
-clock. Full schema and per-column definitions: [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md).
+Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck events captured in
+order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
+below.
 
 | | Apple pluck | Perturb | Maze |
 |---|---|---|---|
@@ -1076,6 +1074,91 @@ Why each earns its place:
 - **`disp_m`** (pluck/perturb) is the dependent variable of the experiment, and was previously only
   printed at debug rate. Recording it per sample is also what lets the threshold crossing be
   interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
+
+### Events, per experiment
+
+#### Apple pluck
+
+**Records from** `start_trial()` **to** `on_recover_complete()` — the whole trial including the
+return to start, not just the pull.
+
+**Extra column (1):** `disp_m` — displacement from the locked baseline, the value
+`CartesianImpedanceDisplacementMonitor` already computes every tick and currently only prints at
+`debug_log_rate_hz`. **This is the dependent variable of the experiment and it is not saved
+anywhere.**
+
+**Events** (callback → token):
+
+| Orchestrator callback | `event` | `event_arg` |
+|---|---|---|
+| `start_trial()` | `trial_start` | trial index |
+| `on_move_complete()` | `at_start` | — |
+| `on_quiet_window_complete()` | `quiet_end` | — |
+| ″ (cue fires) | `cue_go` | — |
+| monitor `on_armed` | `armed` | — |
+| `on_monitor_snap()` | `snap` | **displacement, m** |
+| ″ | `cue_snap` | — |
+| ″ (`freeze_hold.start()`) | `freeze` | — |
+| `on_monitor_complete()` | `recover_start` | — |
+| `on_recover_complete()` | `trial_end` | trial index |
+
+**Cue delivery events** (all three experiments, fired from the cue classes rather than the state
+machine, so they can appear anywhere and more than once):
+
+| Event | Fired when | `event_arg` | Observed or inferred? |
+|---|---|---|---|
+| `cue_visual_ack` | the board answers a Wi-Fi cue | round trip, ms | **observed** — the firmware calls `pixels.show()` *inside* the `/cue` handler and answers afterwards, so an ack means the ring is already lit |
+| `cue_audio_end` | the beep subprocess exits | process lifetime, s | **observed** — `[console]::Beep` blocks for exactly `duration_ms`, so the sound's START is `end − duration_ms` |
+
+These exist because `AudioCue.on_complete` fires when `Popen` *returns* — about 49 ms in on WSL2,
+and roughly 290 ms before any sound (the Windows process takes ~340 ms to spawn). Nothing else in
+the system observes either cue, so without these the record cannot say when the animal was cued.
+
+`armed` is the one that matters behaviourally — it is the moment the baseline locks and the animal
+may pull. Reaction time is `snap − armed`.
+
+#### Perturb
+
+Identical to apple pluck, plus:
+
+| Orchestrator callback | `event` | `event_arg` |
+|---|---|---|
+| `on_audio_complete()` | `perturb_delay_start` | delay, s |
+| `on_perturb_complete()` | `perturb_applied` | magnitude, m |
+| `on_monitor_armed()` | `armed` | — |
+
+The applied perturbation **vector** is constant within a trial and goes in the sidecar, not in a
+column.
+
+#### Maze
+
+**Records from** `start_trial()` **to** recover complete. Before the recorder moved into the
+orchestrator it started at the go cue, which is why every maze CSV recorded before 2026-09-23 begins
+mid-trial — the approach and the settle were simply never captured.
+
+**Extra columns (6):** `rel_a`, `rel_b`, `corridor`, `off_rail`, `rail_dist`, `rail_nearest`
+
+**Events:**
+
+| Orchestrator callback | `event` | `event_arg` |
+|---|---|---|
+| `start_trial()` | `trial_start` | trial index |
+| `on_prestart_complete()` | `prestart_done` | — |
+| `on_move_complete()` | `at_start` | — |
+| `on_switched_to_fixture()` | `fixture_active` | — |
+| `on_quiet_window_complete()` | `cue_go` | — |
+| `on_go_complete()` | `maze_armed` | — |
+| `on_checkpoint_reward(i)` | `checkpoint` | **index** |
+| `on_goal_reached()` | `goal` | — |
+| `on_timeout()` | `timeout` | — |
+| `on_safety_trip(reason)` | `safety_trip` | reason code |
+| `force_release.start()` | `release_wait` | — |
+| force release complete | `released` | — |
+| recover complete | `trial_end` | trial index |
+
+`off_rail` transitions stay a column rather than events — it toggles too often to be useful as one.
+
+---
 
 ### The cabinet clock, measured
 
@@ -1145,6 +1228,129 @@ Two fields worth knowing:
 - **`maze_geometry`** embeds the corridors as they were *at record time*. Without it a six-month-old
   run silently plots against whatever `maze_params.yaml` says today.
 
+### Data dictionary
+
+Every column, what it holds and where it comes from. `LBRState` fields are copied straight from
+`<ns>/lbr_state`; "derived" means the recorder computes it.
+
+#### Time (all experiments)
+
+| Column | Unit | Source | Meaning |
+|---|---|---|---|
+| `t` | s | derived | Seconds since the recorder started. Convenience axis for plotting; **not** an alignment clock. |
+| `t_wall` | s (Unix epoch) | `time.time()` on the ROS box | Absolute wall time at the moment the callback ran. Use to correlate with video files — but see the clock section below: the ROS box clock was measured ~3 min off. |
+| `t_ros` | s | `node.get_clock().now()` | ROS clock. Matches TF stamps, so it is the right clock for reasoning about anything ROS-side. |
+| `fri_s` | s (Unix epoch) | `LBRState.time_stamp_sec` | Cabinet clock, seconds part. |
+| `fri_ns` | ns | `LBRState.time_stamp_nano_sec` | Cabinet clock, nanoseconds part. **Quantised to the 10 ms sample period** — see the clock section below. Together with `fri_s` this is the exact, jitter-free sample grid and the anchor for NSP alignment. |
+
+#### End-effector pose (all experiments)
+
+Forward kinematics of `measured_joint_position`, expressed in `lbr_link_0` (the robot base).
+Computed by the recorder rather than read from TF, so pose and joints share one timestamp.
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `x` `y` `z` | m | EE position in the base frame. |
+| `qx` `qy` `qz` `qw` | — | EE orientation as a unit quaternion (scalar last). Currently discarded entirely; needed because the apple can be pulled off-axis. |
+
+#### Joints (all experiments)
+
+Seven values each, `A1`…`A7`, base to wrist. **Radians and newton-metres — SI throughout.**
+(`record_fri_session.py` writes degrees; the two files are deliberately not the same convention.)
+
+| Column | Unit | Source | Meaning |
+|---|---|---|---|
+| `meas_A1..A7` | rad | `measured_joint_position` | Where the arm actually is. |
+| `cmd_A1..A7` | rad | `commanded_joint_position` | Where the cabinet is commanding it to be — under Cartesian impedance this is the *equilibrium*, not a position the arm will reach. |
+| `ext_A1..A7` | Nm | `external_torque` | Torque the cabinet attributes to outside forces, gravity model removed. This is how a pull is measured without a force sensor. A steady non-zero value at rest means un-modelled tool mass — that is what diagnosed the 3.0 Nm A2 sag. |
+
+**`cmd − meas` is the impedance droop.** Under Cartesian impedance the arm deliberately lags its
+equilibrium by `F / k`; that difference is the signal, not an error.
+
+#### FRI health (all experiments)
+
+Mostly constant. Included per-sample so a bad trial is self-diagnosing without cross-referencing a
+second file.
+
+| Column | Source | Values |
+|---|---|---|
+| `tracking` | `tracking_performance` | 0…1. How well the cabinet is following the command; drops when the commanded pose is unreachable or the arm is being fought. |
+| `session` | `session_state` | 0 IDLE · 1 MONITORING_WAIT · 2 MONITORING_READY · 3 COMMANDING_WAIT · **4 COMMANDING_ACTIVE** (the only one in which commands take effect) |
+| `quality` | `connection_quality` | 0 POOR · 1 FAIR · 2 GOOD · 3 EXCELLENT |
+| `safety` | `safety_state` | **0 NORMAL_OPERATION** · 1 SAFETY_STOP_LEVEL_0 · 2 LEVEL_1 · 3 LEVEL_2 |
+| `drive` | `drive_state` | 0 OFF · 1 TRANSITIONING · **2 ACTIVE** |
+| `control` | `control_mode` | 0 POSITION · **1 CART_IMP** · 2 JOINT_IMP · 3 NO_CONTROL |
+
+Anything other than session 4 / safety 0 / drive 2 for any part of a trial means that trial is
+suspect, and `validate_recording.py` fails it.
+
+#### Events (all experiments)
+
+| Column | Meaning |
+|---|---|
+| `event` | Empty on most rows. On the first sample at or after an event, the token from the event tables above. Several events can land on one sample; they share the cell, joined with `|`. |
+| `event_arg` | One number whose meaning depends on the token: trial index, displacement in m at `snap`, checkpoint index, perturbation magnitude, safety reason code. Empty where the token carries no payload. |
+
+Events land on a **sample boundary**, so their time is known to ±5 ms from the row alone. Recover
+finer timing by interpolating the underlying signal — see the clock section below.
+
+#### Apple pluck / perturb only
+
+| Column | Unit | Source | Meaning |
+|---|---|---|---|
+| `disp_m` | m | `CartesianImpedanceDisplacementMonitor` | Distance of the EE from the baseline pose locked at `armed`, along `cartesian_axis` (`norm` = 3-D distance). **The dependent variable.** The trial ends when it crosses `cartesian_displacement_threshold_m`. Recording it per sample is what makes the crossing time recoverable to sub-millisecond by interpolation. |
+
+#### Maze only
+
+All maze coordinates are **relative to the anchor** — the EE pose captured after the fixture's
+`anchor_settle_sec` — and lie in the plane left free by `restricted_axis` (the maze is in Y-Z, so
+`a` = Y and `b` = Z).
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `rel_a` | m | In-plane offset from the anchor along the first free axis. |
+| `rel_b` | m | Same, second free axis. Plot `rel_b` against `rel_a` to get the maze view. |
+| `corridor` | index | Index of the nearest corridor **when on-rail**, else **−1**. Not a strict inside/outside test: the corridors are zero-width lines, so "on rail" means within `on_rail_tol` of one. |
+| `off_rail` | 0 / 1 | 1 when the arm is further than `on_rail_tol` from every corridor — i.e. being actively pulled back by the virtual fixture. Mirrors `corridor == -1`. |
+| `rail_dist` | m | Distance to the **nearest** corridor segment, always populated. On-rail it is ≤ `on_rail_tol`; off-rail it is how hard the fixture is working. |
+
+`rail_nearest` exists because `_maze_coords` used to work out the nearest corridor and then
+throw it away when off-rail, so `corridor` read −1 and the file could not say *which* corridor the
+arm had been pushed off. It is always populated, on-rail or not.
+
+#### Sidecar fields
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | Bump when columns change, so loaders can branch. |
+| `experiment` | `apple_pluck` · `perturb` · `maze` |
+| `trial_index` | Counter within the session. |
+| `session_id` | Shared by every trial from one launch. |
+| `subject` | Animal identifier, from a ROS param. |
+| `clock_sync.start/end` | All four clocks sampled together at both ends of the trial. Gives the offsets *and* the drift over that trial. |
+| `fri` | `sample_time_s`, and the session/control mode at trial start. |
+| `controllers_active` | Which ros2_control controllers were running — catches "wrong controller was loaded". |
+| `git` | Commit SHA and dirty flag of the stack that produced the file. |
+| `start_pose` | Commanded and measured joint vectors at trial start. |
+| `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
+| `perturbation` | Perturb: the applied offset vector. Constant per trial, hence metadata not a column. |
+| `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
+| `params` | Full resolved ROS parameter dump for the orchestrator node. |
+| `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |
+
+### Sizing
+
+```
+47 columns × ~12 B × 100 Hz  ≈  55 KB/s  ≈  3.3 MB/min
+```
+
+A 10-minute maze run is ~33 MB. Rows are written **incrementally** and flushed on every event row,
+and the sidecar is rewritten on every event — so a crash or Ctrl-C costs at most the last fraction
+of a second, and the interrupted trial is marked `partial: true` rather than looking complete.
+
+Recorded data is gitignored — `analysis/expt_*/`, plus `analysis/*.csv` and `*.meta.json` for
+recordings made before the per-launch folders.
+
 ### Working with the data
 
 ```bash
@@ -1167,8 +1373,24 @@ batch analysis.
 
 ### Where files go
 
-`analysis/`, which is **gitignored for `*.csv`** — recorded data is not version controlled. Sidecars
-should be added to the ignore list when the recorder lands.
+One folder per launch, named from the launch file:
+
+```
+analysis/
+  expt_iiwa7_apple_pluck_impedance_control_20260923_160523/
+      robot_trajectory_20260923_160523.csv
+      robot_trajectory_20260923_160523.meta.json
+      robot_trajectory_20260923_160541.csv
+      ...
+```
+
+Each wrapper launch file sets `RUN_NAME` to its own stem and passes it through
+`experiment_base.launch.py` as the `run_name` parameter; without one, the folder falls back to the
+orchestrator's node name. One CSV + sidecar per trial inside it, so a bad trial is a file you
+delete rather than a row range you have to remember to exclude.
+
+**All of it is gitignored** (`analysis/expt_*/`, and `analysis/*.csv` / `*.meta.json` for flat
+recordings made before the folders). Recorded data is never version-controlled.
 
 ## 8. Troubleshooting
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
@@ -1182,7 +1404,7 @@ should be added to the ignore list when the recorder lands.
   steps. It saves `fri_session.csv`, `events.txt` and `summary.txt`.
 - **Before trusting any timestamp for neural alignment.** The cabinet clock in `<ns>/lbr_state` is
   what trial data will be aligned to the Blackrock NSP with (see
-  [`analysis/RECORDING_SPEC.md`](analysis/RECORDING_SPEC.md)), and it is **not NTP-disciplined** — it
+  [§7 Data Collected](#7-data-collected)), and it is **not NTP-disciplined** — it
   was measured ~11 min fast on 2026-09-22. That offset is harmless (trials are anchored by the sync
   pulse, so only the clock's *rate* matters), but the rate has to be measured:
   ```bash

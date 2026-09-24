@@ -2,7 +2,7 @@
 """Measure the FRI cabinet clock against the ROS box clock -- resolution, drift and jumps.
 
 The cabinet timestamp in <ns>/lbr_state is what trial data will be aligned to the Blackrock NSP
-with (see analysis/RECORDING_SPEC.md), so three things about it have to be known before anything is
+with (see README.md section 7, Data Collected), so three things about it have to be known before anything is
 built on it:
 
   1. RESOLUTION. time_stamp_sec alone ticks once a second. All the useful precision is in
@@ -113,7 +113,7 @@ def report(fri, mono, wall, nsec_vals, sample_time, jump_ms=50.0):
     if not ok_res:
         print(f"  FAIL  time_stamp_nano_sec is CONSTANT ({nsec_vals[0]}).")
         print("        The cabinet timestamp has 1-SECOND resolution and cannot align anything.")
-        print("        analysis/RECORDING_SPEC.md has to fall back to interpolating sample index")
+        print("        README.md section 7, Data Collected has to fall back to interpolating sample index")
         print("        against ROS time. Stop and re-plan before building the recorder.")
     else:
         steps = sorted(b - a for a, b in zip(fri, fri[1:]) if 0 < b - a < 1.0)

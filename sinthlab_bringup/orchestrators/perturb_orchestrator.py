@@ -84,7 +84,7 @@ class PerturbOrchestratorNode(rclpyNode):
 
 
         # Trial data. Like the apple pluck, this experiment recorded NOTHING before v1 of
-        # analysis/RECORDING_SPEC.md. Same schema, plus the perturbation in the sidecar.
+        # README.md section 7, Data Collected. Same schema, plus the perturbation in the sidecar.
         self.recorder = TrialRecorder(
             self, experiment="perturb",
             extra_header=["disp_m"],

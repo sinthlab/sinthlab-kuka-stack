@@ -360,11 +360,26 @@ announces every edge as you make and break the short at X76. This is the step th
 
 > **Stop condition:** no edges means wiring, not firmware. The tool prints the likely causes ranked.
 
-**4. Fit the computer-controlled switch.** The cabinet cannot drive the trigger — the Sunrise
-project has no generated I/O groups — so it will be a switch driven by the ROS computer, most likely
-a **USB relay with dry contacts**. Its contacts replace your jumper on X76 1/2; step 3's tool-end
-wiring is already final, and a floating contact needs **no optocoupler** in the circuit. See
-[§6.7 in the top-level README](../README.md#67-endeffector-board--the-visual-cue).
+**4. Fit the RS‑422 link.** The cabinet cannot drive the trigger — the Sunrise project has no
+generated I/O groups — so the ROS computer drives it. That was going to be a USB relay closing
+X76 1/2 as a dry contact; it is now a **full‑duplex RS‑422 serial link**, because the pressure sensor
+needs a data channel off the tool anyway and a relay would have been both redundant and 5–15 ms
+slower than the wire:
+
+| | Part |
+|---|---|
+| ROS box | StarTech **ICUSB422IS** — isolated USB↔RS‑422, FTDI FT232RL |
+| Tool | MikroE **MIKROE‑2821** RS485 3 Click — SN65HVD31, full duplex, 3.3 V |
+
+The MikroE's screw terminals take the CTR pairs from the tool connector; its header pins go to the
+Metro's UART (3.3V, GND, TX/D1, RX/D0 — **check D0/D1 are free** on the AirLift Lite before wiring).
+It's a **crossover**: the adapter's TX pair lands on the MikroE's RX pair and vice versa. Put the
+differential signals on the **shielded** CTR pairs. Set the FTDI `latency_timer` to 1 on the ROS box,
+or you get 16 ms of buffering back. Full detail in
+[§6.7 of the top-level README](../README.md#67-end-effector-board--the-visual-cue).
+
+The jumper test in step 3 still stands as the first check of the harness — it proves continuity
+before any electronics are involved.
 
 ### Handling limits from the manual
 
