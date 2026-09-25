@@ -362,8 +362,8 @@ mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ou
    vcs import src --input https://raw.githubusercontent.com/sinthlab/sinthlab-kuka-stack/main/sinthlab_lbr_stack.repos
    rosdep install --from-paths src -i -r -y
    ```
-3. **(Hardware only, one-time)** Raise the FRI external-torque limit. A recent `lbr_fri_ros2` update
-   added a safety check on the *external joint torque at activation of compliant control modes*. On a
+3. **(Hardware only, one-time)** Raise the FRI external-torque limit. `lbr_fri_ros2` checks the
+   *external joint torque at activation of compliant control modes*. On a
    floor-mounted iiwa7 this trips (~2.4 Nm on A2 vs. the 2 Nm default) at the extended apple-pluck
    start posture **even with no payload** — it's a gravity-model / mastering margin amplified by A2's
    moment, not a real load. Edit the upstream config
@@ -1309,8 +1309,7 @@ below.
 
 | | Apple pluck | Perturb | Maze |
 |---|---|---|---|
-| **Before** | nothing at all | nothing at all | 9 cols, started at the go cue |
-| **Now** | **42 cols** | **42 cols** | **47 cols** |
+| Columns | **42** | **42** | **47** |
 | Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
 | Events | 10 | 12 | 13 |
 | Sidecar extras | `threshold_m` | `perturbation` | `maze_geometry` |
@@ -1517,7 +1516,7 @@ Computed by the recorder rather than read from TF, so pose and joints share one 
 | Column | Unit | Meaning |
 |---|---|---|
 | `x` `y` `z` | m | EE position in the base frame. |
-| `qx` `qy` `qz` `qw` | — | EE orientation as a unit quaternion (scalar last). Currently discarded entirely; needed because the apple can be pulled off-axis. |
+| `qx` `qy` `qz` `qw` | — | EE orientation as a unit quaternion (scalar last). The apple can be pulled off-axis, so orientation is measured, not assumed. |
 
 #### Joints (all experiments)
 
