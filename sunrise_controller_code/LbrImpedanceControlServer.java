@@ -103,7 +103,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         // relaxed:
         //   rot 300 -> 120. Orientation locking defines nothing about the maze; it merely stops the
         //   tool twisting. But holding orientation while translating is the EXPENSIVE motion (it is
-        //   what made the old maze start feel like treacle), so this is the one knob that reduces drag
+        //   what makes a badly chosen start posture feel like treacle), so this is the one knob that reduces drag
         //   on guiding WITHOUT weakening the plane or the walls.
         // Trade-off: the tool may twist a little more -- watch the apple angle.
         { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }  // maze: firm constraints, easy guiding

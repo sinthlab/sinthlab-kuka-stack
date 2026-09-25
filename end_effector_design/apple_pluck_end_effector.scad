@@ -1,35 +1,24 @@
 // =====================================================================
-//  Apple-pluck end-effector for the KUKA LBR iiwa7   (parametric DRAFT v0.15)
+//  Apple-pluck end-effector for the KUKA LBR iiwa7   (parametric)
 //  sinthlab-kuka-stack / end_effector_design
 //
 //  ELECTRONICS HUB that bolts to the iiwa7 *media flange (electric)*, routes its
 //  power/data wiring, drives a NeoPixel cue, and carries the control electronics.
 //
-//  v0.7 changes (all driven by the v0.6 build):
-//    * Ø225 -> Ø188. The 95x75 optocoupler is GONE (a floating dry contact / RS-422 link
-//      needs none), and it was the only thing forcing Ø225. The base is now sized by the
-//      ring groove + rim, with ~10.5 mm of rim outboard of the groove.
-//    * The base is now TWO STACKED TIERS. Shrinking the diameter cost board area, so the
-//      electronics split across two pucks that bolt together (4x M3).
-//    * Ring groove grown Ø157/145 -> Ø165/152 (+~3 LEDs of arc) — four butted quarter-rings
-//      did not close in the v0.6 groove.
-//    * Tobsun pocket 60x55 -> 70x65 and level shifter 26x18 -> 36x28 (both were too small).
-//    * New pockets: RS-422 transceiver (MIKROE-2821) and MPRLS pressure sensor.
-//    * PERIMETER CABLE TRENCH on tier 1 — somewhere for the ~44 cm tool-connector bundle
-//      to turn and be dressed, which v0.6 had no provision for at all.
-//    * The adjustable shaft is GONE. The apple core base + shaft are now ONE PETG part
-//      (the detent-pin joint printed finicky and wobbled).
+//  The base is TWO STACKED TIERS sized by the ring groove + rim (Ø188), each ONE open compartment
+//  with every board velcro'd and the wiring sunk below the floor. The apple is ONE PETG stem with a
+//  fused TPU ball. README.md has the full design notes; check_layout.py verifies the geometry.
 //
 //        [ iiwa7 media flange (electric) ]   8x M6 on a Ø51 pitch circle, 24V + data
 //        (0) FLANGE PLATE  thick adapter disc: takes the 8x M6 (heads buried flush) + the Ø30 cable bore.
-//                          Tier 1 bolts onto ITS top face with 4x M3.
+//                          Tier 1 bolts onto ITS top face with 6x M3 on a Ø100 circle.
 //                 |  cable bundle THROUGH the Ø30 tier-1 centre
 //        (1a) BASE TIER 1  Ø30 central bore (the flange bundle lands here) + PERIMETER CABLE TRENCH.
 //              ├─ Metro M4 AirLift + power adapter   92 x 50   ALL VELCRO'D — no screw bosses.
 //              ├─ RS-422 transceiver (MIKROE-2821)   45 x 28
 //              └─ MPRLS pressure sensor              20 x 19
 //        (1b) BASE TIER 2  stacks on tier 1 (4x M3); Ø20 bore — only ring/apple wiring goes higher.
-//              ├─ Tobsun 24V->5V converter           70 x 65   <- deepest pocket, sets tier-2 height
+//              ├─ Tobsun 24V->5V converter           70 x 65   <- tallest board, sets tier-2 height
 //              ├─ Level shifter (ring data)          36 x 28
 //              └─ DRV2605L haptic driver             28 x 20
 //        (2) COVER       closes tier 2 · seats the NeoPixel ring in a groove on its TOP
@@ -42,9 +31,9 @@
 //        ( + ) CLEAR CASING BOX   5-sided clear box (OPEN on the flange side) shrouding the whole
 //                                  electronics stack; top covers the ring, clamps 3x M3 into the cover
 //
-//  Board layout is VERIFIED numerically (no overlaps, every pocket corner inside the rim, every
-//  pocket clear of the tier bore, every screw clear of every pocket). Re-run that check after ANY
-//  size change — the packing has only 2-5 mm of margin in places.
+//  Board layout is VERIFIED numerically by check_layout.py (no overlaps, every board corner inside the
+//  compartment, every board clear of the tier bore and the pillars). Re-run it after ANY size change —
+//  the tightest fit (the Tobsun) has 1.6 mm of margin.
 //
 //  !!!  VERIFY every flange/component dimension vs the real datasheets before printing.
 //  Export one part at a time, e.g.:
@@ -65,8 +54,7 @@ part = "assembly"; // [assembly, flange_plate, base_tier1, base_tier2, cover, ap
                      the counterbore the M6 cap head drops into, 10 mm above the mating face. Measuring
                      the plate from the top hits THIS, which is why it reads ~63.
 
-    History: Ø62 pcd (span 68.6, measured ~70) did not bolt on; Ø50.4 came from wrongly subtracting the
-    plate's Ø6.6 clearance instead of the flange's Ø6 thread. */
+    Derive the pitch circle from the flange's TAPPED holes (Ø6), never from the plate's clearance holes. */
 flange_bolt_n      = 8;     // 8 x M6 fixing holes on the bolt circle
 flange_pcd         = 51.0;  // bolt pitch-circle diameter [mm] — MEASURED centre-to-centre
 flange_bolt_clear  = 7.0;   // M6 clearance hole, ISO 273 COARSE fit [mm]. Coarse on purpose: it absorbs
@@ -92,26 +80,24 @@ flange_center_h    = 6.0;   // opening/recess depth into the plate bottom [mm] �
     Split out of the base so the 8x M6 can be driven with the plate bare (heads recess flush into its top
     face), and so the printed base never carries the M6 clamp load. Assembly order: plate -> robot, base
     -> plate, THEN populate the electronics. */
-plate_d        = 124;  // adapter plate Ø [mm]. Grown from 110: the plate is what SUPPORTS tier 1's
-                       // floor, and beyond its edge the floor is an unsupported cantilever out to
-                       // r 94. Ø110 left 39 mm of overhang; Ø124 leaves 32 mm.
+plate_d        = 124;  // adapter plate Ø [mm]. The plate is what SUPPORTS tier 1's floor, and beyond
+                       // its edge the floor is an unsupported cantilever out to r 94: Ø124 leaves
+                       // 32 mm of overhang. A bigger plate shortens it further.
 plate_t        = 16;   // plate thickness [mm] = mount wall 8 + washer seat 2 + M6 head 6 (head sits flush)
-plate_screw_n  = 6;    // M3 screws holding tier 1 down onto the plate (was 4 — more, and evenly
-                       // spread, so the joint that carries the whole tool is not held on four points)
-plate_screw_bcd = 100; // their bolt-circle Ø [mm]. Grown from 80: the joint reacts the apple's moment
-                       // as a couple across this circle, so a wider circle is directly less force per
-                       // screw (-20%). Still clear of the M6 washer seats (out to r 32.5), 12.8 mm
+plate_screw_n  = 6;    // M3 screws holding tier 1 down onto the plate — six, evenly spread, because
+                       // this joint carries the whole tool
+plate_screw_bcd = 100; // their bolt-circle Ø [mm]. The joint reacts the apple's moment as a couple
+                       // across this circle, so a wider circle is directly less force per screw. Still clear of the M6 washer seats (out to r 32.5), 12.8 mm
                        // inside the Ø124 plate rim, and clear of the nearest feed channel.
 plate_screw_a0 = 15;   // first-screw angle [deg]. 15 threads the six between BOTH the feed channels
                        // at 30/210 (4.7 mm clear) and the tier-2 drops at 0/90/180/270 (16.2 mm), so
-                       // nothing lands a wire on top of a screw head. At a0=0 the drops at 0 and 180
-                       // came down 0.25 mm inside the screw well.
+                       // nothing lands a wire on top of a screw head. (At a0=0 the drops at 0 and 180
+                       // would come down 0.25 mm inside the screw well.)
 plate_screw_depth = 6; // M3 insert bore depth into the plate top [mm] (takes a 4 mm insert)
-plate_head_z   = 10;   // M3 head seat height above the tier-1 bottom [mm]. DOUBLED from 5: this is the
-                       // thickness of printed material the head bears on, and it was the thinnest
-                       // section in the whole load path — 5 mm of PETG with a Ø6.5 well directly above
-                       // it. Now 10 mm below the head, 4 mm of well above. Needs M3x16 (10 through the
-                       // floor + 6 into the plate insert), NOT the M3x10 used elsewhere.
+plate_head_z   = 10;   // M3 head seat height above the tier-1 bottom [mm]: the thickness of printed
+                       // material the head bears on, the critical section of the base<->flange joint.
+                       // 10 mm below the head, 4 mm of well above. Needs M3x16 (10 through the floor
+                       // + 6 into the plate insert), NOT the M3x10 used elsewhere.
 
 /* [Central cabling] */
 cable_bore_d   = 30;   // BASE central pass-through for the media-flange bundle [mm] (power/data out of the robot)
@@ -133,36 +119,35 @@ m3_cbore   = 6.5;  // M3 cap/cheese-head counterbore Ø [mm] (clears the Ø5.5 h
 m3_cbore_h = 3.0;  // M3 counterbore depth [mm] (>= head height, so the head sits recessed)
 
 /* [Base electronics hub — TWO STACKED TIERS, ONE OPEN COMPARTMENT EACH]
-    Ø188 is set by the RING: groove outer r = 83.5, + rim + wall = r 94. The old Ø225 existed only to
-    swallow the 95x75 optocoupler, which is gone.
+    Ø188 is set by the RING: groove outer r = 83.5, + rim + wall = r 94.
 
-    v0.8: the per-board pockets are GONE. Each tier is now ONE open compartment with a flat floor, and
-    every board is velcro'd wherever it fits — nothing is keyed to a rectangle any more, so boards can
-    be swapped, moved or added without touching the CAD. What is left standing in the compartment is
+    Each tier is ONE open compartment with a flat floor, and every board is velcro'd wherever it
+    fits — nothing is keyed to a rectangle, so boards can be swapped, moved or added without touching
+    the CAD. What is left standing in the compartment is
     only what has to be: four screw pillars per tier. Wiring lives BELOW board level, in channels sunk
     into the floor (see the trench block), so a board can be stuck down on top of a cable run. */
-base_d       = 188;  // base outer Ø [mm] — BOTH tiers. HELD at 188 through the v0.14 strength work.
-                     // The 4 mm hub wall makes the Tobsun the binding part: at a Ø20 bore it needs
+base_d       = 188;  // base outer Ø [mm] — BOTH tiers.
+                     // With the 4 mm hub wall the Tobsun is the binding part: at a Ø20 bore it needs
                      // r 86.4 against the 88 available, so 1.6 mm of margin. That is real but thin —
                      // any further growth of hub_wall, conv_l/w or tier2_bore_d and the base has to
                      // grow with it, or the Tobsun and the Metro have to swap tiers.
 base1_floor  = 14;   // TIER-1 floor thickness [mm]. This is the part that bolts to the flange plate,
-                     // and the v0.6 prototype BROKE at that joint. It is thicker than tier 2's on
-                     // purpose: a 20 N pull at the apple is 4.1 N.m here, and while the M3s only see
-                     // ~17 N each, the printed material around them is what fails. 14 also leaves
-                     // 8 mm of solid floor where a 6 mm cable channel crosses (was 4).
+                     // the most failure-prone joint in bending. It is thicker than tier 2's on
+                     // purpose: a 20 N pull at the apple is ~4.2 N.m here, and while the M3s only see
+                     // ~14 N each, the printed material around them is what fails. 14 also leaves
+                     // 8 mm of solid floor where a 6 mm cable channel crosses.
 base2_floor  = 10;   // TIER-2 floor thickness [mm] — carries far less, no need to pay the height
-base_floor   = base1_floor;  // legacy alias used by the fit mock
+base_floor   = base1_floor;  // tier-1 floor, as used by the fit mock and wire_channel()
 comp1_depth  = 19;   // tier-1 compartment depth below its top face [mm] (tallest = Metro, ~19)
 comp2_depth  = 22;   // tier-2 compartment depth below its top face [mm] (tallest = Tobsun, 22)
 comp_ro      = 88;   // compartment outer radius [mm] — leaves a 6 mm rim wall at Ø188
 base_wall    = 3;    // structural wall / bridge thickness [mm]
-hub_wall     = 4;    // material between a tier's central bore and the open compartment [mm]. Raised
-                     // from 3: the bore ports now take 39-55% of this tube's circumference.
+hub_wall     = 4;    // material between a tier's central bore and the open compartment [mm]. 4, not
+                     // 3: the bore ports take 39-55% of this tube's circumference.
 pocket_clear = 1.0;  // clearance allowance used by the layout check and the fit mock
 
-/* [Screw pillars — the only obstructions left in the compartments]
-    With the pockets gone there is no solid top face to put a heat-set insert in, so each screw
+/* [Screw pillars — the only obstructions in the compartments]
+    An open compartment has no solid top face to put a heat-set insert in, so each screw
     position gets a Ø12 pillar standing from the compartment floor to the tier top. Four per tier.
     They are placed clear of every reference board position (see check_layout.py). */
 pillar_d     = 12;   // screw-pillar Ø [mm]
@@ -170,8 +155,8 @@ fillet_r     = 3;    // fillet radius where the compartment walls meet the floor
                      // Sharp internal corners are where a flat-printed part cracks along its layers.
 
 /* [Tier 1 <-> Tier 2 fixing — a proper bolt circle]
-    v0.8 had these at 0/180/225/315, which is a trapezoid: the clamp load was lopsided and the joint
-    could rock about the two close-together screws. They are now a symmetric square at 45/135/225/315.
+    A symmetric square at 45/135/225/315, so the clamp load is centred and the joint cannot rock about
+    two close-together screws.
     r = 75 is the smallest radius that clears a Metro-sized board: a 94 x 52 pocket tangent to the Ø30
     bore spans |x| <= 47, so a pillar at r = 75 sits at |x| = 53 — outside it by 6 mm. Anything nearer
     the centre lands underneath the Metro no matter how it is clocked. */
@@ -219,9 +204,9 @@ drop_bcd    = 116;   // Ø [mm] -> r 58: 3 mm inboard of the tier-1 trenches (r 
 drop_a0     = 0;     // first drop angle [deg] — between the pillars
 
 /* [CABLE MANAGEMENT — sunk into the floor, so it runs UNDER the boards]
-    v0.6 had nowhere for the ~44 cm, 16-wire tool-connector breakout to go. v0.7 added a perimeter
-    trench; v0.8 sinks it BELOW the compartment floor and adds RADIAL channels that run from the
-    central bore all the way out to it. So the bundle comes up the bore, drops into a radial channel,
+    The ~44 cm, 16-wire tool-connector breakout needs somewhere to go. Perimeter trenches are sunk
+    BELOW the compartment floor, with RADIAL channels from the central bore out to them. So the bundle
+    comes up the bore, drops into a radial channel,
     runs out to the perimeter, and turns into the ring trench — all below board level, with boards
     velcro'd on the flat floor over the top of it.
 
@@ -244,11 +229,11 @@ trench_span  = 74;   // angular width of each trench [deg] — PEG TO PEG. The p
                      // at 40.4 deg. Ending the trench at 37 deg leaves ~4.5 mm of wall between the
                      // trench end and the pillar, which is as far as it can run without undercutting
                      // the thing that carries tier 2. 98 mm of run per trench.
-trench_sink  = 6;    // depth BELOW the compartment floor [mm] -> 4 mm of floor left under it
+trench_sink  = 6;    // depth BELOW the compartment floor [mm] -> 8 mm of floor left under it
 trench_tie_n = 3;    // cable-tie slots per trench
 radial_n     = 2;    // radial cable channels — ONE to each trench
 radial_w     = 10;   // radial channel width [mm] — takes half the bundle
-radial_a0    = 30;   // first radial channel angle [deg]. Each channel now meets its trench at the
+radial_a0    = 30;   // first radial channel angle [deg]. Each channel meets its trench at the
                      // trench's END, not its middle: the bundle enters at one end and runs the whole
                      // length, instead of arriving in the centre and having to be dressed both ways.
                      // Trench 1 spans -30..+30 and trench 2 spans 150..210, so channels at 30 and 210
@@ -256,8 +241,8 @@ radial_a0    = 30;   // first radial channel angle [deg]. Each channel now meets
                      // the bore. 15 deg off the nearest pillar = 8.4 mm of clear floor.
 
 /* [BOARD REFERENCE PLACEMENTS — no pockets are cut for these]
-    Every board is velcro'd to the flat compartment floor, so these numbers no longer shape the print.
-    They are kept because they are still the verified answer to "does this all actually fit?" —
+    Every board is velcro'd to the flat compartment floor, so these numbers do not shape the print.
+    They are the verified answer to "does this all actually fit?" —
     check_layout.py holds each one against the compartment wall, the tier bore and the screw pillars,
     and electronics_mock draws them. Move a board on the bench and nothing needs reprinting; move it
     here and re-run the check if you want the record to stay true.
@@ -303,39 +288,37 @@ haptic_clear   = 9;
 haptic_pos     = [-48.0, -20.0]; haptic_rot = 0;
 
 /* [NeoPixel ring — Adafruit 2874, 60x5050 RGBW (buy 4x QUARTER-rings) — groove on the COVER TOP]
-    v0.6 cut the groove at the datasheet Ø157/145 and four butted quarter-rings did not close in it.
-    The groove is now ~3 LEDs of arc bigger: at the old mean radius 75.5 the 60 LEDs sit at 7.9 mm
-    of arc each, so 3 more LEDs = 23.7 mm of circumference = +3.8 mm of radius. Clearance per side
-    is also up from 0.6 to 1.0 so the segments drop in rather than being pressed in. */
+    Four butted quarter-rings do not close in a groove cut at the datasheet Ø157/145, so the groove is
+    ~3 LEDs of arc bigger: at a mean radius of 75.5 the 60 LEDs sit at 7.9 mm of arc each, so 3 more
+    LEDs = 23.7 mm of circumference = +3.8 mm of radius. 1.0 mm clearance per side lets the segments
+    drop in rather than being pressed in. */
 ring_od        = 165.0; // GROOVE outer Ø [mm]  (the ring PCB itself is 157 — see ring_pcb_od)
 ring_id        = 152.0; // GROOVE inner Ø [mm]  (the ring PCB itself is 145 — see ring_pcb_id)
 ring_pcb_od    = 157.0; // actual Adafruit 2874 full-ring outer Ø [mm] — for the fit mock only
 ring_pcb_id    = 145.0; // actual Adafruit 2874 full-ring inner Ø [mm] — for the fit mock only
-// The channel is now 8.5 mm wide against the ring's 6 mm, so the four quarter-arcs can sit anywhere
+// The channel is 8.5 mm wide against the ring's 6 mm, so the four quarter-arcs can sit anywhere
 // from r 72.5..78.5 (hard against the inner wall) out to r 77.5..83.5 (hard against the outer wall).
 // Sitting further out is what buys the extra circumference: at r 79 the 60-LED ring needs 496 mm of
-// arc against the 474 mm it needs at r 75.5 — about 3 LEDs' worth, which is the gap that stopped the
-// four segments closing in v0.6. Push them outward as you seat them.
+// arc against the 474 mm it needs at r 75.5 — about 3 LEDs' worth, which is what lets the four
+// segments close. Push them outward as you seat them.
 ring_pcb_t     = 3.25;  // ring overall thickness [mm]   (PCB + LEDs, 2874 = 3.25 mm / 0.13")
 ring_clear     = 1.0;   // radial clearance per side [mm]
 ring_groove_h  = 4.5;   // top-facing groove depth to seat the ring [mm] (LEDs face up; clear box shields)
 ring_wire_d    = 6.0;   // lead pass-through under the groove, one per quarter junction [mm]
 
 /* [Cover plate] */
-cover_plate_t  = 9.0;   // cover thickness [mm] — opaque (same material as the base).
-                        // 6.0 was too thin in THREE independent places, all found together:
+cover_plate_t  = 9.0;   // cover thickness [mm] — opaque (same material as the base). Set by three
+                        // independent sections:
                         //  * BENDING. The apple stem bolts to this plate on a Ø36 circle, so its
                         //    screws carry 78 N each -- 5.6x what the base-to-flange screws see,
                         //    because the same 4.2 N.m is reacted across a third of the diameter.
-                        //    Just outboard of the Ø44 boss the plate drops to 6 mm and the stress
-                        //    jumps 2.9 -> 15.9 MPa, a safety factor of 3.1 before you allow for the
-                        //    part being flat-printed. At 9 mm it is 7.1 MPa, SF 7.1.
-                        //  * RING GROOVE. A 4.5 mm groove in a 6 mm plate left 1.5 mm of floor.
-                        //  * CASING PILOT. A 5 mm insert bore in a 6 mm plate left 1.0 mm.
-                        // 9 mm gives 4.5 and 4.0 mm respectively. Costs ~70 g.
-cover_boss_fillet = 4.0; // fillet where the apple-stem boss meets the plate [mm]. The step used to
-                        // be a sharp 90 deg corner exactly where the bending stress peaks -- the
-                        // same crack initiator that the base fillets were added to remove.
+                        //    Just outboard of the Ø44 boss, at 9 mm the stress is 7.1 MPa, SF 7.1
+                        //    before allowing for flat-print layer strength (6 mm would give SF 3.1).
+                        //  * RING GROOVE. The 4.5 mm groove leaves 4.5 mm of floor under it.
+                        //  * CASING PILOT. The 5 mm insert bore leaves 4.0 mm under it.
+cover_boss_fillet = 4.0; // fillet where the apple-stem boss meets the plate [mm]. A sharp 90 deg step
+                        // here would sit exactly where the bending stress peaks -- the same crack
+                        // initiator the base fillets exist to prevent.
 
 /* [Base <-> cover fastening screws] */
 cover_screw_n       = 4;     // screws joining the cover down to the base
@@ -343,11 +326,9 @@ cover_screw_bcd     = 120;   // their bolt-circle Ø [mm] — at r=60, INSIDE th
                              // possible: the gap between the groove outer (r 83.5) and the rim inner
                              // (r 91) is 7.5 mm and an M3 counterbore is 6.5 wide, which leaves 0.5 mm
                              // a side.
-                             // WAS 138 (r=69) and that was WRONG: the Ø12 cover pillar reached r 75,
-                             // and the tier-screw counterbore at r 75 starts at r 71.75 — the two
-                             // overlapped by 3.25 mm at the same four angles, so the counterbore ate
-                             // into the pillar. r=60 puts the pillar at 54..66, a clear 5.75 mm inboard
-                             // of the counterbore. check_layout.py now tests for this.
+                             // r=60 puts the Ø12 cover pillar at 54..66, a clear 5.75 mm inboard of the
+                             // tier-screw counterbore (which starts at r 71.75 at the same four
+                             // angles). check_layout.py tests this.
 cover_screw_a0      = 45;    // first-screw angle [deg] — 45 clears the Tobsun (|x| <= 36) on tier 2
 cover_screw_d       = m3_clear;    // clearance hole in the cover (M3) [mm]
 cover_screw_pilot   = m3_insert;   // heat-set insert bore in the base (M3) [mm]
@@ -372,13 +353,11 @@ joint_screw_cbore_h = m3_cbore_h;  // counterbore depth [mm]
 joint_register_h    = 2.5;  // spigot/recess depth [mm]
 
 /* [Apple — ONE-PIECE PETG STEM + FUSED soft BALL]
-    v0.6 split this into a core base, a separate PETG rod, and an M3 detent pin that set the height.
-    In practice that joint was finicky to assemble and the apple wobbled on it: a Ø14 rod in a Ø14.6
-    bore has ~0.3 mm of radial slop, and at a 100 mm lever that is over a degree of rock before the
-    pin even starts to wear. The height adjustment is not worth that, so the flange, the shaft and
-    the armature flange are now ONE printed part.
+    The flange, the shaft and the armature flange are ONE printed part: no joint to assemble and no
+    radial slop to rock on (a pinned Ø14 rod in a Ø14.6 bore would give over a degree of rock at a
+    100 mm lever). Apple height is fixed by stem_shaft_len.
 
-    The stem (PETG) and ball (TPU) still print as ONE dual-material object on the H2D: export
+    The stem (PETG) and ball (TPU) print as ONE dual-material object on the H2D: export
     apple_stem.stl (PETG) + apple_ball.stl (TPU), import BOTH at the same origin in Bambu Studio and
     assign filaments. The PETG shaft runs up into the ball and ends in a low FLANGE embedded in a
     solid TPU cap, so the pull load is carried mechanically (NOT by PETG<->TPU adhesion). */
@@ -387,7 +366,7 @@ apple_wall     = 3;    // TPU ball shell wall [mm]
 apple_grooves  = true; // grip grooves on the ball sides
 stem_shaft_d   = 14;   // PETG shaft Ø [mm]
 stem_shaft_len = 100;  // shaft length, cover flange TOP -> armature flange [mm]. Sets apple height,
-                       // which is now FIXED: change this number and reprint to move the apple.
+                       // which is FIXED: change this number and reprint to move the apple.
 sensor_bore_d  = 9;    // feed bore up the stem [mm] (wiring + ERM + FSR tail + pressure tube;
                        // keep <= stem_shaft_d - 4 for a solid wall)
 arm_flange_d   = 22;   // PETG armature flange Ø [mm] — embedded in the TPU cap (anchors the pull)
@@ -412,9 +391,9 @@ case_box_side  = 198;   // outer square side [mm] (encloses the Ø188 base: ~2 m
 case_box_wall  = 3;     // wall & top-plate thickness [mm]
 case_top_bore  = 44.8;  // centre hole Ø in the top [mm] (clears the Ø44 apple-core boss poking through)
 disc_screw_n   = 3;     // clamp screws down into the cover (through the top face)
-disc_screw_bcd = 64;    // clamp bolt-circle Ø [mm]. Moved out from 56: at r=28 the Ø4.6 insert bore
-                        // ran from r 25.7, and the new boss fillet reaches r 26 -- they overlapped.
-                        // r=32 clears the fillet by 3.7 mm and stays well inside the ring groove.
+disc_screw_bcd = 64;    // clamp bolt-circle Ø [mm]. r=32 clears the boss fillet (to r 26) by 3.7 mm
+                        // and stays well inside the ring groove; any nearer and the Ø4.6 insert bore
+                        // runs into the fillet.
 disc_screw_a0  = 60;    // first clamp-screw angle [deg] (clocked between the 3 apple-core joint screws)
 disc_screw_depth = 5;   // clamp pilot depth into the cover (< cover_plate_t) [mm]
 case_preview   = true;  // show the casing box (transparent) in the assembly preview
@@ -626,8 +605,8 @@ module base_tier1() {
                     translate([(trench_ri + trench_ro)/2, 0, sink_z - 1.5])
                         cube([trench_ro - trench_ri + 6, 3.5, 3 + eps], center = true);
 
-        // tier1 -> plate screws. The head bears on plate_head_z mm of printed floor — that section
-        // was the weakest link in the v0.6 prototype, so it is now 10 mm, not 5. Drive these BEFORE
+        // tier1 -> plate screws. The head bears on plate_head_z (10) mm of printed floor — the
+        // critical section of the base<->flange joint. Drive these BEFORE
         // anything is velcro'd over them. Takes M3x16, not the M3x10 used elsewhere.
         for (i = [0 : plate_screw_n - 1])
             rotate([0, 0, plate_screw_a0 + i * 360 / plate_screw_n])
@@ -750,8 +729,7 @@ module grip_grooves(z0) {
 }
 
 // (3a) APPLE STEM — ONE PETG part: cover flange + shaft + armature flange.
-//      Replaces v0.6's core base + separate rod + detent pin, which wobbled on the pin clearance.
-//      Apple height is now fixed by stem_shaft_len (reprint to change it).
+//      Apple height is fixed by stem_shaft_len (reprint to change it).
 module stem_solid() {   // OUTER envelope of the shaft + armature ONLY — the TPU ball moulds around this
     union() {
         translate([0, 0, sj_flange_t - eps])

@@ -24,8 +24,9 @@ class MoveRestrictedOnAPlaneAction:
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None,
                  own_recorder: bool = True) -> None:
         # own_recorder=False when the ORCHESTRATOR owns a TrialRecorder instead (the maze does).
-        # The old TrajectoryRecorder wrote 9 columns starting at the go cue; TrialRecorder writes the
-        # full schema from trial start. Both must never run at once or a trial produces two files.
+        # The action's own TrajectoryRecorder writes time + position from the go cue (restricted plane);
+        # TrialRecorder writes the full schema from trial start. Never run both, or a trial produces
+        # two files.
         self._own_recorder = own_recorder
         self._node = node
         self._on_complete = on_complete
@@ -151,9 +152,9 @@ class MoveRestrictedOnAPlaneAction:
         if self.recorder is not None:
             self.recorder.start(extra_header=self._record_extra_header())
         
-        # CRITICAL FIX: Wipe the old commanded position from the previous trial!
-        # This forces the script to re-orient itself to the exact joint positions
-        # the arm was moved to by the recovery script, preventing velocity faults!
+        # Drop the previous trial's commanded position, so the fixture re-orients itself to the
+        # joint positions the recovery move left the arm at. Starting from a stale command would
+        # jump the equilibrium and cause velocity faults.
         if hasattr(self, 'last_commanded'):
             delattr(self, 'last_commanded')
             

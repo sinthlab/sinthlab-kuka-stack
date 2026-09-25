@@ -118,9 +118,9 @@
       # Wait for the MEASURED arm home, so the next trial can't start perturbed
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
-      # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), and the joint test
-      # used to leave this move waiting forever after some pulls. If the arm is held off, carry on after
-      # the timeout (a warning says how far off it was).
+      # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), so a joint test can
+      # wait forever after some pulls. If the arm is held off, carry on after the timeout (a warning says
+      # how far off it was).
       cartesian_move_tolerance: 0.03      # apple within 3 cm of the start counts as arrived [m]
       physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
       debug_log_enabled: false  # print this action's periodic debug line
@@ -128,7 +128,7 @@
     audio_cue_play:          # trial-start cue: monkey begins reaching, before the perturbation
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
       duration_ms: 1500  # trial-start (go) tone: length [ms]
-    audio_cue_snap:          # threshold-reached cue (pull success). (The post-perturbation "pull" cue was removed.)
+    audio_cue_snap:          # threshold-reached cue (pull success)
       frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
       duration_ms: 500  # threshold-reached tone: length [ms]
 

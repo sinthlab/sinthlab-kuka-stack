@@ -72,10 +72,10 @@ class CartesianImpedanceDisplacementMonitor:
 
         # Runtime state
         # Latest displacement, refreshed every tick. The recorder reads this so `disp_m` lands in
-        # the trial CSV -- it is the dependent variable of the experiment and until now it only ever
-        # reached the debug log. Recording it per sample is also what lets the threshold crossing be
+        # the trial CSV -- it is the dependent variable of the experiment. Recording it per sample is
+        # also what lets the threshold crossing be
         # interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
-        self._last_disp: float = 0.0
+        self._last_disp: float = float("nan")
         self._baseline: Optional[TransformStamped] = None
         self._settle_elapsed = 0.0
         self._stopping = False
@@ -127,7 +127,7 @@ class CartesianImpedanceDisplacementMonitor:
             return
 
         self._baseline = None
-        self._last_disp = 0.0
+        self._last_disp = float("nan")   # not measuring until the baseline locks
         self._settle_elapsed = 0.0
         self._stopping = False
         self._shutdown_requested = False
@@ -141,8 +141,10 @@ class CartesianImpedanceDisplacementMonitor:
     def current_disp(self) -> float:
         """Displacement from the locked baseline as of the last tick, in metres.
 
-        Read by TrialRecorder once per sample. Returns 0.0 before the baseline is locked, which is
-        correct: there is nothing to be displaced from yet."""
+        Read by TrialRecorder once per sample. NaN whenever the monitor is not measuring this trial --
+        before the baseline locks (`armed`) and after the monitor completes -- so no trial ever opens
+        with the previous trial's displacement. During the post-snap hold it keeps the snap-time value
+        (the arm is frozen there)."""
         return self._last_disp
 
     def baseline_xyz(self) -> Optional[tuple]:
@@ -171,6 +173,7 @@ class CartesianImpedanceDisplacementMonitor:
         """Disarm the monitor (e.g. on an external safety abort) without firing its callbacks."""
         self._ready = False
         self._shutting_down = False
+        self._last_disp = float("nan")
 
     def _step(self) -> None:
         if not self._ready:
@@ -191,6 +194,7 @@ class CartesianImpedanceDisplacementMonitor:
             ts = self._lookup()
             if ts is not None:
                 self._baseline = ts
+                self._last_disp = 0.0
                 self._node.get_logger().info(
                     f"Captured baseline EE pose for displacement thresholding "
                     f"(after {self._settle_elapsed:.2f}s settle)"
@@ -236,6 +240,7 @@ class CartesianImpedanceDisplacementMonitor:
         self._shutdown_requested = True
         self._ready = False
         self._shutting_down = False
+        self._last_disp = float("nan")   # done measuring: recovery must not read as displacement
         self._node.get_logger().info("Displacement monitor sequence complete. Yielding control.")
         
         try:

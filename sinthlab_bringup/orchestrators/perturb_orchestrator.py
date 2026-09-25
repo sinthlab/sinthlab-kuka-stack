@@ -22,8 +22,8 @@ class PerturbOrchestratorNode(rclpyNode):
     -> monitor -> (threshold) snap cue + freeze_at_pose -> move_recover -> repeat.
 
     Two cues only: one at trial start (the monkey begins reaching; the perturbation then displaces
-    the equilibrium) and one when the pull reaches threshold. The post-perturbation "pull" cue that
-    used to sound when the monitor armed is deliberately removed.
+    the equilibrium) and one when the pull reaches threshold. There is deliberately no cue when the
+    monitor arms after the perturbation.
     """
 
     def __init__(self) -> None:
@@ -85,8 +85,8 @@ class PerturbOrchestratorNode(rclpyNode):
         )
 
 
-        # Trial data. Like the apple pluck, this experiment recorded NOTHING before v1 of
-        # README.md section 7, Data Collected. Same schema, plus the perturbation in the sidecar.
+        # Trial data -- see README.md section 7, Data Collected. Same schema as the apple pluck, plus
+        # the perturbation in the sidecar.
         # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "perturb")

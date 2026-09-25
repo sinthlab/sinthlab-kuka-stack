@@ -2,25 +2,22 @@
 
 Design and the full data dictionary: README.md section 7, Data Collected.
 
-Replaces TrajectoryRecorder, which wrote 9 columns for the maze only and nothing at all for the
-apple pluck and perturb experiments. What changed and why:
+Used by the apple pluck, perturb and maze orchestrators. What it guarantees:
 
-  * THE CABINET CLOCK IS RECORDED. LBRState carries the cabinet's own timestamp and the old recorder
-    threw it away in favour of time.time() sampled inside a Python callback. The cabinet stamp is an
-    exact, jitter-free 10 ms grid (measured 2026-09-22: <0.1 ppm drift, no discontinuities) and is
-    what trial data will be aligned to the Blackrock NSP with.
+  * THE CABINET CLOCK IS RECORDED. LBRState carries the cabinet's own timestamp (fri_s / fri_ns), not
+    just time.time() sampled inside a Python callback. The cabinet stamp is an exact, jitter-free
+    10 ms grid (measured 2026-09-22: <0.1 ppm drift, no discontinuities) and is what trial data is
+    aligned to the Blackrock NSP with.
   * FK IS DONE HERE, not read from TF, so the EE pose and the joint values in a row come from the
-    SAME sample on the SAME clock instead of two differently-stamped pipelines.
-  * EVENTS LIVE IN THE FILE. The snap, the checkpoint rewards, the cues -- previously log text only.
-  * WRITES INCREMENTALLY. The old recorder buffered the whole trial in memory and wrote on stop, so
-    a crash lost the trial.
+    SAME sample on the SAME clock rather than two differently-stamped pipelines.
+  * EVENTS LIVE IN THE FILE. The snap, the checkpoint rewards, the cues -- in the CSV and, precisely
+    timed, in the sidecar.
+  * WRITES INCREMENTALLY, so a crash or Ctrl-C loses at most the last fraction of a second.
 
-Deviation from the spec: §3 proposed a standalone node with events arriving over a topic. This is a
-class the orchestrator owns instead. The orchestrators already host every other action as a class in
-their own node, events become direct calls with no topic hop or serialisation to mis-time, and
-`robot_description` does not have to be plumbed to a second process. The trade is that recording
-shares the orchestrator's executor -- acceptable, since appending ~46 floats to a list is nothing
-against a 10 ms budget.
+It is a class the orchestrator owns, not a separate node: events are direct calls with no topic hop or
+serialisation to mis-time, and `robot_description` does not have to be plumbed to a second process.
+Recording shares the orchestrator's executor, which is fine -- appending ~46 floats to a list is
+nothing against a 10 ms budget.
 
 Usage from an orchestrator:
 
@@ -150,8 +147,8 @@ class TrialRecorder:
         """Open a new file. `sidecar` holds anything constant for the trial (baseline,
         perturbation, maze_geometry) -- it is merged into the JSON verbatim."""
         if self._active:
-            # Do NOT silently ignore this. Ignoring it left the previous trial's file open and the
-            # new trial appending to it -- two trials in one CSV, and no sidecar for either.
+            # Do NOT silently ignore this: that would leave the previous trial's file open and the new
+            # trial appending to it -- two trials in one CSV, and no sidecar for either.
             self._node.get_logger().warn("TrialRecorder: start() while still recording; "
                                          "closing the previous trial first")
             self.stop_and_save()

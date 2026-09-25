@@ -50,7 +50,7 @@ def yaml_docs(text: str) -> Tuple[Dict[str, str], Dict[str, str]]:
 
       description  the `# comment` on the key's line -- one line: what it is, with units
       notes        the comment lines directly above the key (no blank line between) -- the why,
-                   history and knobs. A comment that heads a block therefore belongs to that block.
+                   measurements and knobs. A comment that heads a block therefore belongs to that block.
 
     Every parameter must have a description; check_param_docs.py enforces it."""
     stack: List[Tuple[int, str]] = []

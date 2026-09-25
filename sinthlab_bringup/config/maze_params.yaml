@@ -7,8 +7,8 @@
     # >>> USE THE "Maze walls + easy guiding (rot 120)" SmartPad profile.
     # It is anisotropic {2500, 1000, 1000, 120, 120, 120}. X 2500 locks the radial axis so the plane is
     # enforced in hardware; Y/Z 1000 hold the arm firmly on the rails; rot 120 is the knob that makes
-    # guiding light. Uniform profiles could never win: 400 gave walls too weak to feel (4 N/cm), 3000
-    # was dominated by TRACKING LAG.
+    # guiding light. No uniform profile works: 400 gives walls too weak to feel (4 N/cm), and at 3000
+    # tracking lag dominates.
     #
     # The sister profile "Maze walls (X lock, Y/Z firm)" is identical except rot 300 -- keep it for an
     # A/B if the tool twists more than the experiment allows. Rotational stiffness defines NOTHING
@@ -46,11 +46,11 @@
     # Jacobian is 0.0, condition number infinite -- the arm is fully extended straight up). The cabinet
     # runs Cartesian impedance, so a move commanded from there is ill-conditioned: the Jacobian has lost
     # rank and the 7-DOF nullspace is degenerate, so the arm does not reliably reach the maze start.
-    # Observed on hardware: launching the maze from mechanical zero misses the start posture, while
-    # running the restricted-plane experiment first (which parks the arm here) then makes it work.
+    # On hardware, a maze launched from mechanical zero misses the start posture; from this posture it
+    # reaches it.
     #
-    # This posture is the restricted-plane start -- empirically proven to be reachable FROM mechanical
-    # zero, and to be a configuration the maze start is reachable FROM. It is well conditioned
+    # This posture is the restricted-plane start -- reachable FROM mechanical zero on hardware, and a
+    # configuration the maze start is reachable FROM. It is well conditioned
     # (smallest singular value 0.206 vs 0.0 at mechanical zero).
     #
     # Only the FIRST trial uses it; afterwards the arm is already at the maze start, so the recovery
@@ -63,8 +63,8 @@
       # The waypoint is used ONLY when the arm starts in a near-singular ("straight") posture. The test
       # is max(|A2|,|A4|,|A6|) < this many degrees -- verified against the Jacobian to agree exactly
       # with "smallest singular value < 0.05". Mechanical zero scores 0 deg; the maze start scores 79.5
-      # and the plane start 90, so neither triggers it. Without this check the arm was detouring to the
-      # plane start on every fresh launch, even when already sitting at the maze start.
+      # and the plane start 90, so neither triggers it: an arm already at the maze start goes straight
+      # there rather than detouring to the plane start.
       extended_if_bend_below_deg: 12.0  # use the waypoint only if max(|A2|,|A4|,|A6|) is below this [deg]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -79,15 +79,15 @@
       # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
       # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
       # plane through the start (tool points +X, perpendicular into it).
-      # >>> WHY THIS POSTURE (changed 2026-08): the EE pose is IDENTICAL to the previous start
-      #     [0,0,0,-70,-20,10,0] -- same position, same tool orientation -- but the arm reaches it with
-      #     the elbow flipped. That matters because both fixtures LOCK ORIENTATION, and translating the
-      #     EE while holding orientation is far harder in some postures than others. Measured cost of
-      #     1 m/s of pure sideways (Y) translation with orientation held, ||qdot||:
-      #         old posture: 19.8 at start, up to 33.6 across the maze   -> felt like treacle
-      #         this one   :  2.5 at start, up to  8.2 across the maze   -> comparable to the sine rail
-      #     (6D condition number 45.0 -> 10.1.) An earlier analysis picked the old posture using the
-      #     LINEAR Jacobian only, which ignores the orientation lock and made Y look cheap (1.4).
+      # >>> WHY THIS POSTURE: the same EE pose (position and tool orientation) is also reached by
+      #     [0,0,0,-70,-20,10,0], but this solution has the elbow flipped. That matters because both
+      #     fixtures LOCK ORIENTATION, and translating the EE while holding orientation is far harder in
+      #     some postures than others. Measured cost of 1 m/s of pure sideways (Y) translation with
+      #     orientation held, ||qdot||:
+      #         [0,0,0,-70,-20,10,0]: 19.8 at start, up to 33.6 across the maze   -> treacle
+      #         this posture       :  2.5 at start, up to  8.2 across the maze   -> like the sine rail
+      #     (6D condition number 10.1 vs 45.0.) Judge postures with the FULL 6D Jacobian: the linear
+      #     Jacobian alone ignores the orientation lock and makes Y look cheap (1.4) in the bad one.
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
@@ -96,8 +96,8 @@
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory
-      #     alone; observed on hardware finishing at meas err 0.0219 rad against a 0.0100 tolerance,
-      #     i.e. the arm was still ~2x outside tolerance and the whole maze was then offset from it.
+      #     alone, which on hardware can leave the arm ~2x outside a 0.01 rad tolerance (0.022 rad)
+      #     and the whole maze offset from it.
       #     Tolerance is 0.03 rad (~1.7 deg, ~2 cm at the EE) rather than 0.01: under cabinet impedance
       #     there is always some steady-state joint error, and 0.01 would never be met, hanging the move.
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
@@ -264,15 +264,14 @@
     virtual_fixture_profile: "maze"  # which block under virtual_fixtures is active
     virtual_fixtures:  # fixture geometries; virtual_fixture_profile picks the active one
       # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
-      # first is kuka_clik_controller.max_linear_velocity): at 0.01 m/tick and ~100 Hz state the
-      # equilibrium could only chase the hand at 1 m/s, but combined with the CLIK clamp it was the
-      # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
-      # against spikes without throttling normal guiding.
+      # first is kuka_clik_controller.max_linear_velocity): at ~100 Hz state, a small step (0.01 m/tick
+      # = 1 m/s) becomes the binding constraint and the fixture feels stiff while moving. 0.05 keeps it
+      # a jerk guard against spikes without throttling normal guiding.
       max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
       # Anchor the maze where the arm RESTS, not where it was commanded. A free axis carries no
-      # restoring force, so the arm settles a few cm below the commanded start; anchoring on the
-      # commanded pose put the whole maze that far above it and the checkpoints were missed (CP1 by
-      # ~1 cm against a 3 cm radius). 3 s captures most of the settle without stalling the trial.
+      # restoring force, so the arm settles a few cm below the commanded start; anchored on the
+      # commanded pose, the whole maze would sit that far above it and the checkpoints could be missed
+      # (by ~1 cm against a 3 cm radius). 3 s captures most of the settle without stalling the trial.
       anchor_settle_sec: 3.0  # wait this long after the fixture starts before anchoring it [s]
       anchor_on_measured: true  # anchor on the measured pose (true) rather than the commanded one
       # --- rung 1: open rectangle, X locked, Y/Z free. Deliberately smaller than the full envelope
@@ -319,13 +318,12 @@
         #   1. The gravity-comp residual is a constant ~5.5 N DOWNWARD at the tool, so climbing fights
         #      it and descending is assisted.
         #   2. Vertical conditioning DEGRADES with height: the cost of 1 m/s of vertical motion with
-        #      orientation held was 3.4 at b=-0.15 but 8.6 at b=+0.15 -- 2.5x the sideways cost.
+        #      orientation held is 3.4 at b=-0.15 but 8.6 at b=+0.15 -- 2.5x the sideways cost.
         #
-        # DEPTH IS 0.22, NOT 0.33, so the arm does not reach uncomfortably low: the goal row sits at
-        # z = 0.64 m in the base frame instead of 0.53 m. Shortening the maze was chosen over RAISING
-        # the start, because raising the start drags the start row back into the badly-conditioned
-        # region (start-row vertical cost 4.5 at the shipped height, 6.9 if raised 0.10, 12.6 at 0.15),
-        # while shortening costs nothing: same height gain, conditioning unchanged.
+        # DEPTH IS 0.22 so the arm does not reach uncomfortably low: the goal row sits at z = 0.64 m in
+        # the base frame (0.53 m at a 0.33 depth). A shallow maze beats RAISING the start, because a
+        # higher start drags the start row into the badly-conditioned region (start-row vertical cost
+        # 4.5 at this height, 6.9 if raised 0.10, 12.6 at 0.15); a shallow maze costs nothing.
         #
         #   a:      -0.30   -0.15    0.00    +0.15
         #  b  0.00                   >-------O          (R1 entrance, R2 down-link)

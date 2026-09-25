@@ -23,9 +23,8 @@ picking an experiment, editing its parameters, Start / Pause / Stop, changing cu
 and following the status and log. Every experiment can also be run from a terminal
 ([§5](#5-running-experiments-on-hardware)).
 
-FRI **torque** mode (ROS-side impedance) was evaluated on hardware and **not adopted** — see the
-[appendix](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out) for what was learned and
-the conditions under which it would be worth revisiting.
+Why FRI **position** mode rather than torque mode (ROS-side impedance), and when torque mode would be
+worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-torque-mode).
 
 ## Table of Contents
 - [Quick start: the experiment dashboard](#quick-start-the-experiment-dashboard)
@@ -39,7 +38,7 @@ the conditions under which it would be worth revisiting.
 - [8. Troubleshooting](#8-troubleshooting)
 - [9. Development & Contributing](#9-development--contributing)
 - [Acknowledgement](#acknowledgement)
-- [Appendix — FRI torque mode (not adopted)](#appendix--fri-torque-mode-an-experiment-that-did-not-work-out)
+- [Appendix — why FRI position mode, not torque mode](#appendix--why-fri-position-mode-not-torque-mode)
 
 ---
 
@@ -118,7 +117,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    - **■ Stop now:** Ctrl-C at once. The trial in progress is saved with `"partial": true`.
    - **↻ Restart:** Stop now, then Start again with the current edits.
 8. **Validate recording** checks this run's data folder
-   (`analysis/validate_recording.py --folder …`) and prints the result in the log.
+   (`analysis/validate_recording.py --folder …`) and prints the result in the log. To plot the
+   run afterwards, see [Working with the data](#working-with-the-data).
 
 **The log** is the launch's own output from every node, colour-coded by level. Filter it by level or
 text, or turn off *Follow* to scroll back. It is also saved to `experiment_ctrl_gui/logs/`.
@@ -372,7 +372,7 @@ mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ou
    ```yaml
    state_guard:
      external_torque_safety_check: true
-     external_torque_limit: 4.0   # raised from the default 2.0
+     external_torque_limit: 4.0   # upstream default is 2.0
    ```
    Skip this for mock/sim. The proper long-term fix is calibrating the mounted tool's load data (see
    §2 “Tool Load Data”) so the residual stays under the default — raising the limit is the stopgap
@@ -453,20 +453,19 @@ what ROS streams into it:
 - **Restricted-plane / Maze (2 & 4)** — a fixture-constrained **Cartesian equilibrium** via
   `kuka_clik_controller` (Cartesian target → IK → joint positions).
 
-> **The two things that decide how a fixture feels** — both were long mis-set, and both are now
-> configured correctly:
+> **The two things that decide how a fixture feels:**
 >
 > 1. **Soft-inside comes from tracking, not from low stiffness.** Inside the allowed region the
 >    fixture's projection returns the *measured* pose, so the spring error — and hence the force — is
 >    ~zero **whatever K is**. High K only bites at the walls and on locked axes. What breaks this is
 >    **tracking lag**: if the commanded equilibrium cannot keep up with the operator's hand it falls
 >    behind *cumulatively* and `K × error` is felt as resistance in every direction. That is governed
->    by `kuka_clik_controller.max_linear_velocity` (now **1.0 m/s**, well above hand-guiding speed) and
->    the fixture's `max_target_step_m` (now **0.05 m**).
+>    by `kuka_clik_controller.max_linear_velocity` (**1.0 m/s**, well above hand-guiding speed) and
+>    the fixture's `max_target_step_m` (**0.05 m**).
 > 2. **Use an anisotropic stiffness profile.** `LbrImpedanceControlServer` takes a full per-axis
 >    `{X,Y,Z,A,B,C}` diagonal. A *uniform* profile forces one compromise for locked axes, walls and
->    free motion alike — which is why the maze failed at every uniform value (400 = mushy walls,
->    3000 = heavy everywhere). Lock the constrained axis hard and keep the free axes firm enough for
+>    free motion alike, and for the maze no uniform value works (400 = mushy walls, 3000 = heavy
+>    everywhere). Lock the constrained axis hard and keep the free axes firm enough for
 >    walls; the interior stays free by (1).
 
 ### Scenario 1 — Apple Pluck
@@ -631,10 +630,10 @@ always projects the equilibrium onto the **nearest segment**, exactly like the s
 **Why vertical, and why this start posture.** The tool axis (the EE frame's **Z** axis) points ~+X at
 the subject, and the maze locks base‑X so the plane is enforced by the cabinet. The start posture
 matters more than it looks: both fixtures **lock orientation**, and translating the EE while holding
-orientation is far more expensive in some arm configurations than others. The shipped start reaches the
-same EE pose as an earlier one but with the **elbow flipped**, which cut the cost of sideways motion
-from ‖q̇‖ ≈ 19.8 to ≈ 2.5 (6D condition number 45 → 10). Before that change the maze felt like treacle
-in exactly the directions it was supposed to be free.
+orientation is far more expensive in some arm configurations than others. The start posture reaches
+its EE pose with the **elbow flipped** relative to the obvious solution, which puts the cost of sideways
+motion at ‖q̇‖ ≈ 2.5 instead of ≈ 19.8 (6D condition number 10 instead of 45). In the other posture the
+maze is heavy in exactly the directions it is supposed to be free.
 
 **Workspace limits (measured by IK, holding tool orientation).** From the shipped start the arm can
 reach **a ∈ [−0.40, +0.40] m** sideways and **b ∈ [−0.35, +0.20] m** up/down — but that envelope is a
@@ -653,17 +652,16 @@ reasons, both measured:
 2. **Vertical conditioning degrades with height** — the cost of vertical motion with orientation held
    is 3.4 low down but **8.6** near the top, 2.5× the sideways cost there.
 
-An earlier layout put the goal *above* the start, and its two climbing legs were reported as markedly
-harder to pull than anything else in the maze. Moving the whole maze below the start (rows at
-b = 0, −0.11, −0.33) cuts the worst vertical cost from **8.6 to 3.5** and puts gravity on the
-operator's side.
+So the maze's rows are at **b = 0, −0.11 and −0.22**: every vertical leg is in the well-conditioned
+lower region and gravity is on the operator's side. The depth stops at −0.22 so the goal row stays at
+a comfortable height (z ≈ 0.64 m in the base frame).
 
 **The maze is defined RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`),
 so its origin is wherever the arm starts: change `move_to_start` and the whole maze — rails, checkpoints,
 goal — moves with it. It is anchored on the **settled measured** pose, not the commanded one
 (`anchor_settle_sec: 3.0`, `anchor_on_measured: true`): a free axis carries no restoring force, so the
-arm sinks a few cm below the commanded start, and anchoring on the command put the whole maze that far
-overhead and the checkpoints were missed.
+arm sinks a few cm below the commanded start; anchored on the command, the whole maze would sit that
+far overhead and the checkpoints would be missed.
 
 #### What you should expect to see
 
@@ -678,7 +676,7 @@ rails, and only one route reaches the goal. Coordinates are **offsets from the a
          │░░░░░░░░░░░░░░░░░░░░░░░░░░░║│
  b -0.11 │┌════════◆═════════════════┘│  ◆ fork (reward cue)
          │║░░░░░░░░║░░░░░░░░░░░░░░░░░░│
- b -0.33 │└════════◆═════════════════★│  ★ GOAL — below the start
+ b -0.22 │└════════◆═════════════════★│  ★ GOAL — below the start
          └────────────────────────────┘
             the two ◆ are the only choices; every vertical leg is DESCENDED
             ░ = solid (no rail)     ═ ║ ┌ ┐ └ ┘ = rail you can travel
@@ -692,28 +690,20 @@ the subject nothing to act on, so it gets no cue. A reward tone therefore means 
 | fork | the choice |
 |---|---|
 | (−0.15, −0.11) | drop here for the **short** route, or carry on left and drop at a = −0.30 (**long**) |
-| (−0.15, −0.33) | turn right for the goal, or left along the bottom (the long way round) |
+| (−0.15, −0.22) | turn right for the goal, or left along the bottom (the long way round) |
 
 The descent at a = −0.15 is a **single rail** from the first fork straight down to the second — nothing
 branches off it in between, so its midpoint is not a junction and deliberately gets no cue.
 
-**The choice is which column to descend.** Drop at a = −0.15 for the **short route (1.08 m)**, or carry
-on to a = −0.30 and drop there for the **long route (1.38 m)**. Both reach the goal row, so there are
+**The choice is which column to descend.** Drop at a = −0.15 for the **short route (0.97 m)**, or carry
+on to a = −0.30 and drop there for the **long route (1.27 m)**. Both reach the goal row, so there are
 **no dead ends** — a wrong choice costs travel rather than trapping the arm. Every vertical leg is
 descended, never climbed.
 
-**No dead ends.** The only choice is which column to descend, and both reach the goal row — so a
-wrong turn costs travel rather than trapping the arm somewhere it must be reversed out of.
-
 **The walls hold you.** The fixture latches onto the rail you are travelling and will only hand you
 over to a rail that *physically touches* it — a real junction. Push sideways mid-rail and the
-equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it.
-
-**The walls hold you.** The fixture latches onto the rail you are travelling and will only hand you
-over to a rail that *physically touches* it — a real junction. Push sideways mid-rail and the
-equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it. (Previously the
-projection simply picked the globally nearest rail each tick, so a hard push could make an unrelated
-rail the closest one and the arm would be dragged across the maze — passing straight through a wall.)
+equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it. A hard push can
+never make an unrelated rail "nearest" and drag the arm through a wall.
 
 **The gap matters.** On the b=0 row there is deliberately **no rail between a=−0.15 and a=0.00**
 (the shaded cells left of ▶). Without it the arm could run straight from START to the goal up-link and
@@ -789,9 +779,9 @@ failure, so it works in CI. Example of a bad maze:
 FAILED (5 problem(s))
 ```
 
-The duplicate-key check runs **first**, and it is there because this bug actually shipped: a stale
-three-element `checkpoint_x` sat above the real four-element one, the file parsed cleanly, and every
-other check passed while the maze quietly loaded different values than the file appeared to specify.
+The duplicate-key check runs **first**. A YAML file with the same key twice parses cleanly and the
+later value silently wins, so every other check would pass while the maze loads different values than
+the file appears to specify.
 
 Structural checks run without the URDF; the kinematic ones are skipped with a note if `optas` or
 `IIWA7_URDF` is unavailable.
@@ -867,7 +857,7 @@ Work up the ladder and stop at the first rung that feels wrong.
 > 1. **Rotational stiffness** (SmartPad profile, 300 vs 120): the biggest lever on how heavy guiding
 >    feels, and it costs no fixture fidelity.
 > 2. **Tracking lag**: if it drags *when you move fast*, that is lag, not stiffness — raise
->    `kuka_clik_controller.max_linear_velocity` (now 1.0 m/s) and `max_target_step_m` (now 0.05).
+>    `kuka_clik_controller.max_linear_velocity` (1.0 m/s) and `max_target_step_m` (0.05).
 > 3. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
 >
 > If a *free* direction feels heavy no matter what, suspect the **start posture** rather than any of
@@ -1029,9 +1019,8 @@ flowchart LR
   plain "distance from mechanical zero" test would miss. The maze start scores 79.5° and the plane
   start 90°, so neither triggers it.
 
-  This is a guard, not a routine step: running the waypoint unconditionally dragged the arm out to the
-  restricted-plane posture and back on every launch — including when it was already sitting at the maze
-  start — which was disruptive and pointless.
+  This is a guard, not a routine step: an arm already at (or near) the maze start goes straight there,
+  rather than detouring out to the restricted-plane posture and back.
 
   A trial is then literally a chain of actions — e.g. apple‑pluck:
   `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
@@ -1225,12 +1214,11 @@ to **tool pins 1/2**, into the Tobsun converter, down to the 5 V rail. Full pino
 pass‑through with no cabinet‑driven I/O, and the Sunrise project has no generated I/O groups
 (`src/com/kuka/generated/` does not exist). The Sunrise application plays no part in the cue.
 
-**The wire path is an RS‑422 serial link, not a relay — decided and on order.** The earlier plan was
-a USB relay closing X76 1–2 as a dry contact. That was the right answer while the firmware was frozen
-and the wire was only ever going to carry a contact closure. Two things changed it: the effector is
-being reopened (so firmware *can* be redeployed), and the force/pressure sensor needs a data channel
-off the tool anyway. Once a differential link is on the flange, a relay is both **redundant and two
-orders of magnitude slower** — a mechanical contact is 5–15 ms against ~80 µs of wire time.
+**The wire path is an RS‑422 serial link — decided, parts on order.** The effector casing opens, so
+firmware can be redeployed, and the force/pressure sensor needs a data channel off the tool anyway; one
+full-duplex differential link carries both the cue trigger and the sensor data. A dry-contact relay on
+X76 1–2 would be **redundant and two orders of magnitude slower** — a mechanical contact is 5–15 ms
+against ~80 µs of wire time.
 
 | | |
 |---|---|
@@ -1238,17 +1226,17 @@ orders of magnitude slower** — a mechanical contact is 5–15 ms against ~80 �
 | Tool | **MIKROE‑2821 RS485 3 Click** — SN65HVD31, full duplex, 3.3 V |
 | Link | shielded twisted pair on the CTR pairs through the flange |
 
-Notes that survive from the relay plan:
+Notes:
 
 - **No optocoupler on the inbound path.** The only voltage in the trigger loop is the Metro's own
   3.3 V through D2's pull‑up; a floating contact has nothing to isolate. The *outbound* direction is
   different — anything the Metro drives toward a 24 V cabinet input does need one.
 - **`latency_timer` must be set to 1.** FTDI defaults to 16 ms of buffering, which would hand back
   exactly the delay the serial link was chosen to avoid. See §8.
-- **The experiments are unaffected meanwhile.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
+- **Until the link is fitted, the experiments run unchanged.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
   is called beside `AudioCue` at all eight cue sites. On the wire path it is a **safe no‑op**: it
   completes immediately and warns once if `visual_cue.enabled` is true.
-- **When the link is up,** implement `VisualCue._close_switch()` (now a serial write, not a contact)
+- **When the link is up,** implement `VisualCue._close_switch()` as a serial write
   and set `visual_cue.remote_test_trigger: false`. If the arm box runs WSL2, the adapter needs
   `usbipd-win attach`.
 
@@ -1272,7 +1260,7 @@ visual_cue:
 
 Then join the ROS computer to the board's **`KUKA_NEOPIXEL`** Wi‑Fi (its Ethernet link to the
 robot is separate) and check the link from the shell you launch from:
-`curl http://192.168.4.1/status`. Each cue site now sends `GET http://192.168.4.1/cue` — the same as
+`curl http://192.168.4.1/status`. Each cue site sends `GET http://192.168.4.1/cue` — the same as
 running that `curl` by hand — from a background thread, so a slow or missing board never stalls a
 trial. Every cue is logged with its round‑trip time, and a failed one says why. Each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at threshold, goal and timeout, blue for maze rewards. **Not for
 experiments:** the Wi‑Fi delay varies from cue to cue, so never align trial data to it. Code:
@@ -1328,9 +1316,6 @@ below.
 | Sidecar extras | `threshold_m` | `perturbation` | `maze_geometry` |
 | Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
-Two of the three experiments recorded **nothing** before this. The maze wrote 9 columns starting at
-the go cue, which is why old maze CSVs begin mid-trial.
-
 **The 41-column core**
 
 | Block | Cols | Contents |
@@ -1344,14 +1329,14 @@ the go cue, which is why old maze CSVs begin mid-trial.
 Why each earns its place:
 
 - **`fri_s`/`fri_ns`** is the cabinet's own clock — the anchor for aligning to the Blackrock NSP.
-- **The quaternion** was discarded before; the apple can be pulled off-axis and that went unmeasured.
+- **The quaternion** captures the apple's orientation, so an off-axis pull is measured.
 - **`cmd − meas`** is the impedance droop — under Cartesian impedance the arm lags its equilibrium by
-  `F / k`, and that lag is signal, not error. It is what diagnosed the A2 gravity sag.
+  `F / k`, and that lag is signal, not error. A steady offset at rest points at un-modelled tool mass.
 - **`ext_A1..A7`** measures a pull with no force sensor fitted.
 - **FRI health per sample** makes a bad trial self-diagnosing.
-- **`disp_m`** (pluck/perturb) is the dependent variable of the experiment, and was previously only
-  printed at debug rate. Recording it per sample is also what lets the threshold crossing be
-  interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
+- **`disp_m`** (pluck/perturb) is the dependent variable of the experiment. Recording it per sample is
+  also what lets the threshold crossing be interpolated to sub-millisecond, which the 10 ms cabinet
+  stamp cannot give on its own.
 
 ### Events, per experiment
 
@@ -1360,10 +1345,8 @@ Why each earns its place:
 **Records from** `start_trial()` **to** `on_recover_complete()` — the whole trial including the
 return to start, not just the pull.
 
-**Extra column (1):** `disp_m` — displacement from the locked baseline, the value
-`CartesianImpedanceDisplacementMonitor` already computes every tick and currently only prints at
-`debug_log_rate_hz`. **This is the dependent variable of the experiment and it is not saved
-anywhere.**
+**Extra column (1):** `disp_m` — displacement from the locked baseline, computed by
+`CartesianImpedanceDisplacementMonitor` every tick. **The dependent variable of the experiment.**
 
 **Events** (callback → token):
 
@@ -1410,9 +1393,8 @@ column.
 
 #### Maze
 
-**Records from** `start_trial()` **to** recover complete. Before the recorder moved into the
-orchestrator it started at the go cue, which is why every maze CSV recorded before 2026-09-23 begins
-mid-trial — the approach and the settle were simply never captured.
+**Records from** `start_trial()` **to** recover complete — the approach and the settle included, not
+just the maze phase.
 
 **Extra columns (6):** `rel_a`, `rel_b`, `corridor`, `off_rail`, `rail_dist`, `rail_nearest`
 
@@ -1546,7 +1528,7 @@ Seven values each, `A1`…`A7`, base to wrist. **Radians and newton-metres — S
 |---|---|---|---|
 | `meas_A1..A7` | rad | `measured_joint_position` | Where the arm actually is. |
 | `cmd_A1..A7` | rad | `commanded_joint_position` | Where the cabinet is commanding it to be — under Cartesian impedance this is the *equilibrium*, not a position the arm will reach. |
-| `ext_A1..A7` | Nm | `external_torque` | Torque the cabinet attributes to outside forces, gravity model removed. This is how a pull is measured without a force sensor. A steady non-zero value at rest means un-modelled tool mass — that is what diagnosed the 3.0 Nm A2 sag. |
+| `ext_A1..A7` | Nm | `external_torque` | Torque the cabinet attributes to outside forces, gravity model removed. This is how a pull is measured without a force sensor. A steady non-zero value at rest means un-modelled tool mass. |
 
 **`cmd − meas` is the impedance droop.** Under Cartesian impedance the arm deliberately lags its
 equilibrium by `F / k`; that difference is the signal, not an error.
@@ -1582,7 +1564,7 @@ finer timing by interpolating the underlying signal — see the clock section be
 
 | Column | Unit | Source | Meaning |
 |---|---|---|---|
-| `disp_m` | m | `CartesianImpedanceDisplacementMonitor` | Distance of the EE from the baseline pose locked at `armed`, along `cartesian_axis` (`norm` = 3-D distance). **The dependent variable.** The trial ends when it crosses `cartesian_displacement_threshold_m`. Recording it per sample is what makes the crossing time recoverable to sub-millisecond by interpolation. |
+| `disp_m` | m | `CartesianImpedanceDisplacementMonitor` | Distance of the EE from the baseline pose locked at `armed`, along `cartesian_axis` (`norm` = 3-D distance). **`nan` when the monitor is not measuring**: before `armed`, and from the end of the post-snap hold onward. **The dependent variable.** The trial ends when it crosses `cartesian_displacement_threshold_m`. Recording it per sample is what makes the crossing time recoverable to sub-millisecond by interpolation. |
 
 #### Maze only
 
@@ -1598,9 +1580,8 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `off_rail` | 0 / 1 | 1 when the arm is further than `on_rail_tol` from every corridor — i.e. being actively pulled back by the virtual fixture. Mirrors `corridor == -1`. |
 | `rail_dist` | m | Distance to the **nearest** corridor segment, always populated. On-rail it is ≤ `on_rail_tol`; off-rail it is how hard the fixture is working. |
 
-`rail_nearest` exists because `_maze_coords` used to work out the nearest corridor and then
-throw it away when off-rail, so `corridor` read −1 and the file could not say *which* corridor the
-arm had been pushed off. It is always populated, on-rail or not.
+`rail_nearest` is the index of the nearest corridor, **always populated** — on-rail or not. Off-rail,
+`corridor` reads −1, and `rail_nearest` says *which* corridor the arm has been pushed off.
 
 #### Sidecar fields
 
@@ -1632,28 +1613,100 @@ A 10-minute maze run is ~33 MB. Rows are written **incrementally** and flushed o
 and the sidecar is rewritten on every event — so a crash or Ctrl-C costs at most the last fraction
 of a second, and the interrupted trial is marked `partial: true` rather than looking complete.
 
-Recorded data is gitignored — `analysis/expt_*/`, plus `analysis/*.csv` and `*.meta.json` for
-recordings made before the per-launch folders.
+Recorded data is gitignored ([Where files go](#where-files-go)).
 
 ### Working with the data
+After a session, check the recordings, then plot them. The scripts in `analysis/` need only Python 3
+with numpy and matplotlib: no ROS, no pandas. They run on the ROS computer, or on any laptop you
+copy an `analysis/expt_*` folder to (keep the `.csv` and `.meta.json` pairs together).
+
+**1. Find the run.** Each launch writes one folder, `analysis/expt_<launch name>_<start time>/`, with
+one CSV and one `.meta.json` sidecar per trial ([Where files go](#where-files-go)). The dashboard's
+Run card shows the folder of the current run.
 
 ```bash
-python3 analysis/plot_trajectory.py                  # newest trial
-python3 analysis/plot_trajectory.py --save out.gif   # animated, headless-safe
-python3 analysis/validate_recording.py --all         # exit 1 if any trial is unsound
+cd ~/lbr-stack/src/sinthlab-kuka-stack/analysis
+ls -d expt_*/                                   # one folder per launch, newest last
 ```
 
-**`plot_trajectory.py`** draws two panels. The first is the maze view for maze runs, or — new —
-`disp_m` against time for pluck and perturb, with the threshold line and the `armed` / `snap`
-markers, so reaction time is the gap between them. The second is the 3-D Cartesian path with trial
-events marked on it, so "where was the arm when this happened" needs no cross-referencing against a
-log. Maze rails come from the trial's **sidecar** when present and fall back to `maze_params.yaml`
-for older recordings. Both schemas load, so existing 9-column files still plot.
+**2. Validate it** before analysing anything. The dashboard's **Validate recording** button runs the
+same check.
 
-**`validate_recording.py`** is to a recording what `check_layout.py` is to the CAD: schema, sample
-rate and gaps, cabinet-clock monotonicity, FRI session/safety/drive healthy for the *whole* trial,
-every expected event present once and in order, sidecar complete. Non-zero exit, so it can gate a
-batch analysis.
+```bash
+python3 validate_recording.py --folder expt_iiwa7_apple_pluck_impedance_control_20260923_160523
+python3 validate_recording.py                   # just the newest trial
+python3 validate_recording.py --all             # every trial in every folder
+```
+
+It checks each trial for:
+- the right schema;
+- the sample rate, with no gaps;
+- a monotonic cabinet clock;
+- a healthy FRI session, safety state and drives for the whole trial;
+- every expected event, once and in order;
+- a complete sidecar;
+- for pluck / perturb, that the `disp_m` peak agrees with whether `snap` happened.
+
+Exit code 1 if any trial fails, so it can gate a batch script. A trial cut off by **Stop now** or
+Ctrl-C passes as `PASS (partial)`: what is there is sound, but it did not finish.
+
+**3. Plot it.**
+
+```bash
+python3 plot_trajectory.py                                        # newest trial, in a window
+python3 plot_trajectory.py --folder expt_iiwa7_maze_20260924_101500 # every trial of one run, overlaid
+python3 plot_trajectory.py --file expt_iiwa7_maze_20260924_101500/robot_trajectory_20260924_101512.csv
+python3 plot_trajectory.py --folder <run> --save run.png          # static image of the final frame
+python3 plot_trajectory.py --file <trial.csv> --save trial.gif    # animated GIF of the 3-D path
+```
+
+Paths are relative to `analysis/` (absolute paths work too). On WSL or any headless computer use
+`--save`; a `.png` is the final frame, and a `.gif` animates.
+
+| Option | Effect |
+|---|---|
+| `--file <csv>` | one trial |
+| `--folder <expt_… folder>` | every trial of one launch, overlaid |
+| `--all` | every trial in every folder, overlaid (mixes runs; mostly for a quick look) |
+| `--save out.png` \| `out.gif` | write a file instead of opening a window |
+| `--no-anim` | draw the whole 3-D path at once |
+| `--fps 25`, `--frames 250` | GIF playback rate and length (more frames = smoother, slower to render) |
+| `--elev 22`, `--azim -58` | 3-D view angle; `--elev 0 --azim 0` looks straight down +X |
+| `--stretch-x` | magnify X to show drift off the maze plane. **This distorts the view**, and the title says so |
+
+**What the two panels show:**
+- **Left, apple pluck / perturb: displacement against time.**
+  - `disp_m` in mm, with the threshold line;
+  - markers at `cue_go`, `armed`, `perturb_applied` (perturb) and `snap`;
+  - reaction time is the gap between `armed` and `snap`;
+  - with `--folder`, every trial overlaid and labelled by its start time.
+- **Left, maze: the maze face-on** (sideways a × vertical b, metres from the start).
+  - the rails in grey, the forks (checkpoints) as orange rings, the goal as a green star;
+  - the operator's path, with red dots wherever it was off a rail;
+  - rails come from the trial's sidecar, so the plot shows the maze that was actually run.
+- **Right, every experiment: the 3-D end-effector path** in the base frame, with the start and every
+  trial event marked. It is animated with `--save *.gif`. With `--folder` it shows the last trial.
+
+**4. Retime a GIF** to line up with camera footage, without re-rendering:
+
+```bash
+python3 retime_gif.py trial.gif --show          # how long it plays now
+python3 retime_gif.py trial.gif 57 -o synced.gif   # make it play in exactly 57.0 s
+```
+
+**Your own analysis.** A trial is a plain CSV plus a JSON sidecar; the
+[data dictionary](#data-dictionary) documents every column and field.
+
+```python
+import csv, json
+rows = list(csv.DictReader(open("expt_…/robot_trajectory_20260923_160541.csv")))
+meta = json.load(open("expt_…/robot_trajectory_20260923_160541.meta.json"))
+events = meta["events"]            # precise event times (wall, ROS and cabinet clock)
+params = meta["params"]            # every parameter this trial ran with
+```
+
+Align to neural data with the cabinet clock, `fri_s` / `fri_ns`; see
+[Sync to the Blackrock NSP](#sync-to-the-blackrock-nsp).
 
 ### Where files go
 
@@ -1673,8 +1726,7 @@ Each wrapper launch file sets `RUN_NAME` to its own stem and passes it through
 orchestrator's node name. One CSV + sidecar per trial inside it, so a bad trial is a file you
 delete rather than a row range you have to remember to exclude.
 
-**All of it is gitignored** (`analysis/expt_*/`, and `analysis/*.csv` / `*.meta.json` for flat
-recordings made before the folders). Recorded data is never version-controlled.
+**All of it is gitignored** (`analysis/expt_*/`, and any loose `analysis/*.csv` / `*.meta.json`). Recorded data is never version-controlled.
 
 ## 8. Troubleshooting
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
@@ -1776,85 +1828,62 @@ under the Apache License 2.0 (see [`vendored_controllers/LICENSE`](vendored_cont
 
 ---
 
-## Appendix — FRI torque mode: an experiment that did not work out
+## Appendix — why FRI position mode, not torque mode
 
-This records an attempt to move the fixture experiments from FRI **position** mode to FRI **torque**
-mode. **It was reverted** — none of it is in the repo any more. It is written down so the reasoning is
-not lost if anyone considers it again.
+Every experiment runs in FRI **position** mode, with the cabinet computing the Cartesian spring. FRI
+**torque** mode (cabinet gravity compensation only, the whole spring computed in ROS) looks like the
+route to variable impedance, but on this arm it has hard constraints.
 
-### Why we tried it
-
-The maze felt wrong at every cabinet stiffness: at `Maze compliant (uniform 400)` the walls were too
-weak to feel; at `Stiff (3000)` the arm was too heavy to move. idra-lab's wiki states that their
-proprietary-impedance path has **"no runtime stiffness tuning"** and cannot add custom torque terms,
-and that their **custom torque control** branch exists precisely to provide variable impedance. That
-looked like the principled fix: cabinet does gravity compensation only, ROS computes the whole
-Cartesian spring at the control rate, giving genuinely soft interiors with firm walls.
-
-### What we built (all since removed)
-
-- Vendored `idra-lab/ros2_effort_controller` (`effort_controller_base`, `cartesian_impedance_controller`,
-  `joint_impedance_controller`, `debug_msg`) with two local patches: one for a Jazzy `get_value()` that
-  throws `std::bad_optional_access` on an empty state interface, one adding a joint-space target topic
-  to bypass a fragile Cartesian→IK round trip.
-- `TorqueControl.java` — a Sunrise FRI app running a joint overlay in `ClientCommandMode.TORQUE`.
-- Torque FRI system config, controller config, per-experiment stiffness overlays, a joint-space move
-  action, and a zero-torque "float" diagnostic.
-
-### What we observed on hardware
+### What torque mode does on this arm
 
 1. **In `ClientCommandMode.TORQUE` the joint position you send is not the servo reference.** The cabinet
-   keeps servoing to the `positionHold` pose captured when the Sunrise app started; your torque is
-   added on top. Confirmed directly — push the arm and it springs back to the app-start pose no matter
-   what position is commanded. **Torque mode can only perturb the arm around an anchor; it cannot drive
-   it anywhere.** That invalidated the whole move-to-start design.
-2. **Zero cabinet stiffness is unusable on this arm.** `JointImpedanceControlMode(0,…,0)` leaves nothing
-   holding the joints, so the ~2.5 Nm gravity-compensation residual makes the arm drift until FRI aborts
-   with **"illegal axis delta"** — reproduced with **zero commanded torque and none of our control
-   code**, using lbr's own `lbr_torque_command_controller`.
-3. **Non-zero cabinet stiffness fixes the drift but tethers the arm** to the app-start pose:
+   servos to the `positionHold` pose captured when the Sunrise app starts, and the commanded torque is
+   added on top: push the arm and it springs back to the app-start pose whatever position is commanded.
+   **Torque mode can only perturb the arm around that anchor; it cannot drive it anywhere**, so it
+   cannot run a move-to-start.
+2. **Zero cabinet stiffness is unusable.** `JointImpedanceControlMode(0,…,0)` leaves nothing holding the
+   joints, so the ~2.5 Nm gravity-compensation residual makes the arm drift until FRI aborts with
+   **"illegal axis delta"** — even with zero commanded torque, using lbr's own
+   `lbr_torque_command_controller`.
+3. **Non-zero cabinet stiffness stops the drift but tethers the arm** to the app-start pose:
 
    | K [Nm/rad] | sag (2.5 Nm residual) | tether at EE 20 cm from start |
    |---|---|---|
    | 30 | ~4.8 deg (visible) | ~9 N |
    | 50 | ~2.9 deg (not visible) | ~16 N |
 
-   30 was the lowest that held. That tether is superimposed on every fixture force.
+   K = 30 is the lowest that holds, and that tether adds to every fixture force.
 4. **Both the sag and the stiffness floor are set by the gravity residual** (`sag = residual / K`). With
-   a 0.5 Nm residual, K=10 would give less sag than K=50 does at 2.5 Nm, with a third of the tether. So
+   a 0.5 Nm residual, K = 10 would sag less than K = 50 does at 2.5 Nm, with a third of the tether. So
    torque mode's quality is gated on gravity-compensation accuracy.
 5. **Echoing the measured joint position as the FRI position command breaks under fast motion.** FRI
    limits how much the commanded position may change per cycle; a raw echo changes as fast as the
-   operator's hand, and trips "illegal axis delta". It needs rate limiting.
-6. Also learned the hard way: the effort controllers hard-abort the **process** (`std::terminate`) if a
-   newly desired joint torque differs from the applied one by more than 10 Nm, and joint damping of
-   `2*sqrt(K)` turns velocity noise into large torque swings — at K=200 a mere 0.14 rad/s transient
-   trips it, which is less than the arm's own glide speed.
+   operator's hand and trips "illegal axis delta". It needs rate limiting.
+6. **The idra-lab effort controllers abort the process** (`std::terminate`) if a newly desired joint
+   torque differs from the applied one by more than 10 Nm, and joint damping of `2*sqrt(K)` turns
+   velocity noise into large torque swings — at K = 200 a 0.14 rad/s transient trips it, less than the
+   arm's own glide speed.
 
-### Why we went back to position mode
+### Why position mode is enough
 
-Two levers that directly address the original complaint had **never been tested** before the migration:
+**Soft-inside does not come from low stiffness.** Inside a corridor the fixture's projection returns the
+measured pose, so the spring error — and the force — is ~zero whatever K is. High K only bites at the
+walls. Firm walls and a free interior are therefore not in conflict, *provided the equilibrium can
+track the hand*. Position mode gets both from two settings:
 
-- **The CLIK tracking clamps.** `max_linear_velocity: 0.4` and `max_target_step_m: 0.01` cap how fast
-  the commanded equilibrium can chase the hand. Move faster and it falls behind *cumulatively*, so the
-  error — and `K * error` — grows without bound. **That, not stiffness, is what made the maze feel
-  stiff.** Now 1.0 m/s and 0.05 m.
-- **Anisotropic cabinet stiffness.** `LbrImpedanceControlServer` always supported a full per-axis
-  `{X,Y,Z,A,B,C}` diagonal, but every maze profile we had tried was uniform. Added
-  `Maze walls (X lock, Y/Z firm)` = `{2500, 1000, 1000, 300, 300, 300}`.
+- **The CLIK tracking clamps:** `kuka_clik_controller.max_linear_velocity` (1.0 m/s) and
+  `max_target_step_m` (0.05 m) let the commanded equilibrium keep up with hand-guiding speed, so it never
+  falls behind cumulatively.
+- **An anisotropic cabinet stiffness:** `LbrImpedanceControlServer` takes a full per-axis
+  `{X,Y,Z,A,B,C}` diagonal, e.g. `Maze walls + easy guiding (rot 120)` =
+  `{2500, 1000, 1000, 120, 120, 120}` — lock the constrained axis hard, keep the free axes firm enough
+  for walls.
 
-And the principle we had lost sight of: **soft-inside does not come from low stiffness.** Inside a
-corridor the fixture's projection returns the measured pose, so spring error — and force — is ~zero
-whatever K is. High K only bites at the walls. Firm walls and a free interior are therefore not in
-conflict, *provided the equilibrium can track the hand*. Both of the maze's failure modes are explained
-by this, and neither was a test of the right configuration.
+### When torque mode would be worth reconsidering
 
-### If you revisit torque mode
+Only when **both** hold:
 
-Everything above was removed, but it is recoverable from git history (the work sits between the commits
-"moving to torque plane from clik" and the revert). Do not start again until **both** hold:
-
-- The real end effector is mounted **and** SmartPad **Determine** has been run and persisted to
+- the real end effector is mounted **and** SmartPad **Determine** has been run and persisted to
   `RoboticsAPI.data.xml`, so the gravity residual — and with it the stiffness floor and the tether —
   drops; **and**
 - the experiment design can accept an operator pre-positioning the arm, since torque mode anchors at

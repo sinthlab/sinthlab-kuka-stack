@@ -68,7 +68,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
 
-        # Trial data. Until now this experiment recorded NOTHING -- see README.md section 7, Data Collected.
+        # Trial data -- see README.md section 7, Data Collected.
         # disp_m is the dependent variable and is sampled here every state message, so the threshold
         # crossing can be interpolated offline to finer than the 10 ms cabinet stamp.
         # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.

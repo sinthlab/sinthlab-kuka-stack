@@ -11,8 +11,8 @@
 
     move_to_start:  # joint-space move to the trial start pose
       update_rate: 200  # loop rate of this action [Hz]
-      # Tool points down -Z: the original apple-pluck start (apple pluck and perturb now start with the
-      # apple pointing at the monkey -- see apple_pluck_impedance.yaml).
+      # Tool points down -Z. (Apple pluck and perturb start with the apple pointing at the monkey
+      # instead -- see apple_pluck_impedance.yaml.)
       target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # start pose, joint angles A1..A7 [deg]
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
@@ -83,9 +83,9 @@
     #   max_displacement_m: the sine pull legitimately travels up to the displacement-monitor threshold
     #     (0.5 m in z), so this only trips well beyond that.
     #   max_speed_mps: must clear a brisk legitimate pull. The CLIK lets the commanded equilibrium chase
-    #     the hand at up to max_linear_velocity (1.0 m/s), so the arm can legitimately move near that --
-    #     1.2 was calibrated back when that clamp was 0.4 and now false-trips. 1.8 still catches a fall
-    #     (free fall passes 1.8 m/s in ~0.18 s / 16 cm).
+    #     the hand at up to max_linear_velocity (1.0 m/s), so the arm can legitimately move near that and
+    #     a limit near 1.2 false-trips. 1.8 still catches a fall (free fall passes 1.8 m/s in ~0.18 s /
+    #     16 cm).
     #   speed_trip_samples: speed is a single-sample TF difference and therefore noisy; require this many
     #     CONSECUTIVE over-threshold samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort.
     plane_safety:  # runaway stop: abort to recovery if the arm goes too far or too fast
@@ -104,10 +104,9 @@
       # The KUKA cabinet runs Cartesian impedance (run LbrImpedanceControlServer on the SmartPad);
       # this node streams the fixture-constrained equilibrium pose.
       # Cap on commanded-equilibrium move per tick [m]. This is the SECOND tracking-lag clamp (the
-      # first is kuka_clik_controller.max_linear_velocity): at 0.01 m/tick and ~100 Hz state the
-      # equilibrium could only chase the hand at 1 m/s, but combined with the CLIK clamp it was the
-      # binding constraint that made the fixture feel stiff while moving. 0.05 keeps it a jerk guard
-      # against spikes without throttling normal guiding.
+      # first is kuka_clik_controller.max_linear_velocity): at ~100 Hz state, a small step (0.01 m/tick
+      # = 1 m/s) becomes the binding constraint and the fixture feels stiff while moving. 0.05 keeps it
+      # a jerk guard against spikes without throttling normal guiding.
       max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
       simple_plane:  # lock one base axis, free the other two
         type: "plane"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
@@ -143,10 +142,10 @@
         # you at most `amplitude` off it, so the worst case is K_y * amplitude = 40 N at 1000 N/m. The
         # steeper slope (amplitude*spatial_freq = 1.2, a 50 deg rail) costs no extra force — it only
         # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull, so the CLIK's
-        # max_linear_velocity must exceed it or the rail gets rate-limited flat (now 1.0 m/s).
+        # max_linear_velocity (1.0 m/s) must exceed it or the rail gets rate-limited flat.
         # Pair with the "Rail guide (uniform 1000)" cabinet profile.
-        # History: the original 0.1 / 20.0 was slope 2.0 (63 deg) and a 10 cm error = 300 N at "Stiff" —
-        # it would have slammed the arm sideways and tripped the cabinet.
+        # Keep the slope moderate: 0.1 / 20.0 would be slope 2.0 (63 deg), and a 10 cm error = 300 N at
+        # "Stiff" -- enough to slam the arm sideways and trip the cabinet.
         amplitude: 0.04  # sideways swing of the rail [m] -- this sets the force
         spatial_freq: 30.0  # rail frequency along the pull [rad/m]; wavelength = 2*pi / this
         pull_axis: "z"  # axis the operator pulls along (free)

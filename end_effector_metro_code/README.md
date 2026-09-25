@@ -398,9 +398,8 @@ bundle, and `README.md` never leaves the repo.
 The board's own drive also carries `boot_out.txt` (written *by* CircuitPython at boot — firmware
 version, board ID, UID) and the zero-byte macOS indexing suppressors `.fseventsd/no_log`,
 `.metadata_never_index` and `.Trashes`. **Leave all of those on the board**; none are mirrored here,
-because none are ever deployed *from* the repo. The Adafruit factory-demo leftovers that shipped on
-the drive (`simpleio`, `adafruit_dotstar`, `adafruit_hid/`, `adafruit_waveform/`, and the stock
-`README.txt`) have been **removed** — `code.py` imports none of them.
+because none are ever deployed *from* the repo. Nothing else belongs on the drive: `code.py` needs
+only the files listed here.
 
 ### `lib/` — what is actually required
 
@@ -411,7 +410,7 @@ the drive (`simpleio`, `adafruit_dotstar`, `adafruit_hid/`, `adafruit_waveform/`
 | `adafruit_httpserver/` | The routing / request / response layer. |
 | `adafruit_bus_device/` | SPI transaction helper — a dependency of `adafruit_esp32spi`. |
 
-`lib/` has been trimmed to exactly these four. Leave everything *inside* `adafruit_esp32spi/` as it
+`lib/` holds exactly these four. Leave everything *inside* `adafruit_esp32spi/` as it
 is — the package imports its own submodules internally, so its apparent duplicates (`socketpool` vs
 `adafruit_esp32spi_socketpool`, `wifimanager` vs `adafruit_esp32spi_wifimanager`) are not spare
 copies to prune.
@@ -605,7 +604,7 @@ handler callable directly.
 | Cue hygiene | a cue restores what the ring was showing; a manual command cancels it and wins |
 | LED test | exactly one LED lit per step, every LED through all four colours in order, `from`/`to`/`loop`, and a cue or manual command stops it without leaving a test pixel behind |
 | File access | read-only, refuses `settings.toml`, refuses traversal, no write route |
-| Regressions | settings and endpoints removed in earlier redesigns stay removed |
+| Surface | the HTTP endpoints are exactly the documented set, and `/status` reports every documented field |
 
 **What it does not cover:** anything physical — the flange wiring, the real ESP32, LED timing,
 current draw. It checks logic, not electrons. Still bench-test with a jumper on `D2`
@@ -732,10 +731,10 @@ and no optocoupler. Full pinout in
 **Not the cabinet.** The flange has no cabinet-driven I/O and the Sunrise project has no generated
 I/O groups, so Sunrise has no output that could drive X76.
 
-**Driven by the ROS computer, over an RS‑422 serial link — decided, parts on order.** The earlier plan
-was a USB relay closing X76 1/2 as a dry contact. It changed because the pressure sensor needs a data
-channel off the tool anyway, and once a differential link is on the flange a relay is redundant and
-two orders of magnitude slower (5–15 ms mechanical against ~80 µs of wire time). StarTech ICUSB422IS
+**Driven by the ROS computer, over an RS‑422 serial link — decided, parts on order.** The pressure
+sensor needs a data channel off the tool anyway, and one differential link carries both; a
+dry-contact relay on X76 1/2 would be two orders of magnitude slower (5–15 ms mechanical against
+~80 µs of wire time). StarTech ICUSB422IS
 on the ROS box, MikroE MIKROE‑2821 at the tool; wiring in
 [`end_effector_design/README.md`](../end_effector_design/README.md) step 4.
 

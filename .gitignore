@@ -1,6 +1,6 @@
 __pycache__/
-# Recorded trial data -- never version-controlled. One folder per launch since the recorder
-# moved to analysis/expt_<run>_<timestamp>/; the flat patterns cover recordings made before that.
+# Recorded trial data -- never version-controlled. One folder per launch (analysis/expt_<run>_<timestamp>/),
+# plus any loose CSV / sidecar in analysis/ (the restricted-plane fixture writes its CSV there).
 analysis/*.csv
 analysis/*.meta.json
 analysis/expt_*/

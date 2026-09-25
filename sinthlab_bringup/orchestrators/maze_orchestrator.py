@@ -48,8 +48,8 @@ class MazeOrchestratorNode(rclpyNode):
         # Pre-start waypoint, used ONLY when the arm is parked in a near-singular ("straight") posture
         # such as mechanical zero -- a Cartesian-impedance move commanded from there does not reliably
         # reach the maze start (see move_to_prestart in maze_params.yaml). It is NOT run otherwise:
-        # dragging the arm out to a different posture and back is disruptive and was causing the arm to
-        # detour to the restricted-plane start even when it was already sitting at the maze start.
+        # dragging the arm out to a different posture and back is disruptive, and an arm already at the
+        # maze start should go straight there rather than detour to the restricted-plane start.
         self.move_to_prestart = MoveToPositionJointSpace(
             self, param_prefix="move_to_prestart", on_complete=self.on_prestart_complete
         )
@@ -87,9 +87,9 @@ class MazeOrchestratorNode(rclpyNode):
         self.go_cue_visual = VisualCue(self, label="play", on_complete=lambda: None)
         self.maze_fixtures = MoveInMazeAction(self, param_prefix="", own_recorder=False)
 
-        # Trial data. Replaces the fixture's own 9-column TrajectoryRecorder, which started at the
-        # GO CUE -- that is why every existing maze CSV begins mid-trial, and why matching a run
-        # against video needed a manual offset. This records from trial start and marks the cue.
+        # Trial data -- see README.md section 7, Data Collected. Records from trial START (approach and
+        # settle included, not just the maze phase) and marks the go cue, so a run lines up with video
+        # without a manual offset.
         # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "maze")

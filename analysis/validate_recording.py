@@ -101,7 +101,7 @@ def validate(path) -> bool:
 
     if meta is None:
         if "rel_a" in head and "t" not in head:
-            r.note("9-column pre-spec recording; only the legacy checks apply")
+            r.note("fixture-recorder file (time + position, no sidecar); only the basic checks apply")
             r.check(len(body) > 10, f"{len(body)} samples")
             return not r.bad
         r.check(False, "no .meta.json sidecar beside the CSV")
@@ -213,7 +213,8 @@ def validate(path) -> bool:
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
     if exp in ("apple_pluck", "perturb") and "disp_m" in head:
-        vals = [v for v in col(head, body, "disp_m") if v is not None]
+        # NaN = monitor not measuring (before armed / after completion); v == v drops it.
+        vals = [v for v in col(head, body, "disp_m") if v is not None and v == v]
         peak = max(vals) if vals else 0.0
         thr = (meta or {}).get("threshold_m")
         if thr:

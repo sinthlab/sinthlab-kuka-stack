@@ -137,9 +137,8 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
     # IN THE MAZE, and which corridor am I in". These add maze-relative columns so a run can be plotted
     # straight on top of the corridor rectangles from maze_params.yaml.
     def _record_extra_header(self):
-        # rail_nearest is the sixth: _maze_coords works out the nearest corridor BEFORE the on-rail
-        # test and then throws it away, so `corridor` reads -1 off-rail and the data could not say
-        # WHICH corridor the arm was pushed off. The debug log printed it; the file did not.
+        # rail_nearest is the sixth: `corridor` reads -1 off-rail, so rail_nearest (worked out BEFORE
+        # the on-rail test) is what says WHICH corridor the arm has been pushed off.
         return ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]
 
     # Public name for the same thing, so a TrialRecorder owned by the orchestrator can use it as its
@@ -168,7 +167,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         the arm is OUTSIDE every corridor (i.e. being held against a wall). clamped mirrors that as 0/1.
         """
         if self._initial_transform is None:
-            # Not anchored yet. The recorder now runs from trial START, so this branch is hit for
+            # Not anchored yet. The recorder runs from trial START, so this branch is hit for
             # every sample of the approach -- it MUST return the same arity as the anchored path or
             # the unpack below raises, and the recorder swallows it, losing the approach silently.
             return 0.0, 0.0, -1, 1, 0.0, -1

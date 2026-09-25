@@ -297,7 +297,7 @@ def main():
           f"+ tier2 {v['base2_floor'] + v['comp2_depth']:.0f} + cover {v['cover_plate_t']:.0f} = {stack:.0f} mm; "
           f"apple centre {stack + ball_c:.0f} mm above the robot flange")
 
-    print("\nstrength at the base <-> flange joint (this is where the v0.6 prototype broke)")
+    print("\nstrength at the base <-> flange joint (the most failure-prone joint in bending)")
     lever = (stack + ball_c) / 1000.0
     moment = 20.0 * lever
     rr = v["plate_screw_bcd"] / 2
@@ -305,13 +305,13 @@ def main():
     print(f"  ---- 20 N at the apple = {moment:.2f} N.m; couple across Ø{v['plate_screw_bcd']:.0f} "
           f"= {per:.0f} N per screw on the tension side")
     report(v["plate_head_z"] >= 8,
-           f"{v['plate_head_z']:.0f} mm of printed floor under each screw head (was 5 in v0.6)")
+           f"{v['plate_head_z']:.0f} mm of printed floor under each screw head (>= 8 required)")
     report(v["base1_floor"] - v["trench_sink"] >= 6,
            f"{v['base1_floor'] - v['trench_sink']:.0f} mm of floor left where a cable channel crosses")
     report(rr + cbore / 2 < v["plate_d"] / 2 - 6,
            f"bolt circle r {rr:.0f} sits {v['plate_d']/2 - rr - cbore/2:.1f} mm inside the Ø{v['plate_d']:.0f} plate rim")
     over = v["base_d"] / 2 - v["plate_d"] / 2
-    report(over < 35, f"tier-1 floor overhangs the plate by {over:.0f} mm (was 39 at Ø110)")
+    report(over < 35, f"tier-1 floor overhangs the plate by {over:.0f} mm (< 35 required)")
     report(v["fillet_r"] >= 2,
            f"R{v['fillet_r']:.0f} fillets at the compartment corners and pillar bases")
     report((v["case_box_side"] - 2 * v["case_box_wall"] - v["base_d"]) / 2 > 0,

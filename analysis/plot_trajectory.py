@@ -10,7 +10,7 @@ Two views:
     just duplicate it. --elev/--azim rotate it (use --elev 0 --azim 0 for the face-on view).
 
 Runs on numpy + matplotlib only -- deliberately NO pandas, which is not installed in the ROS
-environment on the arm box and made the previous version unrunnable there.
+environment on the arm box.
 
     python3 plot_trajectory.py                 # newest CSV, both views on screen
     python3 plot_trajectory.py --save out.gif  # animated GIF (headless / WSL)
@@ -18,7 +18,8 @@ environment on the arm box and made the previous version unrunnable there.
     python3 plot_trajectory.py --fps 40 --frames 400
     python3 plot_trajectory.py --elev 0 --azim 0   # face-on Y-Z instead of perspective
     python3 plot_trajectory.py --file robot_trajectory_20260902_115639.csv
-    python3 plot_trajectory.py --all           # overlay every CSV in the folder (maze view)
+    python3 plot_trajectory.py --folder expt_iiwa7_maze_20260924_101500   # overlay every trial of one run
+    python3 plot_trajectory.py --all           # overlay every CSV from every run
 """
 from __future__ import annotations
 
@@ -37,9 +38,9 @@ PARAMS = os.path.join(HERE, "..", "sinthlab_bringup", "config", "maze_params.yam
 def load_csv(path):
     """Return {column: np.array}, plus "_events" -> [(row, token, arg), ...].
 
-    Reads both schemas: the 9-column files written before README.md section 7, Data Collected and the
-    42/47-column ones written since. `event` is text, so it is pulled out separately rather than
-    coerced to NaN like every other column."""
+    Reads both formats: the TrialRecorder's 42/47-column files (README.md section 7, Data Collected)
+    and the restricted-plane fixture's own time + position files. `event` is text, so it is pulled
+    out separately rather than coerced to NaN like every other column."""
     with open(path) as f:
         rows = list(csv.reader(f))
     head, body = [h.strip() for h in rows[0]], rows[1:]
@@ -86,8 +87,8 @@ def load_sidecar(csv_path):
 
 
 def plot_displacement(ax, chosen, sidecar):
-    """disp_m against time -- the view for apple pluck and perturb, which have no maze coordinates
-    and until now got an empty first panel. The threshold and the armed/snap moments are what make
+    """disp_m against time -- the view for apple pluck and perturb, which have no maze coordinates.
+    The threshold and the armed/snap moments are what make
     the trial readable: reaction time is the gap between the two markers."""
     for path in chosen:
         d = load_csv(path)
@@ -96,7 +97,7 @@ def plot_displacement(ax, chosen, sidecar):
         t, disp = time_col(d), d["disp_m"] * 1000.0
         single = len(chosen) == 1
         ax.plot(t, disp, lw=1.4, zorder=3,
-                label="displacement" if single else os.path.basename(path)[18:-4])
+                label="displacement" if single else os.path.basename(path)[len("robot_trajectory_"):-4])
         marks = {"armed": ("tab:blue", "^"), "snap": ("tab:red", "v"),
                  "cue_go": ("tab:green", "|"), "perturb_applied": ("tab:purple", "D")}
         seen = set()
@@ -149,7 +150,8 @@ def load_rails(profile=None, sidecar=None):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", help="specific CSV (default: newest in this folder)")
-    ap.add_argument("--all", action="store_true", help="overlay every CSV (maze view only)")
+    ap.add_argument("--folder", help="overlay every trial in this expt_* folder (one launch)")
+    ap.add_argument("--all", action="store_true", help="overlay every CSV from every run")
     ap.add_argument("--save", help="write here instead of showing a window; .gif animates, .png is static")
     ap.add_argument("--fps", type=int, default=25, help="animation frames per second")
     ap.add_argument("--frames", type=int, default=250, help="how many frames to render")
@@ -175,6 +177,12 @@ def main() -> int:
         return 1
     if a.file:
         chosen = [a.file if os.path.isabs(a.file) else os.path.join(HERE, a.file)]
+    elif a.folder:
+        folder = a.folder if os.path.isabs(a.folder) else os.path.join(HERE, a.folder)
+        chosen = sorted(glob.glob(os.path.join(folder, "robot_trajectory_*.csv")))
+        if not chosen:
+            print(f"No trajectory CSV files in {folder}.")
+            return 1
     elif a.all:
         chosen = files
     else:
@@ -189,7 +197,7 @@ def main() -> int:
     if sidecar:
         src = "sidecar" if sidecar.get("maze_geometry") else "maze_params.yaml"
         print(f"  {sidecar.get('experiment')} trial {sidecar.get('trial_index')} "
-              f"(schema v{sidecar.get('schema_version')}), rails from {src}")
+              f"(schema v{sidecar.get('schema_version')})" + (f", rails from {src}" if has_maze else ""))
     if not has_maze:
         rails, params = [], None      # nothing to draw them against
 
@@ -217,7 +225,7 @@ def main() -> int:
             continue
         a_, b_ = d["rel_a"], d["rel_b"]
         off = d.get("off_rail", np.zeros_like(a_))
-        lbl = os.path.basename(path)[18:-4] if len(chosen) > 1 else "path"
+        lbl = os.path.basename(path)[len("robot_trajectory_"):-4] if len(chosen) > 1 else "path"
         ax1.plot(a_, b_, lw=1.2, alpha=0.85, zorder=3, label=lbl)
         m = off > 0.5
         if m.any():
@@ -278,7 +286,8 @@ def main() -> int:
             ax2.scatter([x[row]], [y[row]], [z[row]], color=c, marker=m, s=sz, zorder=8,
                         label=(tok if tok not in shown else None))
             shown.add(tok)
-    ax2.set_xlabel("X (m)  — locked")
+    # X is the LOCKED axis only in the maze; for pluck / perturb it is toward the monkey.
+    ax2.set_xlabel("X (m)  — locked" if has_maze else "X (m)  — toward the monkey")
     ax2.set_ylabel("Y (m)  — sideways")
     ax2.set_zlabel("Z (m)  — height")
     ax2.set_title("Cartesian path (3-D, base frame)")
@@ -287,11 +296,10 @@ def main() -> int:
     # ALL THREE AXES SHARE ONE SCALE by default, so the picture is metrically honest: the path really
     # is nearly planar (X is the locked axis and moves only millimetres), and it should LOOK planar.
     #
-    # An earlier version gave X its own tighter scale to make drift visible. That magnified X by ~10x
-    # relative to Y/Z, so a 7 mm wobble was drawn like 70 mm of in-plane error and the arm appeared to
-    # be off the rails for most of the run when it was actually within 2.3 mm of them (median).
-    # Magnifying one axis of a trajectory plot is a good way to invent a problem that is not there, so
-    # it is now opt-in via --stretch-x and the title says so when it is on.
+    # Giving X its own tighter scale magnifies it ~10x relative to Y/Z: a 7 mm wobble is drawn like
+    # 70 mm of in-plane error, and an arm within 2.3 mm of the rails (median) looks off them for most
+    # of the run. Magnifying one axis of a trajectory plot invents problems, so it is opt-in via
+    # --stretch-x and the title says so when it is on.
     rng = max(x.ptp(), y.ptp(), z.ptp()) / 2.0 or 0.1
     cy, cz = y.mean(), z.mean()
     ax2.set_ylim(cy - rng, cy + rng); ax2.set_zlim(cz - rng, cz + rng)
@@ -305,7 +313,7 @@ def main() -> int:
     face_on = abs(a.elev) < 5 and abs(a.azim) < 5
     if face_on:
         ax2.set_xticks([])                 # not just the labels: the tick marks smear too, edge-on
-        ax2.set_xlabel("X — locked axis (edge-on)", labelpad=-6)
+        ax2.set_xlabel("X — locked axis (edge-on)" if has_maze else "X (edge-on)", labelpad=-6)
     ax2.legend(fontsize=8, loc="upper right")
 
     trail, = ax2.plot([], [], [], lw=1.6, color="tab:blue")

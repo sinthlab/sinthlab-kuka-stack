@@ -66,7 +66,7 @@ def install_stubs():
         """Enough of adafruit_pixelbuf to check what would be sent to the ring.
 
         Values are stored unscaled, as PixelBuf does — `brightness` is applied on the way out to
-        the LEDs, which is exactly why the firmware no longer scales colours itself.
+        the LEDs, which is exactly why the firmware does not scale colours itself.
         """
 
         def __init__(self, pin, n, brightness=1.0, auto_write=True, pixel_order=None):
@@ -112,7 +112,7 @@ def install_stubs():
                 raise RuntimeError("bad credentials")
 
         def connect_AP(self, ssid, password, timeout_s=10):
-            self.joined = ssid          # present so a regression to station mode is visible
+            self.joined = ssid          # recorded so any attempt to join another network (station mode) is visible
 
         def pretty_ip(self, ip):
             return ".".join(str(b) for b in ip)
@@ -644,10 +644,11 @@ def test_surface_is_the_documented_one():
     for field in ("trigger_pin_raw", "trigger_asserted", "trigger_debounced", "wire_fired",
                   "cue_active", "uptime_s", "nvm", "led_test_pixel", "led_test_colour"):
         check(f"/status reports {field}", field + "=" in body)
-    # things removed in earlier redesigns; their return would be a regression
-    for gone in ("armed", "arm_seq", "profiles", "N_PROFILES", "_decode_select",
-                 "MAX_BRIGHTNESS", "wifi_mode"):
-        check(f"stays removed: {gone}", not hasattr(fw, gone))
+    # names that must not exist in the firmware: arming, stored profiles, a brightness cap and a
+    # Wi-Fi mode switch are all deliberately absent from the design
+    for absent in ("armed", "arm_seq", "profiles", "N_PROFILES", "_decode_select",
+                   "MAX_BRIGHTNESS", "wifi_mode"):
+        check(f"absent by design: {absent}", not hasattr(fw, absent))
 
 
 def main():
