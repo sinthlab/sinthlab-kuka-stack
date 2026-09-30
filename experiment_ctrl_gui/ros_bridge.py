@@ -100,15 +100,18 @@ class RosBridge:
             return False, f"{name} did not answer within {CALL_TIMEOUT_SEC:.0f} s"
         return True, future.result()
 
-    def set_param(self, exp: ex.Experiment, name: str, value) -> Tuple[bool, str]:
-        from rcl_interfaces.srv import SetParameters
+    def set_params(self, exp: ex.Experiment, values: Dict[str, object]) -> Tuple[bool, str]:
+        """Set several live parameters atomically -- linked ones (start + recover pose) must land
+        together or the node refuses them. set_parameters_atomically: all or nothing."""
+        from rcl_interfaces.srv import SetParametersAtomically
         from rclpy.parameter import Parameter
-        req = SetParameters.Request()
-        req.parameters = [Parameter(name, value=value).to_parameter_msg()]
-        ok, res = self._call(SetParameters, f"{self._ns}/{exp.node}/set_parameters", req)
+        req = SetParametersAtomically.Request()
+        req.parameters = [Parameter(n, value=v).to_parameter_msg() for n, v in values.items()]
+        ok, res = self._call(SetParametersAtomically,
+                             f"{self._ns}/{exp.node}/set_parameters_atomically", req)
         if not ok:
             return False, res
-        r = res.results[0]
+        r = res.result
         return bool(r.successful), r.reason or "accepted; applies from the next trial"
 
     def pause(self, exp: ex.Experiment, paused: bool) -> Tuple[bool, str]:
@@ -139,7 +142,7 @@ class UnavailableBridge:
     def robot(self) -> dict:
         return {"lbr_state_hz": None, "session_state": None}
 
-    def set_param(self, exp, name, value):
+    def set_params(self, exp, values):
         return False, f"ROS is not available here: {self.reason}"
 
     def pause(self, exp, paused):
@@ -274,17 +277,20 @@ class DemoBridge:
         return {"lbr_state_hz": 100 if running else 0,
                 "session_state": "COMMANDING_ACTIVE" if running else None}
 
-    def set_param(self, exp: ex.Experiment, name: str, value) -> Tuple[bool, str]:
+    def set_params(self, exp: ex.Experiment, values: Dict[str, object]) -> Tuple[bool, str]:
         if self._status is None:
             return False, "no experiment is running"
-        if not ex.live_params.is_live(exp.key, name):
-            return False, f"'{name}' is a per-run parameter: it was read once at start-up."
-        problem = ex.live_params.check_value(name, value)
-        if problem:
-            return False, problem
+        context = {**self._effective, **self._pending, **values}     # as the real node's gate sees it
+        for name, value in values.items():
+            if not ex.live_params.is_live(exp.key, name):
+                return False, f"'{name}' is a per-run parameter: it was read once at start-up."
+            problem = ex.live_params.check_value(name, value, context)
+            if problem:
+                return False, problem
         with self._lock:
-            self._pending[name] = value
-        self._log(f"Live change accepted: {name} = {value} (applies from trial {self._trial + 1})")
+            self._pending.update(values)
+        for name, value in values.items():
+            self._log(f"Live change accepted: {name} = {value} (applies from trial {self._trial + 1})")
         self._publish()
         return True, "accepted; applies from the next trial"
 

@@ -32,6 +32,7 @@ from std_srvs.srv import SetBool
 
 from sinthlab_bringup.helpers.common_threshold import get_optional_param
 from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_live
+from sinthlab_bringup.helpers.live_params import PAIRED
 
 # Event token -> code sent to the NSP. Two per trial are enough for alignment (trial_start and
 # trial_end give offset and rate); the rest make a dropped pulse visible instead of silently
@@ -158,6 +159,12 @@ class ExperimentControl:
         return response
 
     def _gate(self, params) -> SetParametersResult:
+        # Values in force once this request lands -- the node's current ones, overridden by the request
+        # -- so parameters that are only valid together (the perturbation's r and plane) are checked
+        # together, whether they arrive one at a time or in the same call.
+        context = {n: _plain(self._node.get_parameter(n).value) for n in PAIRED
+                   if self._node.has_parameter(n)}
+        context.update({p.name: _plain(p.value) for p in params})
         for p in params:
             if not self._node.has_parameter(p.name):
                 continue            # a first declaration, not a change
@@ -167,7 +174,7 @@ class ExperimentControl:
                     reason=(f"'{p.name}' is a per-run parameter: it was read once at start-up, "
                             f"so changing it now would do nothing. Stop, edit it, and start again. "
                             f"Live parameters: {', '.join(LIVE_PARAMS[self._experiment])}"))
-            problem = check_value(p.name, _plain(p.value))
+            problem = check_value(p.name, _plain(p.value), context)
             if problem:
                 return SetParametersResult(successful=False, reason=problem)
         for p in params:

@@ -15,6 +15,8 @@ Polar plane convention:
 """
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+
 import numpy as np
 from rclpy.node import Node as rclpyNode
 
@@ -32,6 +34,7 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         self._read_arrival_params(node)
         # Placeholder until resolved from the live start pose.
         self._joint_pos_target = np.zeros(7)
+        self._joint_limits = self._urdf_joint_limits(node)
 
     def _read_polar(self, node: rclpyNode) -> None:
         self._polar_r_m = float(get_required_param(node, self._param_prefix + "polar_r_m"))
@@ -40,9 +43,9 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         if node.has_parameter(self._param_prefix + "polar_plane"):
             self._polar_plane = str(node.get_parameter(self._param_prefix + "polar_plane").value).strip().lower()
 
-    def reload(self) -> None:
-        """Re-read r / theta / plane -- live parameters (helpers/live_params.py), applied at a trial
-        boundary. The joint target is re-solved from them at the next start() anyway."""
+    def _reload_target(self) -> None:
+        """Re-read r / theta / plane for reload(). The joint target is re-solved from them at the next
+        start() anyway."""
         self._read_polar(self._node)
 
     def _resolve_target(self) -> None:
@@ -68,11 +71,38 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
             f"-> EE {np.round(start_pos, 4)} -> {np.round(target_pos, 4)} (IK residual {residual_mm:.1f} mm); "
             f"target joints (deg)={np.round(np.degrees(q_target), 2)}"
         )
+        margin = self._limit_margin_deg(q_target)
+        if margin is not None and margin < 5.0:
+            self._node.get_logger().warn(
+                f"Polar perturbation lands {margin:.1f} deg from a joint limit -- the cabinet may stop "
+                f"the arm. The per-plane caps assume the default start pose; reduce polar_r_m or change "
+                f"polar_theta_deg / polar_plane.")
         if residual_mm > 5.0:
             self._node.get_logger().warn(
                 f"Polar IK residual {residual_mm:.1f} mm > 5 mm — target may be near a joint limit or "
                 f"singular; reduce polar_r_m or change polar_theta_deg/polar_plane."
             )
+
+    @staticmethod
+    def _urdf_joint_limits(node: rclpyNode):
+        """(lower, upper) in rad for the 7 arm joints, from robot_description, or None if unavailable."""
+        try:
+            root = ET.fromstring(str(node.get_parameter("robot_description").value))
+            lims = []
+            for j in root.iter("joint"):
+                lim = j.find("limit")
+                if j.get("type") == "revolute" and lim is not None:
+                    lims.append((float(lim.get("lower")), float(lim.get("upper"))))
+            return np.array(lims[:7]) if len(lims) >= 7 else None
+        except Exception:
+            return None
+
+    def _limit_margin_deg(self, q):
+        """Smallest distance of q from any joint limit [deg], or None without limits."""
+        if self._joint_limits is None:
+            return None
+        lo, hi = self._joint_limits[:, 0], self._joint_limits[:, 1]
+        return float(np.degrees(np.min(np.minimum(np.asarray(q) - lo, hi - np.asarray(q)))))
 
     def _ik_position_dls(self, target_pos: np.ndarray, q_seed: np.ndarray,
                          iters: int = 200, damping: float = 0.05, tol: float = 1e-5,

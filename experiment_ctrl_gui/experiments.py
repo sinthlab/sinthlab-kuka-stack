@@ -129,6 +129,9 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
+    "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
+                                "(every direction >= 10 deg from a joint limit, from the default start pose). "
+                                "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
 }
 
 # Parameters kept equal to each other: an edit to one sets them all. The YAML notes say "change it in
@@ -138,9 +141,10 @@ LINKED: List[List[str]] = [
 ]
 START_POSE = "move_to_start.target_joint_position"
 
-# iiwa7 joint limits [deg], A1..A7, from the KUKA LBR iiwa 7 R800 spec.
-IIWA7_LIMITS_DEG = [170.0, 120.0, 170.0, 120.0, 170.0, 120.0, 175.0]
-STRAIGHT_BELOW_DEG = 12.0
+# Pose checks (joint limits, the straight-arm rule) live in live_params.check_pose, shared with the
+# orchestrators; these are re-exported for anything that wants the numbers.
+IIWA7_LIMITS_DEG = live_params.IIWA7_LIMITS_DEG
+STRAIGHT_BELOW_DEG = live_params.STRAIGHT_BELOW_DEG
 
 
 def tier(exp: Experiment, name: str) -> str:
@@ -162,21 +166,8 @@ def linked(name: str) -> List[str]:
 
 
 def check_extra(name: str, value) -> Optional[str]:
-    """Checks beyond live_params.check_value that only the dashboard makes."""
-    if name.endswith("target_joint_position"):
-        if not isinstance(value, list) or len(value) != 7:
-            return f"{name} needs 7 joint angles in degrees"
-        for i, (q, lim) in enumerate(zip(value, IIWA7_LIMITS_DEG), start=1):
-            if abs(q) > lim:
-                return f"{name}: A{i} = {q} deg is outside the iiwa7 limit of ±{lim:.0f} deg"
-        # A nearly straight arm is singular (mechanical zero: smallest singular value 0.0), and a
-        # Cartesian-impedance move from or around it does not reliably arrive. Same test as the Sunrise
-        # app's ready-pose check (STRAIGHT_BELOW_DEG in LbrImpedanceControlServer.java), validated
-        # against the Jacobian.
-        bend = max(abs(value[1]), abs(value[3]), abs(value[5]))
-        if bend < STRAIGHT_BELOW_DEG:
-            return (f"{name}: max(|A2|, |A4|, |A6|) = {bend} deg < {STRAIGHT_BELOW_DEG:.0f} deg -- a nearly "
-                    f"straight, singular arm. Bend A2, A4 or A6 further.")
+    """Checks beyond live_params.check_value that only the dashboard makes (none at present: the pose
+    checks moved into live_params so the orchestrators enforce them too)."""
     return None
 
 

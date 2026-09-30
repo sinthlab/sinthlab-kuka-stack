@@ -21,6 +21,9 @@ class MoveToPositionJointSpace(MoveActionBase):
         self._joint_pos_target = self._read_joint_target_param(node)
         self._read_arrival_params(node)
 
+    def _reload_target(self) -> None:
+        self._joint_pos_target = self._read_joint_target_param(self._node)
+
     def _read_arrival_params(self, node: rclpyNode) -> None:
         """Optionally wait for the PHYSICAL arm to arrive, not just the commanded anchor.
 

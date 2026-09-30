@@ -132,16 +132,17 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Tab | When it can change | What is in it |
 |---|---|---|
-| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; the pull threshold and hold; the perturbation; the maze timeout ([full list](#live-parameters)) |
-| **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: start and recover poses, rails, checkpoints and goal, move speeds and tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
+| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; move speeds; the pull threshold and hold; the perturbation; the start pose (apple pluck / perturb); the maze timeout ([full list](#live-parameters)) |
+| **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: the start pose in restricted plane / maze, rails, checkpoints and goal, move tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
 | **Fixed** | Not from the dashboard: at the SmartPad or in the file named | what every experiment shares: SmartPad (FRI) selections, launch arguments, `iiwa7_hardware_controllers.yaml`, the CLIK redundancy posture |
 
 - **Your edits never change the package YAML.** They go into a copy for that run, and every
   recorded trial's sidecar keeps the full parameter set it ran with, live changes included.
 - **Poses** are 7 joint angles in degrees. They are checked against the iiwa7 joint limits, and a
-  nearly straight (singular) arm is refused.
+  nearly straight (singular) arm is refused — by the dashboard and again by the orchestrator.
   - **Start and recover are edited together**, because the next trial starts where the last one
-    recovered to.
+    recovered to. A live change sends both in one call; one on its own is refused.
+  - **Apple Pluck / Perturb:** the pose is live. The next trial moves to it and recovers to it.
   - **Restricted Plane and Maze:** the CLIK redundancy posture follows an edited start pose
     automatically.
   - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
@@ -164,13 +165,14 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
 | `nsp_sync.enabled` | send event codes to the Blackrock NSP. **The DIO is not wired yet**: when on, it warns once and sends nothing ([§7](#sync-to-the-blackrock-nsp)) |
+| `move_to_start.move_to_pos_v_max` / `_a_max` / `_j_max`, and the same for `move_to_start_recover` | move speed limits: peak joint speed 5–90 deg/s, acceleration 0.5–20 rad/s², jerk 1–150 rad/s³. The next move uses them. |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
 
 | Experiment | Extra live parameters |
 |---|---|
-| Apple Pluck | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
-| Apple Pluck Perturb | the two above, `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m`, `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec` |
+| Apple Pluck | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
+| Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec` |
 
@@ -178,7 +180,12 @@ These are deliberately **not** live:
 - `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
   different trial.
 - **Safety limits:** a limit must not be loosened mid-session.
-- **Poses and geometry:** they are verified offline.
+- **Move tolerances** (`joint_move_tolerance`, `cartesian_move_tolerance`): they decide when a move
+  counts as arrived.
+- **The start pose in Restricted Plane and Maze:** those experiments hand the arm to the CLIK, whose
+  redundancy posture must equal the start pose and is read once, when the controller starts; and the
+  maze's geometry hangs off the start. Edit it per-run (the posture then follows automatically).
+- **Maze rails, checkpoints and goal:** verified offline by `check_maze.py`.
 
 ### Parameter help
 Each parameter shows a one-line description. **Hover over its name**, or tab to it, for the full
@@ -205,12 +212,15 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py param
 
 ros2 topic echo /lbr/experiment_status                                                     # where the run is
 ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false                       # live: next trial
+ros2 param set /lbr/apple_pluck_orchestrator move_to_start.move_to_pos_a_max 1.0             # slower approach
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"   # pause after trial
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: false}"  # resume
 ```
 
 A `ros2 param set` on anything that is not live is **rejected with the reason**, because the
-orchestrator read it once at start-up. The maze and restricted-plane launches also accept
+orchestrator read it once at start-up. The start and recover poses must change together, so set them
+in one atomic call, `ros2 service call /lbr/apple_pluck_orchestrator/set_parameters_atomically …`, or
+from the dashboard; `ros2 param set` on one of them alone is refused. The maze and restricted-plane launches also accept
 `clik_nullspace_cfg:=`.
 
 ### Files the dashboard writes
@@ -584,7 +594,7 @@ perturbation.
 
 | Knob | Effect |
 |---|---|
-| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. |
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 10° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `move_to_pos_a_max`, `move_to_pos_j_max` | **How fast.** On a short move the acceleration and jerk limits set the duration. |

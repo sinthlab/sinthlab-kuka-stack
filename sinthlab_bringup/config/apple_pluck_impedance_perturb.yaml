@@ -64,8 +64,13 @@
       #                      sagittal   X-Z (theta from +X toward +Z); theta 0 = toward the monkey.
       #   polar_theta_deg  direction in that plane. frontal: 0 = +Y (sideways), 90 = up, 180 = -Y
       #                    (the other side), 270 = down.
-      #   Checked from the start pose: every frontal direction at r = 0.05 and 0.10 m solves exactly
-      #   (IK residual < 0.1 mm, condition number <= 13.3).
+      #   polar_r_m is CAPPED PER PLANE: frontal 0.15, horizontal 0.175, sagittal 0.10 m. Checked by IK
+      #   from this start pose, every direction in 15 deg steps: all solve exactly, stay >= 10 deg from
+      #   every joint limit (>= 19 deg after a further 15 cm pull toward the monkey) and well conditioned
+      #   (smallest singular value >= 0.10). The next step out breaks the 10 deg margin in each plane.
+      #   Position-only IK lets the flange tilt: up to ~22 / 19 / 14 deg at the caps. The caps live in
+      #   sinthlab_bringup/helpers/live_params.py (PERTURB_R_MAX); the dashboard and the orchestrator
+      #   both enforce them, and the action warns if a solution still lands within 5 deg of a limit.
       polar_r_m: 0.05  # perturbation distance from the start [m]
       polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
       polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)

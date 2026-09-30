@@ -241,7 +241,9 @@ class ExperimentParams:
             raise KeyError(f"unknown parameter {name}")
         default = self.defaults[name]
         value = coerce(raw, default)
-        problem = ex.live_params.check_value(name, value) or ex.check_extra(name, value)
+        # Linked parameters change together, so check against all of them at their new value.
+        context = {**self.current(), **{n: value for n in ex.linked(name) if n in self.defaults}}
+        problem = ex.live_params.check_value(name, value, context) or ex.check_extra(name, value)
         if problem is None:
             ch = ex.choices(self.exp, name, self.defaults)
             if ch is not None and str(value) not in ch:

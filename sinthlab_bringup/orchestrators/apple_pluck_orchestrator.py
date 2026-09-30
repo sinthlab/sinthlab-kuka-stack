@@ -150,6 +150,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
             cue.reload()
         self.monitor.reload()
         self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
+        self.move_recover.reload()
 
 
 def main(args=None) -> None:

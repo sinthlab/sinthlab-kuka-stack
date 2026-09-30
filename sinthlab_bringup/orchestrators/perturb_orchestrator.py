@@ -178,6 +178,8 @@ class PerturbOrchestratorNode(rclpyNode):
             cue.reload()
         self.monitor.reload()
         self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
+        self.move_recover.reload()
         self.perturb.reload()
         self.perturb_delay.set_duration(float(get_required_param(self, "perturb_start.start_delay_sec")))
 

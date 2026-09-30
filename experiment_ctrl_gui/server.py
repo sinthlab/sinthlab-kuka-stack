@@ -332,11 +332,16 @@ def make_handler(app: App):
                     raise KeyError(f"unknown parameter {name}")
                 from params import coerce
                 value = coerce(body["value"], p.defaults[name])
-                problem = ex.live_params.check_value(name, value)
-                if problem:
-                    raise ValueError(problem)
-                ok, msg = app.bridge.set_param(exp, name, value)
-                app.runner.emit(f"Live {name} = {value}: {msg}", "gui" if ok else "warn")
+                # Linked parameters (start + recover pose) go together, in one atomic call.
+                values = {n: value for n in ex.linked(name) if n in p.defaults}
+                st = app.status() or {}
+                context = {**(st.get("live") or {}), **(st.get("pending") or {}), **values}
+                for n, v in values.items():
+                    problem = ex.live_params.check_value(n, v, context)
+                    if problem:
+                        raise ValueError(problem)
+                ok, msg = app.bridge.set_params(exp, values)
+                app.runner.emit(f"Live {', '.join(values)} = {value}: {msg}", "gui" if ok else "warn")
                 if not ok:
                     raise RuntimeError(msg)
                 return {"ok": True, "message": msg, "value": value}

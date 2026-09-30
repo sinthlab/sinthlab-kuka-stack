@@ -48,7 +48,7 @@ flowchart LR
     RUN -- "subprocess (own process group)<br/>stdout → log" --> L
     L --> O
     O -- "experiment_status (JSON, latched)" --> BR
-    BR -- "set_parameters (live only)" --> O
+    BR -- "set_parameters_atomically (live only)" --> O
     BR -- "pause (SetBool)" --> O
     HW -- "lbr_state (FRI session, rate)" --> BR
 ```
@@ -68,8 +68,8 @@ flowchart LR
 |---|---|
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop / restart / stop-after-trial |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
-| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters` / `pause`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
-| `experiments.py` | the four experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name); cautions, linked parameters, iiwa7 joint limits, the straight-arm check |
+| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `pause`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
+| `experiments.py` | the four experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name); cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `static/` | the page: `index.html`, `style.css`, `app.js`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
@@ -111,15 +111,23 @@ values that trial used.
 
 `live_params.py` has no ROS import, so the dashboard loads it from the source tree whether or not
 ROS is sourced; the orchestrators import the same module, so the two cannot disagree. It also holds
-`LIMITS` (ranges) and `CHOICES` (enums), checked by `check_value()` on both sides.
+the checks, which `check_value()` applies on both sides:
+- `LIMITS` (ranges) and `CHOICES` (enums);
+- **poses** (`check_pose`): 7 values, within `IIWA7_LIMITS_DEG`, and not a straight arm
+  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12° — the same test the Sunrise app uses for its
+  ready-pose move);
+- **pairs**, checked against the other values in force (`context`): the perturbation's r against its
+  plane's cap (`PERTURB_R_MAX`), and the start pose against the recover pose, which must be equal.
+
+Live motion parameters: the speed limits of every move are live in all four experiments; the start /
+recover pose is live in apple pluck and perturb only (`_POSE`). Each move action's `reload()` re-reads
+them at the trial boundary, and Ruckig is rebuilt from them at the move's next start.
 
 **Dashboard-only checks and conveniences** (`experiments.py`, `params.py`):
 - `CAUTION`: amber notes on parameters other things depend on. They never lock anything.
 - `LINKED`: `move_to_start.target_joint_position` and `move_to_start_recover.target_joint_position`
-  are set together.
-- **Poses:** 7 values, within `IIWA7_LIMITS_DEG`, and not a straight arm
-  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12° — the same test the Sunrise app uses for its
-  ready-pose move).
+  are set together — per-run edits change both, and a live change sends both in one
+  `set_parameters_atomically` call (all or nothing), so the node never sees them differ.
 - **Parallel arrays** (`corridor_*`, `checkpoint_*`) must keep their length.
 - **Coercion:** values from the browser are coerced to the YAML default's exact type, because ROS
   refuses a set that changes a parameter's type.
@@ -173,7 +181,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/stop` `{mode: "now" \| "after_trial"}` | Ctrl-C now, or pause and stop once the orchestrator reports it is holding |
 | POST | `/api/restart` | stop now, then start the same experiment with the current edits |
 | POST | `/api/pause` `{paused}` | the orchestrator's pause service |
-| POST | `/api/live` `{name, value}` | `set_parameters` on the running orchestrator |
+| POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |
 
 ---

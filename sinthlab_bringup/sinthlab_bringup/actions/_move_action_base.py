@@ -51,10 +51,7 @@ class MoveActionBase:
         self._update_rate = int(get_required_param(node, self._param_prefix + "update_rate"))
         self._dt = 1.0 / float(self._update_rate)
         self._joint_pos_tol = float(get_required_param(node, self._param_prefix + "joint_move_tolerance"))
-        # move_to_pos_v_max is in deg/s (converted to rad/s here); a_max / j_max are rad/s^2, rad/s^3.
-        self._v_max_param = np.radians(np.array(get_required_param(node, self._param_prefix + "move_to_pos_v_max"), dtype=float)).tolist()
-        self._a_max_param = get_required_param(node, self._param_prefix + "move_to_pos_a_max")
-        self._j_max_param = get_required_param(node, self._param_prefix + "move_to_pos_j_max")
+        self._read_speed_params(node)
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
 
@@ -111,7 +108,25 @@ class MoveActionBase:
             f"{type(self).__name__} initialised: {self._describe_target()} tol={self._joint_pos_tol}"
         )
 
+    def _read_speed_params(self, node: rclpyNode) -> None:
+        # move_to_pos_v_max is in deg/s (converted to rad/s here); a_max / j_max are rad/s^2, rad/s^3.
+        # Ruckig is rebuilt from these at every start(), so re-reading them is all a change needs.
+        self._v_max_param = np.radians(np.array(get_required_param(node, self._param_prefix + "move_to_pos_v_max"), dtype=float)).tolist()
+        self._a_max_param = get_required_param(node, self._param_prefix + "move_to_pos_a_max")
+        self._j_max_param = get_required_param(node, self._param_prefix + "move_to_pos_j_max")
+
+    def reload(self) -> None:
+        """Re-read the live parameters -- speed limits and, where the subclass has one, the target.
+        Called by the orchestrator at a trial boundary, while the move is idle; the next start() uses
+        the new values (see helpers/live_params.py for which experiments allow which)."""
+        self._read_speed_params(self._node)
+        self._reload_target()
+
     # ===================== subclass hooks =====================================
+    def _reload_target(self) -> None:
+        """Re-read the target parameters for reload(). Default: nothing to re-read."""
+        return
+
     def _configure_target(self, node: rclpyNode) -> None:
         """Read target params and set ``self._joint_pos_target`` (radians). Required."""
         raise NotImplementedError
