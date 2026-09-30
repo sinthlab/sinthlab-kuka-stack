@@ -97,7 +97,7 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 ### Running an experiment
 1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze.
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping. **If the arm is nearly
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. **If the arm is nearly
    straight** (mechanical zero, or close to it), the app then asks to move it to the ready pose
    `[0, 10, 0, −80, 0, 90, 0]` — answer **Move to ready pose** and hold the enabling switch while it
    moves. The app then waits about 60 s for ROS.
@@ -505,7 +505,7 @@ pose in `config/apple_pluck_impedance.yaml`.
 **Steps to run:**
 1. Check that `update_rate` in
    `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
-2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens four
+2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens five
    selection dialogs in sequence — choose:
 
    | Prompt | Select |
@@ -514,10 +514,12 @@ pose in `config/apple_pluck_impedance.yaml`.
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
    | Damping ratio (D0) | `0.7 (Standard)` |
+   | Null-space (elbow) stiffness | `30 (Standard)` |
 
    *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. The other
-   stiffness profiles (`Very Soft Z`, `Soft Z (Apple Pluck)`, `Stiff Cartesian`) and damping ratios
-   (`0.3 (Underdamped)`, `1.0 (Critically Damped)`) are available if you want to change the feel.*
+   stiffness profiles (`Very Soft Z`, `Soft Z (Apple Pluck)`, `Stiff (firm walls)`, …), damping ratios
+   (`0.1`, `0.2`, `0.3`, `1.0`) and elbow stiffnesses (`15`, `5`) are available if you want to change
+   the feel.*
    The app then waits (~60 s) for the ROS client to connect.
 3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
    (nothing happens until you run this):
@@ -537,7 +539,7 @@ Along a free axis the equilibrium tracks the arm, so the spring error — and th
 the manifold it stays put, so the spring pulls the arm back.
 
 **Steps to run:**
-1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens four dialogs:
+1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens five dialogs:
 
    | Prompt | Select |
    |--------|--------|
@@ -545,6 +547,7 @@ the manifold it stays put, so the spring pulls the arm back.
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** |
    | Damping ratio (D0) | `0.7 (Standard)` |
+   | Null-space (elbow) stiffness | `30 (Standard)` |
 
    The app then waits (~60 s) for the ROS client to connect.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
@@ -624,6 +627,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
    | Damping ratio (D0) | `0.7 (Standard)` |
+   | Null-space (elbow) stiffness | `30 (Standard)` |
 
    The app then waits (~60 s) for the ROS client to connect.
 3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
@@ -832,17 +836,19 @@ Work up the ladder and stop at the first rung that feels wrong.
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
    | Cartesian stiffness (K diagonal) | **`Maze walls + easy guiding (rot 120)`** — `{2500, 1000, 1000, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
+   | Null-space (elbow) stiffness | `30 (Standard)` |
 
    > **Use an anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
    > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
    > never win: 400 made the walls mushy, 3000 made everything heavy.
    >
-   > Two maze profiles ship, differing **only in rotational stiffness** (300 vs 120) so you can A/B the
-   > one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
+   > Four maze profiles ship, differing **only in rotational stiffness** — `Maze walls (X lock, Y/Z
+   > firm)` 300, `… easy guiding` 120, `… light guiding` 60, `… very light guiding` 30 — so you can A/B
+   > the one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
    > the rails), so orientation stiffness defines nothing about the maze — it only stops the tool
    > twisting. But holding orientation *while translating* is the expensive motion, so dropping it to
-   > 120 reduces guiding effort **without** softening the plane or the rails. Trade-off: the tool may
-   > twist a little more — watch the apple angle.
+   > 120 (or 60, or 30) reduces guiding effort **without** softening the plane or the rails. Trade-off:
+   > the tool twists more as rot drops — watch the apple angle.
 2. **Launch:**
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
@@ -882,11 +888,16 @@ Work up the ladder and stop at the first rung that feels wrong.
 >    the cap is +0.05, because beyond the real lag the arm starts to pull itself along; **negative** =
 >    a deliberate speed-dependent drag, if the task should be harder. It never acts across a rail, so
 >    the walls are unchanged, and never leads more than 2 cm.
-> 2. **Damping ratio** (SmartPad: 0.3 / 0.7 / 1.0). The cabinet damps the arm's velocity, which is
->    felt as drag along the rail too. 0.3 is lighter; check the walls do not ring.
-> 3. **Rotational stiffness** (SmartPad profile, 300 vs 120): the biggest lever on how heavy guiding
->    feels, and it costs no fixture fidelity.
-> 4. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
+> 2. **Damping ratio** (SmartPad: 0.1 / 0.2 / 0.3 / 0.7 / 1.0). The cabinet damps the arm's velocity,
+>    which is felt as drag along the rail that grows with speed. Lower is lighter; check the walls and
+>    the return to start do not ring.
+> 3. **Rotational stiffness** (SmartPad maze profile: rot 300 / 120 / 60 / 30): the biggest lever on
+>    how heavy guiding feels even when moving slowly, and it costs no fixture fidelity — only more tool
+>    twist.
+> 4. **Null-space (elbow) stiffness** (SmartPad: 30 / 15 / 5 Nm/rad): how firmly the elbow is held.
+>    Moving the flange moves the elbow too, so this is felt as a steady resistance; lower is lighter,
+>    but watch the elbow does not swing.
+> 5. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
 >
 > To tell them apart, move along one rail at a steady speed and watch
 > `ros2 topic echo /lbr/force_torque_broadcaster/wrench --field wrench.force` (it reads 0 below 2 N).

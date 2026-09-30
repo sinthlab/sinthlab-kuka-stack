@@ -34,6 +34,7 @@ _FRI_COMMON = {
     "FRI send period [ms]": "10",
     "Remote IP address": "172.31.1.148 (this ROS computer)",
     "Damping ratio (D0)": "0.7 (Standard)",
+    "Null-space (elbow) stiffness": "30 (Standard)",
 }
 
 

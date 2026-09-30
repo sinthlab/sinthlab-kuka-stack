@@ -320,7 +320,8 @@ SMARTPAD_HELP = {
     "SmartPad application": "the Sunrise app that runs the Cartesian impedance spring in the cabinet at 1 kHz",
     "FRI send period [ms]": "how often the cabinet and ROS exchange FRI messages",
     "Remote IP address": "where the cabinet sends FRI -- this ROS computer",
-    "Damping ratio (D0)": "Cartesian damping ratio of the cabinet spring; 0.7 = standard",
+    "Damping ratio (D0)": "Cartesian damping ratio of the cabinet spring; 0.7 = standard, lower = lighter to move",
+    "Null-space (elbow) stiffness": "how firmly the cabinet holds the elbow posture [Nm/rad]; lower = lighter to move",
     "Cartesian stiffness (K diagonal)": "stiffness profile {X, Y, Z, A, B, C} chosen at the SmartPad for this experiment",
 }
 LAUNCH_HELP = {

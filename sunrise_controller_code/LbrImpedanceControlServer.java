@@ -91,7 +91,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Stiff (firm walls)",
         "Maze compliant (uniform 400)",
         "Maze walls (X lock, Y/Z firm)",
-        "Maze walls + easy guiding (rot 120)"
+        "Maze walls + easy guiding (rot 120)",
+        "Maze walls + light guiding (rot 60)",
+        "Maze walls + very light guiding (rot 30)"
     };
     private double[][] stiffness_vals_ = {
         { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
@@ -118,7 +120,12 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         //   what makes a badly chosen start posture feel like treacle), so this is the one knob that reduces drag
         //   on guiding WITHOUT weakening the plane or the walls.
         // Trade-off: the tool may twist a little more -- watch the apple angle.
-        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }  // maze: firm constraints, easy guiding
+        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }, // maze: firm constraints, easy guiding
+        // MAZE, lighter still: the same walls and plane lock, rotational stiffness lowered further. Holding
+        // orientation while translating is the costly motion, so this is the knob for "moving along a
+        // rail feels heavy". The price is more tool twist under load -- watch the apple angle.
+        { 2500.0, 1000.0, 1000.0,  60.0,  60.0,  60.0 }, // maze: firm constraints, light guiding
+        { 2500.0, 1000.0, 1000.0,  30.0,  30.0,  30.0 }  // maze: firm constraints, very light guiding
     };
     // READY POSE -- where the arm goes if the app starts with it nearly straight. It is the
     // restricted-plane start: reachable from mechanical zero, well conditioned (smallest singular value
@@ -131,8 +138,19 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private static final double STRAIGHT_BELOW_DEG = 12.0;
     private static final double READY_VEL_REL = 0.2;   // PTP speed, fraction of the joint limits
 
-    private String[] damping_options_ = { "0.3 (Underdamped)", "0.7 (Standard)", "1.0 (Critically Damped)" };
-    private double[] damping_vals_ = { 0.3, 0.7, 1.0 };
+    // Damping ratio. The cabinet damps the flange's actual velocity, so along a rail it is felt as drag
+    // that grows with speed; lower = lighter to move, but walls and returns may ring. 0.1 is Sunrise's
+    // minimum.
+    private String[] damping_options_ = { "0.1 (Very light)", "0.2 (Light)", "0.3 (Underdamped)",
+                                          "0.7 (Standard)", "1.0 (Critically Damped)" };
+    private double[] damping_vals_ = { 0.1, 0.2, 0.3, 0.7, 1.0 };
+
+    // Null-space (elbow) stiffness [Nm/rad]: how firmly the cabinet holds the arm's redundant elbow
+    // posture. Translating the flange moves the elbow too, so this is felt as a constant resistance.
+    // Lower = lighter; the elbow is then held less firmly, so watch it does not swing. No 0: an unheld
+    // elbow drifts under the gravity-compensation residual.
+    private String[] ns_stiffness_options_ = { "30 (Standard)", "15 (Light)", "5 (Very light)" };
+    private double[] ns_stiffness_vals_ = { 30.0, 15.0, 5.0 };
 
     /**
      * Prompts the user on the SmartPAD to configure the connection.
@@ -174,6 +192,14 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ns_damping = d0;
         getLogger().info("Damping Ratio set to: " + d0);
 
+        // Ask for Null-space (elbow) Stiffness
+        selectedButtonIndex = applicationUi.displayModalDialog(
+                ApplicationDialogType.QUESTION,
+                "Select Null-space (elbow) Stiffness [Nm/rad]:",
+                ns_stiffness_options_);
+        ns_stiffness = ns_stiffness_vals_[selectedButtonIndex];
+        getLogger().info("Null-space stiffness set to: " + ns_stiffness);
+
         // Setup the Cartesian Impedance Control Mode with per-axis stiffness & damping
         control_mode_ = new CartesianImpedanceControlMode();
         applyCartesianImpedance(control_mode_, K, D);
@@ -181,6 +207,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         getLogger().info("Control mode set to: Cartesian Impedance Control");
         getLogger().info("Stiffness (X, Y, Z, A, B, C): " + K[0] + ", " + K[1] + ", " + K[2] + 
                          ", " + K[3] + ", " + K[4] + ", " + K[5]);
+        getLogger().info("Damping " + ns_damping + ", null-space stiffness " + ns_stiffness);
     }
 
     /**

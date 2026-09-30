@@ -10,8 +10,9 @@
     # guiding light. No uniform profile works: 400 gives walls too weak to feel (4 N/cm), and at 3000
     # tracking lag dominates.
     #
-    # The sister profile "Maze walls (X lock, Y/Z firm)" is identical except rot 300 -- keep it for an
-    # A/B if the tool twists more than the experiment allows. Rotational stiffness defines NOTHING
+    # Sister profiles differ ONLY in rotational stiffness: "Maze walls (X lock, Y/Z firm)" rot 300,
+    # "... light guiding (rot 60)" and "... very light guiding (rot 30)". Go lower if guiding feels heavy
+    # even when moving slowly; go higher if the tool twists more than the experiment allows. Rotational stiffness defines NOTHING
     # about the maze (its constraints are all translational), but holding orientation while translating
     # is the expensive motion, so it is the one lever that reduces effort without softening the plane
     # or the rails.
