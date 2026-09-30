@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import rclpy
 from rclpy.node import Node as rclpyNode
 
@@ -45,25 +44,6 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_ending = False
 
         # Actions that make up the trial.
-        # Pre-start waypoint, used ONLY when the arm is parked in a near-singular ("straight") posture
-        # such as mechanical zero -- a Cartesian-impedance move commanded from there does not reliably
-        # reach the maze start (see move_to_prestart in maze_params.yaml). It is NOT run otherwise:
-        # dragging the arm out to a different posture and back is disruptive, and an arm already at the
-        # maze start should go straight there rather than detour to the restricted-plane start.
-        self.move_to_prestart = MoveToPositionJointSpace(
-            self, param_prefix="move_to_prestart", on_complete=self.on_prestart_complete
-        )
-        self._did_prestart = False
-        self._prestart_wait = None
-
-        # A near-singular posture is one where the arm is nearly STRAIGHT, i.e. the bending joints
-        # A2/A4/A6 are all close to zero. Verified against the Jacobian: this test agrees exactly with
-        # "smallest singular value < 0.05" for mechanical zero, near-zero, and extended-but-rotated
-        # configurations, while correctly clearing the maze start (79.5 deg) and the plane start (90).
-        self._extended_deg = 12.0
-        if self.has_parameter("move_to_prestart.extended_if_bend_below_deg"):
-            self._extended_deg = float(self.get_parameter("move_to_prestart.extended_if_bend_below_deg").value)
-
         self.move_to_start = MoveToPositionJointSpace(
             self, param_prefix="move_to_start", on_complete=self.on_move_complete
         )
@@ -147,44 +127,8 @@ class MazeOrchestratorNode(rclpyNode):
         self.trial_count += 1
         self._trial_ending = False
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
-        if self._did_prestart:
-            self.move_to_start.start()
-            return
-        # Decide ONCE, from where the arm actually is, whether the waypoint is needed at all.
-        self._await_state_then_start()
-
-    def _await_state_then_start(self):
-        """Wait for the first robot state, then go via the waypoint only if the arm is near-singular."""
-        q = self.move_to_start.latest_measured_joints()
-        if q is None:
-            if self._prestart_wait is None:
-                self.get_logger().info("Waiting for robot state before deciding the start route...")
-                self._prestart_wait = self.create_timer(0.1, self._await_state_then_start)
-            return
-        if self._prestart_wait is not None:
-            # cancel() only -- destroy_timer() from inside the timer's own callback is not safe.
-            self._prestart_wait.cancel()
-            self._prestart_wait = None
-
-        bend_deg = float(np.max(np.abs(np.rad2deg(q[[1, 3, 5]]))))  # |A2|, |A4|, |A6|
-        self._did_prestart = True  # decided; never re-evaluated
-        if bend_deg < self._extended_deg:
-            self.get_logger().warn(
-                f"Arm is nearly straight (max |A2,A4,A6| = {bend_deg:.1f} deg < {self._extended_deg:.0f}) "
-                f"-- that is a near-singular posture. Stepping via the pre-start waypoint first."
-            )
-            self.move_to_prestart.start()
-            return
-        self.get_logger().info(
-            f"Arm is in a well-conditioned posture (max |A2,A4,A6| = {bend_deg:.1f} deg); "
-            f"moving straight to the maze start."
-        )
-        self.move_to_start.start()
-
-    def on_prestart_complete(self):
-        self.recorder.mark("prestart_done")
-        # Waypoint reached; from here the maze start is reliably reachable. Never repeated.
-        self.get_logger().info("At pre-start waypoint. Moving to the maze start...")
+        # A straight (singular) arm is moved to a ready pose by the Sunrise app before ROS connects,
+        # so this always starts from a well-conditioned posture.
         self.move_to_start.start()
 
     def on_move_complete(self):

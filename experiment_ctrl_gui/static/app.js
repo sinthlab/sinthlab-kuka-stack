@@ -25,7 +25,7 @@ const PHASE_TEXT = {
   fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
   safety_trip: "SAFETY ABORT — recovering", release_wait: "waiting for release", released: "recovering to start",
-  paused: "paused at the start", prestart_done: "moving to start", cue_audio_end: null, cue_visual_ack: null,
+  paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
 };
 const TAB_HELP = {
   live: {

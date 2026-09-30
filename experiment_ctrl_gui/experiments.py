@@ -123,7 +123,6 @@ CAUTION: Dict[str, str] = {
         "iiwa7 joint limits; reachability of anything relative to it (the maze) is not checked here."),
     "move_to_start_recover.target_joint_position": (
         "Recover pose. Kept equal to move_to_start (edited together) -- the next trial starts here."),
-    "move_to_prestart.target_joint_position": "Maze pre-start waypoint, degrees. Only used from a near-straight arm.",
     "virtual_fixtures.maze.*": "Maze rail. Run check_maze.py on the edited YAML (runs/…) to confirm reachability.",
     "checkpoint_monitor.checkpoint_*": "Checkpoints must sit on the rails. Arrays stay the same length.",
     "checkpoint_monitor.goal_[xyz]": "The goal must sit on a rail.",
@@ -171,10 +170,11 @@ def check_extra(name: str, value) -> Optional[str]:
             if abs(q) > lim:
                 return f"{name}: A{i} = {q} deg is outside the iiwa7 limit of ±{lim:.0f} deg"
         # A nearly straight arm is singular (mechanical zero: smallest singular value 0.0), and a
-        # Cartesian-impedance move from or around it does not reliably arrive. Same test as the maze's
-        # pre-start guard (maze_params.yaml, extended_if_bend_below_deg), validated against the Jacobian.
+        # Cartesian-impedance move from or around it does not reliably arrive. Same test as the Sunrise
+        # app's ready-pose check (STRAIGHT_BELOW_DEG in LbrImpedanceControlServer.java), validated
+        # against the Jacobian.
         bend = max(abs(value[1]), abs(value[3]), abs(value[5]))
-        if name != "move_to_prestart.target_joint_position" and bend < STRAIGHT_BELOW_DEG:
+        if bend < STRAIGHT_BELOW_DEG:
             return (f"{name}: max(|A2|, |A4|, |A6|) = {bend} deg < {STRAIGHT_BELOW_DEG:.0f} deg -- a nearly "
                     f"straight, singular arm. Bend A2, A4 or A6 further.")
     return None

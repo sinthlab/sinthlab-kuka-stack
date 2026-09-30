@@ -40,7 +40,7 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
-# maze endings, prestart_done) is optional or repeatable and is checked separately.
+# maze endings) is optional or repeatable and is checked separately.
 ORDER = {
     "apple_pluck": ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap",
                     "cue_snap", "freeze", "recover_start", "trial_end"],

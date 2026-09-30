@@ -118,7 +118,8 @@ ROS is sourced; the orchestrators import the same module, so the two cannot disa
 - `LINKED`: `move_to_start.target_joint_position` and `move_to_start_recover.target_joint_position`
   are set together.
 - **Poses:** 7 values, within `IIWA7_LIMITS_DEG`, and not a straight arm
-  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12°; the maze pre-start waypoint is exempt).
+  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12° — the same test the Sunrise app uses for its
+  ready-pose move).
 - **Parallel arrays** (`corridor_*`, `checkpoint_*`) must keep their length.
 - **Coercion:** values from the browser are coerced to the YAML default's exact type, because ROS
   refuses a set that changes a parameter's type.

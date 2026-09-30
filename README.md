@@ -97,8 +97,10 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 ### Running an experiment
 1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze.
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping. The app then waits
-   about 60 s for ROS.
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping. **If the arm is nearly
+   straight** (mechanical zero, or close to it), the app then asks to move it to the ready pose
+   `[0, 10, 0, −80, 0, 90, 0]` — answer **Move to ready pose** and hold the enabling switch while it
+   moves. The app then waits about 60 s for ROS.
 3. **Check the parameters** ([below](#live-per-run-and-fixed-parameters)). Edited rows get an
    `edited` badge, and ↺ puts one back to the YAML value. Hover over any parameter for its full
    help.
@@ -131,7 +133,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Tab | When it can change | What is in it |
 |---|---|---|
 | **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; the pull threshold and hold; the perturbation; the maze timeout ([full list](#live-parameters)) |
-| **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: start and recover poses, the maze pre-start waypoint, rails, checkpoints and goal, move speeds and tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
+| **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: start and recover poses, rails, checkpoints and goal, move speeds and tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
 | **Fixed** | Not from the dashboard: at the SmartPad or in the file named | what every experiment shares: SmartPad (FRI) selections, launch arguments, `iiwa7_hardware_controllers.yaml`, the CLIK redundancy posture |
 
 - **Your edits never change the package YAML.** They go into a copy for that run, and every
@@ -283,7 +285,9 @@ None of these are committed to git.
 
 ### Install Application to Robot
 Follow [these steps](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr_fri_ros2_stack/doc/hardware_setup.html#install-applications-to-the-robot)
-to install the application to the robot.
+to install the application to the robot. Our application is
+[`sunrise_controller_code/LbrImpedanceControlServer.java`](sunrise_controller_code/LbrImpedanceControlServer.java);
+redeploy it from Sunrise Workbench whenever that file changes.
 
 ### Tool Load Data (payload calibration)
 The cabinet must know the end‑effector's mass, or the compliant control modes (Cartesian / joint
@@ -429,6 +433,11 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 >
 > ⚠️ **Safety first.** On the first run of any scenario, operate in **T1** (reduced speed) with a
 > hand on the E‑stop. The arm is actively controlled the moment a SmartPad application is running.
+>
+> **Starting from mechanical zero.** A straight arm is singular, and impedance control cannot move it
+> reliably. If `LbrImpedanceControlServer` starts with the arm nearly straight, it asks to move it to the
+> ready pose `[0, 10, 0, −80, 0, 90, 0]` in position control first; answer **Move to ready pose**. From
+> there every experiment's start is reachable. An arm already bent (e.g. at a start pose) is not moved.
 
 ### Running from the dashboard
 The [dashboard](#quick-start-the-experiment-dashboard) runs exactly the launches below, with the
@@ -828,9 +837,8 @@ Work up the ladder and stop at the first rung that feels wrong.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
    ```
-3. The orchestrator checks **where the arm actually is** before the first move. If it is parked in a
-   near-singular ("straight") posture it steps via a pre-start waypoint first; otherwise it drives
-   straight to ▶START. The log says which branch it took. Later trials always go straight there.
+3. The arm drives to ▶START. (From a straight arm, the SmartPad app has already moved it to the
+   ready pose, from which the maze start is reachable.)
 4. The arm settles for 3 s, the fixture anchors on where it **rests**, the go cue plays, and the rails go
    live. Drive to the goal (or let the 60 s timeout expire).
 
@@ -981,7 +989,7 @@ flowchart LR
 
   | Action | Responsibility |
   |--------|----------------|
-  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move, and for the maze's conditional pre-start waypoint |
+  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
   | `FreezeAtPoseAction` | at the snap, move the equilibrium onto the arm and hold it there (apple / perturb) |
   | `SwitchControllerAction` | switch between the joint controller and `kuka_clik_controller` (restricted-plane / maze) |
@@ -1002,25 +1010,21 @@ flowchart LR
   change never lands mid-trial. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
   is built on these interfaces, and anything else can use them too.
 
-  **Start-up guard (maze).** `MoveToPositionJointSpace` exposes `latest_measured_joints()`, so the
-  orchestrator can ask *where the arm physically is* before committing to a move. The maze uses this to
-  decide **once per run** whether it needs its pre-start waypoint:
+  **Starting from a straight arm.** At mechanical zero the arm is fully straight, which is singular:
+  the Jacobian's smallest singular value is **0.0**, so the cabinet's Cartesian impedance cannot act in
+  some directions and a ROS move commanded from there does not reliably reach its target. The **Sunrise
+  app** handles this before ROS is involved. When it starts with
 
   ```
-  max(|A2|, |A4|, |A6|) < extended_if_bend_below_deg   ->  arm is nearly STRAIGHT
-                                                       ->  near-singular  ->  go via the waypoint
-  otherwise                                            ->  drive straight to the start
+  max(|A2|, |A4|, |A6|) < 12 deg        ->  arm is nearly STRAIGHT (singular)
   ```
 
-  A straight arm is a singular one: at mechanical zero the Jacobian's smallest singular value is
-  **0.0**, and a Cartesian-impedance move commanded from there does not reliably reach the target. The
-  bend test was validated against the Jacobian and agrees exactly with "smallest singular value <
-  0.05" — including the awkward *extended-but-rotated* case (A1 = 90° but the arm straight), which a
-  plain "distance from mechanical zero" test would miss. The maze start scores 79.5° and the plane
-  start 90°, so neither triggers it.
-
-  This is a guard, not a routine step: an arm already at (or near) the maze start goes straight there,
-  rather than detouring out to the restricted-plane posture and back.
+  it asks on the SmartPad, then PTPs the arm to the ready pose `[0, 10, 0, −80, 0, 90, 0]` in plain
+  position control, and only then opens FRI and switches impedance on. So every experiment's first move
+  starts from a well-conditioned posture, and ROS needs no start-up special case. The bend test agrees
+  exactly with "smallest singular value < 0.05", including the *extended-but-rotated* case (A1 = 90°
+  but the arm straight) that a "distance from mechanical zero" test would miss. Every experiment start
+  bends one of A2/A4/A6 by 36° or more, so an arm parked at a start pose is not moved.
 
   A trial is then literally a chain of actions — e.g. apple‑pluck:
   `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
@@ -1039,7 +1043,12 @@ sequenceDiagram
     participant ORCH as Orchestrator
 
     Op->>CAB: Start LbrImpedanceControlServer, pick the scenario's stiffness profile
-    Note over CAB: waits ~60 s for the FRI client
+    opt arm nearly straight (max |A2,A4,A6| < 12°)
+        CAB->>Op: SmartPad: move to the ready pose?
+        Op->>CAB: Move to ready pose (hold enabling switch)
+        CAB->>CAB: joint PTP to [0, 10, 0, −80, 0, 90, 0] in position control
+    end
+    Note over CAB: opens FRI, waits ~60 s for the FRI client
     Op->>ROS: ros2 launch sinthlab_bringup iiwa7_*.launch.py
     ROS->>CM: start ros2_control_node (FRI client) + robot_state_publisher
     CM-->>CAB: FRI session → COMMANDING_ACTIVE
@@ -1174,9 +1183,7 @@ stateDiagram-v2
 **Flow 4 — Maze** (joint moves, CLIK fixture)
 ```mermaid
 stateDiagram-v2
-    [*] --> Prestart : first trial only, if the arm is nearly straight
     [*] --> MoveToStart : [trial_start]
-    Prestart --> MoveToStart : [prestart_done]
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : [fixture_active]
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
@@ -1311,7 +1318,7 @@ below.
 |---|---|---|---|
 | Columns | **42** | **42** | **47** |
 | Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
-| Events | 10 | 12 | 13 |
+| Events | 10 | 12 | 12 |
 | Sidecar extras | `threshold_m` | `perturbation` | `maze_geometry` |
 | Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
@@ -1404,7 +1411,6 @@ just the maze phase.
 | Orchestrator callback | `event` | `event_arg` |
 |---|---|---|
 | `start_trial()` | `trial_start` | trial index |
-| `on_prestart_complete()` | `prestart_done` | — |
 | `on_move_complete()` | `at_start` | — |
 | `on_switched_to_fixture()` | `fixture_active` | — |
 | `on_quiet_window_complete()` | `cue_go` | — |

@@ -40,37 +40,9 @@
     # Whole-experiment timeout [s]; on expiry the arm waits for release then returns to start.
     timeout_sec: 60.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
 
-    # PRE-START WAYPOINT -- run ONCE at startup, before the first move to the maze start.
-    #
-    # WHY: MECHANICAL ZERO IS AN EXACTLY SINGULAR CONFIGURATION (smallest singular value of the
-    # Jacobian is 0.0, condition number infinite -- the arm is fully extended straight up). The cabinet
-    # runs Cartesian impedance, so a move commanded from there is ill-conditioned: the Jacobian has lost
-    # rank and the 7-DOF nullspace is degenerate, so the arm does not reliably reach the maze start.
-    # On hardware, a maze launched from mechanical zero misses the start posture; from this posture it
-    # reaches it.
-    #
-    # This posture is the restricted-plane start -- reachable FROM mechanical zero on hardware, and a
-    # configuration the maze start is reachable FROM. It is well conditioned
-    # (smallest singular value 0.206 vs 0.0 at mechanical zero).
-    #
-    # Only the FIRST trial uses it; afterwards the arm is already at the maze start, so the recovery
-    # move goes straight there and the trial loop is not slowed down.
-    move_to_prestart:  # waypoint before the first maze start, only from a near-straight arm
-      update_rate: 200  # loop rate of this action [Hz]
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # pre-start waypoint A1..A7 [deg]
-      # Loose: this is only a waypoint, not the experiment start
-      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
-      # The waypoint is used ONLY when the arm starts in a near-singular ("straight") posture. The test
-      # is max(|A2|,|A4|,|A6|) < this many degrees -- verified against the Jacobian to agree exactly
-      # with "smallest singular value < 0.05". Mechanical zero scores 0 deg; the maze start scores 79.5
-      # and the plane start 90, so neither triggers it: an arm already at the maze start goes straight
-      # there rather than detouring to the plane start.
-      extended_if_bend_below_deg: 12.0  # use the waypoint only if max(|A2|,|A4|,|A6|) is below this [deg]
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
-      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
-      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    # A straight (singular) arm -- mechanical zero, or near it -- never reaches this experiment: the
+    # Sunrise app (LbrImpedanceControlServer) PTPs it to a ready pose in position control before ROS
+    # connects, and the maze start is reachable from there.
 
     move_to_start:  # joint-space move to the trial start pose
       update_rate: 200  # loop rate of this action [Hz]
