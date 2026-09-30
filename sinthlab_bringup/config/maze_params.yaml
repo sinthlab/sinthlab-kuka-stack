@@ -246,6 +246,12 @@
       # (by ~1 cm against a 3 cm radius). 3 s captures most of the settle without stalling the trial.
       anchor_settle_sec: 3.0  # wait this long after the fixture starts before anchoring it [s]
       anchor_on_measured: true  # anchor on the measured pose (true) rather than the commanded one
+      # EASE OF MOVING ALONG A RAIL. Along a rail the spring force is zero except for tracking lag: the
+      # equilibrium reaches the arm a few tens of ms late, and K * speed * lag is felt as drag. This
+      # aims the equilibrium that many seconds AHEAD of the arm along the rail it is on: > 0 cancels
+      # the lag (lighter), < 0 makes it trail (a deliberate, speed-dependent drag). It never acts
+      # across a rail, so the walls are unchanged. Capped at 2 cm of lead. Start small: 0.01-0.03 s.
+      rail_lead_sec: 0.0  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off
       # --- rung 1: open rectangle, X locked, Y/Z free. Deliberately smaller than the full envelope
       #     (a +/-0.20, b -0.18..+0.14) so a drifting arm meets a wall rather than running to the
       #     workspace limit. Note this is a BOX, not a rail -- the only rung that is. ---

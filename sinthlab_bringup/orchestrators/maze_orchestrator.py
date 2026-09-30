@@ -224,6 +224,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
         self.move_recover.reload()
         self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
+        self.maze_fixtures.reload()      # rail_lead_sec: how easy moving along a rail feels
 
 
 def main(args=None) -> None:

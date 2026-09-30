@@ -174,7 +174,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
 | Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
-| Maze | `timeout_sec` |
+| Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 
 These are deliberately **not** live:
 - `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
@@ -871,12 +871,27 @@ Work up the ladder and stop at the first rung that feels wrong.
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
 >
-> **Tuning the feel** — three independent levers, in the order worth trying:
-> 1. **Rotational stiffness** (SmartPad profile, 300 vs 120): the biggest lever on how heavy guiding
+> **Tuning the feel.** The goal is effortless movement *along* a rail and a hard wall *across* it.
+> Along a rail the spring exerts no force by design (the equilibrium is the arm's own position
+> projected onto the rail), so what you feel there comes from lag, damping and the orientation lock.
+> The levers, in the order worth trying:
+> 1. **`virtual_fixtures.rail_lead_sec`** — the **ease knob**, Live between trials. It aims the
+>    equilibrium slightly *ahead* of the arm along the rail it is on, cancelling the tracking lag that
+>    reads as drag (the equilibrium reaches the arm a few tens of ms late, and stiffness × speed × lag
+>    pulls back). `0` = off; **+0.01 to +0.03** = lighter (at 0.2 m/s, +0.03 is ~6 N of assist);
+>    the cap is +0.05, because beyond the real lag the arm starts to pull itself along; **negative** =
+>    a deliberate speed-dependent drag, if the task should be harder. It never acts across a rail, so
+>    the walls are unchanged, and never leads more than 2 cm.
+> 2. **Damping ratio** (SmartPad: 0.3 / 0.7 / 1.0). The cabinet damps the arm's velocity, which is
+>    felt as drag along the rail too. 0.3 is lighter; check the walls do not ring.
+> 3. **Rotational stiffness** (SmartPad profile, 300 vs 120): the biggest lever on how heavy guiding
 >    feels, and it costs no fixture fidelity.
-> 2. **Tracking lag**: if it drags *when you move fast*, that is lag, not stiffness — raise
->    `kuka_clik_controller.max_linear_velocity` (1.0 m/s) and `max_target_step_m` (0.05).
-> 3. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
+> 4. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
+>
+> To tell them apart, move along one rail at a steady speed and watch
+> `ros2 topic echo /lbr/force_torque_broadcaster/wrench --field wrench.force` (it reads 0 below 2 N).
+> Drag that grows with speed is lag or damping; a push-back that is there even when you move slowly
+> is the orientation lock or gravity.
 >
 > If a *free* direction feels heavy no matter what, suspect the **start posture** rather than any of
 > these — see the note on orientation-constrained translation above.

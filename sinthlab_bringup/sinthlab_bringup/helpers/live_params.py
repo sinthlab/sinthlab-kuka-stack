@@ -62,6 +62,8 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     "restricted_plane": _COMMON + _PULL + _SPEED,
     "maze": _COMMON + _SPEED + [
         "timeout_sec",
+        # How easy moving along a rail feels -- see rail_lead_sec in maze_params.yaml. Walls unchanged.
+        "virtual_fixtures.rail_lead_sec",
     ],
 }
 
@@ -78,6 +80,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "perturb_start.polar_theta_deg": (-360.0, 360.0),
     "perturb_start.start_delay_sec": (0.0, 10.0),
     "timeout_sec": (5.0, 600.0),
+    # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
+    # Drag may go further -- it only ever resists.
+    "virtual_fixtures.rail_lead_sec": (-0.15, 0.05),
     # Speed limits. v_max in deg/s per joint, kept under the slowest joint's rating (98 deg/s, A1/A2).
     # a_max / j_max up to the fastest perturbation measured (20 rad/s^2, 150 rad/s^3: 0.23 s for 5 cm).
     "*.move_to_pos_v_max": (5.0, 90.0),

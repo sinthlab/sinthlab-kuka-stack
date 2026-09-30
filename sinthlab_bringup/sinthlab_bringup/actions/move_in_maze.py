@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional
 import numpy as np
 
@@ -77,6 +78,23 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         # The rail the arm is currently travelling. Latched: see _project_to_corridors.
         self._cur_rail = None
 
+        # EASE OF MOVING ALONG A RAIL. The equilibrium is the arm's own position projected onto the rail,
+        # so along the rail the spring force is zero -- EXCEPT for tracking lag: the equilibrium reaches
+        # the arm a few tens of ms late (state stream, IK, FRI), and the spring pulls back by
+        # K * speed * lag, felt as drag that grows with speed. rail_lead_sec aims the equilibrium that
+        # far AHEAD of the arm along the rail (from its filtered in-plane velocity):
+        #   > 0  assist -- cancels the lag, so moving along a rail feels lighter
+        #   = 0  off (the equilibrium is exactly the projected arm position)
+        #   < 0  deliberate drag -- the equilibrium trails the arm, so faster = harder
+        # Only the along-rail part acts: the led point is projected onto the rail the arm is ACTUALLY
+        # on, so it can never push across a wall or pick a different rail. Live (helpers/live_params.py).
+        self._rail_lead_sec = 0.0
+        self._vel_tau = 0.03          # velocity low-pass time constant [s]
+        self._lead_cap_m = 0.02       # never lead or trail by more than this [m]
+        self._prev_q = None           # (t, qa, qb) of the previous tick
+        self._vel = (0.0, 0.0)
+        self._read_rail_lead(node)
+
         # Periodic maze-position logging (see _record_extra). Reuses the fixture's own debug flags if
         # present so it can be switched off without touching code.
         # How far off a rail still counts as "on" it, for logging only (the projection is unaffected).
@@ -97,7 +115,32 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
     def start(self) -> None:
         # Forget which rail we were on; the next trial re-latches from wherever the arm actually is.
         self._cur_rail = None
+        self._prev_q = None
+        self._vel = (0.0, 0.0)
         super().start()
+
+    def _read_rail_lead(self, node: rclpyNode) -> None:
+        name = self._param_prefix + "virtual_fixtures.rail_lead_sec"
+        self._rail_lead_sec = float(node.get_parameter(name).value) if node.has_parameter(name) else 0.0
+
+    def reload(self) -> None:
+        """Re-read the live fixture parameters (rail_lead_sec). Called at a trial boundary."""
+        self._read_rail_lead(self._node)
+        self._node.get_logger().info(f"Maze fixture: rail_lead_sec = {self._rail_lead_sec:+.3f} s")
+
+    def _update_velocity(self, qa: float, qb: float) -> tuple[float, float]:
+        """Low-passed in-plane velocity of the arm [m/s], from successive measured positions."""
+        now = time.monotonic()
+        if self._prev_q is not None:
+            dt = now - self._prev_q[0]
+            if 1e-4 < dt < 0.1:
+                va, vb = (qa - self._prev_q[1]) / dt, (qb - self._prev_q[2]) / dt
+                k = dt / (self._vel_tau + dt)
+                self._vel = (self._vel[0] + k * (va - self._vel[0]), self._vel[1] + k * (vb - self._vel[1]))
+            else:
+                self._vel = (0.0, 0.0)          # a gap in the stream: do not extrapolate across it
+        self._prev_q = (now, qa, qb)
+        return self._vel
 
     def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
         """Lock the out-of-plane axis + orientation to the start pose (like the base 'plane' profile),
@@ -248,4 +291,14 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             if c[2] < best[2]:
                 best_i, best = i, c
         self._cur_rail = best_i
+
+        # Lead / trail along the chosen rail (see rail_lead_sec in __init__). The rail is chosen from
+        # the ACTUAL position above; only the projected point moves, and only along that rail.
+        va, vb = self._update_velocity(qa, qb)
+        if self._rail_lead_sec != 0.0:
+            da, db = self._rail_lead_sec * va, self._rail_lead_sec * vb
+            n = (da * da + db * db) ** 0.5
+            if n > self._lead_cap_m:
+                da, db = da * self._lead_cap_m / n, db * self._lead_cap_m / n
+            best = self._clamp_to(corridors[best_i], qa + da, qb + db)
         return best[0] + a0, best[1] + b0  # back to absolute
