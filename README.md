@@ -1347,20 +1347,20 @@ return to start, not just the pull.
 **Extra column (1):** `disp_m` — displacement from the locked baseline, computed by
 `CartesianImpedanceDisplacementMonitor` every tick. **The dependent variable of the experiment.**
 
-**Events** (callback → token):
+**Events**, in trial order. Some callbacks mark more than one event:
 
-| Orchestrator callback | `event` | `event_arg` |
-|---|---|---|
-| `start_trial()` | `trial_start` | trial index |
-| `on_move_complete()` | `at_start` | — |
-| `on_quiet_window_complete()` | `quiet_end` | — |
-| ″ (cue fires) | `cue_go` | — |
-| monitor `on_armed` | `armed` | — |
-| `on_monitor_snap()` | `snap` | **displacement, m** |
-| ″ | `cue_snap` | — |
-| ″ (`freeze_hold.start()`) | `freeze` | — |
-| `on_monitor_complete()` | `recover_start` | — |
-| `on_recover_complete()` | `trial_end` | trial index |
+| Orchestrator callback | `event` | `event_arg` | Marked when |
+|---|---|---|---|
+| `start_trial()` | `trial_start` | trial index | the trial begins; the move to start is sent |
+| `on_move_complete()` | `at_start` | — | the arm has reached the start pose |
+| `on_quiet_window_complete()` | `quiet_end` | — | the quiet window has elapsed |
+| `on_quiet_window_complete()` | `cue_go` | — | the audio + visual go cues have been fired |
+| `on_monitor_armed()` | `armed` | — | the baseline is locked; the animal may pull |
+| `on_monitor_snap()` | `snap` | **displacement, m** | the pull crosses the threshold |
+| `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
+| `on_monitor_snap()` | `freeze` | — | the equilibrium is frozen on the arm (`freeze_hold.start()`) |
+| `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
+| `on_recover_complete()` | `trial_end` | trial index | the arm is back at the start |
 
 **Cue delivery events** (all three experiments, fired from the cue classes rather than the state
 machine, so they can appear anywhere and more than once):
@@ -1379,13 +1379,15 @@ may pull. Reaction time is `snap − armed`.
 
 #### Perturb
 
-Identical to apple pluck, plus:
+Identical to apple pluck, plus two events between `cue_go` and `armed`:
 
-| Orchestrator callback | `event` | `event_arg` |
-|---|---|---|
-| `on_audio_complete()` | `perturb_delay_start` | delay, s |
-| `on_perturb_complete()` | `perturb_applied` | magnitude, m |
-| `on_monitor_armed()` | `armed` | — |
+| Orchestrator callback | `event` | `event_arg` | Marked when |
+|---|---|---|---|
+| `on_audio_complete()` | `perturb_delay_start` | delay, s | the go cue is out; the wait before the perturbation starts |
+| `on_perturb_complete()` | `perturb_applied` | magnitude, m | the perturbation move has finished |
+
+`armed` then comes after the monitor's settle (`baseline_settle_sec`), so the baseline is the
+post-perturbation rest pose.
 
 The applied perturbation **vector** is constant within a trial and goes in the sidecar, not in a
 column.

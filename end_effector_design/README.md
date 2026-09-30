@@ -52,7 +52,8 @@ top and a clear casing box over the lot:
                       flange, filleted R6 at the root. Apple height is FIXED by stem_shaft_len —
                       reprint to change it. Apple centre sits 212 mm above the robot flange.
   (3b) TPU BALL       Ø45. LOWER cup FUSED to the stem (dual-material print); solid cap embeds the
-                      armature flange; OPEN top loads the ERM + force sensor
+                      armature flange; OPEN top loads the ERM + force sensor. A 45° teardrop NECK
+                      where it meets the shaft makes the underside print without support
   (3c) TPU CAP        press-fit dome closes the ball; wires / FSR tail / pressure tube exit the bore
   ( + ) CLEAR CASING BOX  198 × 198, 5-sided (open on the flange side), over the whole stack; its top
                       clamps with 3× M3 into the cover on Ø64
@@ -596,7 +597,7 @@ Sizes, so you know what you are looking at on the plate:
 | `base_tier2` | Ø188 | 32 | PETG | — |
 | `cover` | Ø188 | 17 | PETG | — |
 | `apple_stem` | Ø44 | 113.5 | PETG | **fused with `apple_ball`** |
-| `apple_ball` | Ø45 | 27.4 | TPU 95A | **fused with `apple_stem`** |
+| `apple_ball` | Ø45 | 30.8 | TPU 95A | **fused with `apple_stem`** |
 | `apple_cap` | Ø43 | 22.5 | TPU 95A | — |
 | `casing` | 198 × 198 | 77 | *not printed* | acrylic, by hand |
 
@@ -690,7 +691,17 @@ aligned**. Do not import them separately and let auto-arrange move them.
    - In the **PETG filament preset for this plate only**: **Minimum and Maximum fan speed `0 %`**.
      Layer adhesion up the shaft is the whole ball game here.
 6. **Print it alone on the plate.** Nothing else should be stealing layer time.
-7. No supports. The ball's lower cup is fused to the shaft and its overhang is progressive.
+7. **No supports.** The ball's underside is a 45° cone (`ball_neck`) where it meets the shaft, so
+   every TPU layer sits on the one below — nothing on the grip surface needs support.
+
+> **"Floating cantilever" warning on `apple_ball`?** Two causes, in order of likelihood:
+> - **The files were loaded as two objects.** The object list must show **one** object with
+>   `apple_stem` and `apple_ball` as its *parts*. Two separate objects means the ball is checked on
+>   its own — and auto-arrange drops it onto the bed, out of line with the stem. Delete both and
+>   re-import them together, answering **Yes** in step 2.
+> - **The STL predates the neck.** A bare sphere meets the Ø14 shaft almost flat (18° from
+>   horizontal), which really is an unsupported overhang. Re-export `apple_ball.stl` (the neck adds
+>   ~3.4 mm of taper down the shaft; `check_layout.py` reports the worst underside angle).
 
 > **If it snaps at the shaft root:** printed upright, the layers lie perpendicular to the bending
 > stress — the worst possible orientation, and one no slicer setting fully fixes. Fall back to

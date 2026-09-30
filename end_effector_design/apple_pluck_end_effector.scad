@@ -364,6 +364,13 @@ joint_register_h    = 2.5;  // spigot/recess depth [mm]
 apple_d        = 45;   // TPU ball outer Ø [mm]
 apple_wall     = 3;    // TPU ball shell wall [mm]
 apple_grooves  = true; // grip grooves on the ball sides
+// The ball prints UPRIGHT on the stem, 100 mm off the bed, so its underside must be self-supporting.
+// A bare sphere meets the Ø14 shaft at 18 deg from horizontal -- a flat ring of TPU over nothing
+// (Bambu: "floating cantilever"). The neck is a cone tangent to the sphere where its surface reaches
+// neck_angle, continuing down the shaft, so every layer sits on the one below: a slight teardrop at
+// the stem, no supports anywhere on the grip surface.
+ball_neck      = true; // add the self-supporting teardrop neck under the ball
+neck_angle     = 45;   // steepest overhang the underside may have, from horizontal [deg]
 stem_shaft_d   = 14;   // PETG shaft Ø [mm]
 stem_shaft_len = 100;  // shaft length, cover flange TOP -> armature flange [mm]. Sets apple height,
                        // which is FIXED: change this number and reprint to move the apple.
@@ -769,7 +776,10 @@ module apple_ball() {
     split_z  = ball_c + cap_split;
     rebate_d = apple_d - 2 * apple_wall;
     difference() {
-        translate([0,0,ball_c]) sphere(d = apple_d);                                  // ball body
+        union() {
+            translate([0,0,ball_c]) sphere(d = apple_d);                              // ball body
+            if (ball_neck) ball_neck_cone(ball_c);                                    // self-supporting underside
+        }
         intersection() {                                                              // hollow above the flange
             translate([0,0,ball_c]) sphere(d = inner_d);
             translate([0,0,fl_top]) cylinder(h = apple_d, d = apple_d + 1);
@@ -779,6 +789,18 @@ module apple_ball() {
         stem_solid();                                                                 // carve the PETG stem
         if (apple_grooves) grip_grooves(ball_c - apple_d/2);
     }
+}
+
+// Cone under the ball, tangent to the sphere at the point where the sphere's surface is neck_angle
+// from horizontal, apex on the axis below. stem_solid() is carved out afterwards, so what is left is a
+// collar round the shaft that starts at a knife edge and widens at neck_angle -- printable without
+// support. At 45 deg it reaches ~3.4 mm further down the shaft than the bare sphere.
+module ball_neck_cone(ball_c) {
+    R  = apple_d / 2;
+    rt = R * sin(neck_angle);            // tangent point, radius
+    zt = ball_c - R * cos(neck_angle);   // tangent point, height
+    rotate_extrude($fn = 96)
+        polygon([[0, zt - rt * tan(neck_angle)], [rt, zt], [0, zt]]);
 }
 
 // (3c) TPU CAP — separate press-fit dome that closes the ball after loading electronics.

@@ -290,6 +290,15 @@ def main():
     report(v["stem_shaft_d"] / 2 + v["stem_fillet_r"] < v["sj_screw_bcd"] / 2 - cbore / 2,
            f"fillet to r={v['stem_shaft_d']/2 + v['stem_fillet_r']:.1f} clears the joint screws "
            f"(cbore inner r={v['sj_screw_bcd']/2 - cbore/2:.2f})")
+    # The ball prints upright, 100 mm off the bed, so its underside must be self-supporting. Without the
+    # neck the sphere meets the shaft at asin(r_shaft / R) from horizontal; with it, the flattest
+    # underside surface is the neck cone itself.
+    neck = re.search(r"\bball_neck\s*=\s*true\s*;", src) is not None
+    R = v["apple_d"] / 2
+    flattest = v["neck_angle"] if neck else math.degrees(math.asin(v["stem_shaft_d"] / 2 / R))
+    report(flattest >= 45 - 1e-9,
+           f"ball underside is self-supporting: flattest surface {flattest:.0f} deg from horizontal "
+           f"(>= 45 required; {'neck on' if neck else 'NO neck -- the bare sphere overhangs the shaft'})")
 
     stack = (v["plate_t"] + v["base1_floor"] + v["comp1_depth"]
              + v["base2_floor"] + v["comp2_depth"] + v["cover_plate_t"])
