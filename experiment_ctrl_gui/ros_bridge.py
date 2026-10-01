@@ -249,6 +249,12 @@ class DemoBridge:
                 if not self._sleep(run_id, 1.0):
                     return
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
+            elif self._exp.group == "pretraining":
+                thr = self._effective.get("travel_task.threshold_m", 0.1)
+                self._phase_to("threshold", thr, f"Threshold reached: {thr:+.3f} m.")
+                if not self._sleep(run_id, 1.5):
+                    return
+                self._phase_to("goal", None, "Trial succeeded. Reward; waiting for release before reset.")
             else:
                 thr = self._effective.get(
                     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", 0.1)

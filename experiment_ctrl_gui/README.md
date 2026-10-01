@@ -69,7 +69,7 @@ flowchart LR
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop / restart / stop-after-trial |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
 | `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `pause`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
-| `experiments.py` | the four experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name); cautions and linked parameters |
+| `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): four experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `static/` | the page: `index.html`, `style.css`, `app.js`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
@@ -84,7 +84,7 @@ packages when ROS is sourced.
 ## Robot side: ExperimentControl
 
 [`helpers/experiment_control.py`](../sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py)
-makes an orchestrator controllable from outside. Each of the four orchestrators creates one:
+makes an orchestrator controllable from outside. Every orchestrator creates one:
 
 | Interface | Type | Behaviour |
 |---|---|---|
@@ -119,7 +119,7 @@ the checks, which `check_value()` applies on both sides:
 - **pairs**, checked against the other values in force (`context`): the perturbation's r against its
   plane's cap (`PERTURB_R_MAX`), and the start pose against the recover pose, which must be equal.
 
-Live motion parameters: the speed limits of every move are live in all four experiments; the start /
+Live motion parameters: the speed limits of every move are live in every experiment; the start /
 recover pose is live in apple pluck and perturb only (`_POSE`). Each move action's `reload()` re-reads
 them at the trial boundary, and Ruckig is rebuilt from them at the move's next start.
 
@@ -170,7 +170,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/experiments` | the four experiments and their SmartPad selections |
+| GET | `/api/experiments` | every experiment, its tab (`group`) and its SmartPad selections |
+| GET | `/api/groups` | the experiment-list tabs, in order: `experiments`, `pretraining` |
 | GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices), `groups` (block docs), `fixed` (Fixed tab sections) |
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
@@ -236,7 +237,8 @@ Static files are served from `static/` only, with no path traversal.
 It then appears on the Live tab automatically. Do step 2 before step 1: a listed name that is never
 re-read would be accepted and silently ignored, which is the failure the gate exists to prevent.
 
-**A new experiment:** add an `Experiment` to `EXPERIMENTS` in `experiments.py`, an entry in
+**A new experiment:** add an `Experiment` to `EXPERIMENTS` in `experiments.py` (its `group` picks the
+tab), an entry in
 `LIVE_PARAMS`, and create an `ExperimentControl` in its orchestrator. The orchestrator must end each
 trial with `control.begin_trial(...)` and pass `on_event=self.control.on_event` to its `TrialRecorder`.
 Add its step list to `STEPS` in `static/app.js` for the status card.

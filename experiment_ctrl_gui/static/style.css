@@ -96,6 +96,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 
 /* ---------- experiment list ---------- */
 .exp-list { display: flex; flex-direction: column; gap: 8px; }
+.exp-groups { margin: -4px 0 10px; }
+.dot-run { color: var(--ok); font-size: 10px; vertical-align: 1px; }
 .exp {
   text-align: left; border: 1px solid var(--line); background: var(--panel-2); color: inherit; border-radius: 8px;
   padding: 9px 11px; cursor: pointer; font: inherit; position: relative;

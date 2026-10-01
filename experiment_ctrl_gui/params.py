@@ -243,7 +243,7 @@ class ExperimentParams:
         value = coerce(raw, default)
         # Linked parameters change together, so check against all of them at their new value.
         context = {**self.current(), **{n: value for n in ex.linked(name) if n in self.defaults}}
-        problem = ex.live_params.check_value(name, value, context) or ex.check_extra(name, value)
+        problem = ex.live_params.check_value(name, value, context)
         if problem is None:
             ch = ex.choices(self.exp, name, self.defaults)
             if ch is not None and str(value) not in ch:

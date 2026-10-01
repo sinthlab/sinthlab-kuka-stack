@@ -185,6 +185,10 @@ class TrialRecorder:
             f"TrialRecorder: recording {self._experiment} trial {trial_index} -> "
             f"{os.path.basename(self._path)}")
 
+    def annotate(self, **fields) -> None:
+        """Add sidecar fields known only once the trial is under way (e.g. the baseline at `armed`)."""
+        self._sidecar.update(fields)
+
     def mark(self, event: str, arg: Optional[float] = None) -> None:
         """Log an event: fire the sync pulse, record the exact moment, tag the next CSV sample.
 

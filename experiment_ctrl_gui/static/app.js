@@ -11,11 +11,15 @@ const STEPS = {
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
          "release_wait", "released", "trial_end"],
 };
+// The three pre-training tasks report the same steps.
+STEPS.free_move = STEPS.move_vertical = STEPS.move_horizontal =
+  ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "threshold", "goal",
+   "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "recover", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
-  goal: "goal / timeout", release_wait: "release wait", released: "released",
+  goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
@@ -26,6 +30,7 @@ const PHASE_TEXT = {
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
   safety_trip: "SAFETY ABORT — recovering", release_wait: "waiting for release", released: "recovering to start",
   paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
+  threshold: "threshold reached — coming back",
 };
 const TAB_HELP = {
   live: {
@@ -50,7 +55,7 @@ const store = {
 };
 
 const S = {
-  experiments: [], selected: new URLSearchParams(location.search).get("exp") || store.get("exp", "apple_pluck"),
+  experiments: [], groups: [], group: "experiments", selected: new URLSearchParams(location.search).get("exp") || store.get("exp", "apple_pluck"),
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
   params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
@@ -96,8 +101,17 @@ function exp(key) { return S.experiments.find((e) => e.key === key); }
 function renderExperiments() {
   const list = $("#exp-list");
   const rk = runningKey();
+  // Group tabs: Experiments | Pre-training. A dot marks the tab holding the running experiment.
+  $("#exp-groups").innerHTML = S.groups.map((g) => {
+    const running = rk && exp(rk)?.group === g.key;
+    return `<button class="tab${g.key === S.group ? " active" : ""}" data-group="${esc(g.key)}" role="tab"
+      aria-selected="${g.key === S.group}">${esc(g.label)}${running ? ' <span class="dot-run" title="running">●</span>' : ""}</button>`;
+  }).join("");
+  document.querySelectorAll("#exp-groups .tab").forEach((t) => t.onclick = () => {
+    S.group = t.dataset.group; renderExperiments();
+  });
   list.innerHTML = "";
-  for (const e of S.experiments) {
+  for (const e of S.experiments.filter((x) => x.group === S.group)) {
     const b = document.createElement("button");
     b.className = "exp"; b.setAttribute("role", "radio");
     b.setAttribute("aria-checked", String(e.key === S.selected));
@@ -112,6 +126,7 @@ function renderExperiments() {
 }
 async function select(key) {
   S.selected = key; store.set("exp", key);
+  S.group = exp(key)?.group ?? S.group;
   renderExperiments(); renderChecklist();
   await loadParams(key);
   renderControls();
@@ -317,7 +332,7 @@ function renderParams(force = false) {
   data.params.forEach((p) => counts[p.tier]++);
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
+  document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
   $("#tab-help").textContent = TAB_HELP[S.tab][mode];
   $("#btn-reset-edits").disabled = mode === "running" || !data.params.some((p) => p.edited);
 
@@ -498,7 +513,9 @@ function connect() {
 
 async function init() {
   S.experiments = await api("/api/experiments");
+  S.groups = await api("/api/groups");
   if (!exp(S.selected)) S.selected = S.experiments[0].key;
+  S.group = exp(S.selected).group;
   (await api("/api/logs")).forEach(appendLog);
   S.app = await api("/api/state");
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
@@ -527,7 +544,7 @@ async function init() {
   $("#btn-pause").onclick = () => { const s = statusLive(); act(() => api("/api/pause", { paused: !(s && s.paused) }), s && s.paused ? "Resumed" : "Pause requested"); };
   $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating — see the log");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };
-  document.querySelectorAll(".tab").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });
+  document.querySelectorAll(".tab[data-tab]").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });
   $("#param-filter").oninput = (e) => { S.paramFilter = e.target.value; renderParams(true); };
   document.querySelectorAll("#log-levels button").forEach((b) => b.onclick = () => {
     S.logLevel = b.dataset.level;

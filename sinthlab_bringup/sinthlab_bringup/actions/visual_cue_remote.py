@@ -60,7 +60,7 @@ class RemoteCueTrigger:
 
     def check(self) -> None:
         """Ask the board for /status and log whether it answered. Returns immediately."""
-        self._jobs.put((("/status",), None, time.monotonic()))
+        self._jobs.put((("/status",), None, time.monotonic(), True))
 
     def fire(self, label: str, colour: Optional[Tuple[int, int, int, int]] = None) -> None:
         """Run the board's cue -- in `colour` (r, g, b, w) if given. Returns immediately."""
@@ -68,19 +68,26 @@ class RemoteCueTrigger:
             paths = ("/cue",)
         else:   # set the colour (RAM only: never save=1), then fire -- see the module doc
             paths = ("/config?r={}&g={}&b={}&w={}".format(*colour), "/cue")
-        self._jobs.put((paths, label, time.monotonic()))
+        self._jobs.put((paths, label, time.monotonic(), True))
+
+    def show(self, path: str, label: str) -> None:
+        """Send a STATE change -- e.g. /segments, /off -- that holds until the next one. Returns
+        immediately. Never dropped as stale: a late state is still the right state, and dropping it
+        would leave the ring showing the previous one (ring_state_cue.py)."""
+        self._jobs.put(((path,), label, time.monotonic(), False))
 
     def _run(self) -> None:
         while True:
-            paths, label, queued_at = self._jobs.get()
+            paths, label, queued_at, droppable = self._jobs.get()
             try:
-                self._send(paths, label, queued_at)
+                self._send(paths, label, queued_at, droppable)
             except Exception as exc:    # this thread must outlive anything a request can throw
                 self._log.warn(f"Visual cue Wi-Fi trigger: unexpected error, carrying on: {exc!r}")
 
-    def _send(self, paths: Tuple[str, ...], label: Optional[str], queued_at: float) -> None:
+    def _send(self, paths: Tuple[str, ...], label: Optional[str], queued_at: float,
+              droppable: bool = True) -> None:
         waited = time.monotonic() - queued_at
-        if label is not None and waited > STALE_SEC:
+        if droppable and label is not None and waited > STALE_SEC:
             self._log.warn(
                 f"Visual cue '{label}' DROPPED: it waited {waited * 1000:.0f} ms behind a slow "
                 "request and would have lit late.")

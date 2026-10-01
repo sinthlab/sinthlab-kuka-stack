@@ -9,9 +9,4 @@ install(
 )
 
 # Install ros2_control resources (initial joint positions, configs)
-install(
-  DIRECTORY ros2_control
-  DESTINATION share/${PROJECT_NAME}
-)
-
 ament_package()

@@ -149,6 +149,7 @@ class PerturbOrchestratorNode(rclpyNode):
         # reaching (cued once at trial start); we just begin watching for the pull.
         self.get_logger().info("Monitor armed (baseline locked). Watching for the pull.")
         self.recorder.mark("armed")
+        self.recorder.annotate(baseline=self.monitor.baseline_xyz())
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — snap cue + freezing the arm at its current pose (pull released).")

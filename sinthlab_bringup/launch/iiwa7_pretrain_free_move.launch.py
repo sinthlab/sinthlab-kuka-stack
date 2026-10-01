@@ -1,4 +1,4 @@
-"""Maze-exploration experiment. Thin wrapper over experiment_base.launch.py."""
+"""Pre-training: free move (admittance inside a safety box). Thin wrapper over experiment_base.launch.py."""
 import os
 
 from launch import LaunchDescription
@@ -9,7 +9,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 # Names the recording folder: analysis/expt_<this file's name>_<timestamp>/
-RUN_NAME = "iiwa7_maze"
+RUN_NAME = "iiwa7_pretrain_free_move"
 
 
 def generate_launch_description():
@@ -20,7 +20,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "params_file",
                 default_value=PathJoinSubstitution(
-                    [FindPackageShare("sinthlab_bringup"), "config", "maze_params.yaml"]
+                    [FindPackageShare("sinthlab_bringup"), "config", "pretrain_free_move.yaml"]
                 ),
                 description="Experiment parameter YAML.",
             ),
@@ -40,13 +40,13 @@ def generate_launch_description():
                 launch_arguments={
                     "params_file": LaunchConfiguration("params_file"),
                     "run_name": RUN_NAME,
-                    "orchestrator": "maze_orchestrator.py",
+                    "orchestrator": "free_move_orchestrator.py",
                     # Joint controller active for the exact-posture start/recover moves; CLIK loaded
-                    # inactive and switched in by the orchestrator for the corridor fixtures.
+                    # inactive and switched in by the orchestrator for the trial.
                     "ctrl": "lbr_joint_position_command_controller",
                     "extra_inactive_ctrl": "kuka_clik_controller",
-                    # The maze is the ONLY experiment whose tool points along +X, so the CLIK must
-                    # resolve the arm's redundancy toward the maze start posture, not the tool-down one.
+                    # Starts at the maze start (tool along +X), so the CLIK resolves the arm's
+                    # redundancy toward that posture, as in the maze.
                     "clik_nullspace_cfg": LaunchConfiguration("clik_nullspace_cfg"),
                 }.items(),
             ),

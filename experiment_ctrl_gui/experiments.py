@@ -1,4 +1,5 @@
-"""The four experiments the dashboard can run, and how their parameters are classified.
+"""The experiments the dashboard can run -- four experiments and three pre-training tasks, shown
+under two tabs -- and how their parameters are classified.
 
 Three tiers, shown as three tabs in the dashboard:
 
@@ -51,6 +52,7 @@ class Experiment:
     run_name: Optional[str]        # recording folder prefix: analysis/expt_<run_name>_<ts>/
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
+    group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
 
     def smartpad(self) -> Dict[str, str]:
         out = dict(_FRI_COMMON)
@@ -105,7 +107,46 @@ EXPERIMENTS: List[Experiment] = [
         clik_nullspace="clik_nullspace_maze.yaml",
     ),
 ]
+
+# Pre-training: shorter tasks that get a subject used to the arm before the real experiments. All
+# three start at the maze start (tool along +X) and run on the CLIK like the maze.
+_MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
+                "extra_inactive_ctrl": "kuka_clik_controller",
+                "clik_nullspace_cfg": "config/clik_nullspace_maze.yaml"}
+EXPERIMENTS += [
+    Experiment(
+        key="free_move", label="Free Move", group="pretraining",
+        summary="Admittance: the arm goes wherever it is pushed, inside a safety box. Reward for moving it.",
+        launch_file="iiwa7_pretrain_free_move.launch.py",
+        params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
+        stiffness_profile="Rail guide (uniform 1000)",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_free_move",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+    ),
+    Experiment(
+        key="move_vertical", label="Move Vertical", group="pretraining",
+        summary="One vertical rail: up or down to the threshold (ring green → red), then back to start.",
+        launch_file="iiwa7_pretrain_move_vertical.launch.py",
+        params_yaml="pretrain_move_vertical.yaml", node="rail_training_orchestrator",
+        stiffness_profile="Maze walls + easy guiding (rot 120)",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_move_vertical",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+    ),
+    Experiment(
+        key="move_horizontal", label="Move Horizontal", group="pretraining",
+        summary="One horizontal rail: left or right to the threshold (ring green → red), then back to start.",
+        launch_file="iiwa7_pretrain_move_horizontal.launch.py",
+        params_yaml="pretrain_move_horizontal.yaml", node="rail_training_orchestrator",
+        stiffness_profile="Maze walls + easy guiding (rot 120)",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_move_horizontal",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+    ),
+]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
+GROUPS = [("experiments", "Experiments"), ("pretraining", "Pre-training")]
 
 # Launch arguments every experiment shares (experiment_base.launch.py defaults).
 COMMON_LAUNCH_ARGS = {"robot_type": "iiwa7", "robot_name": "lbr", "startup_delay": "0.0"}
@@ -130,6 +171,9 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
+    "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
+    "free_move.box_*": "Safety box, checked by IK from the maze start. Re-check reach before enlarging it (+X +Z is the tight corner).",
+    "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y), or norm for free move.",
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
@@ -164,12 +208,6 @@ def linked(name: str) -> List[str]:
         if name in group:
             return group
     return [name]
-
-
-def check_extra(name: str, value) -> Optional[str]:
-    """Checks beyond live_params.check_value that only the dashboard makes (none at present: the pose
-    checks moved into live_params so the orchestrators enforce them too)."""
-    return None
 
 
 def choices(exp: Experiment, name: str, flat: Dict[str, object]) -> Optional[List[str]]:

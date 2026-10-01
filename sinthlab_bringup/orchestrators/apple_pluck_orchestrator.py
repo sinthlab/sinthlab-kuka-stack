@@ -121,6 +121,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_monitor_armed(self):
         # Baseline locked: this is the moment the animal may pull. Reaction time is snap - armed.
         self.recorder.mark("armed")
+        self.recorder.annotate(baseline=self.monitor.baseline_xyz())
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — freezing the arm at its current pose (pull released).")

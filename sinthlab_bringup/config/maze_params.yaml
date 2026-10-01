@@ -216,7 +216,7 @@
     # better conditioned for vertical motion and has gravity helping rather than fighting.
     #
     # Layout and solution: see the grid diagram in the `maze` profile below.
-    # Short route 1.08 m; the long way round 1.38 m. Every vertical leg travelled DOWNWARD. There are NO dead ends -- every wrong turn is a loop that
+    # Short route 0.97 m; the long way round 1.27 m. Every vertical leg travelled DOWNWARD. There are NO dead ends -- every wrong turn is a loop that
     # rejoins the route, so it costs time rather than trapping the arm. Verified vs the URDF (optas
     # IK) by `ros2 run sinthlab_bringup check_maze.py`: every rail sampled reachable while holding the
     # start orientation, all junctions connected, START on a rail, all checkpoints + goal on rails.

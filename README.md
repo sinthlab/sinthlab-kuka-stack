@@ -33,6 +33,7 @@ worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-t
 - [3. Building the Stack](#3-building-the-stack)
 - [4. Simulation & Visualization (no hardware)](#4-simulation--visualization-no-hardware)
 - [5. Running Experiments on Hardware](#5-running-experiments-on-hardware)
+  - [Pre-training — Free Move, Move Vertical, Move Horizontal](#pre-training--free-move-move-vertical-move-horizontal)
 - [6. Software Architecture](#6-software-architecture)
 - [7. Data Collected](#7-data-collected)
 - [8. Troubleshooting](#8-troubleshooting)
@@ -47,7 +48,7 @@ worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-t
 The quickest way to run an experiment is the **experiment control dashboard**, a local web page on
 the ROS computer. From it you:
 
-- pick one of the four experiments;
+- pick one of the four experiments, or a pre-training task;
 - check or change its parameters;
 - Start, Pause, Stop and Restart it;
 - change cues and other live settings between trials;
@@ -86,7 +87,7 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 | `--host 0.0.0.0` | serve beyond this computer. **Anyone who can reach the port can start the robot.** Prefer an SSH tunnel: `ssh -L 8080:localhost:8080 <ros-box>` |
 
 ### The page
-- **Left column:** the experiment list, the **Run** controls, and a **Before you start** checklist
+- **Left column:** the experiment list (tabs **Experiments** and **Pre-training**), the **Run** controls, and a **Before you start** checklist
   with the SmartPad selections for the chosen experiment.
 - **Middle column:** the **status**, then the **parameters**. Status shows the trial number, the
   current phase, the trial's steps, and a list of every event.
@@ -95,7 +96,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   run state.
 
 ### Running an experiment
-1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze.
+1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze; or, under
+   **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
    *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. **If the arm is nearly
    straight** (mechanical zero, or close to it), the app then asks to move it to the ready pose
@@ -175,6 +177,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
+| Free Move | `timeout_sec`; the task `travel_task.threshold_m` / `direction` / `require_return` / `return_tolerance_m`; the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (5–200, lower = lighter), `free_move.deadband_n`, `free_move.max_speed_mps` (≤ 0.4), `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
+| Move Vertical / Move Horizontal | `timeout_sec`, `virtual_fixtures.rail_lead_sec`, the task `travel_task.*` and the ring `ring_cue.*` as in Free Move |
 
 These are deliberately **not** live:
 - `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
@@ -186,6 +190,7 @@ These are deliberately **not** live:
   redundancy posture must equal the start pose and is read once, when the controller starts; and the
   maze's geometry hangs off the start. Edit it per-run (the posture then follows automatically).
 - **Maze rails, checkpoints and goal:** verified offline by `check_maze.py`.
+- **The pre-training rails and the Free Move box:** checked by IK for reach; edit them per-run.
 
 ### Parameter help
 Each parameter shows a one-line description. **Hover over its name**, or tab to it, for the full
@@ -204,7 +209,8 @@ document a new parameter, see [§9](#9-development--contributing).
 ### Without the dashboard
 The same controls from a terminal (namespace `lbr`, apple pluck shown). The orchestrator nodes are
 `apple_pluck_orchestrator`, `perturb_orchestrator`, `restricted_plane_orchestrator` and
-`maze_orchestrator`.
+`maze_orchestrator`; for pre-training, `free_move_orchestrator` and `rail_training_orchestrator`
+(Move Vertical and Move Horizontal).
 
 ```bash
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py                 # start; Ctrl-C stops
@@ -220,8 +226,8 @@ ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{dat
 A `ros2 param set` on anything that is not live is **rejected with the reason**, because the
 orchestrator read it once at start-up. The start and recover poses must change together, so set them
 in one atomic call, `ros2 service call /lbr/apple_pluck_orchestrator/set_parameters_atomically …`, or
-from the dashboard; `ros2 param set` on one of them alone is refused. The maze and restricted-plane launches also accept
-`clik_nullspace_cfg:=`.
+from the dashboard; `ros2 param set` on one of them alone is refused. The maze, restricted-plane and
+pre-training launches also accept `clik_nullspace_cfg:=`.
 
 ### Files the dashboard writes
 | Where | What |
@@ -404,11 +410,16 @@ mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ou
 
 ## 4. Simulation & Visualization (no hardware)
 
-**Mock setup in RViz**
+The experiments themselves need the real arm: the cabinet provides the impedance spring and the
+force estimate, which no simulation here reproduces. To try the trial flow and the dashboard without
+it, run the dashboard in demo mode ([Quick start](#quick-start-the-experiment-dashboard)). To look at
+the arm itself:
+
+**Mock arm in RViz** (upstream `lbr_bringup`)
 ```bash
-# Terminal 1 — launch the mock setup
+# Terminal 1 — the mock arm
 source install/setup.bash
-ros2 launch sinthlab_bringup iiwa7_mock_apple.launch.py
+ros2 launch lbr_bringup mock.launch.py model:=iiwa7
 ```
 ```bash
 # Terminal 2 — visualize
@@ -418,10 +429,10 @@ ros2 launch lbr_bringup rviz.launch.py \
   rviz_cfg:=config/mock.rviz
 ```
 
-**Physics simulation in Gazebo**
+**Physics simulation in Gazebo** (upstream `lbr_bringup`)
 ```bash
 source install/setup.bash
-ros2 launch sinthlab_bringup iiwa7_gazebo_apple.launch.py
+ros2 launch lbr_bringup gazebo.launch.py model:=iiwa7
 ```
 
 **MoveIt with apple (mock or gazebo)**
@@ -453,7 +464,7 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 The [dashboard](#quick-start-the-experiment-dashboard) runs exactly the launches below, with the
 SmartPad checklist, parameters, status and log on one page. The steps below are the terminal way, and
 what the dashboard does for you. The launches accept `params_file:=/path/to.yaml` to run an edited
-parameter copy; the maze and restricted-plane launches also accept `clik_nullspace_cfg:=`.
+parameter copy; the maze, restricted-plane and pre-training launches also accept `clik_nullspace_cfg:=`.
 
 ### Scenario quick reference
 | # | Scenario | Launch file | SmartPad app (FRI) | ROS controller |
@@ -462,6 +473,7 @@ parameter copy; the maze and restricted-plane launches also accept `clik_nullspa
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
 (`LbrImpedanceControlServer`) running the Cartesian impedance spring at 1000 Hz. They differ only in
@@ -503,9 +515,7 @@ the monkey rather than along one base axis. Tilt, roll and height knobs are docu
 pose in `config/apple_pluck_impedance.yaml`.
 
 **Steps to run:**
-1. Check that `update_rate` in
-   `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
-2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens five
+1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application. It opens five
    selection dialogs in sequence — choose:
 
    | Prompt | Select |
@@ -521,12 +531,12 @@ pose in `config/apple_pluck_impedance.yaml`.
    (`0.1`, `0.2`, `0.3`, `1.0`) and elbow stiffnesses (`15`, `5`) are available if you want to change
    the feel.*
    The app then waits (~60 s) for the ROS client to connect.
-3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
+2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
    (nothing happens until you run this):
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
    ```
-4. The arm moves to the start. At the beep (and a **green** ring, if the visual cue is on) pull the
+3. The arm moves to the start. At the beep (and a **green** ring, if the visual cue is on) pull the
    apple toward you; **0.1 m** in any direction counts. A second beep and a **red** ring confirm it,
    the arm holds for a moment, then returns to the start.
 
@@ -616,9 +626,7 @@ Measured from the start pose at r = 0.05 m (motion of the impedance anchor):
 The physical apple follows the anchor through the impedance spring, so it lags a very fast perturbation.
 
 **Steps to run:**
-1. Check that `update_rate` in
-   `lbr-stack/src/lbr_fri_ros2_stack/lbr_description/ros2_control/lbr_controllers.yaml` is set to `200`.
-2. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application with the **same four
+1. On the KUKA SmartPad, start the **`LbrImpedanceControlServer`** application with the **same
    selections as Scenario 1**:
 
    | Prompt | Select |
@@ -630,11 +638,11 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
    The app then waits (~60 s) for the ROS client to connect.
-3. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
+2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
    ```bash
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
    ```
-4. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
+3. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
    the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
    any direction counts.
 
@@ -899,6 +907,17 @@ Work up the ladder and stop at the first rung that feels wrong.
 >    but watch the elbow does not swing.
 > 5. **Y/Z stiffness**: how firmly you are held on a rail. Raise if the rails feel mushy.
 >
+> **What is left when all of these are at their lightest** is the arm's own inertia and drive
+> friction (about 23 kg of links to move), and the walls catching the part of your push that is not
+> exactly along the rail. Separate the two with the ladder: profile **"Diagnostic: nearly free
+> (uniform 50, rot 10)"** + `virtual_fixture_profile: free_plane` shows the floor — how light the arm
+> can feel at all (diagnostic only; walls and plane lock are meaningless at that stiffness). Then the
+> maze profile + `free_plane` adds the plane lock, `single_line` adds one wall pair, and `maze` adds
+> the rails. Wherever it gets clearly heavier is the part to work on.
+>
+> Damping 0.1 / 0.2 apply to the Cartesian spring only; the elbow's damping stays at 0.3, Sunrise's
+> minimum for it.
+>
 > To tell them apart, move along one rail at a steady speed and watch
 > `ros2 topic echo /lbr/force_torque_broadcaster/wrench --field wrench.force` (it reads 0 below 2 N).
 > Drag that grows with speed is lag or damping; a push-back that is there even when you move slowly
@@ -926,6 +945,123 @@ Work up the ladder and stop at the first rung that feels wrong.
 > degenerate — a horizontal leg has `b_min == b_max`, a vertical leg has `a_min == a_max` — or you get a
 > box with free area inside it again. Segments must **touch** to form a junction; START (0,0) must lie on
 > one; the checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
+
+### Pre-training — Free Move, Move Vertical, Move Horizontal
+Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
+they are under the **Pre-training** tab. All three:
+
+- start at the **maze start** (tool along +X toward the subject), so they share one posture with the
+  maze;
+- run on the CLIK, like the maze;
+- end like the maze. On success or timeout there is a cue, then the arm waits for the hand to let go,
+  then it returns to the start.
+- record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
+
+| Task | Launch file | SmartPad stiffness | The subject… | Success |
+|---|---|---|---|---|
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Rail guide (uniform 1000)** | moves the arm anywhere inside a box | moved `travel_task.threshold_m` (0.05 m) from the start |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
+| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it left or right along one horizontal rail, then back | back at the start |
+
+Use **damping 0.7** and **elbow 30** for all three. Move Vertical and Move Horizontal share one
+orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free Move has its own
+(`free_move_orchestrator.py`).
+
+#### Free Move — admittance
+The arm goes where it is pushed and stays where it is let go. ROS owns the cabinet spring's
+**equilibrium** and moves it at a speed proportional to the hand's force
+(`speed = force / free_move.damping_ns_per_m`). The cabinet spring then pulls the arm after it
+([`admittance_move.py`](sinthlab_bringup/sinthlab_bringup/actions/admittance_move.py)).
+
+- **The feel is set in the YAML, not on the SmartPad, and all of it is live.**
+  - `damping_ns_per_m`: lower is lighter. At 25, a 10 N push moves the arm about 0.2 m/s.
+  - `deadband_n`: raise it if the arm creeps when nobody touches it.
+  - `max_speed_mps`: speed cap, 0.25 m/s by default.
+  - `force_filter_tau_sec`: low-pass on the force estimate.
+- **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
+  equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm,
+  and the box edges are firm walls (10 N per cm). A soft profile makes it sag and lag, so it is no
+  longer admittance. Rotation 300 holds the tool orientation.
+- **The equilibrium is integrated from force, never copied from the arm.** An equilibrium set to
+  the measured pose gives zero spring force, and the arm sinks under the gravity residual. That is
+  the collapse the threshold give-in once caused. Upstream `lbr_ros2_control/AdmittanceController`
+  integrates from the measured joints and assumes a stiff, position-controlled arm, so it is not
+  used here.
+- **Safety bounds:**
+  - **The box** (`box_min_m` / `box_max_m`, per-run, offsets from the start in the base frame):
+    X −0.10…+0.05 (+X is toward the subject), Y ±0.15, Z −0.15…+0.08 m. Checked by IK holding the
+    start orientation: every corner is reachable, every joint is ≥ 16° from its limit, and the arm
+    stays clear of singular poses. +X +Z is the tight corner; +0.10 m in both is not reachable.
+  - **A leash** (`leash_m`, 3 cm): the equilibrium is never more than this ahead of the arm.
+  - **A tare:** the force at rest, about 5 N from the gravity residual, is measured each trial
+    before the go cue and subtracted.
+  - **The runaway monitor** (`free_move_safety`).
+
+#### Move Vertical / Move Horizontal — one leg of the maze
+Each is the maze's rail fixture with **one straight rail** through the start (`virtual_fixtures.vertical_rail`
+or `horizontal_rail`, per-run). The task is in `travel_task`, and all of it is live:
+
+- `threshold_m`: how far out turns the ring red.
+- `direction`: `both`, `positive` (up / +Y) or `negative`.
+- `require_return`: `false` makes the threshold itself the success.
+- `return_tolerance_m`: how close to the start counts as back.
+
+**The ring shows the task.** It holds a state per phase (`ring_cue`, live):
+
+| Phase | Ring |
+|---|---|
+| from the go cue, travelling out | travel quarters **green** |
+| threshold reached, come back | travel quarters **red** (plus `audio_cue_threshold`) |
+| success | **blue** (plus `audio_cue_reward`) |
+| timeout, and between trials | dark |
+
+`ring_cue.quarters` names the quarters that light: Move Vertical uses `[0, 2]` (up and down),
+Move Horizontal `[1, 3]` (left and right), and Free Move all four. Which quarter faces up depends on
+how the ring sits on the flange. Light quarter 0 alone once and set the lists to match:
+```bash
+curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"     # quarter 0 green; /off to clear
+```
+The quarter cues use the board's existing `/segments` endpoint, so **the firmware needs no change**.
+They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
+one bit, not a pattern.
+
+**Reach and gravity** (IK from the maze start, holding the tool orientation):
+- **Sideways is easy:** at ±0.25 m every joint is still ≥ 39° from its limit.
+- **Down is easy.**
+- **Up is the limit.** The arm nears a singular pose above +0.12 m, and +0.20 m is unreachable.
+  Hence the vertical rail is ±0.12 m and the horizontal ±0.15 m, both with a 0.10 m threshold.
+- **On the vertical rail nothing holds the arm up** except the load data. An untouched arm sinks a
+  few cm and stops; the rail anchors after that settle (`anchor_settle_sec`, during the 4 s quiet
+  window). **Check that an untouched arm never reaches the threshold** before a session with a
+  subject.
+
+The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end.
+
+#### Before the first session with a subject
+1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`.
+   Push the tool gently sideways: **the arm must move with the push.** If it moves against it, stop
+   at once; the force frame is wrong.
+2. **Free Move, creep and box.** Leave the arm untouched for 10 s; it must not move. Then push it into
+   each box wall.
+3. **Move Vertical, gravity.** Let go at the start. The arm must stop well short of the threshold.
+4. **Ring.** Confirm the travel quarters really are up/down (or left/right) as seen by the subject.
+
+#### A suggested progression
+1. **Free Move:** threshold 0.03 m, raised live toward 0.10 m.
+2. **Move Horizontal:** first `require_return: false` (reward at the threshold), then `true`.
+3. **Move Vertical:** first `direction: negative` (down only, gravity helps), then `both`.
+4. **Maze**, along its own diagnostic ladder: `free_plane` → `single_line` → `maze`.
+
+#### Further pre-training tasks worth adding (not implemented yet)
+- **Touch and hold.** The arm holds still; the reward comes for holding the apple (force above a
+  level for a time). It teaches contact and needs only the force topic.
+- **Wait for go.** The reward is withheld if the arm is moved before the go cue. It teaches the quiet
+  window every real experiment starts with.
+- **One corner.** An L-shaped, two-rail maze profile (one turn), between the single rails and the
+  maze. This needs YAML only.
+- **Short pull.** Apple Pluck with a 2–3 cm threshold, raised live as the subject learns. No new code.
+- **Automatic staircase.** Raise `threshold_m` by itself after N successes in a row. This is a small
+  orchestrator addition.
 
 ---
 
@@ -1016,7 +1152,8 @@ flowchart LR
   orchestrator to switch to.
 
 - **The orchestrator owns the ROS side.** Each experiment has exactly one orchestrator node (1:1 with
-  its launch) that builds the experiment's **trial state machine**. The four orchestrators are kept
+  its launch) that builds the experiment's **trial state machine** (Move Vertical and Move Horizontal
+  share `rail_training_orchestrator`, configured by their YAML). The orchestrators are kept
   **independent** (no shared base) so each reads top‑to‑bottom as one self‑contained experiment.
 
 - **Orchestrators are composed only of actions.** An orchestrator holds no inline robot logic; it is a
@@ -1032,9 +1169,12 @@ flowchart LR
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
-  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze) |
-  | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze recovers |
+  | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, inside a box, leashed to the arm |
+  | `TravelMonitor` | pre-training: travel ≥ threshold, then (optionally) back at the start |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze / pre-training) |
+  | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task recovers |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
+  | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
   | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
   | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, the live-parameter gate, and the NSP event hook |
 
@@ -1148,7 +1288,7 @@ gentle pull), a 100 Hz anchor refresh is plenty — the 1 kHz loop fills in the 
 and the session drops out of `COMMANDING_ACTIVE` and the robot stops. The client is ROS 2 on
 **WSL2 — not a real‑time OS** — over a jittery ethernet link, so reliably hitting a 1–2 ms deadline
 is impractical while 10 ms is robust. It also matches the ROS rate (`controller_manager`
-`update_rate: 100`; `lbr_controllers.yaml` = `200`) — no point sending faster than ROS produces
+`update_rate: 100` in `config/iiwa7_hardware_controllers.yaml`) — no point sending faster than ROS produces
 commands.
 
 This decoupling is the whole reason the impedance lives **on the cabinet**: the fast,
@@ -1233,6 +1373,25 @@ stateDiagram-v2
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
+**Flow 5 — Pre-training** (joint moves; CLIK with one rail, or admittance for Free Move)
+```mermaid
+stateDiagram-v2
+    [*] --> MoveToStart : [trial_start]
+    MoveToStart --> SwitchToCLIK : at start [at_start]
+    SwitchToCLIK --> QuietWindow : rail anchors / free move tares [fixture_active]
+    QuietWindow --> Out : quiet_window_sec, ring green [cue_go]<br/>monitor + timeout + safety on [armed]
+    Out --> Back : travel ≥ threshold_m, ring red [threshold]
+    Back --> ReleaseWait : back at the start, reward [goal]
+    Out --> ReleaseWait : timeout_sec [timeout]
+    ReleaseWait --> SwitchToJoint : hand lets go [released]
+    Out --> SwitchToJoint : SAFETY trip [safety_trip]
+    Back --> SwitchToJoint : SAFETY trip [safety_trip]
+    SwitchToJoint --> Recover
+    Recover --> NextTrial : [trial_end]
+    NextTrial --> MoveToStart : next trial (or hold if paused)
+```
+With `require_return: false`, `threshold` and `goal` fire together.
+
 ### 6.7 End-effector board — the visual cue
 
 The [apple‑pluck end effector](end_effector_design/README.md) carries its own microcontroller, an
@@ -1308,6 +1467,11 @@ running that `curl` by hand — from a background thread, so a slow or missing b
 trial. Every cue is logged with its round‑trip time, and a failed one says why. Each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at threshold, goal and timeout, blue for maze rewards. **Not for
 experiments:** the Wi‑Fi delay varies from cue to cue, so never align trial data to it. Code:
 [`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
+
+**Quarter-ring states (pre-training).** The pre-training tasks do not flash a cue; they *hold* a
+state on the ring — chosen quarters green while travelling, red at the threshold, blue on success,
+dark otherwise — with the board's `/segments` endpoint, over Wi-Fi only. See
+[Pre-training](#pre-training--free-move-move-vertical-move-horizontal).
 
 #### Changing what the cue looks like
 
@@ -1461,6 +1625,32 @@ just the maze phase.
 
 `off_rail` transitions stay a column rather than events — it toggles too often to be useful as one.
 
+#### Pre-training
+
+**Records from** `start_trial()` **to** recover complete, like the maze.
+
+**Extra columns:** Move Vertical / Move Horizontal have the maze's six (`rel_a` … `rail_nearest`).
+Free Move has six of its own: `eq_dx`, `eq_dy`, `eq_dz` (the commanded equilibrium minus the start,
+base frame, m) and `f_adm_x`, `f_adm_y`, `f_adm_z` (the force that moved it: tared, filtered and
+past the dead band, base frame, N).
+
+**Events:**
+
+| Orchestrator callback | `event` | `event_arg` |
+|---|---|---|
+| `start_trial()` | `trial_start` | trial index |
+| `on_move_complete()` | `at_start` | — |
+| `on_switched_to_fixture()` | `fixture_active` | — |
+| `on_quiet_window_complete()` | `cue_go` | — |
+| `on_go_complete()` | `armed` | — |
+| `on_threshold(d)` | `threshold` | **travel [m]**: signed along the rail; distance for Free Move |
+| `on_success()` | `goal` | — |
+| `on_timeout()` | `timeout` | — |
+| `on_safety_trip(reason)` | `safety_trip` | reason code |
+| `force_release.start()` | `release_wait` | — |
+| force release complete | `released` | — |
+| recover complete | `trial_end` | trial index |
+
 ---
 
 ### The cabinet clock, measured
@@ -1505,7 +1695,8 @@ so the two cannot drift apart in a later edit. The codes are in
 
 ```python
 NSP_CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
-             "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9}
+             "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
+             "threshold": 10}
 ```
 
 Sending is switched by **`nsp_sync.enabled`** in each experiment YAML. It is a live parameter, so the

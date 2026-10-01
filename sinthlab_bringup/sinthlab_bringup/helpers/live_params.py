@@ -48,6 +48,12 @@ _SPEED = ["*.move_to_pos_v_max", "*.move_to_pos_a_max", "*.move_to_pos_j_max"]
 # and the maze's whole geometry hangs off the start. There the pose stays per-run.
 _POSE = ["move_to_start.target_joint_position", "move_to_start_recover.target_joint_position"]
 
+# Pre-training: the out-and-back task and the quarter-ring state colours.
+_TASK = ["travel_task.threshold_m", "travel_task.direction", "travel_task.require_return",
+         "travel_task.return_tolerance_m"]
+_RING = ["ring_cue.quarters", "ring_cue.colours.*"]
+_RAIL = _COMMON + _SPEED + _TASK + _RING + ["timeout_sec", "virtual_fixtures.rail_lead_sec"]
+
 LIVE_PARAMS: Dict[str, List[str]] = {
     "apple_pluck": _COMMON + _PULL + _SPEED + _POSE,
     "perturb": _COMMON + _PULL + _SPEED + _POSE + [
@@ -65,6 +71,18 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         # How easy moving along a rail feels -- see rail_lead_sec in maze_params.yaml. Walls unchanged.
         "virtual_fixtures.rail_lead_sec",
     ],
+    # Pre-training. The rail geometry and the free-move box stay per-run, like the maze's rails.
+    "free_move": _COMMON + _SPEED + _TASK + _RING + [
+        "timeout_sec",
+        # The feel of the admittance -- see pretrain_free_move.yaml.
+        "free_move.damping_ns_per_m",
+        "free_move.deadband_n",
+        "free_move.max_speed_mps",
+        "free_move.force_filter_tau_sec",
+        "free_move.tare_sec",
+    ],
+    "move_vertical": _RAIL,
+    "move_horizontal": _RAIL,
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -88,6 +106,17 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "*.move_to_pos_v_max": (5.0, 90.0),
     "*.move_to_pos_a_max": (0.5, 20.0),
     "*.move_to_pos_j_max": (1.0, 150.0),
+    # Pre-training. The threshold must also stay short of the rail end; the orchestrator warns if not.
+    "travel_task.threshold_m": (0.01, 0.30),
+    "travel_task.return_tolerance_m": (0.005, 0.10),
+    "ring_cue.colours.*": (0, 255),
+    "ring_cue.quarters": (0, 3),
+    # Admittance feel. The speed cap stays under the safety monitors' 0.6-0.7 m/s.
+    "free_move.damping_ns_per_m": (5.0, 200.0),
+    "free_move.deadband_n": (1.0, 15.0),
+    "free_move.max_speed_mps": (0.02, 0.4),
+    "free_move.force_filter_tau_sec": (0.0, 0.5),
+    "free_move.tare_sec": (0.2, 5.0),
 }
 
 # Joint poses: 7 angles in degrees, inside the iiwa7 limits (lbr joint_limits.yaml, which is 1 deg
@@ -104,6 +133,8 @@ CHOICES: Dict[str, List[str]] = {
     "*.restricted_axis": ["x", "y", "z"],
     "*.corridor_frame": ["relative", "absolute"],
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
+    "travel_task.direction": ["both", "positive", "negative"],
+    "travel_task.axis": ["x", "y", "z", "norm"],
 }
 
 
@@ -161,7 +192,7 @@ def check_value(name: str, value, context: Optional[dict] = None) -> Optional[st
         return _check_pair(name, value, context)
     lo, hi = lim
     values = list(value) if isinstance(value, (list, tuple)) else [value]
-    if name.startswith("visual_cue.colours.") and len(values) not in (3, 4):
+    if name.startswith(("visual_cue.colours.", "ring_cue.colours.")) and len(values) not in (3, 4):
         return f"{name} must be [r, g, b] or [r, g, b, w], got {len(values)} values"
     for v in values:
         if not (lo <= float(v) <= hi):

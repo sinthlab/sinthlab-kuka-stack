@@ -15,9 +15,6 @@ class DebugTicker:
         self._rate_hz = float(rate_hz)
         self._accum = 0.0
 
-    def set_rate(self, rate_hz: float) -> None:
-        self._rate_hz = float(rate_hz)
-
     def tick(self, dt: float) -> bool:
         if self._rate_hz <= 1e-6:
             return False

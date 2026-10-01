@@ -13,6 +13,8 @@ set(SINTHLAB_BRINGUP_PY_SCRIPTS
   orchestrators/perturb_orchestrator.py
   orchestrators/restricted_plane_orchestrator.py
   orchestrators/maze_orchestrator.py
+  orchestrators/free_move_orchestrator.py
+  orchestrators/rail_training_orchestrator.py
   diagnostics/check_maze.py
   diagnostics/check_cue_wiring.py
   diagnostics/record_fri_session.py

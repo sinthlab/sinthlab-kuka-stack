@@ -40,6 +40,7 @@ from sinthlab_bringup.helpers.live_params import PAIRED
 NSP_CODES: Dict[str, int] = {
     "trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
     "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
+    "threshold": 10,    # pre-training: the travel threshold was reached
 }
 
 STATUS_TOPIC = "experiment_status"

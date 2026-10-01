@@ -242,8 +242,10 @@ def make_handler(app: App):
                 return self._json([{
                     "key": e.key, "label": e.label, "summary": e.summary,
                     "launch_file": e.launch_file, "params_yaml": e.params_yaml, "node": e.node,
-                    "run_name": e.run_name, "smartpad": e.smartpad(),
+                    "run_name": e.run_name, "smartpad": e.smartpad(), "group": e.group,
                 } for e in ex.EXPERIMENTS])
+            if path == "/api/groups":
+                return self._json([{"key": k, "label": v} for k, v in ex.GROUPS])
             if path.startswith("/api/params/"):
                 key = path.rsplit("/", 1)[1]
                 if key not in app.params:

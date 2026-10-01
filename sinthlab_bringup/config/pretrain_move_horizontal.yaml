@@ -1,0 +1,126 @@
+/**:
+  ros__parameters:
+    # PRE-TRAINING: MOVE HORIZONTAL. One straight horizontal rail through the start -- one leg of the
+    # maze. The arm can only slide sideways along it. Moving it travel_task.threshold_m away from the
+    # start turns the travel quarters of the ring from GREEN to RED; bringing it back to the start ends
+    # the trial with the reward. Same start pose, plane and SmartPad setup as the maze.
+    #
+    # >>> SmartPad: "Maze walls + easy guiding (rot 120)" (or a lighter-rot sister), damping 0.7, elbow 30
+    # -- exactly the maze's setup. X 2500 holds the plane; Z 1000 holds the arm on the rail.
+    #
+    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): sideways is easy
+    # -- at +/-0.25 m every joint is still >= 39 deg from its limit, well away from singular poses. The
+    # rail is +/-0.15 m with a 0.10 m threshold. Gravity acts across this rail, so the rail itself holds
+    # the arm up (a few mm of sag at Z 1000 N/m) and an untouched arm stays put.
+    experiment: "move_horizontal"  # experiment name in the status topic, the trial data and the dashboard
+    state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
+    base_link: "lbr_link_0"  # URDF base link the rail is defined in
+    end_effector_link: "lbr_link_ee"  # URDF end-effector link the rail constrains
+
+    timeout_sec: 30.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
+
+    move_to_start:  # joint-space move to the trial start pose (the maze start)
+      update_rate: 200  # loop rate of this action [Hz]
+      # The maze start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject. Keep equal to
+      # move_to_start_recover and to nullspace_desired_configuration in config/clik_nullspace_maze.yaml.
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive: the rail anchors on it
+      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    move_to_start_recover:  # joint-space move back to the start at the end of each trial
+      update_rate: 200  # loop rate of this action [Hz]
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # recover pose A1..A7 [deg], same as move_to_start
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.05  # EE within this of the target counts as physically arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    # ---- THE TASK (live: change between trials from the dashboard) ----
+    travel_task:  # out to the threshold, then back to the start
+      update_rate: 50  # loop rate of this monitor [Hz]
+      axis: "y"  # which base axis counts as travel: y = sideways (per-run; the rail decides it)
+      threshold_m: 0.10  # travel from the start that turns the ring red [m]; must be short of the rail end
+      direction: "both"  # which way counts: both | positive (+Y) | negative (-Y)
+      require_return: true  # true: the trial succeeds back at the start; false: at the threshold
+      return_tolerance_m: 0.02  # "back at the start" = within this of it [m]
+      debug_log_enabled: false  # print the travel periodically
+      debug_log_rate_hz: 2.0  # how often that line prints [Hz]
+
+    # ---- the rail: the maze machinery with a single straight rail ----
+    virtual_fixture_profile: "horizontal_rail"  # which block under virtual_fixtures is active
+    virtual_fixtures:  # fixture geometry; virtual_fixture_profile picks the active one
+      max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
+      anchor_settle_sec: 3.0  # wait this long after the rail starts before anchoring it [s]
+      anchor_on_measured: true  # anchor on where the arm rests (true) rather than where it was commanded
+      rail_lead_sec: 0.0  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off
+      horizontal_rail:  # one horizontal rail through the start
+        type: "maze"  # geometry class: the maze's rail fixture with one rail
+        restricted_axis: "x"  # locked base axis; the rail lives in the Y-Z plane like the maze
+        corridor_frame: "relative"  # offsets from the anchored start (a = Y, b = Z)
+        corridor_a_min: [-0.15]  # -Y end of the rail [m] -- the end stop on that side
+        corridor_a_max: [0.15]  # +Y end of the rail [m] -- the end stop on that side
+        corridor_b_min: [0.0]  # rail height [m] (0 = level with the start)
+        corridor_b_max: [0.0]  # rail height [m], equal to corridor_b_min for a straight rail
+
+    # Runaway stop: abort to recovery if the arm goes too far or too fast.
+    rail_safety:  # runaway stop
+      update_rate: 100  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      max_displacement_m: 0.25  # abort if the EE gets farther than this from the trial start [m]
+      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s]
+      speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    force_release:  # waits for the hand to let go before recovering
+      update_rate: 100  # loop rate of this action [Hz]
+      release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
+      release_duration_sec: 1.0  # ... continuously for this long [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    # ---- cues (live) ----
+    quiet_window_sec: 4.0  # at the start, before the go cue [s]; keep >= anchor_settle_sec
+    audio_cue:  # switch for every beep
+      enabled: true  # false = no beeps at all; the trial sequence is unchanged
+    audio_cue_play:  # go cue
+      frequency_hz: 1500  # go tone: pitch [Hz]
+      duration_ms: 800  # go tone: length [ms]
+    audio_cue_threshold:  # the threshold is reached (ring turns red)
+      frequency_hz: 1000  # threshold tone: pitch [Hz]
+      duration_ms: 200  # threshold tone: length [ms]
+    audio_cue_reward:  # out and back done
+      frequency_hz: 2200  # reward tone: pitch [Hz]
+      duration_ms: 400  # reward tone: length [ms]
+    audio_cue_timeout:  # timed out
+      frequency_hz: 800  # timeout tone: pitch [Hz]
+      duration_ms: 800  # timeout tone: length [ms]
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false  # send event codes to the Blackrock NSP -- needs the DIO (README §7)
+
+    visual_cue:  # NeoPixel ring
+      enabled: true  # master switch for the ring; false = dark throughout
+      remote_test_trigger: true  # the quarter cues need the Wi-Fi trigger (the X76 wire is one bit)
+    # The ring holds a state per trial phase: travel quarters GREEN from the go cue, RED once the
+    # threshold is reached, the success colour at the end, dark between trials.
+    ring_cue:  # which quarters light, and in what colour per phase
+      # Ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59. Which is "up" depends on how the ring
+      # sits on the flange: light quarter 0 alone with
+      #   curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"
+      # and set this to the two quarters that face left and right.
+      quarters: [1, 3]  # the left and right quarters, 0-3
+      colours:  # RGBW per phase, each 0-255; [0, 0, 0, 0] = dark
+        go: [0, 255, 0, 0]  # travelling out -- green
+        reached: [255, 0, 0, 0]  # threshold reached, come back -- red
+        success: [0, 0, 255, 0]  # out and back done -- blue
+        timeout: [0, 0, 0, 0]  # timed out -- dark

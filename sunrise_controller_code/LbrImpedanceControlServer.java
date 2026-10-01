@@ -78,6 +78,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
 
     // KUKA Sunrise valid ranges; every value is clamped to these (trans <= 5000 N/m, rot <= 300 Nm/rad)
     private static final double[] K_MAX = { 5000.0, 5000.0, 5000.0, 300.0, 300.0, 300.0 };
+    private static final double NS_DAMPING_MIN = 0.3;
 
     // UI Options for Compliance. Each profile is a full per-axis {X,Y,Z,A,B,C} stiffness diagonal,
     // so the cabinet can enforce axis-aligned virtual fixtures in hardware (e.g. a flat table =
@@ -93,7 +94,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Maze walls (X lock, Y/Z firm)",
         "Maze walls + easy guiding (rot 120)",
         "Maze walls + light guiding (rot 60)",
-        "Maze walls + very light guiding (rot 30)"
+        "Maze walls + very light guiding (rot 30)",
+        "Diagnostic: nearly free (uniform 50, rot 10)"
     };
     private double[][] stiffness_vals_ = {
         { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
@@ -125,7 +127,11 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         // orientation while translating is the costly motion, so this is the knob for "moving along a
         // rail feels heavy". The price is more tool twist under load -- watch the apple angle.
         { 2500.0, 1000.0, 1000.0,  60.0,  60.0,  60.0 }, // maze: firm constraints, light guiding
-        { 2500.0, 1000.0, 1000.0,  30.0,  30.0,  30.0 }  // maze: firm constraints, very light guiding
+        { 2500.0, 1000.0, 1000.0,  30.0,  30.0,  30.0 }, // maze: firm constraints, very light guiding
+        // DIAGNOSTIC ONLY -- not for trials. Almost no spring anywhere, so what is still felt when guiding
+        // the arm is its own inertia and drive friction: the floor no fixture setting can go below. Walls
+        // and the plane lock are too soft to mean anything here. The ROS moves still work (slowly).
+        {   50.0,   50.0,   50.0,  10.0,  10.0,  10.0 }  // diagnostic: nearly free
     };
     // READY POSE -- where the arm goes if the app starts with it nearly straight. It is the
     // restricted-plane start: reachable from mechanical zero, well conditioned (smallest singular value
@@ -207,7 +213,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         getLogger().info("Control mode set to: Cartesian Impedance Control");
         getLogger().info("Stiffness (X, Y, Z, A, B, C): " + K[0] + ", " + K[1] + ", " + K[2] + 
                          ", " + K[3] + ", " + K[4] + ", " + K[5]);
-        getLogger().info("Damping " + ns_damping + ", null-space stiffness " + ns_stiffness);
+        getLogger().info("Damping " + d0 + " (elbow damping " + Math.max(NS_DAMPING_MIN, ns_damping)
+                         + "), null-space stiffness " + ns_stiffness);
     }
 
     /**
@@ -225,7 +232,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
             mode.parametrize(dof[i]).setDamping(di);
         }
         mode.setNullSpaceStiffness(ns_stiffness);
-        mode.setNullSpaceDamping(Math.max(0.1, Math.min(ns_damping, 1.0)));
+        // Null-space damping has a narrower valid range than the Cartesian damping (0.3 .. 1.0 against
+        // 0.1 .. 1.0), so a Cartesian damping of 0.1 or 0.2 keeps the elbow damping at 0.3.
+        mode.setNullSpaceDamping(Math.max(NS_DAMPING_MIN, Math.min(ns_damping, 1.0)));
     }
 
     /**

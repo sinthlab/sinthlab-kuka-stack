@@ -10,7 +10,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             # Overridable so the dashboard (experiment_ctrl_gui) can run an edited copy; the
-            # default is the package YAML, exactly as before.
+            # default is the package YAML.
             DeclareLaunchArgument(
                 "params_file",
                 default_value=PathJoinSubstitution(
