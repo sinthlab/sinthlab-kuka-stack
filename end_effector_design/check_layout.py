@@ -12,7 +12,7 @@ Checks, per tier:
 and then: inter-tier screws clear of every pocket on BOTH tiers and of the cable trench,
 cover screws inside the ring groove and clear of tier-2 pockets, tier-1 pockets clear of
 the trench arc, the trench tie slots not cutting into the tier-1 floor, and the apple
-stem's armature flange landing inside the ball.
+apple: the stem, ball and retainer fitting together.
 
     python3 check_layout.py            # exit 0 = clean, 1 = at least one failure
 """
@@ -286,19 +286,28 @@ def main():
     arm_z = v["sj_flange_t"] + v["stem_shaft_len"]
     print("\napple stem")
     report(ball_c - v["apple_d"] / 2 < arm_z,
-           f"armature flange at z={arm_z:.0f} sits inside the ball ({ball_c - v['apple_d']/2:.0f}..{ball_c + v['apple_d']/2:.0f})")
+           f"retainer at z={arm_z:.0f} sits inside the ball ({ball_c - v['apple_d']/2:.0f}..{ball_c + v['apple_d']/2:.0f})")
     report(v["stem_shaft_d"] / 2 + v["stem_fillet_r"] < v["sj_screw_bcd"] / 2 - cbore / 2,
            f"fillet to r={v['stem_shaft_d']/2 + v['stem_fillet_r']:.1f} clears the joint screws "
            f"(cbore inner r={v['sj_screw_bcd']/2 - cbore/2:.2f})")
-    # The ball prints upright, 100 mm off the bed, so its underside must be self-supporting. Without the
-    # neck the sphere meets the shaft at asin(r_shaft / R) from horizontal; with it, the flattest
-    # underside surface is the neck cone itself.
-    neck = re.search(r"\bball_neck\s*=\s*true\s*;", src) is not None
     R = v["apple_d"] / 2
-    flattest = v["neck_angle"] if neck else math.degrees(math.asin(v["stem_shaft_d"] / 2 / R))
-    report(flattest >= 45 - 1e-9,
-           f"ball underside is self-supporting: flattest surface {flattest:.0f} deg from horizontal "
-           f"(>= 45 required; {'neck on' if neck else 'NO neck -- the bare sphere overhangs the shaft'})")
+    report(v["neck_angle"] >= 45 - 1e-9,
+           f"ball underside is self-supporting: neck at {v['neck_angle']:.0f} deg from horizontal (>= 45 required)")
+    # The ball sits on the stem's seat and is clamped by a retainer glued to the tip.
+    print("\napple fit (stem / ball / retainer / cap)")
+    rt = R * math.sin(math.radians(v["neck_angle"]))
+    zt = ball_c - R * math.cos(math.radians(v["neck_angle"]))
+    seat_z = zt - rt * math.tan(math.radians(v["neck_angle"])) + v["seat_d"] / 2 * math.tan(math.radians(v["neck_angle"]))
+    floor = (arm_z) - seat_z
+    report(floor >= 6, f"solid TPU floor clamped between seat and retainer: {floor:.1f} mm (>= 6)")
+    report(v["seat_d"] / 2 - (v["tip_d"] / 2 + v["tip_clear"]) >= 3,
+           f"ball base bears on the seat over r {v['tip_d']/2 + v['tip_clear']:.1f}..{v['seat_d']/2:.1f} mm (>= 3 mm wide)")
+    report(v["arm_flange_d"] + 2 * v["ret_recess_clear"] < v["apple_d"] - 2 * v["apple_wall"],
+           f"retainer Ø{v['arm_flange_d']:.0f} passes the Ø{v['apple_d'] - 2*v['apple_wall']:.0f} ball opening")
+    report((v["tip_d"] - v["sensor_bore_d"]) / 2 >= 1.5,
+           f"tip wall {(v['tip_d'] - v['sensor_bore_d'])/2:.1f} mm round the Ø{v['sensor_bore_d']:.0f} bore (>= 1.5)")
+    glue = v["arm_flange_t"] + v["ret_hub_h"]
+    report(glue >= 5, f"retainer glue length on the tip {glue:.0f} mm (>= 5)")
 
     stack = (v["plate_t"] + v["base1_floor"] + v["comp1_depth"]
              + v["base2_floor"] + v["comp2_depth"] + v["cover_plate_t"])

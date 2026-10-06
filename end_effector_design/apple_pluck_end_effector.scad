@@ -6,8 +6,8 @@
 //  power/data wiring, drives a NeoPixel cue, and carries the control electronics.
 //
 //  The base is TWO STACKED TIERS sized by the ring groove + rim (Ø188), each ONE open compartment
-//  with every board velcro'd and the wiring sunk below the floor. The apple is ONE PETG stem with a
-//  fused TPU ball. README.md has the full design notes; check_layout.py verifies the geometry.
+//  with every board velcro'd and the wiring sunk below the floor. The apple is a PETG stem, a TPU
+//  ball and cap, and a PETG retainer ring, printed apart. README.md has the full design notes; check_layout.py verifies the geometry.
 //
 //        [ iiwa7 media flange (electric) ]   8x M6 on a Ø51 pitch circle, 24V + data
 //        (0) FLANGE PLATE  thick adapter disc: takes the 8x M6 (heads buried flush) + the Ø30 cable bore.
@@ -24,10 +24,10 @@
 //        (2) COVER       closes tier 2 · seats the NeoPixel ring in a groove on its TOP
 //                        (opaque, same material as the base) · 4x M3 down into tier 2
 //                 ▼ BOLTED FLANGE: apple STEM screws down into the cover (3x M3 + spigot)
-//        (3) APPLE = (3a) STEM      ONE PETG part: cover flange + shaft + armature flange
-//                  + (3b) TPU BALL  LOWER cup FUSED to the stem (dual-material print); solid cap
-//                                   embeds the armature flange; OPEN top loads the ERM + sensor
-//                  + (3c) TPU CAP   press-fit dome that closes the ball; wires / FSR tail / tube exit the bore
+//        (3) APPLE = (3a) STEM      ONE PETG part: cover flange + shaft + seat + tip
+//                  + (3b) TPU BALL  sits on the seat; solid floor; OPEN top loads the ERM + sensor
+//                  + (3c) RETAINER  PETG ring glued onto the tip, clamping the ball's floor
+//                  + (3d) TPU CAP   press-fit dome that closes the ball; wires / FSR tail / tube exit the bore
 //        ( + ) CLEAR CASING BOX   5-sided clear box (OPEN on the flange side) shrouding the whole
 //                                  electronics stack; top covers the ring, clamps 3x M3 into the cover
 //
@@ -40,7 +40,7 @@
 //     openscad -D 'part="base_tier1"'  -o base_tier1.stl  apple_pluck_end_effector.scad
 // =====================================================================
 
-part = "assembly"; // [assembly, flange_plate, base_tier1, base_tier2, cover, apple_stem, apple_ball, apple_cap, apple, apple_section, section, electronics_mock, casing]
+part = "assembly"; // [assembly, flange_plate, base_tier1, base_tier2, cover, apple_stem, apple_ball, apple_cap, apple_retainer, apple, apple_section, section, electronics_mock, casing]
 
 /* [Robot media flange — MEASURED: 8x M6 on a Ø51 bolt circle, Ø34 central electric bore]
     THE ONE NUMBER THAT MUST MATCH THE ROBOT IS THE PITCH CIRCLE: 51 mm, centre-to-centre across two
@@ -352,42 +352,50 @@ joint_screw_cbore   = m3_cbore;    // head counterbore Ø [mm]
 joint_screw_cbore_h = m3_cbore_h;  // counterbore depth [mm]
 joint_register_h    = 2.5;  // spigot/recess depth [mm]
 
-/* [Apple — ONE-PIECE PETG STEM + FUSED soft BALL]
-    The flange, the shaft and the armature flange are ONE printed part: no joint to assemble and no
-    radial slop to rock on (a pinned Ø14 rod in a Ø14.6 bore would give over a degree of rock at a
-    100 mm lever). Apple height is fixed by stem_shaft_len.
+/* [Apple — PETG STEM, TPU BALL + CAP, PETG RETAINER — four single-material prints]
+    The cover flange, the shaft, the seat and the tip are ONE printed part: no radial slop to rock on
+    (a pinned Ø14 rod in a Ø14.6 bore would give over a degree of rock at a 100 mm lever). Apple
+    height is fixed by stem_shaft_len.
 
-    The stem (PETG) and ball (TPU) print as ONE dual-material object on the H2D: export
-    apple_stem.stl (PETG) + apple_ball.stl (TPU), import BOTH at the same origin in Bambu Studio and
-    assign filaments. The PETG shaft runs up into the ball and ends in a low FLANGE embedded in a
-    solid TPU cap, so the pull load is carried mechanically (NOT by PETG<->TPU adhesion). */
+    The ball slides down the tip onto the stem's SEAT; the RETAINER drops in through the ball's open
+    top and is GLUED onto the tip (PETG to PETG -- a strong bond), clamping the ball's solid floor
+    between retainer and seat. Pulled, the floor bears on the retainer; pushed, the base bears on the
+    seat. No load rides on a TPU bond (TPU barely bonds to anything). */
 apple_d        = 45;   // TPU ball outer Ø [mm]
 apple_wall     = 3;    // TPU ball shell wall [mm]
 apple_grooves  = true; // grip grooves on the ball sides
-// The ball prints UPRIGHT on the stem, 100 mm off the bed, so its underside must be self-supporting.
-// A bare sphere meets the Ø14 shaft at 18 deg from horizontal -- a flat ring of TPU over nothing
-// (Bambu: "floating cantilever"). The neck is a cone tangent to the sphere where its surface reaches
-// neck_angle, continuing down the shaft, so every layer sits on the one below: a slight teardrop at
-// the stem, no supports anywhere on the grip surface.
-ball_neck      = true; // add the self-supporting teardrop neck under the ball
+// The ball prints UPRIGHT on its flat base, so its underside must be self-supporting. A bare sphere
+// leaves the base almost flat (a ring of TPU over nothing). The NECK is a cone tangent to the sphere
+// where its surface reaches neck_angle, so every layer sits on the one below: a slight teardrop at the
+// stem, no supports anywhere on the grip surface. The base is cut flat where the neck is seat_d wide.
 neck_angle     = 45;   // steepest overhang the underside may have, from horizontal [deg]
 stem_shaft_d   = 14;   // PETG shaft Ø [mm]
-stem_shaft_len = 100;  // shaft length, cover flange TOP -> armature flange [mm]. Sets apple height,
+stem_shaft_len = 100;  // shaft length, cover flange TOP -> retainer bottom [mm]. Sets apple height,
                        // which is FIXED: change this number and reprint to move the apple.
 sensor_bore_d  = 9;    // feed bore up the stem [mm] (wiring + ERM + FSR tail + pressure tube;
                        // keep <= stem_shaft_d - 4 for a solid wall)
-arm_flange_d   = 22;   // PETG armature flange Ø [mm] — embedded in the TPU cap (anchors the pull)
-arm_flange_t   = 3;    // armature flange thickness [mm]
-arm_cap        = 8;    // solid TPU cap thickness below the flange [mm] (embeds it; upper ball hollow)
+arm_flange_d   = 22;   // RETAINER flange Ø [mm] — bears on the ball's floor (anchors the pull)
+arm_flange_t   = 3;    // retainer flange thickness [mm] (sits in a recess in the ball's floor)
+arm_cap        = 8;    // ball bottom (sphere) to retainer [mm] -- sets where the ball sits on the stem
 stem_fillet_r  = 6;    // fillet radius where the shaft meets the flange [mm] — this joint carries
                        // the whole pull moment, and a sharp internal corner is where it would crack
 /* [Re-openable press-fit cap — the ball SPLITS so you can load the ERM (Ø10) + a force sensor (FSR head
-    Ø18, or the MPRLS board 17.8 mm) — all far bigger than the bore. Lower ball (fused to the shaft) is an
+    Ø18, or the MPRLS board 17.8 mm) — all far bigger than the bore. The lower ball is an
     open cup; a separate TPU cap press-fits on a rim rebate. Tune cap_lip_clear on a test print; add a dab
     of silicone if the pull unseats it. Wires / FSR tail / pressure tube still run down the Ø9 bore. */
 cap_split      = 6;    // split plane above the ball centre [mm] (TPU cap = everything above it)
 cap_lip_h      = 6;    // press-fit skirt / rim-rebate depth [mm]
 cap_lip_clear  = 0.2;  // skirt-to-rebate clearance per side [mm] (TPU press-fit; tune on a test print)
+
+/* [Apple — how the ball is held on the stem (see the apple block above)] */
+seat_d         = 20;   // seat Ø under the ball [mm]; its top is the ball's flat base (where the neck cone is this wide)
+seat_flat      = 1;    // flat band on top of the seat [mm]; below it a 45 deg chamfer down to the shaft (prints unsupported)
+tip_d          = 12;   // stem tip Ø inside the ball [mm] (1.5 mm wall round the Ø9 bore)
+tip_clear      = 0.2;  // ball hole clearance per side on the tip [mm]
+ret_hub_d      = 16;   // retainer hub Ø [mm] -- the hub doubles the glue length on the tip
+ret_hub_h      = 3;    // retainer hub height [mm] (the tip runs up to the hub top)
+ret_glue_clear = 0.1;  // retainer bore clearance per side on the tip [mm] -- a glue fit
+ret_recess_clear = 0.3; // clearance per side round the retainer in the ball floor [mm]
 
 /* [Clear casing BOX — a 5-sided clear box, OPEN on the arm-flange side, that shrouds the whole
     electronics stack. Built by hand from acrylic sheet (the STL is a dimensional build reference, not a
@@ -735,22 +743,34 @@ module grip_grooves(z0) {
                 rotate_extrude() translate([r, 0]) circle(r = 1.2);
 }
 
-// (3a) APPLE STEM — ONE PETG part: cover flange + shaft + armature flange.
+// (3a) APPLE STEM — ONE PETG part: cover flange + shaft + seat + tip.
 //      Apple height is fixed by stem_shaft_len (reprint to change it).
-module stem_solid() {   // OUTER envelope of the shaft + armature ONLY — the TPU ball moulds around this
+// Apple heights, in the stem's frame (z = 0 at the cover face).
+function apple_ball_c() = sj_flange_t + stem_shaft_len - arm_cap + apple_d/2;
+function arm_top_z()    = sj_flange_t + stem_shaft_len + arm_flange_t;   // retainer top = cavity floor
+function seat_top_z()   =                                                 // where the neck cone is seat_d wide
+    let(R = apple_d/2, rt = R * sin(neck_angle), zt = apple_ball_c() - R * cos(neck_angle))
+        zt - rt * tan(neck_angle) + seat_d/2 * tan(neck_angle);
+function tip_top_z()    = arm_top_z() + ret_hub_h;
+
+// Shaft up to the seat, the seat, then the slim tip through the ball. No flange on top -- the
+// retainer (apple_retainer) is glued onto the tip once the ball is on.
+module stem_solid() {
+    sz = seat_top_z();
+    ch = (seat_d - stem_shaft_d) / 2;                        // 45 deg chamfer height
     union() {
-        translate([0, 0, sj_flange_t - eps])
-            cylinder(h = stem_shaft_len + eps, d = stem_shaft_d);
-        translate([0, 0, sj_flange_t + stem_shaft_len - eps])
-            cylinder(h = arm_flange_t + eps, d = arm_flange_d);
+        translate([0, 0, sj_flange_t - eps]) cylinder(h = sz - seat_flat - ch - sj_flange_t + 2*eps, d = stem_shaft_d);
+        translate([0, 0, sz - seat_flat - ch]) cylinder(h = ch + eps, d1 = stem_shaft_d, d2 = seat_d);
+        translate([0, 0, sz - seat_flat]) cylinder(h = seat_flat, d = seat_d);
+        translate([0, 0, sz - eps]) cylinder(h = tip_top_z() - sz + eps, d = tip_d);
     }
 }
 module apple_stem() {
-    top_z = sj_flange_t + stem_shaft_len + arm_flange_t;
+    top_z = tip_top_z();
     difference() {
         union() {
             cylinder(h = sj_flange_t, d = sj_flange_d);      // flange -> bolts down into the cover
-            stem_solid();                                    // shaft + armature anchor flange
+            stem_solid();                                    // shaft + seat + tip
             joint_spigot(sj_register_d);                     // centring spigot (down into the cover)
             // fillet at the shaft/flange junction — this corner carries the entire pull moment
             rotate_extrude()
@@ -767,34 +787,48 @@ module apple_stem() {
     }
 }
 
-// (3b) TPU BALL — LOWER cup, fused to the stem. Open-top so the ERM + force sensor drop in; the PETG
-//      armature flange is embedded in the solid cap below; a rim rebate takes the press-fit cap.
+// (3b) TPU BALL — LOWER cup, printed alone, upright. Its base is cut flat where the neck is seat_d wide
+//      (it stands on the bed, and sits on the stem's seat); a hole takes the tip, a recess in the cavity
+//      floor takes the retainer, and a rim rebate takes the press-fit cap. Open-top so the ERM + force
+//      sensor drop in.
 module apple_ball() {
-    ball_c   = sj_flange_t + stem_shaft_len - arm_cap + apple_d/2;  // ball sits low: flange near the BOTTOM
-    fl_top   = sj_flange_t + stem_shaft_len + arm_flange_t;         // armature flange top = cavity floor
+    ball_c   = apple_ball_c();
+    fl_top   = arm_top_z();
     inner_d  = apple_d - 2 * apple_wall;
     split_z  = ball_c + cap_split;
-    rebate_d = apple_d - 2 * apple_wall;
+    sz       = seat_top_z();
     difference() {
         union() {
-            translate([0,0,ball_c]) sphere(d = apple_d);                              // ball body
-            if (ball_neck) ball_neck_cone(ball_c);                                    // self-supporting underside
+            translate([0,0,ball_c]) sphere(d = apple_d);
+            ball_neck_cone(ball_c);
         }
-        intersection() {                                                              // hollow above the flange
+        translate([0,0,sz - apple_d]) cylinder(h = apple_d, d = apple_d + 2);           // flat base
+        intersection() {                                                              // hollow above the floor
             translate([0,0,ball_c]) sphere(d = inner_d);
             translate([0,0,fl_top]) cylinder(h = apple_d, d = apple_d + 1);
         }
         translate([0,0,split_z]) cylinder(h = apple_d, d = apple_d + 2);              // slice OPEN at the split
-        translate([0,0,split_z - cap_lip_h]) cylinder(h = cap_lip_h + eps, d = rebate_d);  // rim rebate
-        stem_solid();                                                                 // carve the PETG stem
+        translate([0,0,split_z - cap_lip_h]) cylinder(h = cap_lip_h + eps, d = inner_d);  // rim rebate
+        translate([0,0,sz - eps]) cylinder(h = fl_top - sz + 2*eps, d = tip_d + 2*tip_clear);   // tip hole
+        translate([0,0,fl_top - arm_flange_t])                                        // retainer recess
+            cylinder(h = arm_flange_t + eps, d = arm_flange_d + 2*ret_recess_clear);
         if (apple_grooves) grip_grooves(ball_c - apple_d/2);
     }
 }
-
+// (3c) RETAINER — PETG ring, glued onto the stem tip inside the ball. Print flat face down.
+module apple_retainer() {
+    translate([0, 0, arm_top_z() - arm_flange_t])
+        difference() {
+            union() {
+                cylinder(h = arm_flange_t, d = arm_flange_d);
+                translate([0, 0, arm_flange_t - eps]) cylinder(h = ret_hub_h + eps, d = ret_hub_d);
+            }
+            translate([0, 0, -eps]) cylinder(h = arm_flange_t + ret_hub_h + 2*eps, d = tip_d + 2*ret_glue_clear);
+        }
+}
 // Cone under the ball, tangent to the sphere at the point where the sphere's surface is neck_angle
-// from horizontal, apex on the axis below. stem_solid() is carved out afterwards, so what is left is a
-// collar round the shaft that starts at a knife edge and widens at neck_angle -- printable without
-// support. At 45 deg it reaches ~3.4 mm further down the shaft than the bare sphere.
+// from horizontal, apex on the axis below. apple_ball() cuts it flat at the seat, so what is left is a
+// collar that widens at neck_angle from its flat base -- printable without support.
 module ball_neck_cone(ball_c) {
     R  = apple_d / 2;
     rt = R * sin(neck_angle);            // tangent point, radius
@@ -803,7 +837,7 @@ module ball_neck_cone(ball_c) {
         polygon([[0, zt - rt * tan(neck_angle)], [rt, zt], [0, zt]]);
 }
 
-// (3c) TPU CAP — separate press-fit dome that closes the ball after loading electronics.
+// (3d) TPU CAP — separate press-fit dome that closes the ball after loading electronics.
 module apple_cap() {
     ball_c  = sj_flange_t + stem_shaft_len - arm_cap + apple_d/2;
     inner_d = apple_d - 2 * apple_wall;
@@ -826,10 +860,11 @@ module apple_cap() {
     }
 }
 
-// Apple stem + fused ball + press-fit cap assembled (preview / section). One frame, no seat offset.
+// Apple stem + ball + retainer + press-fit cap assembled (preview / section). One frame.
 module apple_assembled() {
     apple_stem();
     apple_ball();
+    apple_retainer();
     apple_cap();
 }
 
@@ -886,7 +921,8 @@ module assembly() {
     color("gainsboro", 0.7) translate([0, 0, cover_z]) base_cover();
     translate([0, 0, apple_base_z]) {
         color("slategray")      apple_stem();                       // ONE PETG part: flange + shaft
-        color("firebrick", 0.9) apple_ball();                       // TPU lower ball (fused)
+        color("firebrick", 0.9) apple_ball();                       // TPU lower ball
+        color("slategray")      apple_retainer();                   // PETG retainer, glued to the tip
         color("indianred", 0.85) apple_cap();                       // TPU press-fit cap
     }
     if (case_preview) translate([0, 0, cover_top_z]) casing();      // clear casing box (preview)
@@ -901,10 +937,11 @@ else if (part == "cover")            base_cover();
 else if (part == "apple_stem")       apple_stem();
 else if (part == "apple_ball")       apple_ball();
 else if (part == "apple_cap")        apple_cap();
+else if (part == "apple_retainer")   apple_retainer();
 else if (part == "apple")            apple_assembled();
 else if (part == "electronics_mock") electronics_mock();
 else if (part == "casing")           casing();
-else if (part == "apple_section")    // half-cut: shaft + fused lower ball + press-fit cap + cavity + flange
+else if (part == "apple_section")    // half-cut: stem + ball + retainer + press-fit cap + cavity
     difference() { apple_assembled(); translate([0, -base_d, -40]) cube([base_d, 2*base_d, 260]); }
 else if (part == "section")          // half-cut of the whole stack (shows the full cable path)
     difference() { assembly(); translate([0, -base_d, -20]) cube([base_d, 2*base_d, 360]); }

@@ -48,13 +48,14 @@ top and a clear casing box over the lot:
                       ring · 4 ring-lead pass-throughs (one per quarter) · 3× M3 pilots on Ø64 for
                       the casing box · Ø44 boss (R4 fillet to the plate) for the apple stem
         ▼  BOLTED FLANGE: apple STEM screws down into the cover boss (3× M3 on Ø36 + Ø24 centring spigot)
-  (3a) APPLE STEM     ONE PETG part: Ø44 cover flange + Ø14 × 100 shaft (Ø9 feed bore) + Ø22 armature
-                      flange, filleted R6 at the root. Apple height is FIXED by stem_shaft_len —
-                      reprint to change it. Apple centre sits 212 mm above the robot flange.
-  (3b) TPU BALL       Ø45. LOWER cup FUSED to the stem (dual-material print); solid cap embeds the
-                      armature flange; OPEN top loads the ERM + force sensor. A 45° teardrop NECK
-                      where it meets the shaft makes the underside print without support
-  (3c) TPU CAP        press-fit dome closes the ball; wires / FSR tail / pressure tube exit the bore
+  (3a) APPLE STEM     ONE PETG part: Ø44 cover flange + Ø14 × 100 shaft (Ø9 feed bore), filleted R6 at
+                      the root, then a Ø20 SEAT and a Ø12 TIP up through the ball. Apple height is FIXED
+                      by stem_shaft_len — reprint to change it. Apple centre sits 212 mm above the flange.
+  (3b) TPU BALL       Ø45, printed alone. Flat base sits on the seat; Ø12 hole for the tip; solid floor;
+                      OPEN top loads the ERM + force sensor. 45° teardrop neck, so it prints unsupported.
+  (3c) RETAINER       small PETG ring (Ø22 × 3 + Ø16 hub), dropped in through the open top and GLUED onto
+                      the tip — it clamps the ball's floor down onto the seat.
+  (3d) TPU CAP        press-fit dome closes the ball; wires / FSR tail / pressure tube exit the bore
   ( + ) CLEAR CASING BOX  198 × 198, 5-sided (open on the flange side), over the whole stack; its top
                       clamps with 3× M3 into the cover on Ø64
 ```
@@ -63,15 +64,18 @@ top and a clear casing box over the lot:
 > a Ø24 spigot, cable bore down the middle). The flange sits at the centre of the big ring (ID Ø145), with
 > plenty of clear space between the apple mount and the ring.
 >
-> **Fixed height.** The flange, shaft and armature flange are **one PETG part** (`apple_stem`),
-> filleted R6 at the root. One piece has no radial slop to rock on and nothing to assemble; height is
-> set by **`stem_shaft_len` (100 mm)** — change it and reprint.
+> **Fixed height.** The flange, shaft, seat and tip are **one PETG part** (`apple_stem`),
+> filleted R6 at the root. One piece has no radial slop to rock on; height is set by
+> **`stem_shaft_len` (100 mm)** — change it and reprint.
 >
-> **Fused apple (PETG + TPU).** The shaft + LOWER ball print as **one dual-material object** on the H2D.
-> The PETG shaft runs up into the ball and ends in a low **flange**; a solid TPU **cap** embeds it, so the
-> pull load is carried **mechanically**, not by the PETG↔TPU bond. The ball's **top is a separate press-fit
-> TPU cap**: pop it, drop in the ERM + force sensor (all bigger than the bore), route their wires / FSR tail
-> / pressure tube down the **Ø9 shaft bore**, press the cap back on (silicone it if the pull unseats it).
+> **The apple prints as four single-material parts:** stem (PETG), ball and
+> cap (TPU), retainer (PETG). The ball slides down the tip onto the stem's **seat**; the **retainer**
+> drops in through the open top and is **glued onto the tip** — PETG to PETG, a strong bond — clamping the
+> ball's solid floor between retainer and seat. **Pulled, the floor bears on the retainer; pushed, the
+> base bears on the seat.** No load rides on a TPU bond (TPU barely bonds to anything). Then load the
+> ERM + force sensor through the open top, route their wires / FSR tail / pressure tube down the **Ø9
+> bore**, and press the cap on.
+
 
 ## Power / data flow
 ```
@@ -318,8 +322,8 @@ before any electronics are involved.
 >    **10 MPa** of bending stress at the root against ~30–50 MPa for PETG — a safety factor of about
 >    **3–5**. It depends on the **root fillet** forming properly: print the **stem solid /
 >    high-perimeter**, and if you shorten `stem_shaft_len` the margin improves with the square of the
->    change. The ball↔stem **flange anchor (Ø22)** carries the pull in bearing on the solid TPU cap,
->    not on the PETG↔TPU bond.
+>    change. The ball is held by the **Ø22 retainer** bearing on its solid TPU
+>    floor, not by any bond to the TPU.
 > 13. **Apple cavity + access.** The cavity (dome ≈ **Ø39 × 31 mm** above the flange) fits the **ERM
 >    (Ø10)**, the **FSR head (Ø18)**, or the **MPRLS board (17.8 mm)** with room to spare — but all are
 >    bigger than the Ø9 bore, so you load them through the **open top** and close the **press-fit cap**
@@ -377,16 +381,17 @@ both share the Ø5.5/Ø10 head, so the counterbores fit either. The build here u
 | Fastener | Spec | Qty | Where / notes |
 |----------|------|-----|---------------|
 | M6 cap-head screw | **M6 × 16** | 8 | **Flange plate** → into the robot flange's **own tapped holes** (Ø51 pitch circle; Ø7.0 clearance holes). Head sits on a **steel M6 washer** in the Ø14 seat, buried flush in the 16 mm plate. Spans the 8 mm wall + washer → **~6.4 mm thread bite**; **verify the flange tap ≥ 7 mm** (or use M6×18 for ~8 mm). |
-| M3 cap-head screw | **M3 × 16** | 6 | **Tier 1 → flange plate** (Ø100 circle): 10 mm of floor under the head + 6 mm into the plate insert. **Longer than the rest on purpose** — the 10 mm of material under these heads is the critical section of the base joint. |
+| M3 cap-head screw | **M3 × 16** | 6 | **Tier 1 → flange plate** (Ø100 circle): 10 mm of floor under the head + 6 mm into the plate. **Longer than the rest on purpose** — the 10 mm of material under these heads is the critical section of the base joint. The plate bore is 6 mm deep, so the tip just reaches its bottom: if a head will not sit flat, put an **M3 washer** under it (or use M3 × 14). |
 | M3 cap-head screw | **M3 × 16** | 4 | **Tier 2 → tier 1** (Ø150 circle): 5 mm of tier-2 floor under the head + 11 mm into the tier-1 pillar insert. |
-| M3 cap-head screw | **M3 × 10** | 7 | 4× cover → tier 2 (Ø120), 3× apple stem → cover boss (Ø36). Thread into heat-set inserts. |
+| M3 cap-head screw | **M3 × 16** | 4 | **Cover → tier 2** (Ø120): 6 mm of the 9 mm cover under the head + 10 mm into the tier-2 pillar (14 mm bore, 4 mm to spare). An M3 × 10 reaches only 4 mm — just the insert's length — so use the 16. |
+| M3 cap-head screw | **M3 × 10** | 3 | **Apple stem → cover boss** (Ø36): 5 mm of the stem flange under the head + 5 mm into the boss (7 mm bore). **Not longer** — an M3 × 12 would bottom out. |
 | M3 cap-head screw | **M3 × 6** | 3 | Casing-box top → cover (Ø64). **Short on purpose** — the cover pilot is only 5 mm deep, so M3×10 would bottom out and never clamp. |
 | M3 brass heat-set insert | **Bambu M3×5×4** (M3, 5.0 mm OD, 4 mm long) | 20 | 6× **flange plate** + 4× **tier-1 pillars** (tier 2) + 4× tier-2 pillars (cover) + 3× cover boss (stem) + 3× cover top (casing). Printed hole is **Ø4.6 (`m3_insert`)**; the 4 mm length seats in every pilot (shallowest = 5 mm cover top). |
 | Steel washer, M6 | flat, OD ~12 (DIN 125) | 8 | **Under each M6 head** in the plate — spreads bolt torque so the printed 8 mm wall can't crush. Seats in the Ø14 recess (`flange_washer_*`). |
 | Washer, M3 | small | 3 | Under the casing-top screws — spread the clamp load on the clear sheet. |
 | **Hook-and-loop (velcro) pads** | ~2 mm thick | 6 boards | **Every board is stuck down, not screwed.** Board heights already allow for the pad (`velcro_t`). |
 
-> **Shopping summary:** **M3 cap-head** — M3×16 (×10), M3×10 (×7), M3×6 (×3); **M6×16** (×8) +
+> **Shopping summary:** **M3 cap-head** — M3×16 (×14), M3×10 (×3), M3×6 (×3), plus a few spare M3 washers for the plate joint; **M6×16** (×8) +
 > **8 steel M6 washers**; **M3 heat-set inserts** (**Bambu M3×5×4**, ×20); **3 M3 washers** (casing)
 > + **velcro** for the six boards. **Every screw-into-plastic joint takes the same M3 insert; there is
 > no self-tapping and there are no board screws.**
@@ -407,11 +412,12 @@ openscad -D 'part="flange_plate"'    -o flange_plate.stl    apple_pluck_end_effe
 openscad -D 'part="base_tier1"'      -o base_tier1.stl      apple_pluck_end_effector.scad   # lower tier + cable trenches
 openscad -D 'part="base_tier2"'      -o base_tier2.stl      apple_pluck_end_effector.scad   # upper tier
 openscad -D 'part="cover"'           -o cover.stl           apple_pluck_end_effector.scad
-# FUSED APPLE — export stem + lower ball, import at the SAME origin in Bambu Studio, assign filaments:
-openscad -D 'part="apple_stem"'      -o apple_stem.stl      apple_pluck_end_effector.scad   # PETG (flange + shaft + armature)
-openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effector.scad   # TPU  (lower ball, moulds onto it)
-openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effector.scad   # TPU  (press-fit cap, separate print)
-# previews only: 'part="assembly"' (default), 'part="apple"' (stem + fused ball + cap),
+# APPLE — four single-material prints:
+openscad -D 'part="apple_stem"'      -o apple_stem.stl      apple_pluck_end_effector.scad   # PETG (flange + shaft + seat + tip)
+openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effector.scad   # TPU  (lower ball)
+openscad -D 'part="apple_retainer"'  -o apple_retainer.stl  apple_pluck_end_effector.scad   # PETG (glued onto the tip)
+openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effector.scad   # TPU  (press-fit cap)
+# previews only: 'part="assembly"' (default), 'part="apple"' (stem + ball + retainer + cap),
 # 'part="apple_section"' / 'part="section"' (half-cuts), 'part="electronics_mock"' (board/ring fit),
 # 'part="casing"' (clear casing box — reference only; you build it by hand from clear acrylic sheet)
 ```
@@ -453,12 +459,13 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
 - **Board fit:** all footprints are locked (see the table). After **any** size change run
   `check_layout.py` — big rectangles around a central bore collide easily. `part="electronics_mock"`
   shows the boards in place.
-- **Stem strength:** the shaft is one piece with the flange, so there is no fit to test — but the
-  **root fillet is the critical feature**. Print the stem solid / high-perimeter and check the fillet
+- **Stem strength:** the shaft is one piece with the flange, so there is no joint to test there — but
+  the **root fillet is the critical feature**. Print the stem solid / high-perimeter and check the fillet
   actually formed; a sharp internal corner there is where it would crack under the 15–20 N pull.
 - **Feed bore vs wiring:** `sensor_bore_d = 9 mm` carries the ERM leads, the FSR tail, or a Ø2–3 mm
   pressure tube — the bulky parts load through the press-fit cap, not the bore. Widen it (watch the shaft
-  wall) only if your *tail/tube bundle* is fat; tune `cap_lip_clear` for the cap's press-fit on a test print.
+  wall) only if your *tail/tube bundle* is fat; tune `cap_lip_clear` for the cap's press-fit, and `tip_clear` / `ret_glue_clear` for the ball and
+  retainer on the tip, on test prints.
 - **Strain relief:** add a clamp / grommet at the central bore so cable load isn't on the connectors.
 
 ## Printing & finishing
@@ -466,14 +473,18 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
   [Print settings](#print-settings) for the per-part walls, shells and infill.
 - **Cover:** opaque, same material as the base; print **top-face up** so the ring groove + screw
   counterbores are open on top (the ring drops in from above). The clear casing box shields it.
-- **FUSED APPLE (PETG stem + TPU lower ball, one print):** import **apple_stem.stl** and **apple_ball.stl**
-  at the same origin in Bambu Studio, assign **PETG** to the stem and **TPU** to the ball, and print on the
-  **H2D (dual nozzle)** — details in [the fused apple](#4-the-fused-apple--the-only-tricky-one). Print the
-  **PETG stem solid** (load path); the **TPU ball** at low infill stays soft and grippable. Keep the ball
-  **rounded and smooth** — no sharp edges or pinch points.
+- **APPLE STEM (`apple_stem.stl`, PETG):** print it **lying on its side** — the strong axis for a
+  100 mm cantilever — with tree supports under the flange and seat; or upright with the layer-adhesion
+  settings in [Print settings](#the-apple-stem--lay-it-down). Print it **solid** (load path).
+- **APPLE BALL (`apple_ball.stl`, TPU):** prints **upright on its flat base**, no supports (the
+  underside is a 45° neck). Low infill keeps it soft and grippable. Keep it **rounded and smooth** — no
+  sharp edges or pinch points.
+- **RETAINER (`apple_retainer.stl`, PETG):** flat face down, solid. Tiny — put it on the stem's plate.
 - **APPLE CAP (`apple_cap.stl`, TPU, separate):** the top dome; print **dome-up** (skirt on the bed). It
-  **press-fits** onto the lower ball's rim rebate — tune `cap_lip_clear` on a test print; solvent/heat-weld
-  or silicone it for a permanent smooth ball. Round the seam. Load the ERM + sensor through the open ball,
+  **press-fits** onto the lower ball's rim rebate — tune `cap_lip_clear` on a test print. To hold it
+  against pulls, run a thin bead of **neutral-cure silicone (RTV)** round the skirt: flexible, and it peels
+  off cleanly when you need inside. Hot glue works too, but a standard gun (~190 °C) can soften the TPU —
+  use a low-temperature gun, and know it is harder to undo. Round the seam. Load the ERM + sensor through the open ball,
   route wires / FSR tail / pressure tube down the shaft bore, then fit the cap.
 - **Clear casing box:** built by hand from **clear acrylic sheet** (`case_box_*` params) — a 5-sided box
   **198 × 198** outer, walls reaching from the cover top down to the flange plate (~74 mm) plus a
@@ -513,27 +524,35 @@ populate — the boards go in over the screw heads.
    the cover's **top groove** (LEDs up). The groove is 8.5 mm wide against the ring's 6 mm — **seat the
    arcs pushed OUTWARD, against the outer wall**, which is where the extra circumference is and what
    lets the four segments close. Solder the arc-to-arc joints and feed each arc's power/data leads down
-   its **quarter pass-through**. Then lower the cover and drive the **4× M3×10** at **Ø120** (inside the
+   its **quarter pass-through**. Then lower the cover and drive the **4× M3×16** at **Ø120** (inside the
    ring) down into tier 2's pillars.
 6. **Fit the casing box.** Lower the clear box over the stack (open side down to the flange) so its top
    covers the ring, line up the 3 top holes with the **Ø64** pilots, and drive **3× M3×6** (with washers)
    down into the cover. Do this before the apple — the box's Ø44.8 top hole won't pass over an
    assembled apple.
-7. **Attach the apple stem.** It pokes up through the box's top centre hole; set its flange on the cover
-   boss (the **spigot** centres it) and drive the **3× M3×10** down into the cover boss. Pass the apple
-   wiring up through its bore. The ball is already fused to it.
+7. **Attach the apple stem, then the ball.** The stem pokes up through the box's top centre hole; set its
+   flange on the cover boss (the **spigot** centres it) and drive the **3× M3×10** down into the cover boss.
+   Pass the apple wiring up through its bore. Then:
+   - **Dry-fit first.** Slide the **ball** down the tip until its flat base sits on the **seat**, and the
+     **retainer** onto the tip through the open top: it should sit flat in the floor recess, flush with
+     the tip top. Ease a tight fit by sanding, not by forcing the TPU.
+   - **Glue the retainer.** Lift it off, put **thin CA (superglue) or 5-minute epoxy** round the top
+     ~6 mm of the tip, push the retainer down hard so it clamps the floor, and hold it 30 s. Keep glue
+     off the TPU and **out of the Ø9 bore** (run the wiring first, or plug the bore with a wire). Let it
+     cure fully (CA: 1 h; epoxy: per the pack) before any pull.
 8. **Load the electronics + close the ball.** With the **cap off**, seat the **ERM (Ø10)** against the inner
    TPU wall and the **force sensor** in the open cavity (FSR head against the wall behind a backing; or, for
    the MPRLS route, just the pressure tube — sensor stays in the base). Route the leads / FSR tail / tube
-   **down the stem bore**, then **press the cap on** (silicone it if needed). Confirm the **cap + ball
-   can't pull off** by hand.
+   **down the stem bore**, then **press the cap on** (a bead of silicone if pulls unseat it — see
+   [Printing & finishing](#printing--finishing)). Confirm the **cap + ball can't pull off** by hand.
 9. **Connect + commission.** Connect the media-flange power/data, **re-calibrate the tool load** in
    Sunrise (electronics + apple add mass — see main repo README §2 "Tool Load Data"), and first
    power-up / move in **T1** with a hand on the E-stop.
 
 Disassembly is the reverse: pull the apple cap → withdraw the apple electronics via the bore → unbolt the
-stem (3× M3) → unscrew the casing box → cover → tier 2 (4× M3, boards can stay velcro'd) → tier 1. No glue
-in the stack; the stem + fused ball is one printed part (reprint to change the apple height).
+stem (3× M3) → unscrew the casing box → cover → tier 2 (4× M3, boards can stay velcro'd) → tier 1. The only
+glue in the stack is the retainer on the stem tip: the ball, retainer and stem come off as one piece
+(reprint the stem to change the apple height).
 
 ## Print settings
 
@@ -561,23 +580,22 @@ aimed at that. Every part from the cover down is in the pull path
 | **base_tier2** | PETG | 0.20 mm | **6** | **6 / 6** | **35 %** gyroid | In the load path, with large margins. |
 | **cover** | PETG | 0.20 mm | **6** | **8 / 8** | **40 %** gyroid | **The apple bolts to this.** Opaque filament — not translucent. |
 | **apple_stem** | PETG | **0.15 mm** | 6 | 6 / 6 | **100 %** | See below — this one is orientation-critical. |
+| **apple_retainer** | PETG | 0.15 mm | 4 | 4 / 4 | **100 %** | Flat face down. |
 | **apple_ball / apple_cap** | TPU 95A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 30 mm/s), retraction near zero. |
 
 **Temperatures.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %). TPU: nozzle
 230 °C, bed 45 °C, fan 50 %. Enclosure closed for both, no draught.
 
-### The apple stem needs a decision
+### The apple stem — lay it down
 
-The stem is a 100 mm cantilever, and printed upright its layers lie **perpendicular to the bending
-stress** — the worst possible orientation. Upright is also what the dual-material print with the TPU
-ball requires. So:
+The stem is a 100 mm cantilever. Printed upright its layers lie **perpendicular to the bending
+stress** — the worst possible orientation. Printed on its own (the separate build), it can lie down:
 
-- Keep it upright for the fused print, and lean hard on layer adhesion: **0.15 mm layers, 255 °C,
-  fan off for the first 20 mm above the flange**, 100 % infill. Print it alone on the plate so each
-  layer has time to cool evenly without the fan.
-- If it breaks at the root, print the stem **separately and lying down** (strong axis), and bond the
-  TPU ball on mechanically — the Ø22 armature flange carries the pull in bearing, not adhesion, so a
-  separately printed ball is not a downgrade.
+- **Lying on its side (recommended):** layers run along the shaft, its strong axis. Tree supports
+  under the Ø44 flange and the Ø20 seat; brim on. Check the root fillet came out clean.
+- **Upright, if you must:** lean hard on layer adhesion — **0.15 mm layers, 255 °C, fan off for the
+  first 20 mm above the flange**, 100 % infill, alone on the plate, **brim 8 mm** (the Ø24 spigot is a
+  small footprint for a 120 mm part).
 
 ### Do not
 
@@ -596,8 +614,9 @@ Sizes, so you know what you are looking at on the plate:
 | `base_tier1` | Ø188 | 33 | PETG | — |
 | `base_tier2` | Ø188 | 32 | PETG | — |
 | `cover` | Ø188 | 17 | PETG | — |
-| `apple_stem` | Ø44 | 113.5 | PETG | **fused with `apple_ball`** |
-| `apple_ball` | Ø45 | 30.8 | TPU 95A | **fused with `apple_stem`** |
+| `apple_stem` | Ø44 | 116.5 | PETG | — (lie it down) |
+| `apple_ball` | Ø45 | 27.8 | TPU 95A | — |
+| `apple_retainer` | Ø22 | 6 | PETG | the stem's plate |
 | `apple_cap` | Ø43 | 22.5 | TPU 95A | — |
 | `casing` | 198 × 198 | 77 | *not printed* | acrylic, by hand |
 
@@ -671,47 +690,27 @@ part here fails along layer boundaries.
 4. **Speed → set everything ≤ 30 mm/s.** TPU does not survive fast corners.
 5. Retraction near zero in the TPU filament profile.
 
-#### 4. The fused apple — the only tricky one
+#### 4. The apple — stem, ball, retainer
 
-`apple_stem` (PETG) and `apple_ball` (TPU) are modelled in one coordinate frame and **must stay
-aligned**. Do not import them separately and let auto-arrange move them.
+**`apple_stem` + `apple_retainer`** — PETG, one plate.
+1. Import both. Rotate the **stem onto its side** (90° about X), **Place on bed**; the retainer
+   **flat face down**.
+2. **Support → Enable, type `tree(auto)`**, on build plate only — under the flange and the seat.
+   **Others → Brim `8 mm`.**
+3. **Layer height `0.15`**, **Sparse infill `100 %`**, **Wall loops 6**. Dry PETG, 250–255 °C, fan low.
+4. Clean the supports off the flange underside and seat; the seat's top face is what the ball sits on,
+   so keep it flat.
 
-1. **File → Import → Import 3MF/STL**, select **both** `apple_stem.stl` and `apple_ball.stl` at once.
-2. When asked *"Multiple objects detected — load as a single object with multiple parts?"* choose
-   **Yes**. Their relative positions are now locked.
-3. In the object list, expand the object. Assign:
-   - `apple_stem` → the **PETG** nozzle
-   - `apple_ball` → the **TPU** nozzle
-4. **Place on bed.** The stem's Ø24 centring spigot lands first — a small footprint for a 131 mm
-   tall print, so: **Others → Brim type `Outer brim only`, Brim width `8 mm`.**
-5. Process changes for this plate:
-   - **Quality → Layer height `0.15`** (more layers, more bond area at the root)
-   - **Strength → Sparse infill density `100 %`** — the shaft is Ø14 with a Ø9 bore, so it is nearly
-     all perimeter anyway
-   - In the **PETG filament preset for this plate only**: **Minimum and Maximum fan speed `0 %`**.
-     Layer adhesion up the shaft is the whole ball game here.
-6. **Print it alone on the plate.** Nothing else should be stealing layer time.
-7. **No supports.** The ball's underside is a 45° cone (`ball_neck`) where it meets the shaft, so
-   every TPU layer sits on the one below — nothing on the grip surface needs support.
-
-> **"Floating cantilever" warning on `apple_ball`?** Two causes, in order of likelihood:
-> - **The files were loaded as two objects.** The object list must show **one** object with
->   `apple_stem` and `apple_ball` as its *parts*. Two separate objects means the ball is checked on
->   its own — and auto-arrange drops it onto the bed, out of line with the stem. Delete both and
->   re-import them together, answering **Yes** in step 2.
-> - **The STL predates the neck.** A bare sphere meets the Ø14 shaft almost flat (18° from
->   horizontal), which really is an unsupported overhang. Re-export `apple_ball.stl` (the neck adds
->   ~3.4 mm of taper down the shaft; `check_layout.py` reports the worst underside angle).
-
-> **If it snaps at the shaft root:** printed upright, the layers lie perpendicular to the bending
-> stress — the worst possible orientation, and one no slicer setting fully fixes. Fall back to
-> printing `apple_stem` **separately, lying flat** (strong axis, needs supports under the flange)
-> and fitting the ball mechanically. The Ø22 armature flange carries the pull in *bearing*, not
-> adhesion, so a separately printed ball costs nothing structurally.
+**`apple_ball`** — TPU, prints alone.
+1. Import, **Place on bed**: it stands on its **flat base** (the neck pointing down, the open top up).
+2. **No supports** — the underside is a 45° cone. **Brim `5 mm`**: the base is a small ring under a
+   45 mm ball.
+3. TPU settings as the cap: **Wall loops 3**, **Top/Bottom 4**, **infill 15 %**, **≤ 30 mm/s**,
+   retraction near zero.
 
 #### 5. Check on the first layer
 
-- **Brim stuck down all the way round** on the apple print — that part is top-heavy.
+- **Brim stuck down all the way round** on the stem and the ball — both stand on small footprints.
 - **No gaps at the Ø30 bore wall** on `base_tier1`. It is a 4 mm ring and the first layer is where
   under-extrusion shows.
 - If the first layer looks glassy and translucent rather than matte, the bed is too hot or the
