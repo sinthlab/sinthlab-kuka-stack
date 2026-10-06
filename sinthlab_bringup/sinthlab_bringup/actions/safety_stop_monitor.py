@@ -36,6 +36,7 @@ class SafetyStopMonitor:
         self._ee_frame = str(get_required_param(node, self._param_prefix + "ee_frame"))
         # Trip if the EE gets this far from the trial-start pose (m). Must exceed the largest legitimate
         # excursion (e.g. the maze footprint) with margin, but be small enough to catch a runaway early.
+        # 0 turns the distance check off (free move: it has no boundary; only the speed check runs).
         self._max_disp = float(get_required_param(node, self._param_prefix + "max_displacement_m"))
         # Trip if the EE speed exceeds this (m/s). Normal hand guiding stays well below this; a fall or
         # lurch blows past it. Catches a runaway before it travels max_displacement.
@@ -61,7 +62,8 @@ class SafetyStopMonitor:
         self._timer = node.create_timer(self._dt, self._step)
 
         node.get_logger().info(
-            f"SafetyStopMonitor: max displacement {self._max_disp:.2f} m, max speed {self._max_speed:.2f} m/s"
+            f"SafetyStopMonitor: max displacement "
+            f"{f'{self._max_disp:.2f} m' if self._max_disp > 0 else 'off'}, max speed {self._max_speed:.2f} m/s"
         )
 
     def start(self) -> None:
@@ -107,7 +109,7 @@ class SafetyStopMonitor:
         self._speed_over = self._speed_over + 1 if speed >= self._max_speed else 0
 
         reason = None
-        if disp >= self._max_disp:
+        if self._max_disp > 0.0 and disp >= self._max_disp:   # 0 = speed check only (free move)
             reason = f"displacement {disp:.3f} m >= {self._max_disp:.2f} m"
         elif self._speed_over >= self._speed_trip_samples:
             reason = (f"speed {speed:.3f} m/s >= {self._max_speed:.2f} m/s for "

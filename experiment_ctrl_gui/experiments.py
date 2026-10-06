@@ -116,7 +116,7 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
-        summary="Admittance: the arm goes wherever it is pushed, inside a safety box. Reward for moving it.",
+        summary="Admittance: the arm goes wherever it is pushed and holds where it is let go. No goal, no boundary.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile="Rail guide (uniform 1000)",
@@ -172,8 +172,7 @@ CAUTION: Dict[str, str] = {
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
     "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
-    "free_move.box_*": "Safety box, checked by IK from the maze start. Re-check reach before enlarging it (+X +Z is the tight corner).",
-    "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y), or norm for free move.",
+    "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y).",
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),

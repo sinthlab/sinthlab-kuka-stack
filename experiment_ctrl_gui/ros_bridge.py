@@ -249,6 +249,10 @@ class DemoBridge:
                 if not self._sleep(run_id, 1.0):
                     return
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
+            elif self._exp.key == "free_move":
+                if not self._sleep(run_id, 3.0):
+                    return
+                self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
             elif self._exp.group == "pretraining":
                 thr = self._effective.get("travel_task.threshold_m", 0.1)
                 self._phase_to("threshold", thr, f"Threshold reached: {thr:+.3f} m.")

@@ -11,15 +11,18 @@ const STEPS = {
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
          "release_wait", "released", "trial_end"],
 };
-// The three pre-training tasks report the same steps.
-STEPS.free_move = STEPS.move_vertical = STEPS.move_horizontal =
+// Pre-training. Free Move has no goal: each trial is one session that ends on a timer.
+STEPS.move_vertical = STEPS.move_horizontal =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "threshold", "goal",
    "release_wait", "released", "trial_end"];
+STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+                   "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "recover", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
+  session_end: "session over",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
@@ -31,6 +34,7 @@ const PHASE_TEXT = {
   safety_trip: "SAFETY ABORT — recovering", release_wait: "waiting for release", released: "recovering to start",
   paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
+  session_end: "session over — waiting for release",
 };
 const TAB_HELP = {
   live: {

@@ -6,7 +6,6 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.admittance_move import AdmittanceMoveAction
-from sinthlab_bringup.actions.travel_monitor import TravelMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
@@ -22,14 +21,13 @@ CLIK_CTRL = "kuka_clik_controller"
 
 
 class FreeMoveOrchestratorNode(rclpyNode):
-    """Pre-training: the arm in admittance -- it goes where it is pushed, inside a safety box.
+    """Pre-training: the arm in admittance -- it goes wherever it is pushed and stays where it is let go.
+    No goal, no reward, no boundary. Each trial is one free-movement SESSION of session_sec.
 
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
-    quiet window -> go cue (ring GREEN) -> admittance moving + travel monitor + timeout + safety
-    -> moved travel_task.threshold_m from the start (straight-line) -> ring RED, reward
-    [-> back at the start first, if require_return] -> release wait -> switch to JOINT -> recover.
-
-    Timeout and safety end the trial exactly as in the maze.
+    quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor for session_sec
+    -> session over (end tone, ring dark): the arm holds where it is -> release wait
+    -> switch to JOINT -> recover to the start -> next session.
     """
 
     def __init__(self) -> None:
@@ -63,16 +61,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
 
-        self.travel = TravelMonitor(
-            self, param_prefix="travel_task", position_provider=self.admittance.offset_from_anchor,
-            on_threshold=self.on_threshold, on_complete=self.on_success)
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
-        self.threshold_cue = AudioCue(self, param_prefix="audio_cue_threshold", on_complete=lambda: None)
-        self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
-        self.timeout_cue = AudioCue(self, param_prefix="audio_cue_timeout", on_complete=lambda: None)
-        self.timeout = WaitAction(
-            self, duration_sec=float(get_required_param(self, "timeout_sec")),
-            on_complete=self.on_timeout, name="trial_timeout")
+        self.end_cue = AudioCue(self, param_prefix="audio_cue_end", on_complete=lambda: None)
+        self.session = WaitAction(
+            self, duration_sec=float(get_required_param(self, "session_sec")),
+            on_complete=self.on_session_over, name="session")
         self.force_release = ForceReleaseWaiter(
             self, param_prefix="force_release", on_complete=self.on_force_released)
         self.switch_to_joint = SwitchControllerAction(
@@ -89,7 +82,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.recorder.mark("trial_start", self.trial_count + 1)
         self.trial_count += 1
         self._trial_ending = False
-        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        self.get_logger().info(f"--- STARTING SESSION {self.trial_count} ---")
         self.ring.show("off")
         self.move_to_start.start()
 
@@ -111,22 +104,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def on_go_complete(self):
         self.recorder.mark("armed")
+        self.get_logger().info(
+            f"Free move: the arm follows the hand for {self.session.duration_sec():.0f} s.")
         self.admittance.enable_motion()
-        self.travel.start()
-        self.timeout.start()
+        self.session.start()
         self.safety.start()
 
-    def on_threshold(self, travel_m: float):
-        self.get_logger().info(f"Moved {travel_m:.3f} m from the start.")
-        self.recorder.mark("threshold", round(travel_m, 4))
-        self.ring.show("reached")
-        self.threshold_cue.start()
-
-    def on_success(self):
-        self._end_trial("goal")
-
-    def on_timeout(self):
-        self._end_trial("timeout")
+    def on_session_over(self):
+        self._end_trial("session_end")
 
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")
@@ -136,50 +121,41 @@ class FreeMoveOrchestratorNode(rclpyNode):
             return
         self._trial_ending = True
         self.recorder.mark(reason if reason != "safety" else "safety_trip")
-        self.timeout.stop()
-        self.travel.stop()
+        self.session.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
+        self.ring.show("off")
         if reason == "safety":
             self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
-            self.ring.show("off")
             self.switch_to_joint.start()
             return
-        if reason == "goal":
-            self.get_logger().info("Moved far enough. Reward; waiting for release before reset.")
-            self.ring.show("success")
-            self.reward_cue.start()
-        else:
-            self.get_logger().info("Timeout. Waiting for release before reset.")
-            self.ring.show("timeout")
-            self.timeout_cue.start()
+        self.get_logger().info("Session over. The arm holds; waiting for release before reset.")
+        self.end_cue.start()
         self.recorder.mark("release_wait")
         self.force_release.start()
 
     def on_force_released(self):
         self.recorder.mark("released")
-        self.ring.show("off")
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
         self.move_recover.start()
 
     def on_recover_complete(self):
-        self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
+        self.get_logger().info(f"--- SESSION {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
         self.control.begin_trial(self.start_trial)
 
     def _reload_live(self):
-        for cue in (self.go_cue, self.threshold_cue, self.reward_cue, self.timeout_cue):
+        for cue in (self.go_cue, self.end_cue):
             cue.reload()
         self.ring.reload()
         self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
         self.move_to_start.reload()
         self.move_recover.reload()
-        self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
+        self.session.set_duration(float(get_required_param(self, "session_sec")))
         self.admittance.reload()
-        self.travel.reload()
 
 
 def main(args=None) -> None:
