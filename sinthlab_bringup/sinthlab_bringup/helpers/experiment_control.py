@@ -11,7 +11,8 @@ a set on anything else is REJECTED with a reason, because the orchestrator read 
 and the change would otherwise look accepted while doing nothing.
 
 PAUSE takes effect when the current trial ends: the arm finishes recovering to the start pose and
-holds there. Resume starts the next trial (and applies any live changes made meanwhile). Pause is
+holds there. A trial with no natural end (free move) registers on_pause_request() and ends its trial
+when the pause arrives -- that is also how the dashboard's "Stop after trial" reaches it. Resume starts the next trial (and applies any live changes made meanwhile). Pause is
 not a stop and not a safety function -- the arm stays under control and compliant throughout.
 
 NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); with
@@ -41,7 +42,7 @@ NSP_CODES: Dict[str, int] = {
     "trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
     "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
     "threshold": 10,    # pre-training: the travel threshold was reached
-    "session_end": 11,  # free move: the session timer ran out
+    "session_end": 11,  # free move: the session ended (Pause / Stop after trial, or session_sec)
 }
 
 STATUS_TOPIC = "experiment_status"
@@ -71,6 +72,7 @@ class ExperimentControl:
         self._held: Optional[Callable[[], None]] = None     # the next trial, while paused
         self._pending: Dict[str, object] = {}               # accepted, applies at the next trial
         self._reloaders: List[Callable[[], None]] = []
+        self._pause_hooks: List[Callable[[], None]] = []
         # The values the CURRENT trial runs with. rclpy stores an accepted set immediately, but the
         # actions only re-read at the next trial boundary, so the parameter store runs ahead of
         # what is in effect; status reports this snapshot, and `pending` separately.
@@ -93,6 +95,14 @@ class ExperimentControl:
     def on_reload(self, fn: Callable[[], None]) -> None:
         """Register a function that re-reads live parameters. Called at a trial boundary."""
         self._reloaders.append(fn)
+
+    def on_pause_request(self, fn: Callable[[], None]) -> None:
+        """Register a function called when a pause is requested -- for a trial with no natural end, so
+        it can end now instead of never reaching the trial boundary where the pause would hold it."""
+        self._pause_hooks.append(fn)
+
+    def pause_requested(self) -> bool:
+        return self._paused
 
     def begin_trial(self, start_fn: Callable[[], None]) -> None:
         """Run the next trial now, or hold it if paused. Orchestrators call this where they used
@@ -148,7 +158,14 @@ class ExperimentControl:
         self._pending = {}
 
     def _on_pause(self, request, response):
+        was_paused = self._paused
         self._paused = bool(request.data)
+        if self._paused and not was_paused:
+            for fn in self._pause_hooks:
+                try:
+                    fn()
+                except Exception as exc:
+                    self._log.error(f"pause hook failed: {exc}")
         if not self._paused and self._held is not None:
             start_fn, self._held = self._held, None
             self._log.info("Resumed.")

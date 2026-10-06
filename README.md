@@ -115,10 +115,14 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 6. **⏸ Pause after trial** lets the current trial finish. The arm recovers to the start and **holds
    there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
    changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
+   **Free Move** has no trial end, so there the button (labelled **End session & pause**) ends the
+   session at once: the arm holds, waits to be let go, returns to the start and holds.
 7. **Stop:**
    - **■ Stop after trial:** finishes this trial, returns to the start, then stops cleanly, so every
-     trial on disk is complete. **Use this one.**
-   - **■ Stop now:** Ctrl-C at once. The trial in progress is saved with `"partial": true`.
+     trial on disk is complete. **Use this one.** In **Free Move** (labelled **End session & stop**) it
+     ends the session at once, waits for the hand to let go, returns to the start, then stops.
+   - **■ Stop now:** Ctrl-C at once. The trial in progress is saved with `"partial": true`, and the
+     arm stays where it is — it is not returned to the start.
    - **↻ Restart:** Stop now, then Start again with the current edits.
 8. **Validate recording** checks this run's data folder
    (`analysis/validate_recording.py --folder …`) and prints the result in the log. To plot the
@@ -177,7 +181,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
-| Free Move | `session_sec`; the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15), `free_move.max_speed_mps` (≤ 0.5), `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
+| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
 | Move Vertical / Move Horizontal | `timeout_sec`, `virtual_fixtures.rail_lead_sec`, the task `travel_task.threshold_m` / `direction` / `require_return` / `return_tolerance_m`, the ring `ring_cue.quarters`, `ring_cue.colours.*` |
 
 These are deliberately **not** live:
@@ -959,7 +963,7 @@ they are under the **Pre-training** tab. All three:
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
-| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Rail guide (uniform 1000)** | moves the arm anywhere; it stays where it is let go | no goal — each trial is a session of `session_sec` (5 min) |
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Rail guide (uniform 1000)** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
 | **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
 | **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it left or right along one horizontal rail, then back | back at the start |
 
@@ -969,8 +973,11 @@ orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free 
 
 #### Free Move — admittance, no goal, no boundary
 The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
-no wall: each trial is one free-movement **session** of `session_sec` (default 5 min, live). At the end
-an end tone plays, the arm holds where it is, waits to be let go, and returns to the start.
+no wall. It runs as one free-movement **session** until you end it with **Pause** or **■ Stop after
+trial** on the dashboard: an end tone plays, the arm holds where it is, waits to be let go, and returns
+to the start. There it holds (Pause; **▶ Resume** starts a new session) or the launch stops (Stop after
+trial). **■ Stop now** does not return it: the arm stays where it is. For timed sessions instead, set
+`session_sec` (live; 0, the default, means no limit).
 
 ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportional to the hand's force
 (`speed = force / free_move.damping_ns_per_m`). The cabinet spring then pulls the arm after it
@@ -985,7 +992,11 @@ does the IK; ROS only moves the target point.
     it. The force estimator has its own 2 N per-axis dead band on top
     (`estimated_wrench_interface` in `config/iiwa7_hardware_controllers.yaml`).
   - `max_speed_mps`: speed cap, 0.35 m/s by default.
-  - `force_filter_tau_sec`: low-pass on the force estimate.
+  - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 1.5 m/s²; 0 = off).
+    The force estimate is noisy and flickers across the threshold; without this the speed follows
+    every jolt and the motion feels bumpy. Lower is smoother, but slower to start and stop.
+  - `force_filter_tau_sec`: low-pass on the force estimate (larger = smoother, but laggier, and lag
+    can make low damping oscillate).
 - **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool
@@ -1183,7 +1194,7 @@ flowchart LR
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
   | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary |
   | `TravelMonitor` | Move Vertical / Horizontal: travel ≥ threshold, then (optionally) back at the start |
-  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze / pre-training) |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`) |
   | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task recovers |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
@@ -1195,7 +1206,9 @@ flowchart LR
   trial with `control.begin_trial(self.start_trial)` rather than calling `start_trial()` directly.
   That call is where a pause holds the arm at the start, and where accepted live-parameter changes
   are applied: `_reload_live()` calls `reload()` on the cue, monitor and perturbation actions. So a
-  change never lands mid-trial. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
+  change never lands mid-trial. A trial with no natural end (Free Move) also registers
+  `control.on_pause_request(...)`: a pause request — the dashboard's Pause or Stop after trial — ends
+  its session at once, so it reaches that trial boundary instead of never getting there. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
   is built on these interfaces, and anything else can use them too.
 
   **Starting from a straight arm.** At mechanical zero the arm is fully straight, which is singular:
@@ -1311,7 +1324,8 @@ spring law to that ~100 Hz link — far coarser and riskier for torque control.
 ### 6.6 Experiment State Flows
 Each flow is one trial. The event token each step logs is in brackets (see [§7](#events-per-experiment)).
 Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
-next trial, or holds at the start if a pause was requested.
+next trial, or holds at the start if a pause was requested. Free Move's session only ends when a pause
+is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 6).
 
 **Flow 1 — Apple Pluck** (joint controller throughout)
 ```mermaid
@@ -1411,12 +1425,12 @@ stateDiagram-v2
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
-    Free --> ReleaseWait : session_sec, end tone, the arm holds [session_end]
+    Free --> ReleaseWait : Pause / Stop after trial (or session_sec), end tone, the arm holds [session_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip]
     SwitchToJoint --> Recover
     Recover --> NextTrial : [trial_end]
-    NextTrial --> MoveToStart : next session (or hold if paused)
+    NextTrial --> MoveToStart : holds at the start (paused) or the launch stops; Resume = new session
 ```
 
 ### 6.7 End-effector board — the visual cue
@@ -1673,7 +1687,7 @@ past the threshold, base frame, N).
 | `on_threshold(d)` | `threshold` | **travel [m]**, signed along the rail (rails only) |
 | `on_success()` | `goal` | — (rails only) |
 | `on_timeout()` | `timeout` | — (rails only) |
-| `on_session_over()` | `session_end` | — (Free Move only) |
+| `on_end_requested()` / `on_session_over()` | `session_end` | — (Free Move only: Pause / Stop after trial, or `session_sec`) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |

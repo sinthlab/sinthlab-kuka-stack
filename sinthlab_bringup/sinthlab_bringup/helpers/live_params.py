@@ -78,6 +78,7 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "free_move.damping_ns_per_m",
         "free_move.deadband_n",
         "free_move.max_speed_mps",
+        "free_move.accel_limit_mps2",
         "free_move.force_filter_tau_sec",
         "free_move.tare_sec",
     ],
@@ -112,10 +113,11 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "ring_cue.colours.*": (0, 255),
     "ring_cue.quarters": (0, 3),
     # Admittance feel. The speed cap stays under the free-move safety monitor's 0.7 m/s.
-    "session_sec": (10.0, 3600.0),
+    "session_sec": (0.0, 3600.0),          # 0 = until Pause / Stop after trial
     "free_move.damping_ns_per_m": (3.0, 200.0),
     "free_move.deadband_n": (0.0, 15.0),
     "free_move.max_speed_mps": (0.02, 0.5),
+    "free_move.accel_limit_mps2": (0.0, 10.0),
     "free_move.force_filter_tau_sec": (0.0, 0.5),
     "free_move.tare_sec": (0.2, 5.0),
 }

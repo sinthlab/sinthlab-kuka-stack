@@ -36,6 +36,14 @@ const PHASE_TEXT = {
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
 };
+// Where a phase means something different per experiment.
+const PHASE_TEXT_BY_EXP = {
+  free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release" },
+  move_vertical: { armed: "travelling out" },
+  move_horizontal: { armed: "travelling out" },
+};
+// Free Move has no trial end: the pause / stop-after-trial buttons end the session instead.
+const NO_TRIAL_END = new Set(["free_move"]);
 const TAB_HELP = {
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial.",
@@ -163,8 +171,11 @@ function renderControls() {
   const pb = $("#btn-pause");
   pb.disabled = !canPause;
   pb.classList.toggle("on", !!(s && s.paused));
-  pb.textContent = s && s.paused ? (s.held ? "▶ Resume" : "⏸ Pausing… (undo)") : "⏸ Pause after trial";
-  $("#btn-stop-trial").textContent = a.stop_after_trial ? "■ Stopping after trial…" : "■ Stop after trial";
+  const noEnd = NO_TRIAL_END.has(rk || S.selected);
+  pb.textContent = s && s.paused ? (s.held ? "▶ Resume" : "⏸ Pausing… (undo)")
+                                 : (noEnd ? "⏸ End session & pause" : "⏸ Pause after trial");
+  $("#btn-stop-trial").textContent = a.stop_after_trial ? (noEnd ? "■ Ending session…" : "■ Stopping after trial…")
+                                                        : (noEnd ? "■ End session & stop" : "■ Stop after trial");
   $("#btn-validate").disabled = !a.data_folder;
 
   // pills
@@ -214,7 +225,7 @@ function renderStatus() {
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
   const phaseName = s ? (s.held ? "paused" : s.phase) : null;
-  const text = s ? (PHASE_TEXT[phaseName] ?? phaseName) : "not running";
+  const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "not running";
   $("#st-phase").textContent = s && s.paused && !s.held ? `${text} (pausing after this trial)` : text;
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
 

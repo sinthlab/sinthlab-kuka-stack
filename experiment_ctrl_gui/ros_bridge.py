@@ -250,8 +250,12 @@ class DemoBridge:
                     return
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
             elif self._exp.key == "free_move":
-                if not self._sleep(run_id, 3.0):
-                    return
+                # No natural end: runs until a pause (Pause / Stop after trial), or session_sec if > 0.
+                limit = float(self._effective.get("session_sec", 0.0) or 0.0)
+                t0 = time.time()
+                while not self._paused and not (limit > 0 and time.time() - t0 >= limit):
+                    if not self._sleep(run_id, 0.2):
+                        return
                 self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
             elif self._exp.group == "pretraining":
                 thr = self._effective.get("travel_task.threshold_m", 0.1)

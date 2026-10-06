@@ -22,12 +22,13 @@ CLIK_CTRL = "kuka_clik_controller"
 
 class FreeMoveOrchestratorNode(rclpyNode):
     """Pre-training: the arm in admittance -- it goes wherever it is pushed and stays where it is let go.
-    No goal, no reward, no boundary. Each trial is one free-movement SESSION of session_sec.
+    No goal, no reward, no boundary. A trial is one free-movement SESSION that runs until it is ended:
+    by Pause or "Stop after trial" on the dashboard (the pause service), or after session_sec if > 0.
 
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
-    quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor for session_sec
-    -> session over (end tone, ring dark): the arm holds where it is -> release wait
-    -> switch to JOINT -> recover to the start -> next session.
+    quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
+    -> session ended (end tone, ring dark): the arm holds where it is -> release wait
+    -> switch to JOINT -> recover to the start -> holds there (paused) or the launch stops.
     """
 
     def __init__(self) -> None:
@@ -54,6 +55,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
         self.control = ExperimentControl(self, "free_move")
         self.control.on_reload(self._reload_live)
+        # The session has no natural end: a pause request (Pause, or the dashboard's "Stop after trial")
+        # ends it now, so the arm returns to the start and the pause / stop can take effect there.
+        self.control.on_pause_request(self.on_end_requested)
+        self._session_live = False
         self.recorder = TrialRecorder(
             self, experiment="free_move",
             extra_header=self.admittance.record_extra_header(), extra_fn=self.admittance.record_extra,
@@ -63,9 +68,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
         self.end_cue = AudioCue(self, param_prefix="audio_cue_end", on_complete=lambda: None)
-        self.session = WaitAction(
-            self, duration_sec=float(get_required_param(self, "session_sec")),
+        self.session = WaitAction(          # only used when session_sec > 0
+            self, duration_sec=max(float(get_required_param(self, "session_sec")), 1.0),
             on_complete=self.on_session_over, name="session")
+        self._session_sec = float(get_required_param(self, "session_sec"))
         self.force_release = ForceReleaseWaiter(
             self, param_prefix="force_release", on_complete=self.on_force_released)
         self.switch_to_joint = SwitchControllerAction(
@@ -104,14 +110,25 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def on_go_complete(self):
         self.recorder.mark("armed")
-        self.get_logger().info(
-            f"Free move: the arm follows the hand for {self.session.duration_sec():.0f} s.")
         self.admittance.enable_motion()
-        self.session.start()
         self.safety.start()
+        self._session_live = True
+        if self._session_sec > 0:
+            self.session.start()
+            self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
+        else:
+            self.get_logger().info("Free move: the arm follows the hand until Pause / Stop after trial.")
+        if self.control.pause_requested():      # asked to stop before the session even began
+            self.on_end_requested()
 
     def on_session_over(self):
         self._end_trial("session_end")
+
+    def on_end_requested(self):
+        """Pause / Stop after trial. A live session ends now; one still starting ends as it goes live."""
+        if self._session_live:
+            self.get_logger().info("End requested: ending the session.")
+            self._end_trial("session_end")
 
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")
@@ -120,6 +137,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self._trial_ending:
             return
         self._trial_ending = True
+        self._session_live = False
         self.recorder.mark(reason if reason != "safety" else "safety_trip")
         self.session.stop()
         self.safety.stop()
@@ -154,7 +172,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
         self.move_to_start.reload()
         self.move_recover.reload()
-        self.session.set_duration(float(get_required_param(self, "session_sec")))
+        self._session_sec = float(get_required_param(self, "session_sec"))
+        self.session.set_duration(max(self._session_sec, 1.0))
         self.admittance.reload()
 
 

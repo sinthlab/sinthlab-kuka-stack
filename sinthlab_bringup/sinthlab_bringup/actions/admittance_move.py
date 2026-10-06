@@ -24,6 +24,10 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    bounded by K * leash_m whatever the force estimate says. At the arm's reach or a
                    joint limit (where the CLIK stops) the arm simply stops there.
   * max_speed_mps  cap on how fast the equilibrium moves.
+  * accel_limit_mps2  the equilibrium's speed may only change this fast. The force estimate is noisy
+                   and crosses the threshold on and off, and v = F / damping passes all of that
+                   straight through as jolts; limiting the acceleration turns them into smooth
+                   speed changes. 0 = off.
   * tare           the force at rest (the gravity-model residual, ~5 N here) is measured during
                    tare_sec at the start of each trial and subtracted, so a resting arm does not creep.
   * deadband_n     a THRESHOLD: a (tared) force below it moves nothing, so estimator noise cannot
@@ -82,6 +86,7 @@ class AdmittanceMoveAction:
         self._f_msg: Optional[np.ndarray] = None        # latest wrench, EE frame
         self._f_filt = np.zeros(3)
         self._f_used = np.zeros(3)
+        self._v = np.zeros(3)                           # equilibrium velocity (accel-limited)
         self._tare = np.zeros(3)
         self._tare_samples = []
         self._t_prev: Optional[float] = None
@@ -98,12 +103,14 @@ class AdmittanceMoveAction:
         self._damping = max(1.0, float(get_required_param(n, p + "damping_ns_per_m")))
         self._deadband = max(0.0, float(get_required_param(n, p + "deadband_n")))
         self._max_speed = max(0.0, float(get_required_param(n, p + "max_speed_mps")))
+        self._accel = max(0.0, float(get_optional_param(n, p + "accel_limit_mps2", 0.0)))
         self._tau = max(0.0, float(get_optional_param(n, p + "force_filter_tau_sec", 0.05)))
         self._tare_sec = max(0.0, float(get_optional_param(n, p + "tare_sec", 1.0)))
         self._debug = bool(get_optional_param(n, p + "debug_log_enabled", False))
         n.get_logger().info(
             f"Free move feel: damping {self._damping:g} N s/m, threshold {self._deadband:g} N, "
-            f"max speed {self._max_speed:g} m/s")
+            f"max speed {self._max_speed:g} m/s, accel limit "
+            f"{f'{self._accel:g} m/s^2' if self._accel > 0 else 'off'}")
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -112,6 +119,7 @@ class AdmittanceMoveAction:
         self._anchor = self._eq = None
         self._tare_samples = []
         self._f_filt[:] = 0.0
+        self._v[:] = 0.0
         self._t_prev = None
         self._t_start = time.monotonic()
 
@@ -199,12 +207,20 @@ class AdmittanceMoveAction:
         speed = float(np.linalg.norm(v))
         if speed > self._max_speed > 0.0:
             v *= self._max_speed / speed
+        if self._accel > 0.0 and dt > 0.0:                # smooth: the speed changes at most accel * dt
+            dv = v - self._v
+            step = float(np.linalg.norm(dv))
+            if step > self._accel * dt:
+                v = self._v + dv * (self._accel * dt / step)
 
         eq = self._eq + v * dt
         lead = eq - self._p_meas                          # leash: never far ahead of the arm
         dist = float(np.linalg.norm(lead))
         if dist > self._leash:
             eq = self._p_meas + lead * (self._leash / dist)
+        # Remember the speed actually applied (after the leash), so a held-back equilibrium does not
+        # build up speed it would release as a lurch.
+        self._v = (eq - self._eq) / dt if dt > 0.0 else v
         self._eq = eq
         self._publish(eq)
 

@@ -89,7 +89,7 @@ makes an orchestrator controllable from outside. Every orchestrator creates one:
 | Interface | Type | Behaviour |
 |---|---|---|
 | `<ns>/experiment_status` | `std_msgs/String`, JSON, transient-local | published on every trial event and once a second: experiment, trial, phase, paused / held, live values **in effect**, and changes **pending** for the next trial |
-| `<ns>/<orchestrator>/pause` | `std_srvs/SetBool` | `true`: finish this trial, recover, hold at the start. `false`: apply pending changes and start the next trial |
+| `<ns>/<orchestrator>/pause` | `std_srvs/SetBool` | `true`: finish this trial, recover, hold at the start. `false`: apply pending changes and start the next trial. A trial with no natural end (Free Move) registers `on_pause_request()` and ends its session at once on `true` |
 | `set_parameters` | parameter callback | names in `live_params.py` are range-checked, accepted and **applied at the next trial boundary**; anything else is rejected with the reason |
 | `on_event(token, arg)` | `TrialRecorder` hook | every `mark()` updates the status, and with `nsp_sync.enabled` sends the event's NSP code (`_pulse()`, a stub until the DIO arrives) |
 
@@ -194,7 +194,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
   `PYTHONUNBUFFERED=1` keep the log clean and live.
 - **Stop now:** SIGINT to the process group, exactly like Ctrl-C. After 20 s it sends SIGTERM, and
   after 5 s more SIGKILL.
-- **Stop after trial:** pause, then Stop now once the status reports `held`.
+- **Stop after trial:** pause, then Stop now once the status reports `held`. For Free Move the pause
+  itself ends the session, so the arm returns to the start first.
 - **Restart:** Stop now; when the launch has exited, start again after 1 s.
 - **Shutting down the server** stops a launch it started, the same way.
 - **The data folder** is the newest `analysis/expt_<run_name>_*` modified since the launch started.

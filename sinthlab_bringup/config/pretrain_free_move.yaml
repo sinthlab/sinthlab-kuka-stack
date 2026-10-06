@@ -1,9 +1,9 @@
 /**:
   ros__parameters:
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
-    # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. Each
-    # trial is one free-movement SESSION of session_sec; then the arm holds, waits to be let go, and
-    # returns to the start for the next session.
+    # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
+    # runs as one free-movement SESSION until you end it: Pause or "Stop after trial" on the dashboard.
+    # Then the arm holds, waits to be let go, and returns to the start (and holds there, or stops).
     #
     # HOW: ROS moves the cabinet spring's equilibrium at a speed proportional to the hand's force
     # (speed = force / free_move.damping_ns_per_m) and the cabinet spring pulls the arm after it. See
@@ -29,7 +29,7 @@
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
-    session_sec: 300.0  # length of one free-movement session [s]; then: end tone, wait for release, reset
+    session_sec: 0.0  # session length [s]; 0 = until Pause / Stop after trial. > 0: ends by itself, then the next starts
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
@@ -64,6 +64,9 @@
       # on top (estimated_wrench_interface in iiwa7_hardware_controllers.yaml).
       deadband_n: 1.5  # force below this is ignored, so a resting arm never creeps [N]; 0 = none
       max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
+      # SMOOTHNESS. The force estimate is noisy and crosses the threshold on and off; without this the
+      # target speed follows every jolt. Lower = smoother but slower to start and stop; 0 = off.
+      accel_limit_mps2: 1.5  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.2 s)
       force_filter_tau_sec: 0.05  # low-pass on the force estimate [s]; larger = smoother, laggier
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
