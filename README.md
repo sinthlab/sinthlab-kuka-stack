@@ -997,6 +997,20 @@ does the IK; ROS only moves the target point.
     every jolt and the motion feels bumpy. Lower is smoother, but slower to start and stop.
   - `force_filter_tau_sec`: low-pass on the force estimate (larger = smoother, but laggier, and lag
     can make low damping oscillate).
+- **Where the force comes from** (`force_source`, per-run). By default (`joint_torques`) Free Move
+  computes the hand's force itself from the arm's **external joint torques** through the Jacobian
+  (`F = pinv(J)ᵀ τ_ext`, lightly damped: `jacobian_damping` 0.02). It does **not** use lbr's estimated
+  wrench topic, for two reasons that made diagonal motion bumpy:
+  - that estimator has a **per-axis** 2 N dead band, so a diagonal push, split across axes, switches
+    on and off axis by axis and its direction snaps between them;
+  - its Jacobian inverse is damped at 0.2, which here reads only **47–85 %** of the real force and
+    bends its direction by up to **17°**, differently in different directions.
+
+  In an offline test of a 6 N diagonal push, the estimator path barely moved (0.007 m/s, about 26°
+  off the push); the joint-torque path moved at full speed within about 2° of it. `force_source:
+  estimator` switches back. The estimator topic itself is unchanged, so the release check still uses
+  it. Because the force is no longer under-read, the same damping feels **lighter** than with the
+  estimator.
 - **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool

@@ -68,6 +68,12 @@
       # target speed follows every jolt. Lower = smoother but slower to start and stop; 0 = off.
       accel_limit_mps2: 1.5  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.2 s)
       force_filter_tau_sec: 0.05  # low-pass on the force estimate [s]; larger = smoother, laggier
+      # WHERE THE FORCE COMES FROM. joint_torques: computed here from the external joint torques, with no
+      # per-axis dead band and a lightly damped Jacobian inverse -- the same in every direction.
+      # estimator: lbr's force_torque_broadcaster/wrench (per-axis 2 N dead band, damping 0.2): reads
+      # 47-85 % of the real force and bends its direction by up to 17 deg -- bumpy on diagonals.
+      force_source: "joint_torques"  # joint_torques | estimator
+      jacobian_damping: 0.02  # damping of the Jacobian inverse (joint_torques only); larger = steadier near singular poses, less accurate
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]

@@ -35,10 +35,17 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    push -- with a short ramp (one dead band wide) so the start is not a jolt.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
-THE FORCE. `force_torque_broadcaster/wrench` is lbr's EstimatedWrenchInterface: the external joint
-torques mapped through the Jacobian (with its own per-axis dead band, iiwa7_hardware_controllers.yaml)
-and published in the EE frame (lbr_link_ee). It is the force the hand applies to the tool. Rotated
-here into the base frame with the measured EE orientation.
+THE FORCE (force_source). Default "joint_torques": computed HERE from the arm's external joint torques
+(LBRState.external_torque) through the base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext.
+Why not lbr's EstimatedWrenchInterface (`force_torque_broadcaster/wrench`, "estimator")? Two things it
+does make the motion bumpy, worst on diagonals:
+  * a PER-AXIS dead band (2 N on each of X, Y, Z). A diagonal push is split across axes that switch on
+    and off independently, so the measured direction snaps between axes;
+  * a heavily damped pseudo-inverse (0.2). At the maze start it reads only 47-85 % of the real force
+    and bends its direction by up to 17 deg, differently in different directions.
+Here the pseudo-inverse is damped lightly (jacobian_damping, 0.02: within 1 % and 0 deg away from
+singular poses) and the only threshold is this action's own, which is round. The estimator topic
+stays as it is for everything else (e.g. the release check). "estimator" uses that topic instead.
 """
 from __future__ import annotations
 
@@ -70,8 +77,15 @@ class AdmittanceMoveAction:
 
         robot_description = str(node.get_parameter("robot_description").value) \
             if node.has_parameter("robot_description") else ""
-        self._fk = optas.RobotModel(urdf_string=robot_description).get_link_transform_function(
+        model = optas.RobotModel(urdf_string=robot_description)
+        self._fk = model.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
+        # Base-frame geometric Jacobian of the EE: rows [linear; angular] (checked against FK).
+        self._jac = model.get_global_link_geometric_jacobian_function(link=self.ee_link, numpy_output=True)
+        self._source = str(get_optional_param(node, self._p + "force_source", "joint_torques")).lower()
+        if self._source not in ("joint_torques", "estimator"):
+            raise ValueError(f"{self._p}force_source must be joint_torques or estimator, got {self._source!r}")
+        self._jac_damping = max(0.0, float(get_optional_param(node, self._p + "jacobian_damping", 0.02)))
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
         self._tare_max = float(get_optional_param(node, self._p + "tare_max_n", 10.0))
@@ -94,7 +108,8 @@ class AdmittanceMoveAction:
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         node.create_subscription(WrenchStamped, "force_torque_broadcaster/wrench", self._on_wrench, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
-        log.info(f"Admittance free move: no boundary, leash {self._leash} m")
+        log.info(f"Admittance free move: no boundary, leash {self._leash} m, force from {self._source}"
+                 + (f" (Jacobian damping {self._jac_damping:g})" if self._source == "joint_torques" else ""))
 
     # ------------------------------------------------------------------ parameters
     def reload(self) -> None:
@@ -157,6 +172,19 @@ class AdmittanceMoveAction:
         return [round(float(v), 5) for v in d] + [round(float(v), 3) for v in self._f_used]
 
     # ------------------------------------------------------------------ loop
+    def _hand_force(self, msg: LBRState, q: np.ndarray, T: np.ndarray) -> np.ndarray:
+        """The force the hand applies to the tool, base frame [N]."""
+        if self._source == "estimator":
+            return T[0:3, 0:3] @ self._f_msg if self._f_msg is not None else np.zeros(3)
+        tau = np.array(msg.external_torque, dtype=float)
+        if not np.all(np.isfinite(tau)):
+            return np.zeros(3)
+        J = np.array(self._jac(q), dtype=float)
+        U, sv, Vt = np.linalg.svd(J, full_matrices=False)
+        lam2 = self._jac_damping ** 2
+        J_pinv = Vt.T @ np.diag(sv / (sv * sv + lam2)) @ U.T            # damped pseudo-inverse, 7x6
+        return (J_pinv.T @ tau)[0:3]                                    # wrench = pinv(J)^T tau; force part
+
     def _on_wrench(self, msg: WrenchStamped) -> None:
         f = msg.wrench.force
         self._f_msg = np.array([f.x, f.y, f.z], dtype=float)
@@ -190,7 +218,7 @@ class AdmittanceMoveAction:
         now = time.monotonic()
         dt = 0.0 if self._t_prev is None else min(max(now - self._t_prev, 0.0), 0.05)
         self._t_prev = now
-        f_base = T[0:3, 0:3] @ self._f_msg if self._f_msg is not None else np.zeros(3)
+        f_base = self._hand_force(msg, q, T)
 
         if not self._moving:
             if now - self._t_start <= max(self._tare_sec, 0.1) or not self._tare_samples:
