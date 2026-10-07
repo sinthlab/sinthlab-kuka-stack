@@ -96,8 +96,8 @@ plate_screw_a0 = 15;   // first-screw angle [deg]. 15 threads the six between BO
 plate_screw_depth = 6; // M3 insert bore depth into the plate top [mm] (takes a 4 mm insert)
 plate_head_z   = 10;   // M3 head seat height above the tier-1 bottom [mm]: the thickness of printed
                        // material the head bears on, the critical section of the base<->flange joint.
-                       // 10 mm below the head, 4 mm of well above. Needs M3x16 (10 through the floor
-                       // + 6 into the plate insert), NOT the M3x10 used elsewhere.
+                       // 10 mm below the head, 4 mm of well above. Takes M3x14 (10 through the floor
+                       // + the full 4 mm insert, 2 mm short of the 6 mm hole's bottom). M3x16 bottoms out.
 
 /* [Central cabling] */
 cable_bore_d   = 30;   // BASE central pass-through for the media-flange bundle [mm] (power/data out of the robot)
@@ -369,16 +369,22 @@ apple_grooves  = true; // grip grooves on the ball sides
 // where its surface reaches neck_angle, so every layer sits on the one below: a slight teardrop at the
 // stem, no supports anywhere on the grip surface. The base is cut flat where the neck is seat_d wide.
 neck_angle     = 45;   // steepest overhang the underside may have, from horizontal [deg]
-stem_shaft_d   = 14;   // PETG shaft Ø [mm]
+// The shaft TAPERS: thick at the cover flange, where a pull bends it most, slim under the ball.
+// Bending stiffness goes with Ø^4, so Ø24 at the root is ~8.6x stiffer there than a straight Ø14.
+stem_base_d    = 24;   // shaft Ø at the cover flange [mm]. Base + fillet must stay inside the joint
+                       // screws' counterbores (r 14.75), which need straight-down access for the key
+stem_shaft_d   = 14;   // shaft Ø at the top, just under the ball's seat [mm]
 stem_shaft_len = 100;  // shaft length, cover flange TOP -> retainer bottom [mm]. Sets apple height,
                        // which is FIXED: change this number and reprint to move the apple.
 sensor_bore_d  = 9;    // feed bore up the stem [mm] (wiring + ERM + FSR tail + pressure tube;
-                       // keep <= stem_shaft_d - 4 for a solid wall)
+                       // keep <= stem_shaft_d - 4 for a solid wall at the slim end)
 arm_flange_d   = 22;   // RETAINER flange Ø [mm] — bears on the ball's floor (anchors the pull)
 arm_flange_t   = 3;    // retainer flange thickness [mm] (sits in a recess in the ball's floor)
 arm_cap        = 8;    // ball bottom (sphere) to retainer [mm] -- sets where the ball sits on the stem
-stem_fillet_r  = 6;    // fillet radius where the shaft meets the flange [mm] — this joint carries
-                       // the whole pull moment, and a sharp internal corner is where it would crack
+stem_fillet_r  = 2;    // fillet radius where the shaft meets the flange [mm] — this joint carries
+                       // the whole pull moment, and a sharp internal corner is where it would crack.
+                       // The taper does most of that job; the fillet only rounds the corner, and must
+                       // keep stem_base_d/2 + fillet clear of the joint screws (check_layout.py)
 /* [Re-openable press-fit cap — the ball SPLITS so you can load the ERM (Ø10) + a force sensor (FSR head
     Ø18, or the MPRLS board 17.8 mm) — all far bigger than the bore. The lower ball is an
     open cup; a separate TPU cap press-fits on a rim rebate. Tune cap_lip_clear on a test print; add a dab
@@ -622,7 +628,7 @@ module base_tier1() {
 
         // tier1 -> plate screws. The head bears on plate_head_z (10) mm of printed floor — the
         // critical section of the base<->flange joint. Drive these BEFORE
-        // anything is velcro'd over them. Takes M3x16, not the M3x10 used elsewhere.
+        // anything is velcro'd over them. Takes M3x14 (M3x16 bottoms out in the 6 mm plate hole).
         for (i = [0 : plate_screw_n - 1])
             rotate([0, 0, plate_screw_a0 + i * 360 / plate_screw_n])
                 translate([plate_screw_bcd/2, 0, 0]) {
@@ -743,7 +749,7 @@ module grip_grooves(z0) {
                 rotate_extrude() translate([r, 0]) circle(r = 1.2);
 }
 
-// (3a) APPLE STEM — ONE PETG part: cover flange + shaft + seat + tip.
+// (3a) APPLE STEM — ONE PETG part: cover flange + tapered shaft + seat + tip.
 //      Apple height is fixed by stem_shaft_len (reprint to change it).
 // Apple heights, in the stem's frame (z = 0 at the cover face).
 function apple_ball_c() = sj_flange_t + stem_shaft_len - arm_cap + apple_d/2;
@@ -759,7 +765,8 @@ module stem_solid() {
     sz = seat_top_z();
     ch = (seat_d - stem_shaft_d) / 2;                        // 45 deg chamfer height
     union() {
-        translate([0, 0, sj_flange_t - eps]) cylinder(h = sz - seat_flat - ch - sj_flange_t + 2*eps, d = stem_shaft_d);
+        translate([0, 0, sj_flange_t - eps])                 // tapered shaft: Ø stem_base_d -> stem_shaft_d
+            cylinder(h = sz - seat_flat - ch - sj_flange_t + 2*eps, d1 = stem_base_d, d2 = stem_shaft_d);
         translate([0, 0, sz - seat_flat - ch]) cylinder(h = ch + eps, d1 = stem_shaft_d, d2 = seat_d);
         translate([0, 0, sz - seat_flat]) cylinder(h = seat_flat, d = seat_d);
         translate([0, 0, sz - eps]) cylinder(h = tip_top_z() - sz + eps, d = tip_d);
@@ -774,7 +781,7 @@ module apple_stem() {
             joint_spigot(sj_register_d);                     // centring spigot (down into the cover)
             // fillet at the shaft/flange junction — this corner carries the entire pull moment
             rotate_extrude()
-                translate([stem_shaft_d/2, sj_flange_t])
+                translate([stem_base_d/2, sj_flange_t])
                     difference() {
                         square([stem_fillet_r, stem_fillet_r]);
                         translate([stem_fillet_r, stem_fillet_r]) circle(r = stem_fillet_r);

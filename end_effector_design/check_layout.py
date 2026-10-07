@@ -285,10 +285,12 @@ def main():
     ball_c = v["sj_flange_t"] + v["stem_shaft_len"] - v["arm_cap"] + v["apple_d"] / 2
     arm_z = v["sj_flange_t"] + v["stem_shaft_len"]
     print("\napple stem")
+    report(v["stem_base_d"] >= v["stem_shaft_d"], f"shaft tapers Ø{v['stem_base_d']:.0f} -> Ø{v['stem_shaft_d']:.0f} "
+           f"(root {(v['stem_base_d']/v['stem_shaft_d'])**4:.1f}x stiffer than a straight Ø{v['stem_shaft_d']:.0f})")
     report(ball_c - v["apple_d"] / 2 < arm_z,
            f"retainer at z={arm_z:.0f} sits inside the ball ({ball_c - v['apple_d']/2:.0f}..{ball_c + v['apple_d']/2:.0f})")
-    report(v["stem_shaft_d"] / 2 + v["stem_fillet_r"] < v["sj_screw_bcd"] / 2 - cbore / 2,
-           f"fillet to r={v['stem_shaft_d']/2 + v['stem_fillet_r']:.1f} clears the joint screws "
+    report(v["stem_base_d"] / 2 + v["stem_fillet_r"] < v["sj_screw_bcd"] / 2 - cbore / 2,
+           f"shaft base + fillet to r={v['stem_base_d']/2 + v['stem_fillet_r']:.1f} clears the joint screws "
            f"(cbore inner r={v['sj_screw_bcd']/2 - cbore/2:.2f})")
     R = v["apple_d"] / 2
     report(v["neck_angle"] >= 45 - 1e-9,

@@ -34,7 +34,7 @@ top and a clear casing box over the lot:
         ├─ the rest of the floor is FLAT
         └─ reference boards (velcro anywhere): Metro M4 AirLift 92 × 50 · RS-422 click 45 × 28 ·
            MPRLS pressure 20 × 19
-  (1b) BASE TIER 2    Ø188 × 32 (10 mm floor + 22 mm compartment). Stacks on tier 1 with 4× M3×16
+  (1b) BASE TIER 2    Ø188 × 32 (10 mm floor + 22 mm compartment). Stacks on tier 1 with 4× M3×14
                       into tier 1's pillars. Ø20 bore — only ring/apple wiring goes higher, and those
                       5 mm of radius per side are what let the 70 × 65 Tobsun fit inside Ø188 at all.
                       ONE open compartment, r 14 → 88, flat floor (no channels).
@@ -48,8 +48,8 @@ top and a clear casing box over the lot:
                       ring · 4 ring-lead pass-throughs (one per quarter) · 3× M3 pilots on Ø64 for
                       the casing box · Ø44 boss (R4 fillet to the plate) for the apple stem
         ▼  BOLTED FLANGE: apple STEM screws down into the cover boss (3× M3 on Ø36 + Ø24 centring spigot)
-  (3a) APPLE STEM     ONE PETG part: Ø44 cover flange + Ø14 × 100 shaft (Ø9 feed bore), filleted R6 at
-                      the root, then a Ø20 SEAT and a Ø12 TIP up through the ball. Apple height is FIXED
+  (3a) APPLE STEM     ONE PETG part: Ø44 cover flange + 100 mm shaft TAPERING Ø24 → Ø14 (Ø9 feed bore,
+                      R2 root fillet), then a Ø20 SEAT and a Ø12 TIP up through the ball. Apple height is FIXED
                       by stem_shaft_len — reprint to change it. Apple centre sits 212 mm above the flange.
   (3b) TPU BALL       Ø45, printed alone. Flat base sits on the seat; Ø12 hole for the tip; solid floor;
                       OPEN top loads the ERM + force sensor. 45° teardrop neck, so it prints unsupported.
@@ -64,8 +64,7 @@ top and a clear casing box over the lot:
 > a Ø24 spigot, cable bore down the middle). The flange sits at the centre of the big ring (ID Ø145), with
 > plenty of clear space between the apple mount and the ring.
 >
-> **Fixed height.** The flange, shaft, seat and tip are **one PETG part** (`apple_stem`),
-> filleted R6 at the root. One piece has no radial slop to rock on; height is set by
+> **Fixed height.** The flange, tapered shaft, seat and tip are **one PETG part** (`apple_stem`). One piece has no radial slop to rock on; height is set by
 > **`stem_shaft_len` (100 mm)** — change it and reprint.
 >
 > **The apple prints as four single-material parts:** stem (PETG), ball and
@@ -312,17 +311,20 @@ before any electronics are involved.
 >    underneath. **Tier 2 has no channels** — nothing there needs routing under a board.
 > 10. **Assembly order is forced: plate → robot → tier 1 → boards → tier 2 → boards → cover.** The 8 M6
 >    live in the **separate flange plate**, driven with the plate bare. Tier 1 then bolts down with
->    **6× M3×16 on the Ø100 circle (first at 15°)**, their heads recessed into the floor. The
+>    **6× M3×14 on the Ø100 circle (first at 15°)**, their heads recessed into the floor. The
 >    compartment is open so every head is in plain sight — but they sit **under where boards go**, so
 >    drive them before you velcro anything down.
-> 11. **Thin shaft, close apple.** The stem is **Ø14** with a **Ø9 feed bore**, filleted **R6** at the
->    root — it sits at the very centre, far inside the ring (ID r ≈ 75), so it doesn't occlude the
+> 11. **Tapered shaft, close apple.** The stem **tapers from Ø24 at the cover flange to Ø14 under the
+>    ball** (`stem_base_d` → `stem_shaft_d`), with a **Ø9 feed bore** and an R2 root fillet. The base is
+>    as wide as it can be: base + fillet reach r 14, just inside the joint screws' counterbores (r 14.75),
+>    which need straight-down access for the key. It sits at the very centre, far inside the ring (ID r ≈ 75), so it doesn't occlude the
 >    LEDs. Height is **fixed** at `stem_shaft_len = 100` (apple centre 212 mm above the robot flange).
-> 12. **Shaft strength.** At Ø14 / Ø9 bore and a 100 mm lever, a 20 N pull at the ball gives roughly
->    **10 MPa** of bending stress at the root against ~30–50 MPa for PETG — a safety factor of about
->    **3–5**. It depends on the **root fillet** forming properly: print the **stem solid /
->    high-perimeter**, and if you shorten `stem_shaft_len` the margin improves with the square of the
->    change. The ball is held by the **Ø22 retainer** bearing on its solid TPU
+> 12. **Shaft strength and stiffness.** The pull's bending moment is largest at the root, which is
+>    why the shaft is thickest there: Ø24 is **8.6× stiffer** than a straight Ø14 (stiffness goes with
+>    Ø⁴), so the apple wobbles far less. A 20 N pull at the ball now peaks at about **2.4 MPa** of
+>    bending stress, near the top of the shaft (Ø15.5), against ~30–50 MPa for PETG — a safety factor
+>    above **10** (a straight Ø14 shaft reached 10 MPa at the root). Print the **stem solid /
+>    high-perimeter**. The ball is held by the **Ø22 retainer** bearing on its solid TPU
 >    floor, not by any bond to the TPU.
 > 13. **Apple cavity + access.** The cavity (dome ≈ **Ø39 × 31 mm** above the flange) fits the **ERM
 >    (Ø10)**, the **FSR head (Ø18)**, or the **MPRLS board (17.8 mm)** with room to spare — but all are
@@ -356,7 +358,7 @@ a third of the diameter. So the cover is structural:
 **At the base↔flange joint** the screws carry only ~14 N each; what matters is the printed material
 around them:
 
-- **10 mm of floor under each M3 head** (hence **M3×16** there), and 8 mm where a cable channel
+- **10 mm of floor under each M3 head** (hence **M3×14** there: 10 through the floor + the full 4 mm insert), and 8 mm where a cable channel
   crosses;
 - a **14 mm** tier-1 floor;
 - a **Ø124** plate, which supports tier 1's floor so it overhangs by only 32 mm;
@@ -381,17 +383,15 @@ both share the Ø5.5/Ø10 head, so the counterbores fit either. The build here u
 | Fastener | Spec | Qty | Where / notes |
 |----------|------|-----|---------------|
 | M6 cap-head screw | **M6 × 16** | 8 | **Flange plate** → into the robot flange's **own tapped holes** (Ø51 pitch circle; Ø7.0 clearance holes). Head sits on a **steel M6 washer** in the Ø14 seat, buried flush in the 16 mm plate. Spans the 8 mm wall + washer → **~6.4 mm thread bite**; **verify the flange tap ≥ 7 mm** (or use M6×18 for ~8 mm). |
-| M3 cap-head screw | **M3 × 16** | 6 | **Tier 1 → flange plate** (Ø100 circle): 10 mm of floor under the head + 6 mm into the plate. **Longer than the rest on purpose** — the 10 mm of material under these heads is the critical section of the base joint. The plate bore is 6 mm deep, so the tip just reaches its bottom: if a head will not sit flat, put an **M3 washer** under it (or use M3 × 14). |
-| M3 cap-head screw | **M3 × 16** | 4 | **Tier 2 → tier 1** (Ø150 circle): 5 mm of tier-2 floor under the head + 11 mm into the tier-1 pillar insert. |
-| M3 cap-head screw | **M3 × 16** | 4 | **Cover → tier 2** (Ø120): 6 mm of the 9 mm cover under the head + 10 mm into the tier-2 pillar (14 mm bore, 4 mm to spare). An M3 × 10 reaches only 4 mm — just the insert's length — so use the 16. |
-| M3 cap-head screw | **M3 × 10** | 3 | **Apple stem → cover boss** (Ø36): 5 mm of the stem flange under the head + 5 mm into the boss (7 mm bore). **Not longer** — an M3 × 12 would bottom out. |
+| M3 cap-head screw | **M3 × 14** | 14 | **One length for the base and cover joints.** Each engages its whole 4 mm insert and stops short of the hole bottom: **tier 1 → flange plate** (6×, Ø100: 10 mm of floor under the head — the critical section of the base joint — + 4 into the 6 mm plate hole, 2 mm spare); **tier 2 → tier 1** (4×, Ø150: 5 + 9 into the 14 mm pillar hole); **cover → tier 2** (4×, Ø120: 6 of the 9 mm cover + 8 into the 14 mm hole). **Not M3 × 16** at the plate: it needs the whole 6 mm hole, so it bottoms out before the head clamps and leaves a gap. |
+| M3 cap-head screw | **M3 × 10** | 3 | **Apple stem → cover boss** (Ø36): 5 mm of the stem flange under the head + 5 mm into the boss (7 mm bore). **Not longer** — an M3 × 12 or longer bottoms out in the 7 mm hole and lifts the stem off the cover. |
 | M3 cap-head screw | **M3 × 6** | 3 | Casing-box top → cover (Ø64). **Short on purpose** — the cover pilot is only 5 mm deep, so M3×10 would bottom out and never clamp. |
 | M3 brass heat-set insert | **Bambu M3×5×4** (M3, 5.0 mm OD, 4 mm long) | 20 | 6× **flange plate** + 4× **tier-1 pillars** (tier 2) + 4× tier-2 pillars (cover) + 3× cover boss (stem) + 3× cover top (casing). Printed hole is **Ø4.6 (`m3_insert`)**; the 4 mm length seats in every pilot (shallowest = 5 mm cover top). |
 | Steel washer, M6 | flat, OD ~12 (DIN 125) | 8 | **Under each M6 head** in the plate — spreads bolt torque so the printed 8 mm wall can't crush. Seats in the Ø14 recess (`flange_washer_*`). |
 | Washer, M3 | small | 3 | Under the casing-top screws — spread the clamp load on the clear sheet. |
 | **Hook-and-loop (velcro) pads** | ~2 mm thick | 6 boards | **Every board is stuck down, not screwed.** Board heights already allow for the pad (`velcro_t`). |
 
-> **Shopping summary:** **M3 cap-head** — M3×16 (×14), M3×10 (×3), M3×6 (×3), plus a few spare M3 washers for the plate joint; **M6×16** (×8) +
+> **Shopping summary:** **M3 cap-head** — M3×14 (×14), M3×10 (×3), M3×6 (×3); **M6×16** (×8) +
 > **8 steel M6 washers**; **M3 heat-set inserts** (**Bambu M3×5×4**, ×20); **3 M3 washers** (casing)
 > + **velcro** for the six boards. **Every screw-into-plastic joint takes the same M3 insert; there is
 > no self-tapping and there are no board screws.**
@@ -459,9 +459,10 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
 - **Board fit:** all footprints are locked (see the table). After **any** size change run
   `check_layout.py` — big rectangles around a central bore collide easily. `part="electronics_mock"`
   shows the boards in place.
-- **Stem strength:** the shaft is one piece with the flange, so there is no joint to test there — but
-  the **root fillet is the critical feature**. Print the stem solid / high-perimeter and check the fillet
-  actually formed; a sharp internal corner there is where it would crack under the 15–20 N pull.
+- **Stem strength:** the shaft is one piece with the flange and tapers from Ø24, so there is no joint to
+  test there. Print the stem solid / high-perimeter. **If the apple still wobbles,** check the stem's
+  3 screws are **M3 × 10** (longer ones bottom out in the 7 mm holes and never clamp the flange) and
+  that the flange sits flat on the cover.
 - **Feed bore vs wiring:** `sensor_bore_d = 9 mm` carries the ERM leads, the FSR tail, or a Ø2–3 mm
   pressure tube — the bulky parts load through the press-fit cap, not the bore. Widen it (watch the shaft
   wall) only if your *tail/tube bundle* is fat; tune `cap_lip_clear` for the cap's press-fit, and `tip_clear` / `ret_glue_clear` for the ball and
@@ -507,14 +508,14 @@ populate — the boards go in over the screw heads.
 2. **Bolt the flange plate to the robot — bare.** **8× M6×16** through the plate into the flange's tapped
    holes, each on a steel washer in its Ø14 seat; the heads bury flush in the plate's top face. The Ø34
    recess clears the electric connector. Pull the power/data bundle up the **Ø30** bore.
-3. **Bolt TIER 1 onto the plate, THEN populate it.** **6× M3×16** down the Ø100 circle into the plate's
+3. **Bolt TIER 1 onto the plate, THEN populate it.** **6× M3×14** down the Ø100 circle into the plate's
    inserts; the heads recess into the floor. **Do this before any board goes in** — those screws sit
    under where boards land. Then dress the tool-connector bundle: bring it up the Ø30 bore, split it,
    and run each half out through its **bore port and feed channel** into a **perimeter trench**; tie it
    down at the slots. All of it sits below the floor line, so boards go on top of it. Now **velcro**
    the Metro, RS-422 and MPRLS down wherever they suit — clear of the four pillars — and land the CTR
    pairs on the RS-422 screw terminals.
-4. **Stack TIER 2 and populate it.** Drop tier 2 on and drive **4× M3×16** down at 45/135/225/315 into
+4. **Stack TIER 2 and populate it.** Drop tier 2 on and drive **4× M3×14** down at 45/135/225/315 into
    tier 1's pillars (heads recess into tier 2's floor). Pass the 24 V pair up the central riser first.
    Then velcro the **Tobsun, level shifter and DRV2605L** down — anywhere clear of tier 2's four
    pillars — and fan **5 V out from the converter** to every board, back **down through a drop to
@@ -524,7 +525,7 @@ populate — the boards go in over the screw heads.
    the cover's **top groove** (LEDs up). The groove is 8.5 mm wide against the ring's 6 mm — **seat the
    arcs pushed OUTWARD, against the outer wall**, which is where the extra circumference is and what
    lets the four segments close. Solder the arc-to-arc joints and feed each arc's power/data leads down
-   its **quarter pass-through**. Then lower the cover and drive the **4× M3×16** at **Ø120** (inside the
+   its **quarter pass-through**. Then lower the cover and drive the **4× M3×14** at **Ø120** (inside the
    ring) down into tier 2's pillars.
 6. **Fit the casing box.** Lower the clear box over the stack (open side down to the flange) so its top
    covers the ring, line up the 3 top holes with the **Ø64** pilots, and drive **3× M3×6** (with washers)
@@ -719,9 +720,9 @@ part here fails along layer boundaries.
 ## Safety (animal subject + electronics)
 - Lightweight keeps tool inertia low (better impedance behaviour; gentler on contact) — the electronics
   add mass, so re-check the FRI load data / tool calibration after fitting (main repo README §2).
-- The apple sits on a **thin Ø14 PETG shaft** (with a Ø22 flange anchoring the TPU ball), integral
-  with the cover flange and filleted R6 at the root. Re-check the margin after any change to
-  `stem_shaft_len`; print the stem solid, and confirm the **TPU ball can't pull off the flange by hand**
+- The apple sits on a **PETG shaft tapering Ø24 → Ø14** (with a Ø22 retainer anchoring the TPU ball),
+  integral with the cover flange. Re-check the margin after any change to
+  `stem_shaft_len`; print the stem solid, and confirm the **TPU ball can't pull off the stem by hand**
   before use.
 - Keep **5 V/24 V wiring** sealed under the cover and inside the clear casing box, strain-relieved;
   nothing the animal can reach or pull. The box shrouds the sides down to the flange plate, but it is
