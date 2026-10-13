@@ -193,7 +193,7 @@ class ExperimentParams:
         cur = self.current()
         rows = []
         for name, default in self.defaults.items():
-            lim = ex.live_params.limits_for(name)
+            lim = ex.live_params.limits_for(name, cur)      # some ranges follow other values (resistance)
             rows.append({
                 "name": name,
                 "group": name.split(".")[0] if "." in name else "general",
@@ -210,6 +210,7 @@ class ExperimentParams:
                              if name in ex.linked(ex.START_POSE) and self.exp.clik_nullspace else []),
                 "choices": ex.choices(self.exp, name, self.defaults),
                 "limits": list(lim) if lim else None,
+                "step": ex.live_params.step_for(name),     # set -> the dashboard draws a slider
             })
         return rows
 

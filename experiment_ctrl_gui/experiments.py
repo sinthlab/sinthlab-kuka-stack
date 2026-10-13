@@ -66,7 +66,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="Pull the apple 0.1 m in any direction from a fixed start; snap cue, hold, recover.",
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
-        stiffness_profile="Uniform Medium (Apple Pluck)",
+        stiffness_profile="Maze compliant (uniform 400)",
         ros_controller="lbr_joint_position_command_controller",
         run_name="iiwa7_apple_pluck_impedance_control",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
@@ -76,7 +76,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="As Apple Pluck, but the apple is displaced by a polar (r, θ) offset after the go cue.",
         launch_file="iiwa7_apple_pluck_impedance_perturb.launch.py",
         params_yaml="apple_pluck_impedance_perturb.yaml", node="perturb_orchestrator",
-        stiffness_profile="Uniform Medium (Apple Pluck)",
+        stiffness_profile="Maze compliant (uniform 400)",
         ros_controller="lbr_joint_position_command_controller",
         run_name="iiwa7_apple_pluck_impedance_perturb",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
@@ -173,6 +173,9 @@ CAUTION: Dict[str, str] = {
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
     "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
     "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y).",
+    "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Maze compliant "
+                                          "(uniform 400) = 400). If they differ, every pull feels softer or stiffer "
+                                          "than the resistance slider says."),
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),

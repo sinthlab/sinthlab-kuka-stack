@@ -112,7 +112,11 @@ values that trial used.
 `live_params.py` has no ROS import, so the dashboard loads it from the source tree whether or not
 ROS is sourced; the orchestrators import the same module, so the two cannot disagree. It also holds
 the checks, which `check_value()` applies on both sides:
-- `LIMITS` (ranges) and `CHOICES` (enums);
+- `LIMITS` (ranges), `CHOICES` (enums) and `STEPS` (a step makes the dashboard draw a **slider**
+  next to the text box — e.g. the resistance, 10 N/m; the text box still takes any value in range).
+  `limits_for(name, context)` narrows a range that depends on another value — the resistance slider
+  runs from 50 N/m up to the SmartPad base entered, so the dashboard passes the current values when it
+  describes the parameters;
 - **poses** (`check_pose`): 7 values, within `IIWA7_LIMITS_DEG`, and not a straight arm
   (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12° — the same test the Sunrise app uses for its
   ready-pose move);
@@ -172,7 +176,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 |---|---|---|
 | GET | `/api/experiments` | every experiment, its tab (`group`) and its SmartPad selections |
 | GET | `/api/groups` | the experiment-list tabs, in order: `experiments`, `pretraining` |
-| GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices), `groups` (block docs), `fixed` (Fixed tab sections) |
+| GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices, step), `groups` (block docs), `fixed` (Fixed tab sections) |
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
 | GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state", "data": …}` |
@@ -228,7 +232,7 @@ Static files are served from `static/` only, with no path traversal.
 
 **A new live parameter:**
 1. Add its name or glob to `LIVE_PARAMS` in `live_params.py`, with a range in `LIMITS` (and
-   `CHOICES` if it is an enum).
+   `CHOICES` if it is an enum, or a `STEPS` entry for a slider).
 2. Make the action that uses it re-readable: give it a `reload()` (see `AudioCue.reload()`,
    `CartesianImpedanceDisplacementMonitor.reload()`) and call that from the orchestrator's
    `_reload_live()`.

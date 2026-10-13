@@ -54,9 +54,13 @@ _TASK = ["travel_task.threshold_m", "travel_task.direction", "travel_task.requir
 _RING = ["ring_cue.quarters", "ring_cue.colours.*"]
 _RAIL = _COMMON + _SPEED + _TASK + _RING + ["timeout_sec", "virtual_fixtures.rail_lead_sec"]
 
+# The felt stiffness of the pull (apple pluck, perturb). ROS cannot change the cabinet's stiffness; it
+# softens it by letting the equilibrium follow part of the pull -- see actions/resistance_softener.py.
+_RESIST = ["resistance.stiffness_n_per_m"]
+
 LIVE_PARAMS: Dict[str, List[str]] = {
-    "apple_pluck": _COMMON + _PULL + _SPEED + _POSE,
-    "perturb": _COMMON + _PULL + _SPEED + _POSE + [
+    "apple_pluck": _COMMON + _PULL + _SPEED + _POSE + _RESIST,
+    "perturb": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
         "apple_pluck_impedance_control_displacement.baseline_settle_sec",
         # The perturbation itself -- the manipulated variable, so it is the one most worth varying
         # trial to trial. Recorded per trial in the sidecar's `perturbation` block.
@@ -107,6 +111,12 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "*.move_to_pos_v_max": (5.0, 90.0),
     "*.move_to_pos_a_max": (0.5, 20.0),
     "*.move_to_pos_j_max": (1.0, 150.0),
+    # Felt stiffness [N/m]: from MIN_FELT_STIFFNESS up to the SmartPad base the user enters -- checked
+    # against resistance.base_stiffness_n_per_m (_check_pair), and the dashboard sizes the slider to
+    # match (limits_for with a context). The static range here is just the widest possible base.
+    "resistance.stiffness_n_per_m": (50.0, 5000.0),
+    # The SmartPad profile's translational stiffness (per-run): Sunrise caps it at 5000 N/m.
+    "resistance.base_stiffness_n_per_m": (50.0, 5000.0),
     # Pre-training. The threshold must also stay short of the rail end; the orchestrator warns if not.
     "travel_task.threshold_m": (0.01, 0.30),
     "travel_task.return_tolerance_m": (0.005, 0.10),
@@ -128,6 +138,17 @@ LIMITS: Dict[str, Tuple[float, float]] = {
 IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
 _START, _RECOVER = _POSE
+
+# Slider steps: a parameter listed here gets a slider (plus its text box) on the dashboard. The text box
+# still takes any value within LIMITS; the slider moves in these steps.
+STEPS: Dict[str, float] = {
+    "resistance.stiffness_n_per_m": 10.0,
+}
+
+# Softening never goes below this felt stiffness [N/m]: whatever the base, at least this much spring
+# always remains (following the arm completely would leave nothing holding it up).
+MIN_FELT_STIFFNESS = 50.0
+_K, _K_BASE = "resistance.stiffness_n_per_m", "resistance.base_stiffness_n_per_m"
 
 # Parameters with a fixed set of values. The dashboard renders these as a drop-down.
 CHOICES: Dict[str, List[str]] = {
@@ -151,7 +172,7 @@ CHOICES: Dict[str, List[str]] = {
 PERTURB_R_MAX: Dict[str, float] = {"frontal": 0.15, "horizontal": 0.175, "sagittal": 0.10}
 _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
 PAIRED = (_R, _PLANE, "move_to_start.target_joint_position",
-          "move_to_start_recover.target_joint_position")   # checked together: see check_value(context=...)
+          "move_to_start_recover.target_joint_position", _K, _K_BASE)   # checked together: see check_value(context=...)
 
 
 def check_perturbation(r, plane) -> Optional[str]:
@@ -175,12 +196,38 @@ def is_live(experiment: str, name: str) -> bool:
     return any(fnmatch(name, p) for p in LIVE_PARAMS.get(experiment, []))
 
 
-def limits_for(name: str) -> Optional[Tuple[float, float]]:
-    return _lookup(LIMITS, name)
+def limits_for(name: str, context: Optional[dict] = None) -> Optional[Tuple[float, float]]:
+    """(min, max) for `name`. With `context` (the other values in effect), ranges that depend on another
+    parameter are narrowed to it: the felt stiffness to what the SmartPad base can be softened to."""
+    lim = _lookup(LIMITS, name)
+    if lim is not None and name == _K and context and context.get(_K_BASE) is not None:
+        base = float(context[_K_BASE])
+        lo, hi = MIN_FELT_STIFFNESS, min(lim[1], base)
+        if lo <= hi:
+            return (round(lo, 6), round(hi, 6))
+    return lim
 
 
 def choices_for(name: str) -> Optional[List[str]]:
     return _lookup(CHOICES, name)
+
+
+def step_for(name: str) -> Optional[float]:
+    return _lookup(STEPS, name)
+
+
+def check_stiffness(k, base) -> Optional[str]:
+    """None if a felt stiffness k is reachable from the SmartPad base stiffness, else the reason."""
+    if k is None or base is None:
+        return None
+    k, base = float(k), float(base)
+    if k > base + 1e-9:
+        return (f"resistance.stiffness_n_per_m {k:g} N/m is stiffer than the SmartPad base profile "
+                f"({base:g} N/m, resistance.base_stiffness_n_per_m): ROS can only soften the cabinet spring")
+    if k < MIN_FELT_STIFFNESS - 1e-9:
+        return (f"resistance.stiffness_n_per_m {k:g} N/m is below {MIN_FELT_STIFFNESS:g} N/m, the least "
+                f"spring that must always remain")
+    return None
 
 
 def check_value(name: str, value, context: Optional[dict] = None) -> Optional[str]:
@@ -234,6 +281,11 @@ def _check_pair(name, value, context) -> Optional[str]:
             return (f"{name} must equal {other} -- set both together, in one call "
                     f"(the dashboard does this for you)")
         return None
+    if name in (_K, _K_BASE):
+        ctx = context or {}
+        k = value if name == _K else ctx.get(_K)
+        base = value if name == _K_BASE else ctx.get(_K_BASE)
+        return check_stiffness(k, base)
     if context is None or name not in (_R, _PLANE):
         return None
     r = value if name == _R else context.get(_R)

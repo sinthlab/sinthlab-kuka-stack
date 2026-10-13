@@ -9,6 +9,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
+from sinthlab_bringup.actions.resistance_softener import ResistanceSoftener
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.common_threshold import get_optional_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
@@ -64,6 +65,9 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # (the "give") but stays supported — NOT limp. Held for the monitor's
         # force_release_shutdown_delay_sec, then recover.
         self.freeze_hold = FreezeAtPoseAction(self)
+        # Felt stiffness of the pull, below the SmartPad profile (live: resistance.stiffness_n_per_m).
+        # Softens from the moment the monitor arms until the threshold, where the freeze takes over.
+        self.resistance = ResistanceSoftener(self, param_prefix="resistance")
         self.move_recover = MoveToPositionJointSpace(
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
@@ -99,6 +103,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # Record the WHOLE trial, approach included -- analysis can trim, it cannot un-discard.
         self.recorder.start(trial_index=self.trial_count,
                             threshold_m=self.monitor.threshold_m())
+        self.recorder.annotate(resistance=self.resistance.describe())
         self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()
 
@@ -121,6 +126,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_monitor_armed(self):
         # Baseline locked: this is the moment the animal may pull. Reaction time is snap - armed.
         self.recorder.mark("armed")
+        self.resistance.start()   # from here the pull is softened to the selected stiffness
         self.recorder.annotate(baseline=self.monitor.baseline_xyz())
 
     def on_monitor_snap(self):
@@ -129,6 +135,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
         self.recorder.mark("cue_snap")
+        self.resistance.stop()    # the freeze ramps from the equilibrium this left behind
         self.freeze_hold.start()  # equilibrium moves onto the arm and holds there for the dwell
         self.recorder.mark("freeze")
 
@@ -137,6 +144,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.get_logger().info("Apple plucked! Returning to start.")
         self.recorder.mark("recover_start")
         self.freeze_hold.stop()
+        self.resistance.stop()
         self.move_recover.start()
 
     def on_recover_complete(self):
@@ -150,6 +158,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         for cue in (self.audio_cue, self.audio_cue_snap, self.visual_cue, self.visual_cue_snap):
             cue.reload()
         self.monitor.reload()
+        self.resistance.reload()    # felt stiffness of the pull
         self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
         self.move_recover.reload()

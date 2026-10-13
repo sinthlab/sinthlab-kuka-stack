@@ -1,5 +1,26 @@
 /**:
   ros__parameters:
+    # ---- RESISTANCE of the pull: the felt stiffness, chosen per trial (dashboard slider) ----
+    # The cabinet's stiffness is fixed by the SmartPad profile and ROS cannot change it. ROS SOFTENS it:
+    # while the animal pulls, the arm's equilibrium follows part of the pull, so the spring stretches
+    # less -- felt stiffness = base x (1 - fraction followed). It can only SOFTEN, never stiffen, and at
+    # least 50 N/m of spring always remains. See actions/resistance_softener.py.
+    #
+    # >>> SmartPad: any profile -- e.g. "Maze compliant (uniform 400)" (400 N/m, rotation 300, like Uniform
+    #     Medium but 4x stiffer translationally). Enter its translational stiffness below as the base: the
+    #     slider then runs from 50 N/m up to the base, in steps of 10 (100, the usual feel, is mid-range
+    #     on 400). The further below the base you go, the more a quick pull feels like the base (see below):
+    #     choose a base near the stiffest you will actually use.
+    #     base_stiffness_n_per_m MUST equal the profile's translational stiffness: if it says 400 while
+    #     the SmartPad runs Uniform Medium (100), every pull feels 4x softer than the slider says.
+    #     Equal values (stiffness = base) switch the softening off: the arm feels the bare profile.
+    # Quick pulls feel somewhat stiffer than the setting (the equilibrium follows from ROS at 100 Hz,
+    # slightly behind the arm), and at a fixed damping ratio a stiffer base is more damped -- pick a
+    # lower damping ratio on the SmartPad if pulls feel viscous.
+    resistance:  # felt stiffness of the pull
+      base_stiffness_n_per_m: 400.0  # the SmartPad profile's translational stiffness [N/m] (per-run; must match the SmartPad)
+      stiffness_n_per_m: 100.0  # felt stiffness of the pull [N/m] (live, from the next trial): 50 up to the base
+
     # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
     # MoveToPositionJointSpace action; the cabinet (LbrImpedanceControlServer) provides compliance.
     apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover

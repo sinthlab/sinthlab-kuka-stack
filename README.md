@@ -177,7 +177,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Experiment | Extra live parameters |
 |---|---|
-| Apple Pluck | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
+| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
 | Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
@@ -526,7 +526,7 @@ pose in `config/apple_pluck_impedance.yaml`.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
+   | Cartesian stiffness (K diagonal) | `Maze compliant (uniform 400)` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
@@ -543,6 +543,47 @@ pose in `config/apple_pluck_impedance.yaml`.
 3. The arm moves to the start. At the beep (and a **green** ring, if the visual cue is on) pull the
    apple toward you; **0.1 m** in any direction counts. A second beep and a **red** ring confirm it,
    the arm holds for a moment, then returns to the start.
+
+#### Resistance — the felt stiffness of the pull
+How hard the apple pulls back is selectable per trial from the dashboard: **`resistance.stiffness_n_per_m`**
+on the Live tab, a **slider (steps of 10) plus a text box** for any value in its range.
+
+**The range runs from 50 N/m up to the SmartPad base.** Choose any stiffness profile on the SmartPad
+and enter its translational stiffness as `resistance.base_stiffness_n_per_m` (Per-run): the slider then
+covers **50 N/m to that value**. E.g. Uniform Medium (100) gives 50–100, Maze compliant (400) gives
+50–400, Rail guide (1000) gives 50–1000.
+
+ROS cannot read the SmartPad's stiffness (FRI carries positions and torques only), so the base is the
+value you set to match it. Change it on the Per-run tab and the slider's range follows; a value the
+two can't both satisfy is refused with the reason.
+Like every live setting it applies **from the next trial**, and each trial's sidecar records the
+resistance it ran with (`resistance`: base, felt stiffness, fraction followed).
+
+**How.** ROS cannot change the cabinet's stiffness — the SmartPad fixes it when the app starts, and FRI
+streams only the spring's equilibrium. So the SmartPad runs a **stiffer base**, `Maze compliant
+(uniform 400)` (400 N/m, rotation 300 like Uniform Medium), and ROS **softens** it: from the moment
+the monitor arms until the threshold, the equilibrium follows a fraction *f* of the pull, so the
+spring is stretched by only (1 − *f*) of it:
+
+> **felt stiffness = base × (1 − *f*)** — on the 400 base, 100 N/m (the usual Uniform-Medium feel) is *f* = 0.75.
+
+It works in joint space on the same joint controller, measured from the settled pose at `armed`,
+so the resting sag is unchanged ([`resistance_softener.py`](sinthlab_bringup/sinthlab_bringup/actions/resistance_softener.py)).
+At the threshold the freeze takes over from wherever the softening left the equilibrium.
+
+- **It can only soften:** at most the base, and never below **50 N/m** — that much spring always
+  remains; following the arm completely would leave nothing holding it up.
+- **`resistance.base_stiffness_n_per_m` must equal the SmartPad profile** (400). If the SmartPad
+  runs Uniform Medium (100) while this says 400, every pull feels 4× softer than the slider says.
+  Setting the slider to the base (400) switches softening off: the arm feels the bare profile.
+- **Quick pulls feel somewhat stiffer** than the setting: the equilibrium follows from ROS at
+  100 Hz, slightly behind the arm. Slow, steady pulls get the setting. The further below the base you
+  go, the stronger this is (at 50 on a 1000 base, ROS follows 95 % of the pull): **choose a base near
+  the stiffest resistance you will actually use.**
+- **Rotation and the elbow soften by the same fraction,** so the tool twists a little more at low
+  resistance.
+- **At the same damping ratio a stiffer base is more damped** (damping scales with √K): if pulls
+  feel viscous, choose a lower damping ratio on the SmartPad.
 
 ### Scenario 2 — Move Restricted on a Plane
 This scenario applies mathematical **virtual fixtures** (planes, boxes, cylinders, sine rails): the
@@ -637,7 +678,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Uniform Medium (Apple Pluck)` |
+   | Cartesian stiffness (K diagonal) | `Maze compliant (uniform 400)` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
@@ -1202,6 +1243,7 @@ flowchart LR
   | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
   | `FreezeAtPoseAction` | at the snap, move the equilibrium onto the arm and hold it there (apple / perturb) |
+  | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's (apple / perturb) |
   | `SwitchControllerAction` | switch between the joint controller and `kuka_clik_controller` (restricted-plane / maze) |
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
@@ -1348,7 +1390,7 @@ stateDiagram-v2
     MoveToStart --> QuietWindow : at start [at_start]
     QuietWindow --> GoCue : quiet_window_sec (2 s) [quiet_end]
     GoCue --> Monitor : audio + visual cue [cue_go]
-    Monitor --> Snap : baseline locked [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
+    Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
     Snap --> Hold : snap cue [cue_snap], freeze the equilibrium on the arm [freeze]
     Hold --> Recover : force_release_shutdown_delay_sec (0.8 s) [recover_start]
     Recover --> NextTrial : apple back within 3 cm [trial_end]
@@ -1389,7 +1431,7 @@ stateDiagram-v2
     GoCue --> PerturbDelay : audio + visual cue [cue_go]
     PerturbDelay --> Perturb : start_delay_sec (1.5 s) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
-    Monitor --> Snap : settle baseline_settle_sec (1 s) [armed]<br/>pull ≥ threshold [snap]
+    Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap]
     Snap --> Hold : snap cue, freeze [freeze]
     Hold --> Recover : dwell [recover_start]
     Recover --> NextTrial : apple back within 3 cm [trial_end]
@@ -1888,6 +1930,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `git` | Commit SHA and dirty flag of the stack that produced the file. |
 | `start_pose` | Commanded and measured joint vectors at trial start. |
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
+| `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
 | `perturbation` | Perturb: the applied offset vector. Constant per trial, hence metadata not a column. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |

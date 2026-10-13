@@ -445,8 +445,25 @@ function buildControl(ctl, p, value, commit, disabled) {
     pick.onchange = () => { const h = pick.value; commit([1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).concat(value.length > 3 ? [w] : [])); };
     ctl.append(sw, pick);
   }
-  const inp = document.createElement("input");
   const numeric = p.type === "int" || p.type === "float";
+  // A parameter with a step (live_params.STEPS) gets a slider next to its text box. The slider moves in
+  // steps and commits when released; the text box takes any value within the limits.
+  if (numeric && p.step && p.limits && !Array.isArray(value)) {
+    const sl = document.createElement("input");
+    sl.type = "range"; sl.className = "slider"; sl.disabled = disabled; sl.setAttribute("aria-label", `${p.name} slider`);
+    sl.min = p.limits[0]; sl.max = p.limits[1]; sl.step = p.step; sl.value = value;
+    const box = document.createElement("input");
+    box.type = "number"; box.className = "slider-box"; box.disabled = disabled; box.setAttribute("aria-label", p.name);
+    box.min = p.limits[0]; box.max = p.limits[1]; box.step = "any"; box.value = String(value);
+    sl.oninput = () => { box.value = sl.value; };          // follow while dragging
+    sl.onchange = () => commit(sl.value);                   // commit on release
+    box.onkeydown = (e) => { if (e.key === "Escape") { box.value = String(value); box.blur(); } };
+    box.onchange = () => { sl.value = box.value; commit(box.value); };
+    box.onblur = () => { if (S.renderDeferred) setTimeout(() => renderParams(), 0); };
+    ctl.append(sl, box);
+    return;
+  }
+  const inp = document.createElement("input");
   inp.type = numeric ? "number" : "text"; inp.disabled = disabled; inp.setAttribute("aria-label", p.name);
   if (numeric) { inp.step = p.type === "int" ? "1" : "any"; if (p.limits) { inp.min = p.limits[0]; inp.max = p.limits[1]; } }
   inp.value = Array.isArray(value) ? `[${value.join(", ")}]` : String(value);
