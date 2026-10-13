@@ -35,17 +35,23 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    push -- with a short ramp (one dead band wide) so the start is not a jolt.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
-THE FORCE (force_source). Default "joint_torques": computed HERE from the arm's external joint torques
+THE FORCE (force_source). Default "estimator": lbr's EstimatedWrenchInterface
+(`force_torque_broadcaster/wrench`), published in the EE frame and rotated here into the base frame.
+"joint_torques" (experimental): computed HERE from the arm's external joint torques
 (LBRState.external_torque) through the base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext.
-Why not lbr's EstimatedWrenchInterface (`force_torque_broadcaster/wrench`, "estimator")? Two things it
-does make the motion bumpy, worst on diagonals:
+It reads a real push far more faithfully -- the estimator's two simplifications make the motion
+bumpy, worst on diagonals:
   * a PER-AXIS dead band (2 N on each of X, Y, Z). A diagonal push is split across axes that switch on
     and off independently, so the measured direction snaps between axes;
   * a heavily damped pseudo-inverse (0.2). At the maze start it reads only 47-85 % of the real force
     and bends its direction by up to 17 deg, differently in different directions.
 Here the pseudo-inverse is damped lightly (jacobian_damping, 0.02: within 1 % and 0 deg away from
-singular poses) and the only threshold is this action's own, which is round. The estimator topic
-stays as it is for everything else (e.g. the release check). "estimator" uses that topic instead.
+singular poses) and the only threshold is this action's own, which is round. BUT it also passes the
+arm's own model errors that the estimator hides -- worst at the elbow: 1 Nm of error on A4 reads as
+~4.3 N, mostly in Z. On the arm that drove a sustained oscillation about A4, in Z, after the arm had
+been moved, so it is not the default until that is understood; debug_log_enabled then also
+prints the per-joint external torques to show what drives it. The estimator topic itself is
+unchanged for everything else (e.g. the release check).
 """
 from __future__ import annotations
 
@@ -82,7 +88,7 @@ class AdmittanceMoveAction:
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
         # Base-frame geometric Jacobian of the EE: rows [linear; angular] (checked against FK).
         self._jac = model.get_global_link_geometric_jacobian_function(link=self.ee_link, numpy_output=True)
-        self._source = str(get_optional_param(node, self._p + "force_source", "joint_torques")).lower()
+        self._source = str(get_optional_param(node, self._p + "force_source", "estimator")).lower()
         if self._source not in ("joint_torques", "estimator"):
             raise ValueError(f"{self._p}force_source must be joint_torques or estimator, got {self._source!r}")
         self._jac_damping = max(0.0, float(get_optional_param(node, self._p + "jacobian_damping", 0.02)))
@@ -177,6 +183,7 @@ class AdmittanceMoveAction:
         if self._source == "estimator":
             return T[0:3, 0:3] @ self._f_msg if self._f_msg is not None else np.zeros(3)
         tau = np.array(msg.external_torque, dtype=float)
+        self._tau_ext = tau                                             # for the debug line
         if not np.all(np.isfinite(tau)):
             return np.zeros(3)
         J = np.array(self._jac(q), dtype=float)
@@ -203,6 +210,7 @@ class AdmittanceMoveAction:
         if not np.all(np.isfinite(q)):
             return
         T = self._fk(q)
+        self._q_last = q
         self._p_meas = T[0:3, 3].copy()
         if not self._active:
             return
@@ -255,6 +263,9 @@ class AdmittanceMoveAction:
         if self._debug and self._dbg.tick(max(dt, 1e-3)):
             self._node.get_logger().info(
                 f"free move: F={np.round(self._f_used, 1)} N  v={np.round(v, 3)} m/s  "
+                + (f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
+                   if self._source == "joint_torques" else "")
+                + f"q4={np.degrees(self._q_last[3]):.1f} deg  "
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
 
     def _publish(self, xyz: np.ndarray) -> None:

@@ -1038,20 +1038,21 @@ does the IK; ROS only moves the target point.
     every jolt and the motion feels bumpy. Lower is smoother, but slower to start and stop.
   - `force_filter_tau_sec`: low-pass on the force estimate (larger = smoother, but laggier, and lag
     can make low damping oscillate).
-- **Where the force comes from** (`force_source`, per-run). By default (`joint_torques`) Free Move
-  computes the hand's force itself from the arm's **external joint torques** through the Jacobian
-  (`F = pinv(J)ᵀ τ_ext`, lightly damped: `jacobian_damping` 0.02). It does **not** use lbr's estimated
-  wrench topic, for two reasons that made diagonal motion bumpy:
-  - that estimator has a **per-axis** 2 N dead band, so a diagonal push, split across axes, switches
-    on and off axis by axis and its direction snaps between them;
-  - its Jacobian inverse is damped at 0.2, which here reads only **47–85 %** of the real force and
-    bends its direction by up to **17°**, differently in different directions.
+- **Where the force comes from** (`force_source`, per-run). Two sources:
+  - **`estimator` (default, stable):** lbr's estimated wrench topic. It has a **per-axis** 2 N dead
+    band and a heavily damped Jacobian inverse (0.2): it reads only **47–85 %** of the real force and
+    bends its direction by up to **17°**, so diagonal pushes feel a little bumpy.
+  - **`joint_torques` (experimental):** Free Move computes the force itself from the arm's **external
+    joint torques** (`F = pinv(J)ᵀ τ_ext`, `jacobian_damping` 0.02) — within 1 % and 0° of a real push in
+    every direction. But it also passes the arm's own **model errors** that the estimator hides, and the
+    elbow amplifies them: 1 Nm of error on A4 reads as about **4.3 N**, mostly in Z. On the arm this
+    drove a **sustained oscillation about A4, in Z, after the arm had been moved**. With
+    `debug_log_enabled` it logs the per-joint torques and the A4 angle, to show whether the error
+    follows the arm's position (gravity / load data) or its acceleration (inertia / load data) —
+    check the tool load data first if the end effector is mounted.
 
-  In an offline test of a 6 N diagonal push, the estimator path barely moved (0.007 m/s, about 26°
-  off the push); the joint-torque path moved at full speed within about 2° of it. `force_source:
-  estimator` switches back. The estimator topic itself is unchanged, so the release check still uses
-  it. Because the force is no longer under-read, the same damping feels **lighter** than with the
-  estimator.
+  A per-joint torque dead band does not fix it: an X push loads A2 and A4 in opposite directions, so
+  it bends X pushes by 34–86°.
 - **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool

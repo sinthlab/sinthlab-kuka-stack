@@ -85,6 +85,7 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "free_move.accel_limit_mps2",
         "free_move.force_filter_tau_sec",
         "free_move.tare_sec",
+        "free_move.debug_log_enabled",   # turn the force / speed log on for the next session
     ],
     "move_vertical": _RAIL,
     "move_horizontal": _RAIL,
