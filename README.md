@@ -1117,7 +1117,8 @@ one bit, not a pattern.
 The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end.
 
 #### Before the first session with a subject
-1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`.
+1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`
+   (Per-run tab, before Start — every debug-log switch, in every experiment, is a Per-run setting).
    Push the tool gently sideways: **the arm must move with the push.** If it moves against it, stop
    at once; the force frame is wrong.
 2. **Free Move, creep and feel.** Leave the arm untouched for 10 s; it must not move. Then move it

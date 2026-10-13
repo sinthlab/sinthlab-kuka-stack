@@ -79,7 +79,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
-      debug_log_enabled: false  # print force, speed and position twice a second while moving (live: from the next session)
+      debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
     # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
