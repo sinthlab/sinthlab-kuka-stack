@@ -58,24 +58,24 @@
 
     # ---- THE FEEL (live: change between trials from the dashboard) ----
     free_move:  # admittance: the equilibrium moves at force / damping
-      damping_ns_per_m: 10.0  # force per speed [N s/m]: LOWER = LIGHTER (10: a 3 N push moves ~0.3 m/s)
-      # A THRESHOLD, not a subtraction: a (tared) force below it moves nothing; above it the whole force
-      # counts (full from twice the threshold). The force estimator has its own 2 N per-axis dead band
-      # on top (estimated_wrench_interface in iiwa7_hardware_controllers.yaml).
-      deadband_n: 1.5  # force below this is ignored, so a resting arm never creeps [N]; 0 = none
+      damping_ns_per_m: 10.0  # force per speed [N s/m]: LOWER = LIGHTER (10: a 4 N push moves ~0.25 m/s)
+      # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
+      # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
+      # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
+      deadband_n: 2.5  # force below this is ignored, so a resting arm never creeps or oscillates [N]; 0 = none
       max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
-      # SMOOTHNESS. The force estimate is noisy and crosses the threshold on and off; without this the
+      # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
       # target speed follows every jolt. Lower = smoother but slower to start and stop; 0 = off.
       accel_limit_mps2: 1.5  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.2 s)
-      force_filter_tau_sec: 0.05  # low-pass on the force estimate [s]; larger = smoother, laggier
-      # WHERE THE FORCE COMES FROM. estimator (default, stable): lbr's force_torque_broadcaster/wrench
-      # (per-axis 2 N dead band, damping 0.2) -- reads 47-85 % of the real force and bends its direction
-      # by up to 17 deg, so diagonals feel a little bumpy. joint_torques (experimental): computed here from
-      # the external joint torques -- faithful to a real push, but it also passes the arm's model errors
-      # (1 Nm at the elbow A4 reads as ~4.3 N, mostly Z), which on the arm drove a sustained oscillation
-      # about A4 in Z after the arm was moved. With debug_log_enabled it logs the per-joint torques.
-      force_source: "estimator"  # estimator | joint_torques
-      jacobian_damping: 0.02  # damping of the Jacobian inverse (joint_torques only); larger = steadier near singular poses, less accurate
+      force_filter_tau_sec: 0.05  # low-pass on the force reading [s]; larger = smoother, laggier
+      # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
+      # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
+      # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
+      # amplifies most: 1 Nm there reads as 4.3 N at damping 0.02 (that oscillated, ~1 Hz in Z), 3.4 N at
+      # 0.1, 2.0 N at 0.2. Damping 0.1 reads a push at 78-96 % of its strength, bent by at most 6 deg --
+      # a constant small bend for a pose, never a snap. Keep the tool's load data current: stale load
+      # data is the largest model error. With debug_log_enabled the log shows the per-joint torques.
+      jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]

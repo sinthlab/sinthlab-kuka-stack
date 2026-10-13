@@ -30,28 +30,27 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    speed changes. 0 = off.
   * tare           the force at rest (the gravity-model residual, ~5 N here) is measured during
                    tare_sec at the start of each trial and subtracted, so a resting arm does not creep.
-  * deadband_n     a THRESHOLD: a (tared) force below it moves nothing, so estimator noise cannot
+  * deadband_n     a THRESHOLD: a (tared) force below it moves nothing, so force-reading noise cannot
                    creep the arm. Above it the WHOLE force counts -- it is not subtracted from every
                    push -- with a short ramp (one dead band wide) so the start is not a jolt.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
-THE FORCE (force_source). Default "estimator": lbr's EstimatedWrenchInterface
-(`force_torque_broadcaster/wrench`), published in the EE frame and rotated here into the base frame.
-"joint_torques" (experimental): computed HERE from the arm's external joint torques
-(LBRState.external_torque) through the base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext.
-It reads a real push far more faithfully -- the estimator's two simplifications make the motion
-bumpy, worst on diagonals:
-  * a PER-AXIS dead band (2 N on each of X, Y, Z). A diagonal push is split across axes that switch on
-    and off independently, so the measured direction snaps between axes;
-  * a heavily damped pseudo-inverse (0.2). At the maze start it reads only 47-85 % of the real force
-    and bends its direction by up to 17 deg, differently in different directions.
-Here the pseudo-inverse is damped lightly (jacobian_damping, 0.02: within 1 % and 0 deg away from
-singular poses) and the only threshold is this action's own, which is round. BUT it also passes the
-arm's own model errors that the estimator hides -- worst at the elbow: 1 Nm of error on A4 reads as
-~4.3 N, mostly in Z. On the arm that drove a sustained oscillation about A4, in Z, after the arm had
-been moved, so it is not the default until that is understood; debug_log_enabled then also
-prints the per-joint external torques to show what drives it. The estimator topic itself is
-unchanged for everything else (e.g. the release check).
+THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
+base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext, with a damped pseudo-inverse
+(jacobian_damping) and this action's own ROUND threshold (deadband_n) -- the same in every direction, so
+a diagonal push moves along a straight line.
+
+Why not lbr's EstimatedWrenchInterface (`force_torque_broadcaster/wrench`)? It applies its dead band per
+axis (2 N on each of X, Y and Z), so a diagonal push, split across axes that switch on and off
+independently, snaps between them: bumpy on diagonals. That topic is unchanged for everything else
+(e.g. the release check).
+
+The two settings trade accuracy for stability. The external torques also carry the arm's own model
+errors (gravity, dynamics, the tool's load data -- determine it whenever the tool changes), and the
+elbow amplifies them most: 1 Nm of error on A4 reads as 4.3 N at damping 0.02, 3.4 N at 0.1, 2.0 N at
+0.2. At 0.02 that drove a sustained ~1 Hz oscillation about A4, in Z. Damping 0.1 with a 2.5 N round
+threshold is smooth and stable on this arm; it reads a push at 78-96 % of its strength, its direction
+bent by at most 6 deg -- a constant small bend for a pose, never a snap between axes.
 """
 from __future__ import annotations
 
@@ -59,7 +58,7 @@ import time
 from typing import Optional
 
 import numpy as np
-from geometry_msgs.msg import PoseStamped, WrenchStamped
+from geometry_msgs.msg import PoseStamped
 from lbr_fri_idl.msg import LBRState
 from rclpy.node import Node as rclpyNode
 
@@ -88,10 +87,7 @@ class AdmittanceMoveAction:
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
         # Base-frame geometric Jacobian of the EE: rows [linear; angular] (checked against FK).
         self._jac = model.get_global_link_geometric_jacobian_function(link=self.ee_link, numpy_output=True)
-        self._source = str(get_optional_param(node, self._p + "force_source", "estimator")).lower()
-        if self._source not in ("joint_torques", "estimator"):
-            raise ValueError(f"{self._p}force_source must be joint_torques or estimator, got {self._source!r}")
-        self._jac_damping = max(0.0, float(get_optional_param(node, self._p + "jacobian_damping", 0.02)))
+        self._jac_damping = max(0.0, float(get_optional_param(node, self._p + "jacobian_damping", 0.1)))
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
         self._tare_max = float(get_optional_param(node, self._p + "tare_max_n", 10.0))
@@ -103,7 +99,6 @@ class AdmittanceMoveAction:
         self._anchor: Optional[np.ndarray] = None       # start pose (4x4), captured ONCE per trial
         self._eq: Optional[np.ndarray] = None           # commanded equilibrium position (3,)
         self._p_meas: Optional[np.ndarray] = None
-        self._f_msg: Optional[np.ndarray] = None        # latest wrench, EE frame
         self._f_filt = np.zeros(3)
         self._f_used = np.zeros(3)
         self._v = np.zeros(3)                           # equilibrium velocity (accel-limited)
@@ -112,10 +107,9 @@ class AdmittanceMoveAction:
         self._t_prev: Optional[float] = None
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
-        node.create_subscription(WrenchStamped, "force_torque_broadcaster/wrench", self._on_wrench, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
-        log.info(f"Admittance free move: no boundary, leash {self._leash} m, force from {self._source}"
-                 + (f" (Jacobian damping {self._jac_damping:g})" if self._source == "joint_torques" else ""))
+        log.info(f"Admittance free move: no boundary, leash {self._leash} m, force from the joint torques "
+                 f"(Jacobian damping {self._jac_damping:g})")
 
     # ------------------------------------------------------------------ parameters
     def reload(self) -> None:
@@ -131,7 +125,8 @@ class AdmittanceMoveAction:
         n.get_logger().info(
             f"Free move feel: damping {self._damping:g} N s/m, threshold {self._deadband:g} N, "
             f"max speed {self._max_speed:g} m/s, accel limit "
-            f"{f'{self._accel:g} m/s^2' if self._accel > 0 else 'off'}")
+            f"{f'{self._accel:g} m/s^2' if self._accel > 0 else 'off'}, "
+            f"debug log {'ON' if self._debug else 'off'}")
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -180,8 +175,6 @@ class AdmittanceMoveAction:
     # ------------------------------------------------------------------ loop
     def _hand_force(self, msg: LBRState, q: np.ndarray, T: np.ndarray) -> np.ndarray:
         """The force the hand applies to the tool, base frame [N]."""
-        if self._source == "estimator":
-            return T[0:3, 0:3] @ self._f_msg if self._f_msg is not None else np.zeros(3)
         tau = np.array(msg.external_torque, dtype=float)
         self._tau_ext = tau                                             # for the debug line
         if not np.all(np.isfinite(tau)):
@@ -191,10 +184,6 @@ class AdmittanceMoveAction:
         lam2 = self._jac_damping ** 2
         J_pinv = Vt.T @ np.diag(sv / (sv * sv + lam2)) @ U.T            # damped pseudo-inverse, 7x6
         return (J_pinv.T @ tau)[0:3]                                    # wrench = pinv(J)^T tau; force part
-
-    def _on_wrench(self, msg: WrenchStamped) -> None:
-        f = msg.wrench.force
-        self._f_msg = np.array([f.x, f.y, f.z], dtype=float)
 
     def _threshold(self, f: np.ndarray) -> np.ndarray:
         """Zero below the dead band; the FULL force from twice the dead band; a linear ramp between."""
@@ -263,8 +252,7 @@ class AdmittanceMoveAction:
         if self._debug and self._dbg.tick(max(dt, 1e-3)):
             self._node.get_logger().info(
                 f"free move: F={np.round(self._f_used, 1)} N  v={np.round(v, 3)} m/s  "
-                + (f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
-                   if self._source == "joint_torques" else "")
+                + f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
                 + f"q4={np.degrees(self._q_last[3]):.1f} deg  "
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
 

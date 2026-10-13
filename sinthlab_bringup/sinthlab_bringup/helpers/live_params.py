@@ -159,7 +159,6 @@ CHOICES: Dict[str, List[str]] = {
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
     "travel_task.direction": ["both", "positive", "negative"],
     "travel_task.axis": ["x", "y", "z", "norm"],
-    "free_move.force_source": ["joint_torques", "estimator"],
 }
 
 

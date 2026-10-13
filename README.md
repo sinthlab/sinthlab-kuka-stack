@@ -181,7 +181,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
-| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
+| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
 | Move Vertical / Move Horizontal | `timeout_sec`, `virtual_fixtures.rail_lead_sec`, the task `travel_task.threshold_m` / `direction` / `require_return` / `return_tolerance_m`, the ring `ring_cue.quarters`, `ring_cue.colours.*` |
 
 These are deliberately **not** live:
@@ -353,7 +353,9 @@ mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ou
 
 > **Apply** stores the mass / COM on the controller; synchronizing copies them back into the project's
 > `RoboticsAPI.data.xml`. Re‑run after any change to the end‑effector — a different apple height or a
-> moved battery pack counts. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
+> moved battery pack counts. **Stale load data shows up as** a steady external torque at rest on the
+> shoulder and elbow (A2, A4) that grows as the arm moves away from the start, and in Free Move as a
+> sustained ~1 Hz oscillation, mostly in Z. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
 > set it to match if the arm is mounted otherwise.
 
 ---
@@ -1026,33 +1028,43 @@ ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportion
 does the IK; ROS only moves the target point.
 
 - **The feel is set in the YAML, not on the SmartPad, and all of it is live.**
-  - `damping_ns_per_m`: the only resistance — lower is lighter. At 10, 3 N of push moves the arm
-    about 0.3 m/s. Very low values may buzz or oscillate; come down gradually.
-  - `deadband_n`: a **threshold**, not a subtraction. A force below it moves nothing; above it the
-    whole force counts (full from twice the threshold). Raise it if the arm creeps when nobody touches
-    it. The force estimator has its own 2 N per-axis dead band on top
-    (`estimated_wrench_interface` in `config/iiwa7_hardware_controllers.yaml`).
+  - `damping_ns_per_m`: the only resistance — lower is lighter. At 10, a 4 N push moves the arm
+    about 0.25 m/s. Very low values may buzz or oscillate; come down gradually.
+  - `deadband_n` (default **2.5 N**): a **round threshold**, the same in every direction. A force
+    below it moves nothing; above it the force counts, in full from twice the threshold. It also keeps
+    the arm's own small model errors from driving the motion (below). Raise it if the arm creeps or
+    oscillates when nobody touches it; lower it for a lighter start.
   - `max_speed_mps`: speed cap, 0.35 m/s by default.
   - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 1.5 m/s²; 0 = off).
-    The force estimate is noisy and flickers across the threshold; without this the speed follows
+    The force reading is noisy and flickers across the threshold; without this the speed follows
     every jolt and the motion feels bumpy. Lower is smoother, but slower to start and stop.
-  - `force_filter_tau_sec`: low-pass on the force estimate (larger = smoother, but laggier, and lag
+  - `force_filter_tau_sec`: low-pass on the force reading (larger = smoother, but laggier, and lag
     can make low damping oscillate).
-- **Where the force comes from** (`force_source`, per-run). Two sources:
-  - **`estimator` (default, stable):** lbr's estimated wrench topic. It has a **per-axis** 2 N dead
-    band and a heavily damped Jacobian inverse (0.2): it reads only **47–85 %** of the real force and
-    bends its direction by up to **17°**, so diagonal pushes feel a little bumpy.
-  - **`joint_torques` (experimental):** Free Move computes the force itself from the arm's **external
-    joint torques** (`F = pinv(J)ᵀ τ_ext`, `jacobian_damping` 0.02) — within 1 % and 0° of a real push in
-    every direction. But it also passes the arm's own **model errors** that the estimator hides, and the
-    elbow amplifies them: 1 Nm of error on A4 reads as about **4.3 N**, mostly in Z. On the arm this
-    drove a **sustained oscillation about A4, in Z, after the arm had been moved**. With
-    `debug_log_enabled` it logs the per-joint torques and the A4 angle, to show whether the error
-    follows the arm's position (gravity / load data) or its acceleration (inertia / load data) —
-    check the tool load data first if the end effector is mounted.
+- **Where the force comes from.** Free Move computes the hand's force itself from the arm's
+  **external joint torques** (`F = pinv(J)ᵀ τ_ext`), with a damped Jacobian inverse
+  (`jacobian_damping`, Per-run, default **0.1**) and the round threshold above. It does not use lbr's
+  estimated wrench topic: that applies its 2 N dead band **per axis**, so a diagonal push — split
+  across axes that switch on and off independently — snaps between them and feels bumpy. (That topic
+  is unchanged for everything else, e.g. the release check.)
 
-  A per-joint torque dead band does not fix it: an X push loads A2 and A4 in opposite directions, so
-  it bends X pushes by 34–86°.
+  The joint torques also carry the arm's own **model errors** (gravity, dynamics, the tool's load
+  data), and the elbow amplifies them most:
+
+  | `jacobian_damping` | A push is read at | Direction bent by up to | 1 Nm of elbow (A4) error reads as |
+  |---|---|---|---|
+  | 0.02 | 99–100 % | 0° | 4.3 N — on the arm this **oscillated** (~1 Hz, mostly Z) |
+  | **0.1** (default) | 78–96 % | 6° | 3.4 N |
+  | 0.2 | 47–85 % | 17° | 2.0 N |
+
+  At 0.1, the 2.5 N threshold absorbs a model error of up to **0.74 Nm at the elbow (A4)** and
+  **1.1 Nm at the shoulder (A2)**; a steady error larger than that (stale load data showed ~1 Nm and
+  2–3 Nm) creeps or oscillates the arm. **0.1 with the 2.5 N threshold is smooth and stable on this
+  arm, diagonals included.** The bend is a
+  constant small offset for a pose, never a snap between axes. If it ever oscillates (around the
+  elbow, mostly in Z), first **re-determine the tool's load data** — stale load data is the largest
+  model error — then raise `deadband_n` or `jacobian_damping`. With `debug_log_enabled` (Per-run) the
+  log shows the per-joint torques. A per-joint torque dead band is not a fix: an X push loads A2 and
+  A4 in opposite directions, so it would bend X pushes by 34–86°.
 - **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool
