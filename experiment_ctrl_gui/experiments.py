@@ -70,8 +70,10 @@ EXPERIMENTS: List[Experiment] = [
     Experiment(
         key="apple_pluck", label="Apple Pluck",
         summary="Pull the apple 0.1 m in any direction; snap cue, hold, recover. Normal: from a fixed start. "
-                "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue.",
-        paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb")],
+                "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue. "
+                "Random start: each trial starts at one of 9 positions (origin + 8 compass directions).",
+        paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb"),
+                   ("random_start", "Pluck random start")],
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
         stiffness_profile="Maze compliant (uniform 400)",
@@ -185,11 +187,6 @@ LINKED: List[List[str]] = [
     ["move_to_start.target_joint_position", "move_to_start_recover.target_joint_position"],
 ]
 START_POSE = "move_to_start.target_joint_position"
-
-# Pose checks (joint limits, the straight-arm rule) live in live_params.check_pose, shared with the
-# orchestrators; these are re-exported for anything that wants the numbers.
-IIWA7_LIMITS_DEG = live_params.IIWA7_LIMITS_DEG
-STRAIGHT_BELOW_DEG = live_params.STRAIGHT_BELOW_DEG
 
 
 def tier(exp: Experiment, name: str) -> str:

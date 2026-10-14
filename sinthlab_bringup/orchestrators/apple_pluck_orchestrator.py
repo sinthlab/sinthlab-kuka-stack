@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import random
+
+import numpy as np
 import rclpy
 from rclpy.node import Node as rclpyNode
 
@@ -15,7 +18,9 @@ from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
-PARADIGMS = ("pluck", "perturb")
+PARADIGMS = ("pluck", "perturb", "random_start")
+# random_start: the origin C and the 8 compass directions around it (random_start.positions).
+START_POSITIONS = ("C", "N", "NE", "E", "SE", "S", "SW", "W", "NW")
 
 
 class ApplePluckOrchestratorNode(rclpyNode):
@@ -26,10 +31,13 @@ class ApplePluckOrchestratorNode(rclpyNode):
       perturb  the same, but after the go cue the apple is displaced: perturb_delay -> perturbation
                (a polar (r, theta) offset in a plane, perturb_start.*) -> the monitor arms once the arm
                has settled there (perturb_start.baseline_settle_sec).
+      random_start  as pluck, but each trial starts (and recovers) at one of 9 positions
+               (random_start.positions), in shuffled blocks: all 9 once before any repeats.
 
     Two cues only: the go cue at trial start and the snap cue at the threshold -- no cue when the
     monitor arms after a perturbation. Every trial is recorded as experiment "apple_pluck", with
-    `paradigm` in its sidecar (and, for perturb, the perturbation it ran with).
+    `paradigm` in its sidecar (and, for perturb, the perturbation it ran with; for random_start, the
+    start position).
     """
 
     def __init__(self) -> None:
@@ -48,6 +56,11 @@ class ApplePluckOrchestratorNode(rclpyNode):
             raise ValueError(f"paradigm must be one of {PARADIGMS}, got {self.paradigm!r}")
         self.perturbing = self.paradigm == "perturb"
         self.trial_count = 0
+        if self.paradigm == "random_start":
+            self.start_positions = {
+                name: [float(v) for v in get_required_param(self, f"random_start.positions.{name}")]
+                for name in START_POSITIONS}
+            self._start_queue = []
 
         # Actions that make up the trial.
         self.move_to_start = MoveToPositionJointSpace(
@@ -122,6 +135,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
 
+        if self.paradigm == "random_start":
+            self._check_origin()
         self.get_logger().info(
             f"=== AUTOMATED MULTI-TRIAL APPLE PLUCK EXPERIMENT INITIALIZED (paradigm: {self.paradigm}) ===")
         self.start_trial()
@@ -132,11 +147,33 @@ class ApplePluckOrchestratorNode(rclpyNode):
         settle = float(get_required_param(self, "perturb_start.baseline_settle_sec")) if self.perturbing else 0.0
         self.monitor.set_baseline_settle(settle)
 
+    def _check_origin(self):
+        """The grid was solved around the normal start (C); warn if move_to_start has moved since."""
+        start = np.array(get_required_param(self, "move_to_start.target_joint_position"), dtype=float)
+        if not np.allclose(start, self.start_positions["C"], atol=0.05):
+            self.get_logger().warn(
+                "random_start.positions.C differs from move_to_start.target_joint_position: the grid was "
+                "solved around another start pose. Re-solve it (solve_start_grid.py) if that is not intended.")
+
+    def _next_start_position(self) -> str:
+        # Shuffled blocks: every position once, in a random order, before any repeats.
+        if not self._start_queue:
+            self._start_queue = random.sample(START_POSITIONS, len(START_POSITIONS))
+        return self._start_queue.pop()
+
     def start_trial(self):
         self.trial_count += 1
-        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ({self.paradigm}) ---")
         # Record the WHOLE trial, approach included -- analysis can trim, it cannot un-discard.
         sidecar = {"paradigm": self.paradigm, "threshold_m": self.monitor.threshold_m()}
+        where = ""
+        if self.paradigm == "random_start":
+            name = self._next_start_position()
+            pose = self.start_positions[name]
+            self.move_to_start.set_target_deg(pose)
+            self.move_recover.set_target_deg(pose)     # recover to this trial's own start
+            sidecar.update(start_position=name, start_joint_deg=pose)
+            where = f", start {name}"
+        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ({self.paradigm}{where}) ---")
         if self.perturbing:
             sidecar["perturbation"] = self.perturb.perturbation_spec()
         self.recorder.start(trial_index=self.trial_count, **sidecar)
@@ -215,6 +252,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()      # speed limits and the start / recover pose
         self.move_recover.reload()
+        if self.paradigm == "random_start":
+            self._check_origin()         # start_trial sets this trial's start pose after this reload
         if self.perturbing:
             self.perturb.reload()        # the perturbation: r, theta, plane, its speed limits
             self.perturb_delay.set_duration(float(get_required_param(self, "perturb_start.start_delay_sec")))

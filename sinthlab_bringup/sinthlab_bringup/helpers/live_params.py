@@ -143,6 +143,7 @@ _START, _RECOVER = _POSE
 # dashboard shows them -- only in that paradigm.
 PARADIGM_ONLY: Dict[str, str] = {
     "perturb_start.*": "perturb",
+    "random_start.*": "random_start",
 }
 
 
@@ -172,7 +173,7 @@ CHOICES: Dict[str, List[str]] = {
     "*.restricted_axis": ["x", "y", "z"],
     "*.corridor_frame": ["relative", "absolute"],
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
-    "paradigm": ["pluck", "perturb"],
+    "paradigm": ["pluck", "perturb", "random_start"],
     "travel_task.direction": ["both", "positive", "negative"],
     "travel_task.axis": ["x", "y", "z", "norm"],
 }
@@ -285,6 +286,8 @@ def check_pose(name: str, value) -> Optional[str]:
 
 
 def _check_pair(name, value, context) -> Optional[str]:
+    if name.startswith("random_start.positions."):
+        return check_pose(name, value)
     if name.endswith("target_joint_position"):
         problem = check_pose(name, value)
         if problem or context is None or name not in (_START, _RECOVER):

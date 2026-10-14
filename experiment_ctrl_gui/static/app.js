@@ -149,7 +149,7 @@ function renderExperiments() {
       <div class="d">${esc(e.summary)}</div>`;
     b.onclick = () => select(e.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: Pluck normal / Pluck perturb), on the selected card. They set
+    // Nested paradigm tabs (apple pluck: normal / perturb / random start), on the selected card. They set
     // `paradigm` for the next Start; locked while that experiment runs.
     if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
       const cur = paradigmOf(e.key), locked = rk === e.key;
@@ -167,7 +167,9 @@ function renderExperiments() {
         };
         sub.appendChild(t);
       }
-      list.appendChild(sub);
+      const lbl = document.createElement("div"); lbl.className = "paradigm-label";
+      lbl.textContent = locked ? "Paradigm (fixed for this run)" : "Paradigm";
+      list.appendChild(lbl); list.appendChild(sub);
     }
   }
 }

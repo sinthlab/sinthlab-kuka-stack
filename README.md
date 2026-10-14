@@ -48,7 +48,7 @@ worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-t
 The quickest way to run an experiment is the **experiment control dashboard**, a local web page on
 the ROS computer. From it you:
 
-- pick an experiment (Apple Pluck, with its *normal* and *perturb* paradigms, Restricted Plane or Maze), or a pre-training task;
+- pick an experiment (Apple Pluck, with its *normal*, *perturb* and *random start* paradigms, Restricted Plane or Maze), or a pre-training task;
 - check or change its parameters;
 - Start, Pause, Stop and Restart it;
 - change cues and other live settings between trials;
@@ -96,7 +96,7 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   run state.
 
 ### Running an experiment
-1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb**
+1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb** / **Pluck random start**
    on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
@@ -180,6 +180,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
 | Apple Pluck — **perturb paradigm only** (shown under *Pluck perturb*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, `perturb_start.baseline_settle_sec`, and its speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
+| Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start / recover pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
@@ -213,7 +214,7 @@ document a new parameter, see [§9](#9-development--contributing).
 
 ### Without the dashboard
 The same controls from a terminal (namespace `lbr`, apple pluck shown). The orchestrator nodes are
-`apple_pluck_orchestrator` (both paradigms), `restricted_plane_orchestrator` and
+`apple_pluck_orchestrator` (all paradigms), `restricted_plane_orchestrator` and
 `maze_orchestrator`; for pre-training, `free_move_orchestrator` and `rail_training_orchestrator`
 (Move Vertical and Move Horizontal).
 
@@ -479,6 +480,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 3 | Apple Pluck, perturb paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
+| 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
@@ -486,7 +488,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 (`LbrImpedanceControlServer`) running the Cartesian impedance spring at 1000 Hz. They differ only in
 what ROS streams into it:
 
-- **Apple Pluck, both paradigms (1 & 3)** — **joint** setpoints via `LBRJointPositionCommandController`
+- **Apple Pluck, all paradigms (1, 3 & 3b)** — **joint** setpoints via `LBRJointPositionCommandController`
   (straight to the FRI position command, no IK).
 - **Restricted-plane / Maze (2 & 4)** — a fixture-constrained **Cartesian equilibrium** via
   `kuka_clik_controller` (Cartesian target → IK → joint positions).
@@ -514,9 +516,11 @@ recoils when pushed off its commanded anchor.
 
 **Start pose — the apple points at the monkey.** The effector is tilted **25° below horizontal** toward
 the monkey (+X), so the monkey pulls the apple toward itself and the NeoPixel ring faces it. Flange
-≈ (0.40, 0, 0.75) m, apple ≈ (0.56, 0, 0.68) m in `lbr_link_0`, reached with the in-plane posture
-`[0, −15.5, 0, −94.3, 0, 36.2, 0]`. It was solved by IK against the iiwa7 URDF, and the arm can be
-pulled at least 0.30 m toward the monkey before nearing a joint limit or singularity. A **pluck** is any
+≈ (0.40, 0, 0.80) m, apple ≈ (0.56, 0, 0.73) m in `lbr_link_0`, reached with the in-plane posture
+`[0, −13.7, 0, −85.6, 0, 43.1, 0]`. It was solved by IK against the iiwa7 URDF: every joint is
+≥ 33° from its limit, and the arm can be pulled at least 0.35 m toward the monkey before nearing a
+joint limit or singularity. The same pose is used by all three paradigms (in random start it is the
+grid's origin, C). A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
 pose in `config/apple_pluck_impedance.yaml`.
@@ -648,9 +652,10 @@ the apple is displaced by a sudden, programmatic Cartesian shift, to study the r
 perturbation. The pluck threshold is **0.1 m** in any direction, measured from where the arm settles
 after the perturbation (`perturb_start.baseline_settle_sec`, 1 s).
 
-**Choosing the paradigm.** On the dashboard, the **Apple Pluck** card has two nested tabs — **Pluck
-normal** and **Pluck perturb** — that set `paradigm` for the next Start (fixed for the run). From a
-terminal, `paradigm:=perturb` on the launch overrides the YAML. Every trial is recorded as experiment
+**Choosing the paradigm.** On the dashboard, the **Apple Pluck** card has three nested tabs — **Pluck
+normal**, **Pluck perturb** and **Pluck random start** ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm))
+— that set `paradigm` for the next Start (fixed for the run). From a terminal, `paradigm:=perturb`
+(or `random_start`) on the launch overrides the YAML. Every trial is recorded as experiment
 `apple_pluck`, with `paradigm` in its sidecar. The perturbation settings below act, and are shown on
 the dashboard, only in the perturb paradigm; they are **live**. To run **unperturbed trials inside a
 perturb run**, set `polar_r_m` to 0.
@@ -659,7 +664,7 @@ perturb run**, set `polar_r_m` to 0.
 
 | Knob | Effect |
 |---|---|
-| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 10° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 18° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `move_to_pos_a_max`, `move_to_pos_j_max` | **How fast.** On a short move the acceleration and jerk limits set the duration. |
@@ -697,6 +702,53 @@ The physical apple follows the anchor through the impedance spring, so it lags a
 3. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
    the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
    any direction counts.
+
+### Scenario 3b — Apple Pluck, random start paradigm
+The **same experiment as Scenario 1** — same SmartPad setup, resistance, threshold and trial — in its
+**random start paradigm** (`paradigm: random_start`): each trial **starts at one of 9 positions**, the
+origin and the 8 compass directions around it, chosen at random.
+
+```
+      NW   N   NE         N  = up (+Z)                 the grid lies in the plane FACING the
+                          S  = down (−Z)               monkey (base Y-Z); compass as the monkey
+      W    C    E         E  = the monkey's right (+Y)  sees it, facing the apple from +X
+                          W  = the monkey's left (−Y)
+      SW   S   SE         C  = the origin
+```
+
+- **C is the normal start pose** (`move_to_start`, the same start as the normal and perturb
+  paradigms). Every other position is **5 cm from C** — the diagonals too, so the 8 lie on a circle,
+  not a square. The grid spans 10 cm side to side and 10 cm top to bottom.
+- **The apple only translates.** Every position keeps the start orientation, so the apple points at the
+  monkey with the same 25° tilt wherever it starts. Each pose is solved by 6-D IK (position and
+  orientation) from C.
+- **All 9 are safe to pull from.** Every joint stays ≥ 24.7° from its limit (S, the lowest, is
+  the tightest), ≥ 36° after a further 10 cm pull toward the monkey, and the arm is well conditioned
+  (smallest Jacobian singular value ≥ 0.16).
+- **Order: shuffled blocks of 9.** Each block visits every position once, in a random order, before any
+  repeats, so the positions stay balanced however many trials you run. A trial **recovers to its own
+  start**, and the next trial's move-to-start goes from there to the next position.
+- **Recorded:** the sidecar's `start_position` (`C`, `N`, `NE`, …) and `start_joint_deg`, besides
+  `paradigm: random_start`. The trial's events are the same as the normal pluck.
+
+**Changing the grid.** The 9 joint poses are `random_start.positions` in
+`config/apple_pluck_impedance.yaml` (per-run, shown only under *Pluck random start*; each is checked
+like any pose). To change the spacing, or after changing the normal start pose, re-solve them and paste
+the printed block in:
+
+```bash
+xacro $(ros2 pkg prefix lbr_description)/share/lbr_description/urdf/iiwa7/iiwa7.xacro > /tmp/iiwa7.urdf
+IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup solve_start_grid.py --spacing 0.075
+```
+
+It prints each position's joint-limit margin and conditioning, and fails if one gets too close. At
+startup the orchestrator warns if `C` no longer equals `move_to_start`.
+
+**Steps to run:** as Scenario 1 (same SmartPad selections), with the **Pluck random start** tab selected,
+or from a terminal:
+```bash
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start
+```
 
 ### Scenario 4 — Maze
 The operator (or animal) drives the compliant arm along a network of **linear rails** in a **vertical
@@ -1415,7 +1467,8 @@ Every trial ends in `control.begin_trial(...)`: it applies any pending live chan
 next trial, or holds at the start if a pause was requested. Free Move's session only ends when a pause
 is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 6).
 
-**Flow 1 — Apple Pluck** (joint controller throughout)
+**Flow 1 — Apple Pluck** (joint controller throughout). The **random start** paradigm runs this same flow;
+only `MoveToStart` and `Recover` target that trial's start position, picked at `trial_start`.
 ```mermaid
 stateDiagram-v2
     [*] --> MoveToStart : [trial_start]
@@ -1643,13 +1696,13 @@ Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
 below.
 
-| | Apple pluck (pluck) | Apple pluck (perturb) | Restricted Plane | Maze |
-|---|---|---|---|---|
-| Columns | **42** | **42** | **42** | **47** |
-| Extra over the core | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
-| Events | 10 | 12 | 7 (`snap` or `safety_trip`) | 12 |
-| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `threshold_m`, `fixture` | `maze_geometry` |
-| Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
+| | Apple pluck (pluck) | Apple pluck (perturb) | Apple pluck (random start) | Restricted Plane | Maze |
+|---|---|---|---|---|---|
+| Columns | **42** | **42** | **42** | **42** | **47** |
+| Extra over the core | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
+| Events | 10 | 12 | 10 | 7 (`snap` or `safety_trip`) | 12 |
+| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `start_position`, `start_joint_deg` | `threshold_m`, `fixture` | `maze_geometry` |
+| Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
 **The 41-column core**
 
@@ -1953,7 +2006,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 |---|---|
 | `schema_version` | Bump when columns change, so loaders can branch. |
 | `experiment` | `apple_pluck` · `maze` (and the pre-training tasks). Older perturb recordings say `perturb`; `validate_recording.py` reads both |
-| `paradigm` | Apple pluck: `pluck` or `perturb` |
+| `paradigm` | Apple pluck: `pluck`, `perturb` or `random_start` |
 | `trial_index` | Counter within the session. |
 | `session_id` | Shared by every trial from one launch. |
 | `subject` | Animal identifier, from a ROS param. |
@@ -1965,6 +2018,8 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
 | `perturbation` | Apple pluck, perturb paradigm: the applied offset vector. Constant per trial, hence metadata not a column. |
+| `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
+| `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
 | `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |

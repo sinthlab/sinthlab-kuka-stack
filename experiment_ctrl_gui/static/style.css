@@ -251,8 +251,17 @@ input[type=color] { width: 30px; height: 26px; padding: 0; border: 1px solid var
 .param .ctl input[type=range].slider { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .param .ctl input[type=number].slider-box { flex: 0 0 6.5em; width: 6.5em; }
 
-/* Nested paradigm tabs under an experiment card (apple pluck: Pluck normal / Pluck perturb). */
-.paradigm-tabs { margin: -4px 0 4px 14px; border-bottom: 0; }
-.paradigm-tabs .tab { font-size: 12.5px; padding: 4px 10px; }
+/* Nested paradigm switch under an experiment card (apple pluck: normal / perturb / random start):
+   full-width stacked buttons, big enough to read and hit at a glance. */
+.paradigm-label { margin: 2px 0 4px 2px; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); }
+.paradigm-tabs { display: grid; grid-auto-flow: row; gap: 0; margin: 0 0 10px;
+  border: 2px solid var(--accent); border-radius: 10px; overflow: hidden; }
+.paradigm-tabs .tab { font-size: 16px; font-weight: 700; padding: 12px 14px; min-height: 48px; text-align: left;
+  border: 0; border-radius: 0; color: var(--ink); background: var(--panel); }
+.paradigm-tabs .tab + .tab { border-top: 2px solid var(--accent); }
+.paradigm-tabs .tab:hover:not(:disabled):not(.active) { background: var(--panel-2); }
+.paradigm-tabs .tab.active { background: var(--accent); color: var(--accent-ink); }
+.paradigm-tabs .tab:focus-visible { outline: 3px solid var(--ink); outline-offset: -5px; }
 .paradigm-tabs .tab:disabled { opacity: .45; cursor: not-allowed; }
 

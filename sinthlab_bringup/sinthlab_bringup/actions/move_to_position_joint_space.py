@@ -26,6 +26,11 @@ class MoveToPositionJointSpace(MoveActionBase):
     def _reload_target(self) -> None:
         self._joint_pos_target = self._read_joint_target_param(self._node)
 
+    def set_target_deg(self, joint_deg) -> None:
+        """Override the YAML target for the next start() (apple pluck's random_start paradigm picks a
+        start per trial). A later reload() puts the YAML target back."""
+        self._joint_pos_target = np.radians(np.asarray(joint_deg, dtype=float))
+
     def _read_arrival_params(self, node: rclpyNode) -> None:
         """Whether to wait for the PHYSICAL arm to arrive, not just the commanded anchor.
 
