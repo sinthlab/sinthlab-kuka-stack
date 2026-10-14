@@ -175,6 +175,7 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid color-mix(i
   border-radius: 4px; margin-left: 6px; vertical-align: 1px; }
 .badge.edited { color: var(--edited); background: color-mix(in srgb, var(--edited) 16%, transparent); }
 .badge.pending { color: var(--live); background: color-mix(in srgb, var(--live) 16%, transparent); }
+.badge.now { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .param .help { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
 .param .help.caution { color: var(--edited); }
 .param .help.linked { color: var(--info); }

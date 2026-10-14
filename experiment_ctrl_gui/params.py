@@ -211,6 +211,7 @@ class ExperimentParams:
                 "choices": ex.choices(self.exp, name, self.defaults),
                 "limits": list(lim) if lim else None,
                 "step": ex.live_params.step_for(name),     # set -> the dashboard draws a slider
+                "immediate": ex.live_params.is_immediate(name),  # live and applied at once (next move), not next trial
                 # Paradigm experiments (apple pluck): the paradigm is chosen with the card's nested tabs,
                 # and parameters of one paradigm only are shown only under it.
                 "hidden": bool(self.exp.paradigms) and name == "paradigm",

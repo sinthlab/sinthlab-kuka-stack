@@ -185,6 +185,27 @@ class TrialRecorder:
         """Add sidecar fields known only once the trial is under way (e.g. the baseline at `armed`)."""
         self._sidecar.update(fields)
 
+    def note_change(self, name: str, value) -> None:
+        """A live parameter applied mid-trial (live_params.IMMEDIATE, e.g. a move's speed_scale): kept
+        in the sidecar's `live_changes` with when, and on which CSV row, it took effect."""
+        if not self._active:
+            return
+        self._sidecar.setdefault("live_changes", []).append({
+            "name": name, "value": value, "row": self._rows,
+            "t": (time.time() - self._t0) if self._t0 is not None else 0.0, "t_wall": time.time()})
+        self._write_sidecar()
+
+    def note_move(self, move: dict) -> None:
+        """A joint-space move as planned (MoveActionBase.report_moves_to): its speed scale, the limits
+        it actually ran with, its duration and endpoints -- kept in the sidecar's `moves` with when, and
+        on which CSV row, it started."""
+        if not self._active:
+            return
+        self._sidecar.setdefault("moves", []).append({
+            **move, "row": self._rows,
+            "t": (time.time() - self._t0) if self._t0 is not None else 0.0, "t_wall": time.time()})
+        self._write_sidecar()
+
     def mark(self, event: str, arg: Optional[float] = None) -> None:
         """Log an event: fire the sync pulse, record the exact moment, tag the next CSV sample.
 

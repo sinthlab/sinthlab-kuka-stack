@@ -6,7 +6,9 @@
     ros2 param set <ns>/<orchestrator> <name> <value>             live parameters only
 
 LIVE PARAMETERS apply at the next trial boundary, never mid-trial, so each trial runs under one
-configuration and its sidecar records it. Which ones are live is decided in helpers/live_params.py;
+configuration and its sidecar records it. The exception is IMMEDIATE parameters (live_params.py: the
+move speed), applied the moment they are set (from the next move) and logged in the sidecar with when. Which ones are
+live is decided in helpers/live_params.py;
 a set on anything else is REJECTED with a reason, because the orchestrator read it once at start-up
 and the change would otherwise look accepted while doing nothing.
 
@@ -32,7 +34,7 @@ from std_msgs.msg import String
 from std_srvs.srv import SetBool
 
 from sinthlab_bringup.helpers.node_utils import get_required_param
-from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_live
+from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_immediate, is_live
 from sinthlab_bringup.helpers.live_params import PAIRED
 
 # Event token -> code sent to the NSP. Two per trial are enough for alignment (trial_start and
@@ -73,6 +75,8 @@ class ExperimentControl:
         self._pending: Dict[str, object] = {}               # accepted, applies at the next trial
         self._reloaders: List[Callable[[], None]] = []
         self._pause_hooks: List[Callable[[], None]] = []
+        self._immediate: Dict[str, Callable[[object], None]] = {}   # name -> apply(value), right away
+        self._change_log: Optional[Callable[[str, object], None]] = None
         # The values the CURRENT trial runs with. rclpy stores an accepted set immediately, but the
         # actions only re-read at the next trial boundary, so the parameter store runs ahead of
         # what is in effect; status reports this snapshot, and `pending` separately.
@@ -95,6 +99,14 @@ class ExperimentControl:
     def on_reload(self, fn: Callable[[], None]) -> None:
         """Register a function that re-reads live parameters. Called at a trial boundary."""
         self._reloaders.append(fn)
+
+    def apply_immediately(self, handlers: Dict[str, Callable[[object], None]],
+                          log: Callable[[str, object], None]) -> None:
+        """How to apply each IMMEDIATE live parameter (live_params.IMMEDIATE) the moment it is set --
+        e.g. "move_to_start.speed_scale" -> that move's set_speed_scale -- and where to record each
+        change (TrialRecorder.note_change: the trial's sidecar)."""
+        self._immediate.update(handlers)
+        self._change_log = log
 
     def on_pause_request(self, fn: Callable[[], None]) -> None:
         """Register a function called when a pause is requested -- for a trial with no natural end, so
@@ -197,9 +209,18 @@ class ExperimentControl:
             if problem:
                 return SetParametersResult(successful=False, reason=problem)
         for p in params:
-            if self._node.has_parameter(p.name):
-                self._pending[p.name] = _plain(p.value)
-                self._log.info(f"Live change accepted: {p.name} = {_plain(p.value)} "
+            if not self._node.has_parameter(p.name):
+                continue
+            value = _plain(p.value)
+            if is_immediate(p.name) and p.name in self._immediate:
+                self._immediate[p.name](value)
+                self._effective[p.name] = value
+                if self._change_log is not None:
+                    self._change_log(p.name, value)
+                self._log.info(f"Live change applied now: {p.name} = {value}")
+            else:
+                self._pending[p.name] = value
+                self._log.info(f"Live change accepted: {p.name} = {value} "
                                f"(applies from trial {self._trial + 1})")
         self._publish()
         return SetParametersResult(successful=True)

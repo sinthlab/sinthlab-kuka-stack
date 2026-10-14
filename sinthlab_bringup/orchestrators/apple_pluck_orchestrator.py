@@ -135,6 +135,15 @@ class ApplePluckOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
 
+        # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
+        speeds = {"move_to_start.speed_scale": self.move_to_start.set_speed_scale,
+                  "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale}
+        if self.perturbing:
+            speeds["perturb_start.speed_scale"] = self.perturb.set_speed_scale
+        self.control.apply_immediately(speeds, log=self.recorder.note_change)
+        # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
+        for move in (self.move_to_start, self.move_recover) + ((self.perturb,) if self.perturbing else ()):
+            move.report_moves_to(self.recorder.note_move)
         if self.paradigm == "random_start":
             self._check_origin()
         self.get_logger().info(

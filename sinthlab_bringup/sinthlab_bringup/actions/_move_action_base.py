@@ -28,6 +28,8 @@ from lbr_fri_idl.msg import LBRState
 import optas
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_launch_param, get_required_param
 
+_V_CAP = np.radians(90.0)   # joint speed cap after speed scaling [rad/s]
+
 
 class MoveActionBase:
     """Ruckig PTP move with a pluggable target / command / completion. Not used directly.
@@ -73,6 +75,10 @@ class MoveActionBase:
         self._q_meas_completion = np.zeros(7)
         self._shutdown_requested = False
 
+        # Where each planned move is reported (report_moves_to; the trial's TrialRecorder).
+        self._move_log: Optional[Callable[[dict], None]] = None
+        self._move_reported = False
+
         # Trajectory generator (Ruckig)
         self._trajectory_generation: Optional[Ruckig] = None
         self._trajectory_gen_in: Optional[InputParameter] = None
@@ -91,11 +97,33 @@ class MoveActionBase:
         )
 
     def _read_speed_params(self, node: rclpyNode) -> None:
-        # move_to_pos_v_max is in deg/s (converted to rad/s here); a_max / j_max are rad/s^2, rad/s^3.
-        # Ruckig is rebuilt from these at every start(), so re-reading them is all a change needs.
-        self._v_max_param = np.radians(np.array(get_required_param(node, self._param_prefix + "move_to_pos_v_max"), dtype=float)).tolist()
-        self._a_max_param = get_required_param(node, self._param_prefix + "move_to_pos_a_max")
-        self._j_max_param = get_required_param(node, self._param_prefix + "move_to_pos_j_max")
+        # The base limits: move_to_pos_v_max in deg/s (to rad/s here), a_max / j_max in rad/s^2, rad/s^3.
+        p = self._param_prefix
+        self._v_max_param = np.radians(np.array(get_required_param(node, p + "move_to_pos_v_max"), dtype=float))
+        self._a_max_param = np.array(get_required_param(node, p + "move_to_pos_a_max"), dtype=float)
+        self._j_max_param = np.array(get_required_param(node, p + "move_to_pos_j_max"), dtype=float)
+        self._speed_scale = float(get_required_param(node, p + "speed_scale"))
+
+    def set_speed_scale(self, scale: float) -> None:
+        """Live speed, used from the next move this action starts -- even within the current trial. A
+        move already under way keeps its speed: lowering Ruckig's limits mid-move leaves it holding an
+        acceleration above the new limit, and its correction overshoots the target by tens of degrees."""
+        self._speed_scale = float(scale)
+        self._node.get_logger().info(f"{type(self).__name__}: speed scale {self._speed_scale:g} (from its next move)")
+
+    def report_moves_to(self, fn: Callable[[dict], None]) -> None:
+        """Report every move as it is planned -- the limits it actually ran with and its duration --
+        to `fn` (TrialRecorder.note_move: the trial sidecar's `moves`)."""
+        self._move_log = fn
+
+    def _apply_limits(self) -> None:
+        # Scaling v, a, j by s, s^2, s^3 time-stretches the whole move by exactly 1/s. v is capped at
+        # 90 deg/s, under the slowest joint's rating (98 deg/s, A1/A2).
+        s = self._speed_scale
+        inp = self._trajectory_gen_in
+        inp.max_velocity = np.broadcast_to(np.minimum(self._v_max_param * s, _V_CAP), 7).tolist()
+        inp.max_acceleration = np.broadcast_to(self._a_max_param * s ** 2, 7).tolist()
+        inp.max_jerk = np.broadcast_to(self._j_max_param * s ** 3, 7).tolist()
 
     def reload(self) -> None:
         """Re-read the live parameters -- speed limits and, where the subclass has one, the target.
@@ -188,6 +216,7 @@ class MoveActionBase:
         self._subscribers_ready = False
         self._target_resolved = False
         self._trajectory_generation = None
+        self._move_reported = False
         self._shutdown_requested = False
         self._ready = True
         self._node.get_logger().info(f"{type(self).__name__} started.")
@@ -242,6 +271,9 @@ class MoveActionBase:
         # Step the joint trajectory and publish the next setpoint (subclass-defined).
         _ = self._trajectory_generation.update(self._trajectory_gen_in, self._trajectory_gen_out)
         self._publish_setpoint(np.array(self._trajectory_gen_out.new_position, dtype=float))
+        if not self._move_reported:
+            self._move_reported = True
+            self._report_move()
 
         # Feed state forward for a smooth next step.
         self._trajectory_gen_in.current_position = self._trajectory_gen_out.new_position
@@ -251,6 +283,7 @@ class MoveActionBase:
     def _prepare_ruckig(self, trajectory_gen_now: np.ndarray) -> None:
         dofs = 7
         self._trajectory_generation = Ruckig(dofs, self._dt)
+        self._q_plan_start = np.array(trajectory_gen_now, dtype=float)
         self._trajectory_gen_in = InputParameter(dofs)
         self._trajectory_gen_out = OutputParameter(dofs)
         # Current state
@@ -262,19 +295,32 @@ class MoveActionBase:
         self._trajectory_gen_in.target_velocity = [0.0] * dofs
         self._trajectory_gen_in.target_acceleration = [0.0] * dofs
 
-        # Limits: a 7-element list (per joint) or one number for every joint.
-        def per_joint(x):
-            return [float(v) for v in x] if isinstance(x, (list, tuple)) else [float(x)] * dofs
-
-        self._trajectory_gen_in.max_velocity = per_joint(self._v_max_param)
-        self._trajectory_gen_in.max_acceleration = per_joint(self._a_max_param)
-        self._trajectory_gen_in.max_jerk = per_joint(self._j_max_param)
+        self._apply_limits()
 
         self._node.get_logger().info(
-            f"Trajectory generation v_max={np.round(self._trajectory_gen_in.max_velocity,2)}, "
+            f"Trajectory generation (speed scale {self._speed_scale:g}) "
+            f"v_max={np.round(self._trajectory_gen_in.max_velocity,2)}, "
             f"a_max={np.round(self._trajectory_gen_in.max_acceleration,2)}, "
             f"j_max={np.round(self._trajectory_gen_in.max_jerk,2)}"
         )
+
+    def _report_move(self) -> None:
+        if self._move_log is None:
+            return
+        inp = self._trajectory_gen_in
+        try:
+            self._move_log({
+                "move": self._param_prefix.rstrip("."),
+                "speed_scale": self._speed_scale,
+                "v_max_deg_s": np.round(np.degrees(inp.max_velocity), 3).tolist(),   # after the 90 deg/s cap
+                "a_max_rad_s2": np.round(inp.max_acceleration, 4).tolist(),
+                "j_max_rad_s3": np.round(inp.max_jerk, 4).tolist(),
+                "duration_s": round(float(self._trajectory_gen_out.trajectory.duration), 4),
+                "from_deg": np.round(np.degrees(self._q_plan_start), 3).tolist(),
+                "to_deg": np.round(np.degrees(self._joint_pos_target), 3).tolist(),
+            })
+        except Exception as exc:
+            self._node.get_logger().warn(f"{type(self).__name__}: move not logged: {exc}")
 
     def _request_shutdown(self) -> None:
         if self._shutdown_requested:

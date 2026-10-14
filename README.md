@@ -172,14 +172,14 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
 | `nsp_sync.enabled` | send event codes to the Blackrock NSP. **The DIO is not wired yet**: when on, it warns once and sends nothing ([§7](#sync-to-the-blackrock-nsp)) |
-| `move_to_start.move_to_pos_v_max` / `_a_max` / `_j_max`, and the same for `move_to_start_recover` | move speed limits: peak joint speed 5–90 deg/s, acceleration 0.5–20 rad/s², jerk 1–150 rad/s³. The next move uses them. |
+| `move_to_start.speed_scale`, `move_to_start_recover.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
 
 | Experiment | Extra live parameters |
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
-| Apple Pluck — **perturb paradigm only** (shown under *Pluck perturb*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, `perturb_start.baseline_settle_sec`, and its speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
+| Apple Pluck — **perturb paradigm only** (shown under *Pluck perturb*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, `perturb_start.baseline_settle_sec`, and its speed `perturb_start.speed_scale` (applies at once) |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start / recover pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
@@ -197,6 +197,31 @@ These are deliberately **not** live:
   maze's geometry hangs off the start. Edit it per-run (the posture then follows automatically).
 - **Maze rails, checkpoints and goal:** verified offline by `check_maze.py`.
 - **The pre-training rails:** checked by IK for reach; edit them per-run.
+
+### Move speed
+Every joint-space move — to the start, the recover, the perturbation — has one **`speed_scale`**
+slider (Live tab, 0.25–2, default 1). It time-stretches the whole move: it multiplies that move's
+limits `move_to_pos_v_max` / `_a_max` / `_j_max` (Per-run, the base) by s, s² and s³, which makes the
+move take exactly **1/s as long** along the same path. 0.5 = twice as slow, 2 = twice as fast.
+
+*Why a scale and not the limits themselves.* These moves are short — a few to ~18° of joint travel —
+so the joints never reach `v_max` (changing it does nothing), and `a_max` / `j_max` act only through
+square and cube roots: quartering `a_max` stretches a 1.1 s recover to just 1.5 s. The scale changes
+all three together, so every move, however short, changes by exactly the factor you set.
+
+| Move (apple pluck, from the start pose) | ×0.5 | ×1 | ×2 |
+|---|---|---|---|
+| Recover after a 10 cm pull | 2.3 s | 1.1 s | 0.6 s |
+| Perturbation, 5 cm | 1.5 s | 0.7 s | 0.4 s |
+| Random start, C → N (5 cm) | 2.1 s | 1.0 s | 0.5 s |
+
+*When it applies.* **At once, from the next move** — not at the next trial: lower the recover speed
+during a pull and that trial's recover already uses it. A move already under way finishes at the
+speed it started with: lowering the limits mid-move would leave the trajectory generator holding an
+acceleration above the new limit, and its correction overshoots the target. Every change goes into the
+trial sidecar's `live_changes` (name, value, time and CSV row), and every move into its `moves`: the
+scale it ran at, the effective (scaled) limits and its duration — so each move's speed is recorded
+directly, ready to use as an experimental variable. Joint speed stays capped at 90 deg/s after scaling.
 
 ### Parameter help
 Each parameter shows a one-line description. **Hover over its name**, or tab to it, for the full
@@ -224,7 +249,7 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py param
 
 ros2 topic echo /lbr/experiment_status                                                     # where the run is
 ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false                       # live: next trial
-ros2 param set /lbr/apple_pluck_orchestrator move_to_start.move_to_pos_a_max 1.0             # slower approach
+ros2 param set /lbr/apple_pluck_orchestrator move_to_start.speed_scale 0.5                  # half-speed approach, now
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"   # pause after trial
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: false}"  # resume
 ```
@@ -667,18 +692,16 @@ perturb run**, set `polar_r_m` to 0.
 | `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 18° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
-| `move_to_pos_a_max`, `move_to_pos_j_max` | **How fast.** On a short move the acceleration and jerk limits set the duration. |
-| `move_to_pos_v_max` | Per-joint speed cap. It never binds on a 5–10 cm perturbation. |
+| `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
 | `start_delay_sec` | Wait after the start cue before the perturbation begins [s]. Default `1.5`. |
 
-Measured from the start pose at r = 0.05 m (motion of the impedance anchor):
+At r = 0.05 m from the start pose (motion of the impedance anchor):
 
-| `a_max` / `j_max` | Duration | Peak apple speed |
+| `speed_scale` | Duration | Peak apple speed |
 |---|---|---|
-| 2 / 5 *(default)* | 0.73 s | 0.13 m/s |
-| 5 / 20 | 0.46 s | 0.20 m/s |
-| 10 / 50 | 0.34 s | 0.28 m/s |
-| 20 / 150 | 0.23 s | 0.40 m/s |
+| 0.5 | 1.46 s | 0.07 m/s |
+| 1 *(default)* | 0.73 s | 0.13 m/s |
+| 2 | 0.37 s | 0.26 m/s |
 
 The physical apple follows the anchor through the impedance spring, so it lags a very fast perturbation.
 
@@ -2021,6 +2044,8 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
 | `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
+| `moves` | Every joint-space move of the trial (start, perturbation, recover), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
+| `live_changes` | Live parameters applied **mid-trial** (only the move `speed_scale`s do that): each with `name`, `value`, `t`, `t_wall` and the CSV `row` it took effect at. The move it applies to is the next one that starts. Absent when nothing changed. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
 | `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |
 

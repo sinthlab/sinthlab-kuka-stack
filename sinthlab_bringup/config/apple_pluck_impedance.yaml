@@ -80,6 +80,7 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
@@ -107,6 +108,7 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
       # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), so a joint test can
@@ -142,14 +144,15 @@
       polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
       polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)
       joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
-      # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. On a move this
-      # short the joints travel a few degrees, so ACCELERATION and JERK set the duration and the speed cap
-      # never binds. Measured from the start pose, r = 0.05 m:
-      #   a_max 2  / j_max 5    -> 0.73 s, peak 0.13 m/s   (these defaults)
-      #   a_max 5  / j_max 20   -> 0.46 s, peak 0.20 m/s
-      #   a_max 10 / j_max 50   -> 0.34 s, peak 0.28 m/s
-      #   a_max 20 / j_max 150  -> 0.23 s, peak 0.40 m/s
-      #   (v_max 20 or 80 instead of 40 changes none of these.) r = 0.10 m: 0.92 s at the defaults.
+      # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. Set it with
+      # speed_scale (live slider, applies from the next move): it scales v/a/j by s, s^2, s^3, so the move takes
+      # exactly 1/s as long. At r = 0.05 m from the start pose, with the limits below:
+      #   speed_scale 0.5 -> 1.46 s, peak 0.07 m/s
+      #   speed_scale 1   -> 0.73 s, peak 0.13 m/s   (default)
+      #   speed_scale 2   -> 0.37 s, peak 0.26 m/s
+      # The limits themselves (per-run) are the base the scale multiplies. On a move this short the
+      # joints travel a few degrees, so v_max never binds and a_max / j_max act only through square /
+      # cube roots -- which is why changing them alone hardly changes the move.
       # The physical apple follows the anchor through the impedance spring, so it lags a very fast move.
       move_to_pos_v_max:  # peak joint speed [deg/s], per joint
       - 40.0
@@ -161,6 +164,7 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
       start_delay_sec: 1.5  # delay after the start cue before the perturbation move begins [s]
       # The arm must settle where the perturbation left it before the pull baseline locks (the monitor
       # starts as soon as the perturbation move completes, while the physical arm still lags it).

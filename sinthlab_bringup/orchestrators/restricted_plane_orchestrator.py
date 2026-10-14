@@ -98,6 +98,14 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
 
+        # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
+        self.control.apply_immediately({
+            "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
+            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+        }, log=self.recorder.note_change)
+        # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
+        for move in (self.move_to_start, self.move_recover):
+            move.report_moves_to(self.recorder.note_move)
         self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
         self.start_trial()
 

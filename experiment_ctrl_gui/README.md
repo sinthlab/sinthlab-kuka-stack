@@ -122,9 +122,11 @@ the checks, which `check_value()` applies on both sides:
 - **pairs**, checked against the other values in force (`context`): the perturbation's r against its
   plane's cap (`PERTURB_R_MAX`), and the start pose against the recover pose, which must be equal.
 
-Live motion parameters: the speed limits of every move are live in every experiment; the start /
-recover pose is live in apple pluck only (`_POSE`). Each move action's `reload()` re-reads
-them at the trial boundary, and Ruckig is rebuilt from them at the move's next start.
+Live motion parameters: every move's `speed_scale` is live in every experiment, and IMMEDIATE
+(`live_params.IMMEDIATE`): `ExperimentControl.apply_immediately` hands it straight to the move's
+`set_speed_scale`, used from that move's next start, and logs it with `TrialRecorder.note_change`. The
+dashboard marks such rows *applies now*. The base limits `move_to_pos_*` are per-run. The start /
+recover pose is live in apple pluck only (`_POSE`), re-read at the trial boundary.
 
 **Dashboard-only checks and conveniences** (`experiments.py`, `params.py`):
 - `CAUTION`: amber notes on parameters other things depend on. They never lock anything.

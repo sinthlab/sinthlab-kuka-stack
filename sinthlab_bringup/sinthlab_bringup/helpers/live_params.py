@@ -38,9 +38,12 @@ _PULL = [
     "apple_pluck_impedance_control_displacement.force_release_shutdown_delay_sec",
 ]
 
-# Move speed limits of every joint-space move (start, recover, the perturbation). Ruckig is rebuilt
-# from them at each move's start, so a change simply takes effect on the next move.
-_SPEED = ["*.move_to_pos_v_max", "*.move_to_pos_a_max", "*.move_to_pos_j_max"]
+# Move speed of every joint-space move (start, recover, the perturbation): one scale per move that
+# time-stretches it -- 0.5 = twice as long, 2 = half as long. It scales that move's v/a/j limits
+# (move_to_pos_*, per-run) by s, s^2, s^3, so it changes every move, however short. The raw limits
+# barely do: on these few-degree moves v never binds and a/j act through square / cube roots.
+# IMMEDIATE (below): applied the moment it is set, from the next move on (a move under way keeps its speed).
+_SPEED = ["*.speed_scale"]
 
 # The start pose, and the recover pose that must equal it. Live ONLY where the joint controller alone
 # drives the arm (apple pluck, perturb). Restricted plane and maze also hand the arm to the CLIK, whose
@@ -111,6 +114,7 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "*.move_to_pos_v_max": (5.0, 90.0),
     "*.move_to_pos_a_max": (0.5, 20.0),
     "*.move_to_pos_j_max": (1.0, 150.0),
+    "*.speed_scale": (0.25, 2.0),
     # Felt stiffness [N/m]: from MIN_FELT_STIFFNESS up to the SmartPad base the user enters -- checked
     # against resistance.base_stiffness_n_per_m (_check_pair), and the dashboard sizes the slider to
     # match (limits_for with a context). The static range here is just the widest possible base.
@@ -159,7 +163,18 @@ def paradigm_of(name: str) -> Optional[str]:
 # still takes any value within LIMITS; the slider moves in these steps.
 STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
+    "*.speed_scale": 0.05,
 }
+
+# Live parameters applied the moment they are set, instead of at the next trial boundary. Only for
+# what cannot change the trial's outcome or its measurement: how fast the arm is driven -- from the
+# next move on, even within the current trial. Each change is logged in the trial's sidecar
+# (`live_changes`) with when it happened.
+IMMEDIATE: List[str] = ["*.speed_scale"]
+
+
+def is_immediate(name: str) -> bool:
+    return any(fnmatch(name, p) for p in IMMEDIATE)
 
 # Softening never goes below this felt stiffness [N/m]: whatever the base, at least this much spring
 # always remains (following the arm completely would leave nothing holding it up).

@@ -47,7 +47,7 @@ const PHASE_TEXT_BY_EXP = {
 const NO_TRIAL_END = new Set(["free_move"]);
 const TAB_HELP = {
   live: {
-    running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial.",
+    running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
     idle: "These can also be changed while the experiment runs. Edits made now set the values it starts with.",
   },
   run: {
@@ -430,7 +430,7 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const pend = isLiveRunning && pending && p.name in pending;
   // The group heading already carries the prefix; show the rest (full name on hover).
   const short = p.group !== "general" && p.name.startsWith(p.group + ".") ? p.name.slice(p.group.length + 1) : p.name;
-  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(short)}${p.edited ? '<span class="badge edited">edited</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
+  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(short)}${p.edited ? '<span class="badge edited">edited</span>' : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
     const commit = async (v) => {

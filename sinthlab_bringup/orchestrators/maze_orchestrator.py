@@ -117,6 +117,14 @@ class MazeOrchestratorNode(rclpyNode):
             self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
         )
 
+        # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
+        self.control.apply_immediately({
+            "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
+            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+        }, log=self.recorder.note_change)
+        # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
+        for move in (self.move_to_start, self.move_recover):
+            move.report_moves_to(self.recorder.note_move)
         self.get_logger().info("=== MULTI-TRIAL MAZE EXPERIMENT INITIALIZED ===")
         self.start_trial()
 
