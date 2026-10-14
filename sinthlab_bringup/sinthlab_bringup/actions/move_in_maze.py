@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
 import numpy as np
 
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
 class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
@@ -27,14 +27,13 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
     the compliance and the soft/firm walls" contract -- is inherited unchanged.
     """
 
-    def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Optional[Callable[[], None]] = None,
-                 own_recorder: bool = True) -> None:
-        # Base wires up sub/pub/FK/recorder and loads the profile 'type' + restricted_axis + step clamp.
-        super().__init__(node, param_prefix=param_prefix, on_complete=on_complete, own_recorder=own_recorder)
+    def __init__(self, node: rclpyNode, *, param_prefix: str = "") -> None:
+        # Base wires up sub/pub/FK and loads the profile 'type' + restricted_axis + step clamp.
+        super().__init__(node, param_prefix=param_prefix)
 
-        if self.profile_config.get("type") != "maze":
+        if self.profile_config["type"] != "maze":
             raise ValueError(
-                f"MoveInMazeAction requires a 'maze' profile, got type='{self.profile_config.get('type')}' "
+                f"MoveInMazeAction requires a 'maze' profile, got type='{self.profile_config['type']}' "
                 f"for profile '{self.active_profile}'. Use MoveRestrictedOnAPlaneAction for plane/sinusoid."
             )
 
@@ -43,10 +42,8 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         # Corridors = parallel arrays of axis-aligned rectangles in the two in-plane (a, b) axes (the
         # non-restricted axes). Free inside any corridor; clamped to the nearest edge outside it (the
         # cabinet impedance then turns "outside" into a soft/firm wall).
-        amn = list(node.get_parameter(prefix + "corridor_a_min").value) if node.has_parameter(prefix + "corridor_a_min") else []
-        amx = list(node.get_parameter(prefix + "corridor_a_max").value) if node.has_parameter(prefix + "corridor_a_max") else []
-        bmn = list(node.get_parameter(prefix + "corridor_b_min").value) if node.has_parameter(prefix + "corridor_b_min") else []
-        bmx = list(node.get_parameter(prefix + "corridor_b_max").value) if node.has_parameter(prefix + "corridor_b_max") else []
+        amn, amx, bmn, bmx = (list(get_required_param(node, prefix + k))
+                              for k in ("corridor_a_min", "corridor_a_max", "corridor_b_min", "corridor_b_max"))
         if len(amn) == 0 or not (len(amn) == len(amx) == len(bmn) == len(bmx)):
             # Empty corridors => projection passes the point straight through => the same silent
             # no-fixture failure as a missing profile. Refuse to run.
@@ -56,13 +53,9 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         self._maze_corridors = [
             (float(amn[i]), float(amx[i]), float(bmn[i]), float(bmx[i])) for i in range(len(amn))
         ]
-        # "relative" (default): corridor coords are OFFSETS from the start EE, so the maze origin is
-        # wherever the arm starts. "absolute": corridors are raw base-frame coords.
-        self._corridor_relative = True
-        if node.has_parameter(prefix + "corridor_frame"):
-            self._corridor_relative = (
-                str(node.get_parameter(prefix + "corridor_frame").value).lower() != "absolute"
-            )
+        # "relative": corridor coords are OFFSETS from the start EE, so the maze origin is wherever the
+        # arm starts. "absolute": corridors are raw base-frame coords.
+        self._corridor_relative = str(get_required_param(node, prefix + "corridor_frame")).lower() != "absolute"
 
         # RAIL ADJACENCY. Two rails are neighbours if they touch (share a point) -- that is a junction.
         # Precomputed once so the per-tick projection can be restricted to the rail we are ON and the
@@ -95,20 +88,13 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         self._vel = (0.0, 0.0)
         self._read_rail_lead(node)
 
-        # Periodic maze-position logging (see _record_extra). Reuses the fixture's own debug flags if
-        # present so it can be switched off without touching code.
-        # How far off a rail still counts as "on" it, for logging only (the projection is unaffected).
+        # How far off a rail still counts as "on" it, for the trial data only (the projection is unaffected).
         self._on_rail_tol = 0.015
-        self._dbg = None
+        # Periodic log of where the arm is in the maze (see record_extra): virtual_fixtures.debug_log_*.
+        fx = self._param_prefix + "virtual_fixtures."
+        self._debug_log_enabled = bool(get_required_param(node, fx + "debug_log_enabled"))
+        self._dbg = DebugTicker(float(get_required_param(node, fx + "debug_log_rate_hz")))
         self._log_dt = 1.0 / 100.0
-        try:
-            from sinthlab_bringup.helpers.common_threshold import DebugTicker
-            rate = 2.0
-            if node.has_parameter(self._param_prefix + "maze_safety.debug_log_rate_hz"):
-                rate = float(node.get_parameter(self._param_prefix + "maze_safety.debug_log_rate_hz").value)
-            self._dbg = DebugTicker(rate)
-        except Exception:
-            self._dbg = None
 
         node.get_logger().info(f"Maze fixture: {len(self._maze_corridors)} corridors loaded.")
 
@@ -120,8 +106,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         super().start()
 
     def _read_rail_lead(self, node: rclpyNode) -> None:
-        name = self._param_prefix + "virtual_fixtures.rail_lead_sec"
-        self._rail_lead_sec = float(node.get_parameter(name).value) if node.has_parameter(name) else 0.0
+        self._rail_lead_sec = float(get_required_param(node, self._param_prefix + "virtual_fixtures.rail_lead_sec"))
 
     def reload(self) -> None:
         """Re-read the live fixture parameters (rail_lead_sec). Called at a trial boundary."""
@@ -142,16 +127,15 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         self._prev_q = (now, qa, qb)
         return self._vel
 
-    def apply_surface_constraints(self, transform: np.ndarray) -> tuple[np.ndarray, bool]:
+    def apply_surface_constraints(self, transform: np.ndarray) -> np.ndarray:
         """Lock the out-of-plane axis + orientation to the start pose (like the base 'plane' profile),
         then clamp the in-plane point to the union of corridor rectangles."""
         x = transform[0, 3]
         y = transform[1, 3]
         z = transform[2, 3]
-        restricted = True
 
         if self._initial_transform is not None:
-            locked = self.profile_config.get("restricted_axis", "z").lower()
+            locked = self.profile_config["restricted_axis"]
             # Corridor origin = the start EE on the two in-plane (free) axes, so RELATIVE corridors are
             # centred on wherever the arm started (0.0 for absolute).
             si = self._initial_transform
@@ -163,7 +147,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
                 y = si[1, 3]
                 a0, b0 = (si[0, 3], si[2, 3]) if self._corridor_relative else (0.0, 0.0)
                 x, z = self._project_to_corridors(x, z, a0, b0)
-            else:  # "z" (default): maze lives in the X-Y plane
+            else:  # "z": maze lives in the X-Y plane
                 z = si[2, 3]
                 a0, b0 = (si[0, 3], si[1, 3]) if self._corridor_relative else (0.0, 0.0)
                 x, y = self._project_to_corridors(x, y, a0, b0)
@@ -173,30 +157,23 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         transform[0, 3] = x
         transform[1, 3] = y
         transform[2, 3] = z
-        return transform, restricted
+        return transform
 
-    # ---------------- trajectory logging (see analysis/robot_trajectory_*.csv) ----------------
+    # ---------------- trial-data columns (the orchestrator's TrialRecorder extra_header/extra_fn) -------
     # The absolute EE pose alone is hard to reason about: what you actually want to know is "where am I
     # IN THE MAZE, and which corridor am I in". These add maze-relative columns so a run can be plotted
     # straight on top of the corridor rectangles from maze_params.yaml.
-    def _record_extra_header(self):
+    @staticmethod
+    def record_extra_header():
         # rail_nearest is the sixth: `corridor` reads -1 off-rail, so rail_nearest (worked out BEFORE
         # the on-rail test) is what says WHICH corridor the arm has been pushed off.
         return ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]
-
-    # Public name for the same thing, so a TrialRecorder owned by the orchestrator can use it as its
-    # extra_fn without reaching for a private method.
-    def record_extra_header(self):
-        return self._record_extra_header()
-
-    def record_extra(self, measured_T):
-        return self._record_extra(measured_T)
 
     def maze_geometry(self) -> dict:
         """Corridors, checkpoints and goal AS THEY ARE NOW, for the trial sidecar. Without this an
         old run silently plots against whatever maze_params.yaml says today."""
         return {
-            "restricted_axis": self.profile_config.get("restricted_axis", "z"),
+            "restricted_axis": self.profile_config["restricted_axis"],
             "corridor_relative": bool(self._corridor_relative),
             "on_rail_tol_m": float(self._on_rail_tol),
             "corridors": [list(map(float, c)) for c in self._maze_corridors],
@@ -215,7 +192,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             # the unpack below raises, and the recorder swallows it, losing the approach silently.
             return 0.0, 0.0, -1, 1, 0.0, -1
         si = self._initial_transform
-        locked = self.profile_config.get("restricted_axis", "z").lower()
+        locked = self.profile_config["restricted_axis"]
         if locked == "x":
             a, b = measured_T[1, 3], measured_T[2, 3]
             a0, b0 = (si[1, 3], si[2, 3]) if self._corridor_relative else (0.0, 0.0)
@@ -240,11 +217,11 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         on_rail = best <= self._on_rail_tol
         return qa, qb, (idx if on_rail else -1), (0 if on_rail else 1), best, idx
 
-    def _record_extra(self, measured_T):
+    def record_extra(self, measured_T):
         qa, qb, idx, clamped, dist, nearest = self._maze_coords(measured_T)
         # Live view of progress. Without this you cannot tell "I am inside C1 and need to move further"
         # from "I am pinned against a wall" -- they feel similar through a compliant arm.
-        if self._dbg is not None and self._dbg.tick(self._log_dt):
+        if self._debug_log_enabled and self._dbg.tick(self._log_dt):
             where = (f"on rail C{nearest + 1}" if idx >= 0
                      else f"OFF rail (nearest C{nearest + 1}, {dist * 1000:.0f} mm away, being pulled back)")
             self._node.get_logger().info(

@@ -20,7 +20,7 @@ from rclpy.node import Node as rclpyNode
 from rclpy.time import Time
 import tf2_ros
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
 class SafetyStopMonitor:
@@ -44,9 +44,7 @@ class SafetyStopMonitor:
         # Speed is a single-sample finite difference of a TF lookup, so it is NOISY: at 100 Hz a 1.3 cm
         # jitter (or one stale/dropped transform) reads as 1.3 m/s. Require the threshold to be exceeded
         # on this many CONSECUTIVE samples before tripping -- a real runaway sustains, a spike does not.
-        self._speed_trip_samples = 5
-        if node.has_parameter(self._param_prefix + "speed_trip_samples"):
-            self._speed_trip_samples = int(node.get_parameter(self._param_prefix + "speed_trip_samples").value)
+        self._speed_trip_samples = int(get_required_param(node, self._param_prefix + "speed_trip_samples"))
         self._speed_over = 0
 
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))

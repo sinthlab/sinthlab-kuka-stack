@@ -187,7 +187,7 @@ function renderChecklist() {
     <li>On the SmartPad start the app and choose:<ul>${sp}</ul></li>
     <li>The app waits ~60 s for ROS — press <strong>Start</strong> here within that window.</li>
     <li>Visual cue over Wi-Fi? Join this computer to <code>KUKA_NEOPIXEL</code> first.</li>
-    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>${e.run_name ? `; data goes to <code>analysis/expt_${esc(e.run_name)}_&lt;time&gt;/</code>` : " (writes its own trajectory CSV)"}.</li>`;
+    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>; data goes to <code>analysis/expt_${esc(e.run_name)}_&lt;time&gt;/</code>.</li>`;
 }
 
 // ---------------------------------------------------------------- controls + status

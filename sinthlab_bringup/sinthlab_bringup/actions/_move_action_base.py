@@ -26,8 +26,7 @@ from ruckig import InputParameter, OutputParameter, Ruckig
 
 from lbr_fri_idl.msg import LBRState
 import optas
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
-from sinthlab_bringup.helpers.param_logging import log_params_once
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_launch_param, get_required_param
 
 
 class MoveActionBase:
@@ -56,7 +55,7 @@ class MoveActionBase:
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
 
         # --- forward kinematics (shared by completion / perturbation IK) -------
-        robot_desc = str(node.get_parameter("robot_description").value) if node.has_parameter("robot_description") else ""
+        robot_desc = str(get_launch_param(node, "robot_description", ""))
         self.robot = optas.RobotModel(urdf_string=robot_desc)
         self._fk_func = self.robot.get_link_transform_function(link="lbr_link_ee", base_link="lbr_link_0", numpy_output=True)
 
@@ -70,7 +69,6 @@ class MoveActionBase:
         self._moving = False
         self._target_resolved = False
         self._q_init = np.zeros(7)
-        self._q_cmd_sync = np.zeros(7)
         self._q_cmd_completion = np.zeros(7)
         self._q_meas_completion = np.zeros(7)
         self._shutdown_requested = False
@@ -86,19 +84,6 @@ class MoveActionBase:
         # The lbr_state_broadcaster publishes LBRState on '<ns>/lbr_state' (not 'state').
         self._state_sub = node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
         self._configure_command(node, ns)  # subclass sets self._cmd_topic and self._pub
-
-        if self._debug_log_enabled:
-            log_params_once(
-                node,
-                params={
-                    "update_rate": self._update_rate,
-                    "joint_move_tolerance": self._joint_pos_tol,
-                    "move_to_pos_v_max": self._v_max_param,
-                    "move_to_pos_a_max": self._a_max_param,
-                    "move_to_pos_j_max": self._j_max_param,
-                },
-                context=type(self).__name__,
-            )
 
         self._timer = node.create_timer(self._dt, self._step)
         node.get_logger().info(
@@ -174,13 +159,7 @@ class MoveActionBase:
                     )
                 self._q_init = q_meas
 
-            # 2. Command sync reference for Ruckig to ensure packets aren't dropped.
-            if not np.isnan(q_cmd).any():
-                self._q_cmd_sync = q_cmd
-            else:
-                self._q_cmd_sync = q_meas
-
-            # 3. Completion checks the commanded anchor: under Cartesian impedance the physical arm
+            # 2. Completion checks the commanded anchor: under Cartesian impedance the physical arm
             # (q_meas) sags under gravity, so wait for q_cmd to reach the target regardless of droop.
             if not np.isnan(q_cmd).any():
                 self._q_cmd_completion = q_cmd
@@ -283,18 +262,13 @@ class MoveActionBase:
         self._trajectory_gen_in.target_velocity = [0.0] * dofs
         self._trajectory_gen_in.target_acceleration = [0.0] * dofs
 
-        # Limits: support scalar or 7-array forms
-        def _to_arr(x, default_val):
-            if isinstance(x, (list, tuple)) and len(x) == dofs:
-                return list(map(float, x))
-            try:
-                return [float(x)] * dofs
-            except Exception:
-                return [default_val] * dofs
+        # Limits: a 7-element list (per joint) or one number for every joint.
+        def per_joint(x):
+            return [float(v) for v in x] if isinstance(x, (list, tuple)) else [float(x)] * dofs
 
-        self._trajectory_gen_in.max_velocity = _to_arr(self._v_max_param, 1.0)
-        self._trajectory_gen_in.max_acceleration = _to_arr(self._a_max_param, 2.0)
-        self._trajectory_gen_in.max_jerk = _to_arr(self._j_max_param, 10.0)
+        self._trajectory_gen_in.max_velocity = per_joint(self._v_max_param)
+        self._trajectory_gen_in.max_acceleration = per_joint(self._a_max_param)
+        self._trajectory_gen_in.max_jerk = per_joint(self._j_max_param)
 
         self._node.get_logger().info(
             f"Trajectory generation v_max={np.round(self._trajectory_gen_in.max_velocity,2)}, "

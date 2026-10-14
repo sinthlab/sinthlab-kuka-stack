@@ -6,6 +6,10 @@ from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
+# Names the recording folder: analysis/expt_<this file's name>_<timestamp>/
+RUN_NAME = "iiwa7_move_restricted_plane"
+
+
 def generate_launch_description():
     return LaunchDescription(
         [
@@ -26,6 +30,7 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "params_file": LaunchConfiguration("params_file"),
+                    "run_name": RUN_NAME,
                     "orchestrator": "restricted_plane_orchestrator.py",
                     # Joint controller active for the exact-posture start/recover moves; CLIK loaded
                     # inactive and switched in by the orchestrator for the fixture phase.

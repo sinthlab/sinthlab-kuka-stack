@@ -100,10 +100,10 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. **If the arm is nearly
-   straight** (mechanical zero, or close to it), the app then asks to move it to the ready pose
-   `[0, 10, 0, −80, 0, 90, 0]` — answer **Move to ready pose** and hold the enabling switch while it
-   moves. The app then waits about 60 s for ROS.
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. The app
+   then **always** moves the arm to mechanical zero and on to the ready pose `[0, 10, 0, −80, 0, 90, 0]`
+   (no prompt; hold the enabling switch while it moves; see
+   [Start-up posture](#start-up-posture-zero-then-ready)). It then waits about 60 s for ROS.
 3. **Check the parameters** ([below](#live-per-run-and-fixed-parameters)). Edited rows get an
    `edited` badge, and ↺ puts one back to the YAML value. Hover over any parameter for its full
    help.
@@ -462,10 +462,10 @@ ros2 launch sinthlab_bringup iiwa7_moveit_apple.launch.py mode:=gazebo rviz:=tru
 > ⚠️ **Safety first.** On the first run of any scenario, operate in **T1** (reduced speed) with a
 > hand on the E‑stop. The arm is actively controlled the moment a SmartPad application is running.
 >
-> **Starting from mechanical zero.** A straight arm is singular, and impedance control cannot move it
-> reliably. If `LbrImpedanceControlServer` starts with the arm nearly straight, it asks to move it to the
-> ready pose `[0, 10, 0, −80, 0, 90, 0]` in position control first; answer **Move to ready pose**. From
-> there every experiment's start is reachable. An arm already bent (e.g. at a start pose) is not moved.
+> **Start-up posture.** Every time `LbrImpedanceControlServer` starts, it moves the arm to mechanical
+> zero and then to the ready pose `[0, 10, 0, −80, 0, 90, 0]`, in position control and without asking;
+> each experiment's `move_to_start` then begins from there. **Keep the space above the arm clear**: at
+> zero the arm stands fully upright. Why: [Start-up posture](#start-up-posture-zero-then-ready).
 
 ### Running from the dashboard
 The [dashboard](#quick-start-the-experiment-dashboard) runs exactly the launches below, with the
@@ -913,12 +913,12 @@ Work up the ladder and stop at the first rung that feels wrong.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
    ```
-3. The arm drives to ▶START. (From a straight arm, the SmartPad app has already moved it to the
-   ready pose, from which the maze start is reachable.)
+3. The arm drives from the ready pose (where the SmartPad app always leaves it) to ▶START.
 4. The arm settles for 3 s, the fixture anchors on where it **rests**, the go cue plays, and the rails go
    live. Drive to the goal (or let the 60 s timeout expire).
 
-   > **Watching progress.** The fixture logs your maze position at 2 Hz:
+   > **Watching progress.** Set `virtual_fixtures.debug_log_enabled: true` and the fixture logs your
+   > maze position at `debug_log_rate_hz` (2 Hz):
    > `maze: a=+0.180 b=+0.002 -> on rail C1`, or `OFF rail (nearest C1, 31 mm away, being pulled back)`.
    > Every run also writes `analysis/robot_trajectory_*.csv` with
    > `time, x, y, z, rel_a, rel_b, corridor, off_rail, rail_dist` — plot `rel_a` vs `rel_b` straight on
@@ -1166,6 +1166,12 @@ The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end
 The stack separates **hard real‑time physical loops** from **high‑level orchestration**, so that
 Python state transitions never compromise the 1000 Hz hardware control loops.
 
+**Parameters come from the YAML only.** Every experiment parameter is read with `get_required_param`
+([`helpers/node_utils.py`](sinthlab_bringup/sinthlab_bringup/helpers/node_utils.py)): no defaults
+in code, so a key missing from the YAML stops the orchestrator at startup with its name. Only values
+the launch supplies (`robot_description`, `run_name`, `paradigm_override`, `subject`) are optional,
+via `get_launch_param`. Live changes go through the dashboard ([Live parameters](#live-parameters)).
+
 ### 6.1 System Overview — data flow
 Both paths end in a joint **position command** over FRI, and the **cabinet's Cartesian impedance
 provides the compliance**. Every start and recover move sends **joint** setpoints via
@@ -1286,21 +1292,31 @@ flowchart LR
   its session at once, so it reaches that trial boundary instead of never getting there. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
   is built on these interfaces, and anything else can use them too.
 
-  **Starting from a straight arm.** At mechanical zero the arm is fully straight, which is singular:
-  the Jacobian's smallest singular value is **0.0**, so the cabinet's Cartesian impedance cannot act in
-  some directions and a ROS move commanded from there does not reliably reach its target. The **Sunrise
-  app** handles this before ROS is involved. When it starts with
+  <a id="start-up-posture-zero-then-ready"></a>**Start-up posture: zero, then ready — always.** Every
+  time the **Sunrise app** starts, before ROS is involved and with no prompt, it does two joint PTPs in
+  plain position control:
 
   ```
-  max(|A2|, |A4|, |A6|) < 12 deg        ->  arm is nearly STRAIGHT (singular)
+  wherever the arm was left  ->  mechanical zero [0, 0, 0, 0, 0, 0, 0]  ->  ready [0, 10, 0, −80, 0, 90, 0]
   ```
 
-  it asks on the SmartPad, then PTPs the arm to the ready pose `[0, 10, 0, −80, 0, 90, 0]` in plain
-  position control, and only then opens FRI and switches impedance on. So every experiment's first move
-  starts from a well-conditioned posture, and ROS needs no start-up special case. The bend test agrees
-  exactly with "smallest singular value < 0.05", including the *extended-but-rotated* case (A1 = 90°
-  but the arm straight) that a "distance from mechanical zero" test would miss. Every experiment start
-  bends one of A2/A4/A6 by 36° or more, so an arm parked at a start pose is not moved.
+  and only then opens FRI and switches Cartesian impedance on. ROS's first move (`move_to_start`) then
+  always begins from the ready pose.
+
+  *Why.* The arm could otherwise be left in any posture — a previous experiment's start, a jog, a
+  half-finished move — and the joint path from there to the next experiment's start is different every
+  time. Some of those postures and paths pass through or near a **singular configuration** (a
+  straight or folded arm, where the Jacobian's smallest singular value drops toward **0**). There the
+  cabinet's Cartesian impedance cannot act in some directions, so ROS's joint targets are tracked
+  badly or the arm locks up. The cabinet's own **position** controller has no such problem, so the app
+  leaves any such posture in position control. Going through zero gives one known, repeatable route
+  every time, and the ready pose is well conditioned (smallest singular value 0.206) with every
+  experiment's start reachable from it. There is no "stay here" option: the move always happens, so
+  every run starts from the same posture.
+
+  *What to watch.* At zero the arm stands fully upright, so keep the space above it clear, and hold the
+  enabling switch while it moves (T1). Separately, the dashboard and orchestrator refuse a *start pose*
+  that is nearly straight (max(|A2|, |A4|, |A6|) < 12°), so ROS never parks the arm in a singular pose.
 
   A trial is then literally a chain of actions — e.g. apple‑pluck:
   `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
@@ -1319,11 +1335,8 @@ sequenceDiagram
     participant ORCH as Orchestrator
 
     Op->>CAB: Start LbrImpedanceControlServer, pick the scenario's stiffness profile
-    opt arm nearly straight (max |A2,A4,A6| < 12°)
-        CAB->>Op: SmartPad: move to the ready pose?
-        Op->>CAB: Move to ready pose (hold enabling switch)
-        CAB->>CAB: joint PTP to [0, 10, 0, −80, 0, 90, 0] in position control
-    end
+    Note over Op,CAB: hold the enabling switch
+    CAB->>CAB: joint PTP to mechanical zero, then to ready [0, 10, 0, −80, 0, 90, 0]<br/>(always, position control)
     Note over CAB: opens FRI, waits ~60 s for the FRI client
     Op->>ROS: ros2 launch sinthlab_bringup iiwa7_*.launch.py
     ROS->>CM: start ros2_control_node (FRI client) + robot_state_publisher
@@ -1418,8 +1431,8 @@ stateDiagram-v2
     Paused --> MoveToStart : resume
 ```
 
-**Flow 2 — Restricted Plane** (joint moves, CLIK fixture). No TrialRecorder; the fixture action writes
-its own trajectory CSV.
+**Flow 2 — Restricted Plane** (joint moves, CLIK fixture). Recorded by `TrialRecorder` like the others,
+with `disp_m` as the extra column.
 ```mermaid
 stateDiagram-v2
     [*] --> MoveToStart : [trial_start]
@@ -1630,13 +1643,13 @@ Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
 below.
 
-| | Apple pluck (pluck) | Apple pluck (perturb) | Maze |
-|---|---|---|---|
-| Columns | **42** | **42** | **47** |
-| Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
-| Events | 10 | 12 | 12 |
-| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `maze_geometry` |
-| Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
+| | Apple pluck (pluck) | Apple pluck (perturb) | Restricted Plane | Maze |
+|---|---|---|---|---|
+| Columns | **42** | **42** | **42** | **47** |
+| Extra over the core | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
+| Events | 10 | 12 | 7 (`snap` or `safety_trip`) | 12 |
+| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `threshold_m`, `fixture` | `maze_geometry` |
+| Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
 **The 41-column core**
 
@@ -1656,7 +1669,7 @@ Why each earns its place:
   `F / k`, and that lag is signal, not error. A steady offset at rest points at un-modelled tool mass.
 - **`ext_A1..A7`** measures a pull with no force sensor fitted.
 - **FRI health per sample** makes a bad trial self-diagnosing.
-- **`disp_m`** (pluck/perturb) is the dependent variable of the experiment. Recording it per sample is
+- **`disp_m`** (pluck/perturb, restricted plane) is the dependent variable of the experiment. Recording it per sample is
   also what lets the threshold crossing be interpolated to sub-millisecond, which the 10 ms cabinet
   stamp cannot give on its own.
 

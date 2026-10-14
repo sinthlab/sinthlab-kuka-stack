@@ -26,7 +26,7 @@ from typing import Callable, Optional
 import numpy as np
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 _AXES = {"x": 0, "y": 1, "z": 2}
 
@@ -47,7 +47,7 @@ class TravelMonitor:
         if axis not in ("x", "y", "z", "norm"):
             raise ValueError(f"{self._p}axis must be x, y, z or norm, got {axis!r}")
         self._axis = axis
-        self._dbg = DebugTicker(float(get_optional_param(node, self._p + "debug_log_rate_hz", 2.0)))
+        self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
         self.reload()
 
         self._active = False
@@ -58,10 +58,10 @@ class TravelMonitor:
         """Re-read the live task parameters (threshold, direction, return). Called between trials."""
         n, p = self._node, self._p
         self._threshold = float(get_required_param(n, p + "threshold_m"))
-        self._direction = str(get_optional_param(n, p + "direction", "both")).lower()
-        self._require_return = bool(get_optional_param(n, p + "require_return", True))
-        self._return_tol = float(get_optional_param(n, p + "return_tolerance_m", 0.02))
-        self._debug = bool(get_optional_param(n, p + "debug_log_enabled", False))
+        self._direction = str(get_required_param(n, p + "direction")).lower()
+        self._require_return = bool(get_required_param(n, p + "require_return"))
+        self._return_tol = float(get_required_param(n, p + "return_tolerance_m"))
+        self._debug = bool(get_required_param(n, p + "debug_log_enabled"))
         self._node.get_logger().info(
             f"Travel task: {self._axis} >= {self._threshold:.3f} m ({self._direction})"
             + (f", then back within {self._return_tol:.3f} m" if self._require_return else ""))

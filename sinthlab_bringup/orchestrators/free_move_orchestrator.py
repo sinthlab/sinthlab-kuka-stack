@@ -13,7 +13,7 @@ from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
@@ -47,7 +47,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.admittance = AdmittanceMoveAction(self, param_prefix="free_move")
         self.ring = RingStateCue(self)
         self.quiet_window = WaitAction(
-            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
             on_complete=self.on_quiet_window_complete, name="quiet_window")
         self.go_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
@@ -169,7 +169,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         for cue in (self.go_cue, self.end_cue):
             cue.reload()
         self.ring.reload()
-        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()
         self.move_recover.reload()
         self._session_sec = float(get_required_param(self, "session_sec"))

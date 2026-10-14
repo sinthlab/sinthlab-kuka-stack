@@ -115,8 +115,6 @@ class App:
         if not r.experiment or not r.started_at:
             return None
         exp = ex.BY_KEY[r.experiment]
-        if not exp.run_name:
-            return None
         folders = [p for p in ex.ANALYSIS.glob(f"expt_{exp.run_name}_*")
                    if p.is_dir() and p.stat().st_mtime >= r.started_at - 5]
         return str(max(folders, key=lambda p: p.stat().st_mtime)) if folders else None

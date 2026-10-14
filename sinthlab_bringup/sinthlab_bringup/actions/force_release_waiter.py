@@ -14,7 +14,7 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 from geometry_msgs.msg import WrenchStamped
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
 class ForceReleaseWaiter:

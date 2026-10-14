@@ -21,6 +21,8 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
 
     audio_cue_play:  # trial-start (go) tone
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
@@ -45,6 +47,7 @@
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     audio_cue_snap:  # threshold-reached tone
       frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
       duration_ms: 500  # threshold-reached tone: length [ms]
@@ -72,6 +75,7 @@
     visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
       enabled: false  # master switch for the ring; false = no visual cues at all
       remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
       # Colour per cue event, [r, g, b, w] 0-255 -- as in apple_pluck_impedance.yaml. Present even
       # while the ring is off so the dashboard can change it live.
       colours:  # RGBW colour per cue site, each channel 0-255 (Wi-Fi trigger only)
@@ -108,6 +112,8 @@
       # = 1 m/s) becomes the binding constraint and the fixture feels stiff while moving. 0.05 keeps it
       # a jerk guard against spikes without throttling normal guiding.
       max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
+      anchor_settle_sec: 0.0  # wait this long after the fixture starts before anchoring it [s]
+      anchor_on_measured: false  # anchor on the measured pose (true) rather than the commanded one
       simple_plane:  # lock one base axis, free the other two
         type: "plane"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
         restricted_axis: "y"  # locked base axis (x | y | z); the other two stay free

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from rclpy.node import Node as rclpyNode
 import rclpy
 
-from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 
 
 class AudioCue:
@@ -56,7 +56,7 @@ class AudioCue:
         node = self._node
         self._frequency = int(get_required_param(node, self._param_prefix + "frequency_hz"))
         self._duration = int(get_required_param(node, self._param_prefix + "duration_ms"))
-        self._enabled = bool(get_optional_param(node, "audio_cue.enabled", True))
+        self._enabled = bool(get_required_param(node, "audio_cue.enabled"))
 
     def start(self) -> None:
         if self._played:

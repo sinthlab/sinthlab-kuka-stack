@@ -31,7 +31,7 @@ from rcl_interfaces.msg import SetParametersResult
 from std_msgs.msg import String
 from std_srvs.srv import SetBool
 
-from sinthlab_bringup.helpers.common_threshold import get_optional_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_live
 from sinthlab_bringup.helpers.live_params import PAIRED
 
@@ -79,7 +79,7 @@ class ExperimentControl:
         self._effective: Dict[str, object] = {
             name: _plain(node.get_parameter(name).value)
             for name in node._parameters if is_live(experiment, name)}   # noqa: SLF001
-        self._nsp_enabled = bool(get_optional_param(node, "nsp_sync.enabled", False))
+        self._nsp_enabled = bool(get_required_param(node, "nsp_sync.enabled"))
         self._nsp_warned = False
 
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -151,7 +151,7 @@ class ExperimentControl:
             return
         for fn in self._reloaders:
             fn()
-        self._nsp_enabled = bool(get_optional_param(self._node, "nsp_sync.enabled", False))
+        self._nsp_enabled = bool(get_required_param(self._node, "nsp_sync.enabled"))
         self._effective.update(self._pending)
         changes = ", ".join(f"{k}={v}" for k, v in self._pending.items())
         self._log.info(f"Live parameters applied from trial {self._trial + 1}: {changes}")

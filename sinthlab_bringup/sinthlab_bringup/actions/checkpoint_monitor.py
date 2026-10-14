@@ -21,7 +21,7 @@ from rclpy.node import Node as rclpyNode
 from rclpy.time import Time
 import tf2_ros
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
 class CheckpointMonitor:
@@ -57,13 +57,11 @@ class CheckpointMonitor:
         ])
         self._goal_radius = float(get_required_param(node, self._param_prefix + "goal_radius"))
 
-        # RELATIVE (default): checkpoint_*/goal_* are OFFSETS from the start EE, captured on the first
+        # RELATIVE: checkpoint_*/goal_* are OFFSETS from the start EE, captured on the first
         # tick, so they track move_to_start exactly like the relative maze corridors do. Keep this in
         # sync with the fixture's corridor_frame -- if the corridors move with the start but the
         # checkpoints don't, the rewards/goal land in the wrong place. ABSOLUTE: raw base-frame coords.
-        self._relative = True
-        if node.has_parameter(self._param_prefix + "relative_to_start"):
-            self._relative = bool(get_required_param(node, self._param_prefix + "relative_to_start"))
+        self._relative = bool(get_required_param(node, self._param_prefix + "relative_to_start"))
         self._origin: Optional[np.ndarray] = None  # start EE, captured on first tick when relative
 
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))

@@ -36,7 +36,8 @@ from typing import Callable, Optional, Tuple
 
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.actions.visual_cue_remote import DEFAULT_BOARD, RemoteCueTrigger
+from sinthlab_bringup.actions.visual_cue_remote import RemoteCueTrigger
+from sinthlab_bringup.helpers.node_utils import get_required_param
 
 _NOT_WIRED = (
     "visual_cue.enabled is true, but no trigger switch is wired to this computer yet, so visual "
@@ -45,13 +46,10 @@ _NOT_WIRED = (
     "See end_effector_design/README.md.")
 
 
-def optional_param(node: rclpyNode, name: str, default):
-    """Parameter with a fallback — the visual_cue block may be absent or partial."""
-    if node.has_parameter(name):
-        value = node.get_parameter(name).value
-        if value is not None:
-            return value
-    return default
+def colour_param(node: rclpyNode, name: str):
+    """A per-site colour, or None. Colours are the one optional part of the visual_cue block: a cue
+    site without one deliberately leaves the board's own colour in place."""
+    return node.get_parameter(name).value if node.has_parameter(name) else None
 
 
 class VisualCue:
@@ -75,9 +73,9 @@ class VisualCue:
     @staticmethod
     def warmup(node: rclpyNode) -> None:
         """Mirrors AudioCue.warmup(). Says which trigger is in use. Never raises, never blocks."""
-        if not optional_param(node, "visual_cue.enabled", False):
+        if not get_required_param(node, "visual_cue.enabled"):
             return
-        if optional_param(node, "visual_cue.remote_test_trigger", False):
+        if get_required_param(node, "visual_cue.remote_test_trigger"):
             VisualCue._remote_trigger(node).check()
         else:
             VisualCue._warn_once(node)
@@ -98,7 +96,7 @@ class VisualCue:
     @classmethod
     def _remote_trigger(cls, node: rclpyNode) -> RemoteCueTrigger:
         if cls._remote is None:
-            board = str(optional_param(node, "visual_cue.remote_board", DEFAULT_BOARD))
+            board = str(get_required_param(node, "visual_cue.remote_board"))
             cls._remote = RemoteCueTrigger(
                 node, board,
                 on_result=lambda lbl, ok, ms: (cls._result_sink(lbl, ok, ms)
@@ -122,15 +120,15 @@ class VisualCue:
         """Re-read enabled / remote_test_trigger / this site's colour. All are live parameters: an
         orchestrator calls this at a trial boundary after a change (see helpers/live_params.py)."""
         node = self._node
-        self._enabled = bool(optional_param(node, "visual_cue.enabled", False))
-        self._remote_test = bool(optional_param(node, "visual_cue.remote_test_trigger", False))
+        self._enabled = bool(get_required_param(node, "visual_cue.enabled"))
+        self._remote_test = bool(get_required_param(node, "visual_cue.remote_test_trigger"))
         self._colour = self._read_colour(node, self._label) if self._enabled else None
 
     @staticmethod
     def _read_colour(node: rclpyNode, label: str) -> Optional[Tuple[int, int, int, int]]:
         """visual_cue.colours.<label> as (r, g, b, w), or None to use the board's configured colour."""
         name = f"visual_cue.colours.{label}"
-        raw = optional_param(node, name, None)
+        raw = colour_param(node, name)
         if raw is None:
             return None
         try:

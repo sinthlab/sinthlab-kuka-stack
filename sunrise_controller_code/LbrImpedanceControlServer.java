@@ -31,13 +31,14 @@ import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
  * position targets via FRI from the ROS 2 driver.
  *
  * Start-up order (run()):
- *   1. If the arm is nearly straight -- mechanical zero, or close to it -- offer a joint PTP to the
- *      READY pose, in plain POSITION control. A straight arm is a singular configuration: the
- *      Cartesian impedance spring cannot act in some directions there, so ROS joint targets
- *      commanded from it are tracked badly or not at all. The cabinet's own position controller has
- *      no such problem, so the arm leaves the singularity BEFORE impedance is switched on.
- *   2. Open FRI and wait up to 60 s for the ROS 2 client. This comes after the PTP, so the first
- *      state ROS reads -- and the start of its first move -- is the ready pose, not the straight arm.
+ *   1. ALWAYS, with no prompt: joint PTP to MECHANICAL ZERO, then to the READY pose, in plain
+ *      POSITION control. Whatever posture the arm was left in, every experiment then starts its
+ *      move_to_start from the same well-conditioned pose. Starting from an arbitrary posture can put
+ *      the arm in or near a singular configuration, where the Cartesian impedance spring cannot act
+ *      in some directions, so ROS joint targets are tracked badly or the arm locks up. The cabinet's
+ *      own position controller has no such problem, so this is done BEFORE impedance is switched on.
+ *   2. Open FRI and wait up to 60 s for the ROS 2 client. This comes after the PTPs, so the first
+ *      state ROS reads -- and the start of its first move -- is the ready pose.
  *   3. Hold the pose in Cartesian impedance with the FRI overlay; ROS moves the equilibrium.
  */
 public class LbrImpedanceControlServer extends RoboticsAPIApplication {
@@ -133,15 +134,12 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         // and the plane lock are too soft to mean anything here. The ROS moves still work (slowly).
         {   50.0,   50.0,   50.0,  10.0,  10.0,  10.0 }  // diagnostic: nearly free
     };
-    // READY POSE -- where the arm goes if the app starts with it nearly straight. It is the
-    // restricted-plane start: reachable from mechanical zero, well conditioned (smallest singular value
-    // of the Jacobian 0.206, against 0.0 when straight), and every experiment's start is reachable from
-    // it. Degrees, A1..A7.
+    // Start-up sequence, every run: MECHANICAL ZERO (a known, repeatable posture whatever the arm was
+    // left in), then the READY POSE -- the restricted-plane start: well conditioned (smallest singular
+    // value of the Jacobian 0.206, against 0.0 when straight), and every experiment's start is
+    // reachable from it. Degrees, A1..A7.
+    private static final double[] ZERO_POSE_DEG = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
     private static final double[] READY_POSE_DEG = { 0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0 };
-    // "Nearly straight" = the three bending joints A2, A4, A6 are all within this of zero. Checked
-    // against the Jacobian: the same as "smallest singular value < 0.05". Every experiment start bends
-    // at least one of them by 36 deg or more, so none of them triggers it.
-    private static final double STRAIGHT_BELOW_DEG = 12.0;
     private static final double READY_VEL_REL = 0.2;   // PTP speed, fraction of the joint limits
 
     // Damping ratio. The cabinet damps the flange's actual velocity, so along a rail it is felt as drag
@@ -238,40 +236,23 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     }
 
     /**
-     * If the arm is nearly straight (singular), ask on the SmartPAD and PTP it to READY_POSE_DEG in
-     * position control. Does nothing when the arm is already bent -- e.g. parked at an experiment's
-     * start -- so a normal restart does not move the arm at all.
+     * Mechanical zero, then the ready pose, both as joint PTPs in position control. Always runs, with
+     * no prompt -- see the class doc for why.
      */
-    private void leaveSingularityIfStraight() {
-        JointPosition q = lbr_.getCurrentJointPosition();
-        double bend = 0.0;
-        for (int i : new int[] { 1, 3, 5 }) {          // A2, A4, A6
-            bend = Math.max(bend, Math.abs(Math.toDegrees(q.get(i))));
-        }
-        if (bend >= STRAIGHT_BELOW_DEG) {
-            getLogger().info(String.format(
-                "Arm is bent (max |A2,A4,A6| = %.1f deg): no ready move needed.", bend));
-            return;
-        }
-        int choice = applicationUi.displayModalDialog(
-                ApplicationDialogType.QUESTION,
-                String.format("The arm is nearly straight (max |A2,A4,A6| = %.1f deg), a singular pose "
-                        + "where impedance control cannot reliably move it.\n\n"
-                        + "Move it to the ready pose [0, 10, 0, -80, 0, 90, 0] in position control first?",
-                        bend),
-                "Move to ready pose", "Stay here");
-        if (choice != 0) {
-            getLogger().warn("Staying in a near-singular pose: the first move from ROS may not reach "
-                    + "its target. Jog the arm off zero if it misbehaves.");
-            return;
-        }
-        double[] rad = new double[READY_POSE_DEG.length];
-        for (int i = 0; i < rad.length; i++) {
-            rad[i] = Math.toRadians(READY_POSE_DEG[i]);
-        }
-        getLogger().info("Moving to the ready pose in position control...");
-        lbr_.move(ptp(new JointPosition(rad)).setJointVelocityRel(READY_VEL_REL));
+    private void moveToReadyViaZero() {
+        getLogger().info("Moving to mechanical zero in position control...");
+        ptpDeg(ZERO_POSE_DEG);
+        getLogger().info("Moving to the ready pose [0, 10, 0, -80, 0, 90, 0] in position control...");
+        ptpDeg(READY_POSE_DEG);
         getLogger().info("At the ready pose.");
+    }
+
+    private void ptpDeg(double[] deg) {
+        double[] rad = new double[deg.length];
+        for (int i = 0; i < rad.length; i++) {
+            rad[i] = Math.toRadians(deg[i]);
+        }
+        lbr_.move(ptp(new JointPosition(rad)).setJointVelocityRel(READY_VEL_REL));
     }
 
     /**
@@ -329,8 +310,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
 
     @Override
     public void run() {
-        // Leave a singular (straight) pose in position control BEFORE ROS connects -- see the class doc.
-        leaveSingularityIfStraight();
+        // Zero, then ready, in position control BEFORE ROS connects -- see the class doc.
+        moveToReadyViaZero();
         configure_fri();
 
         // Execute the motion holding command. The overlay lets ROS 2 update the target dynamically.

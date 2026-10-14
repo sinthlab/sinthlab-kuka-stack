@@ -50,7 +50,7 @@
       #   flange (0.40, 0, 0.75) m, apple centre ~(0.56, 0, 0.68) m, symmetric in-plane posture.
       #   6D condition number 11.5; every joint >= 24.7 deg from its limit; the arm can be pulled at
       #   least 0.30 m toward the monkey (along +X or along the apple) before nearing a limit or singularity.
-      # KNOBS -- edit move_to_start AND move_to_start_recover, here and in the other apple-pluck YAML:
+      # KNOBS -- edit move_to_start AND move_to_start_recover together:
       #   A6 (6th value)  tilt. +10 -> 35 deg down (apple ~0.53, 0.63); -10 -> 15 deg down (apple ~0.58,
       #                   0.73). The apple pivots about the wrist.
       #   A7 (7th value)  turns the effector about its own axis without moving the apple, e.g. to put the
@@ -79,6 +79,9 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m] (only when waiting)
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     move_to_start_recover:  # joint-space move back to the start at the end of each trial
       update_rate: 200  # loop rate of this action [Hz]
       # Same pose as move_to_start (see the notes there).
@@ -161,6 +164,9 @@
       baseline_settle_sec: 1.0  # wait after the perturbation before locking the pull baseline [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m] (only when waiting)
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
 
     audio_cue_play:  # trial-start (go) tone
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
@@ -192,6 +198,7 @@
     visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
       enabled: true  # master switch for the ring; false = no visual cues at all
       remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
       # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
       # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
       # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.

@@ -36,18 +36,19 @@ CORE = (["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
         + [f"ext_A{i}" for i in range(1, 8)]
         + ["tracking", "session", "quality", "safety", "drive", "control", "event", "event_arg"])
 
-# "perturb" = apple pluck in the perturb paradigm (see validate(); older recordings are named so too).
-EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"],
+# "perturb" = apple pluck in the perturb paradigm (see validate()).
+EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "restricted_plane": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
-# maze endings) is optional or repeatable and is checked separately.
+# maze endings, restricted plane's snap or safety_trip) is optional or repeatable.
 ORDER = {
     "apple_pluck": ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap",
                     "cue_snap", "freeze", "recover_start", "trial_end"],
     "perturb": ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start",
                 "perturb_applied", "armed", "snap", "cue_snap", "freeze", "recover_start",
                 "trial_end"],
+    "restricted_plane": ["trial_start", "at_start", "cue_go", "armed", "recover_start", "trial_end"],
     "maze": ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "trial_end"],
 }
 MAZE_ENDINGS = ("goal", "timeout", "safety_trip")

@@ -32,6 +32,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     move_to_start_recover:  # joint-space move back to the start at the end of each trial
       update_rate: 200  # loop rate of this action [Hz]
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # recover pose A1..A7 [deg], same as move_to_start
@@ -43,6 +44,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
 
     # ---- THE TASK (live: change between trials from the dashboard) ----
     travel_task:  # out to the threshold, then back to the start
@@ -61,6 +63,8 @@
       max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
       anchor_settle_sec: 3.0  # wait this long after the rail starts before anchoring it [s]
       anchor_on_measured: true  # anchor on where the arm rests (true) rather than where it was commanded
+      debug_log_enabled: false  # print where the arm is on the rails (a, b, which rail) periodically
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       rail_lead_sec: 0.0  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off
       horizontal_rail:  # one horizontal rail through the start
         type: "maze"  # geometry class: the maze's rail fixture with one rail
@@ -111,6 +115,7 @@
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
       remote_test_trigger: true  # the quarter cues need the Wi-Fi trigger (the X76 wire is one bit)
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
     # The ring holds a state per trial phase: travel quarters GREEN from the go cue, RED once the
     # threshold is reached, the success colour at the end, dark between trials.
     ring_cue:  # which quarters light, and in what colour per phase

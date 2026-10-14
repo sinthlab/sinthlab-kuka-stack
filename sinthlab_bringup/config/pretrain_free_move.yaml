@@ -44,6 +44,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     move_to_start_recover:  # joint-space move back to the start at the end of each trial
       update_rate: 200  # loop rate of this action [Hz]
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # recover pose A1..A7 [deg], same as move_to_start
@@ -55,6 +56,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
 
     # ---- THE FEEL (live: change between trials from the dashboard) ----
     free_move:  # admittance: the equilibrium moves at force / damping
@@ -116,6 +118,7 @@
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
       remote_test_trigger: true  # the ring state needs the Wi-Fi trigger (the X76 wire is one bit)
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
     # The ring is GREEN while the arm is free to move, dark otherwise.
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # all four quarters (ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59)

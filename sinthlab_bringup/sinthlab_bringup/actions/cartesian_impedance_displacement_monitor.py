@@ -10,8 +10,7 @@ from rclpy.time import Time
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_required_param
-from sinthlab_bringup.helpers.param_logging import log_params_once
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
 class CartesianImpedanceDisplacementMonitor:
@@ -42,33 +41,13 @@ class CartesianImpedanceDisplacementMonitor:
         self._disp_threshold_m = float(get_required_param(node, self._param_prefix + "cartesian_displacement_threshold_m"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, self._param_prefix + "force_release_shutdown_delay_sec")))
         # Settle time to wait after start() before locking the baseline, so the "initial position"
-        # is the SETTLED pose. For the perturbation experiment this guarantees the baseline is the
-        # post-perturbation rest pose (the physical/tf arm lags the commanded anchor under
-        # impedance). Optional; defaults to 0.0 (apple-pluck already settles via its quiet window).
+        # is the SETTLED pose. 0 unless the orchestrator sets it (set_baseline_settle): apple pluck's
+        # perturb paradigm does, so the baseline is the post-perturbation rest pose (the physical arm
+        # lags the commanded anchor under impedance); otherwise the quiet window has already settled it.
         self._baseline_settle_sec = 0.0
-        if node.has_parameter(self._param_prefix + "baseline_settle_sec"):
-            self._baseline_settle_sec = max(0.0, float(node.get_parameter(self._param_prefix + "baseline_settle_sec").value))
 
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
-        dbg_rate = float(get_required_param(node, self._param_prefix + "debug_log_rate_hz"))
-        self._dbg = DebugTicker(dbg_rate)
-
-        if self._debug_log_enabled:
-            log_params_once(
-                node,
-                params={
-                    "update_rate": self._update_rate,
-                    "base_frame": self._base_frame,
-                    "ee_frame": self._ee_frame,
-                    "cartesian_axis": self._disp_axis,
-                    "cartesian_displacement_threshold_m": self._disp_threshold_m,
-                    "release_shutdown_delay_sec": self._release_shutdown_delay,
-                    "baseline_settle_sec": self._baseline_settle_sec,
-                    "debug_log_enabled": self._debug_log_enabled,
-                    "debug_log_rate_hz": dbg_rate,
-                },
-                context="cartesian_impedance_displacement_monitor",
-            )
+        self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
 
         # Runtime state
         # Latest displacement, refreshed every tick. The recorder reads this so `disp_m` lands in
@@ -158,13 +137,11 @@ class CartesianImpedanceDisplacementMonitor:
         return self._disp_threshold_m
 
     def reload(self) -> None:
-        """Re-read the live pull parameters -- threshold, dwell and settle (helpers/live_params.py).
+        """Re-read the live pull parameters -- threshold and dwell (helpers/live_params.py).
         Called by the orchestrator at a trial boundary, while the monitor is idle."""
         node, pre = self._node, self._param_prefix
         self._disp_threshold_m = float(get_required_param(node, pre + "cartesian_displacement_threshold_m"))
         self._release_shutdown_delay = max(0.0, float(get_required_param(node, pre + "force_release_shutdown_delay_sec")))
-        if node.has_parameter(pre + "baseline_settle_sec"):
-            self._baseline_settle_sec = max(0.0, float(node.get_parameter(pre + "baseline_settle_sec").value))
         self._node.get_logger().info(
             f"Displacement monitor: disp_thr={self._disp_threshold_m:.4f} m, "
             f"dwell={self._release_shutdown_delay:.2f} s, settle={self._baseline_settle_sec:.2f} s")

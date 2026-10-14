@@ -29,7 +29,8 @@ from typing import List, Optional, Tuple
 
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.actions.visual_cue import VisualCue, optional_param
+from sinthlab_bringup.actions.visual_cue import VisualCue, colour_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 
 _QUARTERS = 4
 
@@ -45,16 +46,13 @@ class RingStateCue:
 
     def reload(self) -> None:
         node = self._node
-        self._enabled = bool(optional_param(node, "visual_cue.enabled", False))
-        self._wifi = bool(optional_param(node, "visual_cue.remote_test_trigger", False))
-        raw = optional_param(node, self._p + "quarters", [0, 1, 2, 3])
-        try:
-            self._quarters = sorted({int(q) for q in raw if 0 <= int(q) < _QUARTERS})
-        except (TypeError, ValueError):
-            self._quarters = [0, 1, 2, 3]
+        self._enabled = bool(get_required_param(node, "visual_cue.enabled"))
+        self._wifi = bool(get_required_param(node, "visual_cue.remote_test_trigger"))
+        self._quarters = sorted({int(q) for q in get_required_param(node, self._p + "quarters")
+                                 if 0 <= int(q) < _QUARTERS})
 
     def _colour(self, state: str) -> Optional[Tuple[int, ...]]:
-        raw = optional_param(self._node, f"{self._p}colours.{state}", None)
+        raw = colour_param(self._node, f"{self._p}colours.{state}")
         if raw is None:
             return None
         try:

@@ -118,8 +118,7 @@ the checks, which `check_value()` applies on both sides:
   runs from 50 N/m up to the SmartPad base entered, so the dashboard passes the current values when it
   describes the parameters;
 - **poses** (`check_pose`): 7 values, within `IIWA7_LIMITS_DEG`, and not a straight arm
-  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12° — the same test the Sunrise app uses for its
-  ready-pose move);
+  (max(|A2|, |A4|, |A6|) ≥ `STRAIGHT_BELOW_DEG`, 12°: below that the arm is singular);
 - **pairs**, checked against the other values in force (`context`): the perturbation's r against its
   plane's cap (`PERTURB_R_MAX`), and the start pose against the recover pose, which must be equal.
 

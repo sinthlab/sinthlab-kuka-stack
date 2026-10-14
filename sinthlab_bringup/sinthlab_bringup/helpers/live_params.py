@@ -134,7 +134,7 @@ LIMITS: Dict[str, Tuple[float, float]] = {
 
 # Joint poses: 7 angles in degrees, inside the iiwa7 limits (lbr joint_limits.yaml, which is 1 deg
 # stricter than the hardware), and not a nearly straight arm -- max(|A2|, |A4|, |A6|) below this is
-# singular (the same test, and value, as STRAIGHT_BELOW_DEG in LbrImpedanceControlServer.java).
+# singular (checked against the Jacobian: the same as "smallest singular value < 0.05").
 IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
 _START, _RECOVER = _POSE

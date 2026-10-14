@@ -49,7 +49,7 @@ class Experiment:
     node: str                      # orchestrator node name (namespace /<robot_name>)
     stiffness_profile: str         # SmartPad "Cartesian stiffness (K diagonal)" selection
     ros_controller: str
-    run_name: Optional[str]        # recording folder prefix: analysis/expt_<run_name>_<ts>/
+    run_name: str                  # recording folder prefix: analysis/expt_<run_name>_<ts>/
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
@@ -61,6 +61,8 @@ class Experiment:
     def smartpad(self) -> Dict[str, str]:
         out = dict(_FRI_COMMON)
         out["Cartesian stiffness (K diagonal)"] = self.stiffness_profile
+        out["Then, automatically"] = ("arm moves to mechanical zero, then the ready pose; hold the "
+                                      "enabling switch and keep the space above the arm clear")
         return out
 
 
@@ -84,7 +86,7 @@ EXPERIMENTS: List[Experiment] = [
         params_yaml="virtual_fixtures_params.yaml", node="restricted_plane_orchestrator",
         stiffness_profile="Rail guide (uniform 1000)",
         ros_controller="kuka_clik_controller",
-        run_name=None,   # no TrialRecorder: the fixture action writes its own trajectory CSV
+        run_name="iiwa7_move_restricted_plane",
         launch_args={"ctrl": "lbr_joint_position_command_controller",
                      "extra_inactive_ctrl": "kuka_clik_controller"},
         clik_nullspace="clik_nullspace_default.yaml",

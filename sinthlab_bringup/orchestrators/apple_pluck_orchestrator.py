@@ -12,7 +12,7 @@ from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.freeze_at_pose import FreezeAtPoseAction
 from sinthlab_bringup.actions.resistance_softener import ResistanceSoftener
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 PARADIGMS = ("pluck", "perturb")
@@ -42,8 +42,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
         # The launch argument `paradigm:=` (paradigm_override) wins over the YAML, so the paradigm can
         # be chosen at launch without editing a file; the dashboard edits the YAML copy instead.
-        override = str(get_optional_param(self, "paradigm_override", "") or "").strip().lower()
-        self.paradigm = override or str(get_optional_param(self, "paradigm", "pluck")).strip().lower()
+        override = str(get_launch_param(self, "paradigm_override", "") or "").strip().lower()
+        self.paradigm = override or str(get_required_param(self, "paradigm")).strip().lower()
         if self.paradigm not in PARADIGMS:
             raise ValueError(f"paradigm must be one of {PARADIGMS}, got {self.paradigm!r}")
         self.perturbing = self.paradigm == "perturb"
@@ -54,7 +54,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, param_prefix="move_to_start", on_complete=self.on_move_complete
         )
         self.quiet_window = WaitAction(
-            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
             on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         self.audio_cue = AudioCue(
@@ -129,7 +129,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def _apply_settle(self):
         # The arm must settle where the perturbation left it before the pull baseline locks; in the
         # pluck paradigm it is already settled by the quiet window.
-        settle = float(get_optional_param(self, "perturb_start.baseline_settle_sec", 1.0)) if self.perturbing else 0.0
+        settle = float(get_required_param(self, "perturb_start.baseline_settle_sec")) if self.perturbing else 0.0
         self.monitor.set_baseline_settle(settle)
 
     def start_trial(self):
@@ -212,7 +212,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.monitor.reload()
         self._apply_settle()
         self.resistance.reload()    # felt stiffness of the pull
-        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()      # speed limits and the start / recover pose
         self.move_recover.reload()
         if self.perturbing:

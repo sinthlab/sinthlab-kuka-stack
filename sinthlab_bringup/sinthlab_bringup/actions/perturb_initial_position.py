@@ -21,7 +21,7 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
-from sinthlab_bringup.helpers.common_threshold import get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 
 
 class PerturbInitialPosition(MoveToPositionJointSpace):
@@ -39,9 +39,7 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
     def _read_polar(self, node: rclpyNode) -> None:
         self._polar_r_m = float(get_required_param(node, self._param_prefix + "polar_r_m"))
         self._polar_theta_deg = float(get_required_param(node, self._param_prefix + "polar_theta_deg"))
-        self._polar_plane = "horizontal"
-        if node.has_parameter(self._param_prefix + "polar_plane"):
-            self._polar_plane = str(node.get_parameter(self._param_prefix + "polar_plane").value).strip().lower()
+        self._polar_plane = str(get_required_param(node, self._param_prefix + "polar_plane")).strip().lower()
 
     def _reload_target(self) -> None:
         """Re-read r / theta / plane for reload(). The joint target is re-solved from them at the next

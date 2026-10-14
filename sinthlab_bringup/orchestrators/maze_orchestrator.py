@@ -13,7 +13,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.common_threshold import get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
@@ -52,7 +52,7 @@ class MazeOrchestratorNode(rclpyNode):
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
         self.quiet_window = WaitAction(
-            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
             on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         # Audio and visual cues fire together at each site. The visual cue sends TIMING only --
@@ -65,7 +65,7 @@ class MazeOrchestratorNode(rclpyNode):
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
         )
         self.go_cue_visual = VisualCue(self, label="play", on_complete=lambda: None)
-        self.maze_fixtures = MoveInMazeAction(self, param_prefix="", own_recorder=False)
+        self.maze_fixtures = MoveInMazeAction(self, param_prefix="")
 
         # Trial data -- see README.md section 7, Data Collected. Records from trial START (approach and
         # settle included, not just the maze phase) and marks the go cue, so a run lines up with video
@@ -127,8 +127,6 @@ class MazeOrchestratorNode(rclpyNode):
         self.trial_count += 1
         self._trial_ending = False
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
-        # A straight (singular) arm is moved to a ready pose by the Sunrise app before ROS connects,
-        # so this always starts from a well-conditioned posture.
         self.move_to_start.start()
 
     def on_move_complete(self):
@@ -220,7 +218,7 @@ class MazeOrchestratorNode(rclpyNode):
                     self.go_cue_visual, self.reward_cue_visual, self.goal_cue_visual,
                     self.timeout_cue_visual):
             cue.reload()
-        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
+        self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
         self.move_recover.reload()
         self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))

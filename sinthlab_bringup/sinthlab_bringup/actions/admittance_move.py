@@ -64,7 +64,7 @@ from rclpy.node import Node as rclpyNode
 
 import optas
 
-from sinthlab_bringup.helpers.common_threshold import DebugTicker, get_optional_param, get_required_param
+from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
 
 
 class AdmittanceMoveAction:
@@ -80,18 +80,17 @@ class AdmittanceMoveAction:
         cmd_topic = (f"/{robot_name}/kuka_clik_controller/target_frame" if robot_name
                      else "/kuka_clik_controller/target_frame")
 
-        robot_description = str(node.get_parameter("robot_description").value) \
-            if node.has_parameter("robot_description") else ""
+        robot_description = str(get_launch_param(node, "robot_description", ""))
         model = optas.RobotModel(urdf_string=robot_description)
         self._fk = model.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
         # Base-frame geometric Jacobian of the EE: rows [linear; angular] (checked against FK).
         self._jac = model.get_global_link_geometric_jacobian_function(link=self.ee_link, numpy_output=True)
-        self._jac_damping = max(0.0, float(get_optional_param(node, self._p + "jacobian_damping", 0.1)))
+        self._jac_damping = max(0.0, float(get_required_param(node, self._p + "jacobian_damping")))
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
-        self._tare_max = float(get_optional_param(node, self._p + "tare_max_n", 10.0))
-        self._dbg = DebugTicker(float(get_optional_param(node, self._p + "debug_log_rate_hz", 2.0)))
+        self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
+        self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
         self.reload()
 
         self._active = False
@@ -118,10 +117,10 @@ class AdmittanceMoveAction:
         self._damping = max(1.0, float(get_required_param(n, p + "damping_ns_per_m")))
         self._deadband = max(0.0, float(get_required_param(n, p + "deadband_n")))
         self._max_speed = max(0.0, float(get_required_param(n, p + "max_speed_mps")))
-        self._accel = max(0.0, float(get_optional_param(n, p + "accel_limit_mps2", 0.0)))
-        self._tau = max(0.0, float(get_optional_param(n, p + "force_filter_tau_sec", 0.05)))
-        self._tare_sec = max(0.0, float(get_optional_param(n, p + "tare_sec", 1.0)))
-        self._debug = bool(get_optional_param(n, p + "debug_log_enabled", False))
+        self._accel = max(0.0, float(get_required_param(n, p + "accel_limit_mps2")))
+        self._tau = max(0.0, float(get_required_param(n, p + "force_filter_tau_sec")))
+        self._tare_sec = max(0.0, float(get_required_param(n, p + "tare_sec")))
+        self._debug = bool(get_required_param(n, p + "debug_log_enabled"))
         n.get_logger().info(
             f"Free move feel: damping {self._damping:g} N s/m, threshold {self._deadband:g} N, "
             f"max speed {self._max_speed:g} m/s, accel limit "

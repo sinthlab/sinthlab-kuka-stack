@@ -34,7 +34,6 @@ from typing import Optional, Tuple
 
 from rclpy.node import Node as rclpyNode
 
-DEFAULT_BOARD = "192.168.4.1"   # the board's own access point always puts it here
 TIMEOUT_SEC = 1.0               # per request
 STALE_SEC = 0.5                 # a cue older than this when its turn comes is dropped, never lit late
 
@@ -44,7 +43,7 @@ _HINT = "Is this computer joined to the board's Wi-Fi (KUKA_NEOPIXEL)?"
 class RemoteCueTrigger:
     """Sends GET /cue to the board from one background thread. Share one instance per process."""
 
-    def __init__(self, node: rclpyNode, board: str = DEFAULT_BOARD, on_result=None) -> None:
+    def __init__(self, node: rclpyNode, board: str, on_result=None) -> None:
         # on_result(label, ok, rtt_ms) fires when the board answers. The firmware lights the ring
         # INSIDE the /cue handler -- cue_start() -> _render() -> pixels.show() -- and only then
         # returns the response, so an ack means the LEDs are already on. It is a round trip, not a

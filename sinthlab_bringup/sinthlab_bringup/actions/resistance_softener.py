@@ -33,7 +33,7 @@ import numpy as np
 from lbr_fri_idl.msg import LBRJointPositionCommand, LBRState
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.helpers.common_threshold import get_optional_param
+from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.live_params import MIN_FELT_STIFFNESS
 
 
@@ -57,13 +57,10 @@ class ResistanceSoftener:
     def reload(self) -> None:
         """Re-read the felt stiffness. Called at a trial boundary (live parameter)."""
         n, p = self._node, self._p
-        self._base = float(get_optional_param(n, p + "base_stiffness_n_per_m", 0.0))
-        k = float(get_optional_param(n, p + "stiffness_n_per_m", self._base))
-        if self._base <= 0.0:
-            self._follow = 0.0
-        else:
-            k = min(max(k, MIN_FELT_STIFFNESS), self._base)     # 50 N/m .. the base
-            self._follow = max(1.0 - k / self._base, 0.0)
+        self._base = float(get_required_param(n, p + "base_stiffness_n_per_m"))
+        k = float(get_required_param(n, p + "stiffness_n_per_m"))
+        k = min(max(k, MIN_FELT_STIFFNESS), self._base)     # 50 N/m .. the base (both checked live)
+        self._follow = 1.0 - k / self._base
         n.get_logger().info(
             f"Resistance: {self.felt_stiffness():g} N/m felt (base {self._base:g} N/m from the SmartPad, "
             f"equilibrium follows {100 * self._follow:.0f} % of the pull)")

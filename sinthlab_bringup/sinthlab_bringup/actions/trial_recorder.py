@@ -43,6 +43,7 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from lbr_fri_idl.msg import LBRState
+from sinthlab_bringup.helpers.node_utils import get_launch_param
 
 # Core schema, in file order. Experiment columns are appended after these -- never substituted, so
 # one loader reads every experiment. See README.md section 7, Data Collected §4 and §11.
@@ -98,9 +99,7 @@ class TrialRecorder:
         self._experiment = experiment
         # One folder per launch, not a flat dump. `run_name` comes from a ROS param when the launch
         # file sets one; otherwise the node name, which is already experiment-specific.
-        run = None
-        if node.has_parameter("run_name"):
-            run = str(node.get_parameter("run_name").value or "").strip() or None
+        run = str(get_launch_param(node, "run_name", "") or "").strip()
         if not run:
             run = node.get_name().replace("_orchestrator", "")
         self._save_dir = os.path.join(os.path.expanduser(save_dir),
@@ -117,8 +116,7 @@ class TrialRecorder:
 
         # FK, same construction the move actions use, so the pose is defined identically.
         import optas
-        desc = str(node.get_parameter("robot_description").value) \
-            if node.has_parameter("robot_description") else ""
+        desc = str(get_launch_param(node, "robot_description", ""))
         self._fk = optas.RobotModel(urdf_string=desc).get_link_transform_function(
             link="lbr_link_ee", base_link="lbr_link_0", numpy_output=True)
 
@@ -135,9 +133,7 @@ class TrialRecorder:
         self._events: list = []
         self._last_msg: Optional[LBRState] = None
         self._sidecar: dict = {}
-        self._subject = None
-        if node.has_parameter("subject"):
-            self._subject = node.get_parameter("subject").value
+        self._subject = get_launch_param(node, "subject", None)   # set at launch, if at all
 
         node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
 

@@ -359,7 +359,7 @@ def read_fixed_config(exp: ex.Experiment, p: "ExperimentParams") -> List[dict]:
         "source": f"sinthlab_bringup/launch/{exp.launch_file} → experiment_base.launch.py",
         "rows": [{"name": k, "value": v, "help": LAUNCH_HELP.get(k, "")} for k, v in
                  {**ex.COMMON_LAUNCH_ARGS, "orchestrator": exp.node + ".py",
-                  "run_name": exp.run_name or "(none — no TrialRecorder)", **exp.launch_args,
+                  "run_name": exp.run_name, **exp.launch_args,
                   "params_file": (f"edited copy of config/{exp.params_yaml}, written to runs/ at Start"
                                   if p.edits else f"config/{exp.params_yaml}"),
                   **({"clik_nullspace_cfg": "generated in runs/ at Start (follows the edited start pose)"}

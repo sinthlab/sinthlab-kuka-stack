@@ -41,9 +41,8 @@
     # Whole-experiment timeout [s]; on expiry the arm waits for release then returns to start.
     timeout_sec: 60.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
 
-    # A straight (singular) arm -- mechanical zero, or near it -- never reaches this experiment: the
-    # Sunrise app (LbrImpedanceControlServer) PTPs it to a ready pose in position control before ROS
-    # connects, and the maze start is reachable from there.
+    # The Sunrise app (LbrImpedanceControlServer) always PTPs the arm to mechanical zero and then a
+    # ready pose in position control before ROS connects; the maze start is reachable from there.
 
     move_to_start:  # joint-space move to the trial start pose
       update_rate: 200  # loop rate of this action [Hz]
@@ -81,6 +80,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     move_to_start_recover:  # joint-space move back to the start at the end of each trial
       update_rate: 200  # loop rate of this action [Hz]
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # recover pose A1..A7 [deg], same as move_to_start
@@ -93,6 +93,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
 
     # Audio cues
     audio_cue_play:                 # "go" cue at trial start
@@ -131,6 +132,7 @@
     visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
       enabled: true  # master switch for the ring; false = no visual cues at all
       remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
       # Colour per cue event, [r, g, b, w] 0-255. Before each Wi-Fi cue it is set on the board with
       # /config (RAM only, never saved -- works with the firmware already on the board). The board's own
       # pattern, duration and brightness still apply. A site with no line keeps the board's current colour.
@@ -247,6 +249,8 @@
       # (by ~1 cm against a 3 cm radius). 3 s captures most of the settle without stalling the trial.
       anchor_settle_sec: 3.0  # wait this long after the fixture starts before anchoring it [s]
       anchor_on_measured: true  # anchor on the measured pose (true) rather than the commanded one
+      debug_log_enabled: false  # print where the arm is on the rails (a, b, which rail) periodically
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       # EASE OF MOVING ALONG A RAIL. Along a rail the spring force is zero except for tracking lag: the
       # equilibrium reaches the arm a few tens of ms late, and K * speed * lag is felt as drag. This
       # aims the equilibrium that many seconds AHEAD of the arm along the rail it is on: > 0 cancels

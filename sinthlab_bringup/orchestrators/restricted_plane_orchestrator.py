@@ -11,7 +11,8 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
-from sinthlab_bringup.helpers.common_threshold import get_optional_param
+from sinthlab_bringup.actions.trial_recorder import TrialRecorder
+from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
@@ -49,11 +50,12 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
         self.quiet_window = WaitAction(
-            self, duration_sec=float(get_optional_param(self, "quiet_window_sec", 2.0)),
+            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
             on_complete=self.on_quiet_window_complete, name="quiet_window"
         )
         self.audio_cue = AudioCue(
-            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete
+            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
+            on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
         )
         self.audio_cue_snap = AudioCue(
             self, param_prefix="audio_cue_snap", on_complete=lambda: None
@@ -86,6 +88,15 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "restricted_plane")
         self.control.on_reload(self._reload_live)
+        # Trial data -- see README.md section 7, Data Collected. disp_m is the pull the snap is judged on.
+        self.recorder = TrialRecorder(
+            self, experiment="restricted_plane",
+            extra_header=["disp_m"],
+            extra_fn=lambda _T: [f"{self.monitor.current_disp():.6f}"],
+            on_event=self.control.on_event,
+        )
+        VisualCue.set_result_sink(
+            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
 
         self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
         self.start_trial()
@@ -93,13 +104,14 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def start_trial(self):
         self.trial_count += 1
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
-        # This experiment has no TrialRecorder (the fixture action records its own trajectory), so
-        # its events go to the control directly -- same tokens, same status topic and NSP codes.
-        self.control.on_event("trial_start", self.trial_count)
+        self.recorder.start(trial_index=self.trial_count, threshold_m=self.monitor.threshold_m(),
+                            fixture={"profile": self.restricted_plane.active_profile,
+                                     **self.restricted_plane.profile_config})
+        self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()  # joint controller is active at the start of every trial
 
     def on_move_complete(self):
-        self.control.on_event("at_start")
+        self.recorder.mark("at_start")
         self.get_logger().info("Arm at exact start posture. Switching to CLIK for the fixture...")
         self.switch_to_fixture.start()
 
@@ -109,20 +121,20 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
-        self.control.on_event("cue_go")
+        self.recorder.mark("cue_go")
         self.audio_cue.start()
         self.visual_cue.start()
 
     def on_audio_complete(self):
         self.get_logger().info("Audio cue played. Virtual fixtures + displacement monitor + safety active.")
-        self.control.on_event("armed")
+        self.recorder.mark("armed")
         self.restricted_plane.start()
         self.monitor.start()
         self.safety.start()
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
-        self.control.on_event("snap")
+        self.recorder.mark("snap")
         self.restricted_plane.stop()
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
@@ -130,7 +142,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def on_safety_trip(self, reason: str):
         # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to recovery.
         self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
-        self.control.on_event("safety_trip")
+        self.recorder.mark("safety_trip")
         self.safety.stop()
         self.monitor.stop()
         self.restricted_plane.stop()
@@ -143,12 +155,13 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
-        self.control.on_event("recover_start")
+        self.recorder.mark("recover_start")
         self.move_recover.start()
 
     def on_recover_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
-        self.control.on_event("trial_end", self.trial_count)
+        self.recorder.mark("trial_end", self.trial_count)
+        self.recorder.stop_and_save()
         self.control.begin_trial(self.start_trial)   # holds here instead if paused
 
     def _reload_live(self):
@@ -156,8 +169,8 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         for cue in (self.audio_cue, self.audio_cue_snap, self.visual_cue, self.visual_cue_snap):
             cue.reload()
         self.monitor.reload()
-        self.quiet_window.set_duration(float(get_optional_param(self, "quiet_window_sec", 2.0)))
-        self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
+        self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
+        self.move_to_start.reload()      # speed limits
         self.move_recover.reload()
 
 

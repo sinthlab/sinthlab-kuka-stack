@@ -5,7 +5,8 @@ From the arm's current configuration, drive to an absolute target joint configur
 (``target_joint_position``), streaming ``LBRJointPositionCommand`` to the
 ``LBRJointPositionCommandController``. The joint positions go straight to the FRI position
 command (exact, no IK); the cabinet (LbrImpedanceControlServer) provides the compliance.
-Completion is judged in joint space. Used by apple-pluck / perturb move-to-start and recover.
+Completion is judged in joint space. Used for every start and recover move (and, via
+PerturbInitialPosition, the perturbation).
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from rclpy.node import Node as rclpyNode
 
 from lbr_fri_idl.msg import LBRJointPositionCommand
 from sinthlab_bringup.actions._move_action_base import MoveActionBase
+from sinthlab_bringup.helpers.node_utils import get_required_param
 
 
 class MoveToPositionJointSpace(MoveActionBase):
@@ -25,23 +27,19 @@ class MoveToPositionJointSpace(MoveActionBase):
         self._joint_pos_target = self._read_joint_target_param(self._node)
 
     def _read_arrival_params(self, node: rclpyNode) -> None:
-        """Optionally wait for the PHYSICAL arm to arrive, not just the commanded anchor.
+        """Whether to wait for the PHYSICAL arm to arrive, not just the commanded anchor.
 
           wait_for_physical_arrival     bool  also require the measured arm to have arrived
-          cartesian_move_tolerance      [m]   judge that by END-EFFECTOR position; without it, every
-                                              measured joint must be within joint_move_tolerance
-          physical_arrival_timeout_sec  [s]   stop waiting after this long, with a warning, instead of
-                                              waiting forever
+          cartesian_move_tolerance      [m]   judged by END-EFFECTOR position within this
+          physical_arrival_timeout_sec  [s]   stop waiting after this long, with a warning; 0 = wait
+                                              as long as it takes
+        The last two only act when wait_for_physical_arrival is true.
         """
-        def opt(name, cast, default):
-            key = self._param_prefix + name
-            if not node.has_parameter(key):
-                return default
-            value = node.get_parameter(key).value
-            return default if value is None else cast(value)
-        self._wait_for_physical_arrival = opt("wait_for_physical_arrival", bool, False)
-        self._cartesian_tol = opt("cartesian_move_tolerance", float, None)
-        self._arrival_timeout = opt("physical_arrival_timeout_sec", float, None)
+        p = self._param_prefix
+        self._wait_for_physical_arrival = bool(get_required_param(node, p + "wait_for_physical_arrival"))
+        self._cartesian_tol = float(get_required_param(node, p + "cartesian_move_tolerance"))
+        timeout = float(get_required_param(node, p + "physical_arrival_timeout_sec"))
+        self._arrival_timeout = timeout if timeout > 0.0 else None
         self._arrival_wait = 0.0
         self._next_stall_log = 2.0
 
@@ -82,12 +80,9 @@ class MoveToPositionJointSpace(MoveActionBase):
         if not self._wait_for_physical_arrival:
             reached = cmd_ok
         else:
-            if self._cartesian_tol is not None:
-                ee_err = float(np.linalg.norm(
-                    self._ee_pos(self._q_meas_completion) - self._ee_pos(self._joint_pos_target)))
-                phys_ok = ee_err <= self._cartesian_tol
-            else:
-                phys_ok = meas_err <= self._joint_pos_tol
+            ee_err = float(np.linalg.norm(
+                self._ee_pos(self._q_meas_completion) - self._ee_pos(self._joint_pos_target)))
+            phys_ok = ee_err <= self._cartesian_tol
             reached = cmd_ok and phys_ok
             if cmd_ok and not phys_ok:
                 self._arrival_wait += self._dt
@@ -121,8 +116,6 @@ class MoveToPositionJointSpace(MoveActionBase):
     def _arrival_text(self, ee_err, meas_errs) -> str:
         worst = int(np.argmax(meas_errs))
         joint = f"largest joint error A{worst + 1} {np.degrees(meas_errs[worst]):.1f} deg"
-        if ee_err is None:
-            return f"{joint}, tolerance {np.degrees(self._joint_pos_tol):.1f} deg"
         return f"end effector {ee_err * 1000:.0f} mm from target, tolerance {self._cartesian_tol * 1000:.0f} mm; {joint}"
 
     def _describe_target(self) -> str:
