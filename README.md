@@ -48,7 +48,7 @@ worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-t
 The quickest way to run an experiment is the **experiment control dashboard**, a local web page on
 the ROS computer. From it you:
 
-- pick one of the four experiments, or a pre-training task;
+- pick an experiment (Apple Pluck, with its *normal* and *perturb* paradigms, Restricted Plane or Maze), or a pre-training task;
 - check or change its parameters;
 - Start, Pause, Stop and Restart it;
 - change cues and other live settings between trials;
@@ -96,7 +96,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   run state.
 
 ### Running an experiment
-1. **Pick the experiment:** Apple Pluck, Apple Pluck Perturb, Restricted Plane or Maze; or, under
+1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb**
+   on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
    *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. **If the arm is nearly
@@ -138,7 +139,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Tab | When it can change | What is in it |
 |---|---|---|
-| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; move speeds; the pull threshold and hold; the perturbation; the start pose (apple pluck / perturb); the maze timeout ([full list](#live-parameters)) |
+| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; move speeds; the pull threshold and hold; the perturbation; the start pose (apple pluck); the maze timeout ([full list](#live-parameters)) |
 | **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: the start pose in restricted plane / maze, rails, checkpoints and goal, move tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
 | **Fixed** | Not from the dashboard: at the SmartPad or in the file named | what every experiment shares: SmartPad (FRI) selections, launch arguments, `iiwa7_hardware_controllers.yaml`, the CLIK redundancy posture |
 
@@ -148,7 +149,7 @@ from the page; stop it with Ctrl-C in its own terminal.
   nearly straight (singular) arm is refused — by the dashboard and again by the orchestrator.
   - **Start and recover are edited together**, because the next trial starts where the last one
     recovered to. A live change sends both in one call; one on its own is refused.
-  - **Apple Pluck / Perturb:** the pose is live. The next trial moves to it and recovers to it.
+  - **Apple Pluck:** the pose is live. The next trial moves to it and recovers to it.
   - **Restricted Plane and Maze:** the CLIK redundancy posture follows an edited start pose
     automatically.
   - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
@@ -178,7 +179,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Experiment | Extra live parameters |
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
-| Apple Pluck Perturb | everything Apple Pluck has, plus `…displacement.baseline_settle_sec`, `perturb_start.polar_r_m` (capped per plane), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, and the perturbation's speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
+| Apple Pluck — **perturb paradigm only** (shown under *Pluck perturb*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, `perturb_start.baseline_settle_sec`, and its speed limits `perturb_start.move_to_pos_v_max` / `_a_max` / `_j_max` |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
@@ -212,7 +213,7 @@ document a new parameter, see [§9](#9-development--contributing).
 
 ### Without the dashboard
 The same controls from a terminal (namespace `lbr`, apple pluck shown). The orchestrator nodes are
-`apple_pluck_orchestrator`, `perturb_orchestrator`, `restricted_plane_orchestrator` and
+`apple_pluck_orchestrator` (both paradigms), `restricted_plane_orchestrator` and
 `maze_orchestrator`; for pre-training, `free_move_orchestrator` and `rail_training_orchestrator`
 (Move Vertical and Move Horizontal).
 
@@ -477,7 +478,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 |---|----------|-------------|--------------------|----------------|
 | 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
-| 3 | Apple Pluck Perturb  | `iiwa7_apple_pluck_impedance_perturb.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
+| 3 | Apple Pluck, perturb paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
@@ -485,7 +486,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 (`LbrImpedanceControlServer`) running the Cartesian impedance spring at 1000 Hz. They differ only in
 what ROS streams into it:
 
-- **Apple Pluck / Perturb (1 & 3)** — **joint** setpoints via `LBRJointPositionCommandController`
+- **Apple Pluck, both paradigms (1 & 3)** — **joint** setpoints via `LBRJointPositionCommandController`
   (straight to the FRI position command, no IK).
 - **Restricted-plane / Maze (2 & 4)** — a fixture-constrained **Cartesian equilibrium** via
   `kuka_clik_controller` (Cartesian target → IK → joint positions).
@@ -640,17 +641,21 @@ So the cabinet — not Python — supplies the give: the arm yields to a sudden 
 safer behaviour for an animal subject. The software (`MoveRestrictedOnAPlaneAction`) just keeps the
 spring's equilibrium inside the allowed region.
 
-### Scenario 3 — Apple Pluck Perturb
-This scenario builds upon the Apple Pluck physics (cabinet‑side Cartesian impedance via
-`LbrImpedanceControlServer`, with `LBRJointPositionCommandController` streaming the joint setpoints) but
-introduces a sudden, programmatic Cartesian spatial shift right before the user acts, to study the
-response to mechanical perturbation.
+### Scenario 3 — Apple Pluck, perturb paradigm
+The **same experiment as Scenario 1** — same orchestrator, YAML, launch file, start pose, SmartPad
+setup, resistance and threshold — in its **perturb paradigm** (`paradigm: perturb`): after the go cue,
+the apple is displaced by a sudden, programmatic Cartesian shift, to study the response to mechanical
+perturbation. The pluck threshold is **0.1 m** in any direction, measured from where the arm settles
+after the perturbation (`perturb_start.baseline_settle_sec`, 1 s).
 
-It uses the **same start pose** as Apple Pluck (apple pointing at the monkey). The pluck threshold is
-**0.1 m** in any direction (the same as Apple Pluck), measured from where the arm settles after the
-perturbation.
+**Choosing the paradigm.** On the dashboard, the **Apple Pluck** card has two nested tabs — **Pluck
+normal** and **Pluck perturb** — that set `paradigm` for the next Start (fixed for the run). From a
+terminal, `paradigm:=perturb` on the launch overrides the YAML. Every trial is recorded as experiment
+`apple_pluck`, with `paradigm` in its sidecar. The perturbation settings below act, and are shown on
+the dashboard, only in the perturb paradigm; they are **live**. To run **unperturbed trials inside a
+perturb run**, set `polar_r_m` to 0.
 
-**Tuning the perturbation** — `perturb_start` in `config/apple_pluck_impedance_perturb.yaml`:
+**Tuning the perturbation** — `perturb_start` in `config/apple_pluck_impedance.yaml`:
 
 | Knob | Effect |
 |---|---|
@@ -687,7 +692,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    The app then waits (~60 s) for the ROS client to connect.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts it:
    ```bash
-   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_perturb.launch.py
+   ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb
    ```
 3. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
    the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
@@ -1435,7 +1440,7 @@ stateDiagram-v2
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
-**Flow 3 — Apple Pluck Perturb** (joint controller throughout). The cue comes **before** the
+**Flow 3 — Apple Pluck, perturb paradigm** (joint controller throughout). The cue comes **before** the
 perturbation: the monkey starts reaching, then the apple is displaced.
 ```mermaid
 stateDiagram-v2
@@ -1564,7 +1569,7 @@ experiment's YAML set:
 
 ```yaml
 visual_cue:
-  enabled: true                 # on in the apple pluck, perturb and maze configs
+  enabled: true                 # on in the apple pluck and maze configs
   remote_test_trigger: true
   colours:                      # optional, per cue site: [r, g, b, w]
     play: [0, 255, 0, 0]        # trial start: green
@@ -1625,12 +1630,12 @@ Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
 below.
 
-| | Apple pluck | Perturb | Maze |
+| | Apple pluck (pluck) | Apple pluck (perturb) | Maze |
 |---|---|---|---|
 | Columns | **42** | **42** | **47** |
 | Extra over the core | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
 | Events | 10 | 12 | 12 |
-| Sidecar extras | `threshold_m` | `perturbation` | `maze_geometry` |
+| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `maze_geometry` |
 | Size | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
 **The 41-column core**
@@ -1695,16 +1700,16 @@ the system observes either cue, so without these the record cannot say when the 
 `armed` is the one that matters behaviourally — it is the moment the baseline locks and the animal
 may pull. Reaction time is `snap − armed`.
 
-#### Perturb
+#### Apple pluck, perturb paradigm
 
-Identical to apple pluck, plus two events between `cue_go` and `armed`:
+Identical to the pluck paradigm, plus two events between `cue_go` and `armed`:
 
 | Orchestrator callback | `event` | `event_arg` | Marked when |
 |---|---|---|---|
 | `on_audio_complete()` | `perturb_delay_start` | delay, s | the go cue is out; the wait before the perturbation starts |
 | `on_perturb_complete()` | `perturb_applied` | magnitude, m | the perturbation move has finished |
 
-`armed` then comes after the monitor's settle (`baseline_settle_sec`), so the baseline is the
+`armed` then comes after the monitor's settle (`perturb_start.baseline_settle_sec`), so the baseline is the
 post-perturbation rest pose.
 
 The applied perturbation **vector** is constant within a trial and goes in the sidecar, not in a
@@ -1934,7 +1939,8 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | Field | Meaning |
 |---|---|
 | `schema_version` | Bump when columns change, so loaders can branch. |
-| `experiment` | `apple_pluck` · `perturb` · `maze` |
+| `experiment` | `apple_pluck` · `maze` (and the pre-training tasks). Older perturb recordings say `perturb`; `validate_recording.py` reads both |
+| `paradigm` | Apple pluck: `pluck` or `perturb` |
 | `trial_index` | Counter within the session. |
 | `session_id` | Shared by every trial from one launch. |
 | `subject` | Animal identifier, from a ROS param. |
@@ -1945,7 +1951,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_pose` | Commanded and measured joint vectors at trial start. |
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
-| `perturbation` | Perturb: the applied offset vector. Constant per trial, hence metadata not a column. |
+| `perturbation` | Apple pluck, perturb paradigm: the applied offset vector. Constant per trial, hence metadata not a column. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
 | `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |

@@ -10,7 +10,6 @@ ament_python_install_package(${PROJECT_NAME})
 # Install Python scenario script
 set(SINTHLAB_BRINGUP_PY_SCRIPTS
   orchestrators/apple_pluck_orchestrator.py
-  orchestrators/perturb_orchestrator.py
   orchestrators/restricted_plane_orchestrator.py
   orchestrators/maze_orchestrator.py
   orchestrators/free_move_orchestrator.py

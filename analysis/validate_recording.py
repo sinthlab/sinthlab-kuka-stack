@@ -36,6 +36,7 @@ CORE = (["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
         + [f"ext_A{i}" for i in range(1, 8)]
         + ["tracking", "session", "quality", "safety", "drive", "control", "event", "event_arg"])
 
+# "perturb" = apple pluck in the perturb paradigm (see validate(); older recordings are named so too).
 EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
 
@@ -108,6 +109,10 @@ def validate(path) -> bool:
         exp = None
     else:
         exp = meta.get("experiment")
+        # Apple pluck runs in two paradigms; a perturb-paradigm trial is checked as "perturb" (the
+        # experiment name older perturb recordings carry, so both read the same way).
+        if exp == "apple_pluck" and meta.get("paradigm") == "perturb":
+            exp = "perturb"
 
     # ---- SCHEMA ----
     print("\n [SCHEMA]")

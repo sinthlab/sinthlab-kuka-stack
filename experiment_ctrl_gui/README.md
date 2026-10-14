@@ -69,7 +69,7 @@ flowchart LR
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop / restart / stop-after-trial |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
 | `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `pause`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
-| `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): four experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); cautions and linked parameters |
+| `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of one paradigm only (`live_params.PARADIGM_ONLY`) are shown only under it; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `static/` | the page: `index.html`, `style.css`, `app.js`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
@@ -124,7 +124,7 @@ the checks, which `check_value()` applies on both sides:
   plane's cap (`PERTURB_R_MAX`), and the start pose against the recover pose, which must be equal.
 
 Live motion parameters: the speed limits of every move are live in every experiment; the start /
-recover pose is live in apple pluck and perturb only (`_POSE`). Each move action's `reload()` re-reads
+recover pose is live in apple pluck only (`_POSE`). Each move action's `reload()` re-reads
 them at the trial boundary, and Ruckig is rebuilt from them at the move's next start.
 
 **Dashboard-only checks and conveniences** (`experiments.py`, `params.py`):

@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 BRINGUP = REPO / "sinthlab_bringup"
@@ -53,6 +53,10 @@ class Experiment:
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
+    # Variants of one experiment, chosen per run by its `paradigm` parameter and shown as nested tabs
+    # on its card: [(value, label), ...]. Parameters that belong to one paradigm only
+    # (live_params.PARADIGM_ONLY) are shown only under it.
+    paradigms: List[Tuple[str, str]] = field(default_factory=list)
 
     def smartpad(self) -> Dict[str, str]:
         out = dict(_FRI_COMMON)
@@ -63,22 +67,14 @@ class Experiment:
 EXPERIMENTS: List[Experiment] = [
     Experiment(
         key="apple_pluck", label="Apple Pluck",
-        summary="Pull the apple 0.1 m in any direction from a fixed start; snap cue, hold, recover.",
+        summary="Pull the apple 0.1 m in any direction; snap cue, hold, recover. Normal: from a fixed start. "
+                "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue.",
+        paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb")],
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
         stiffness_profile="Maze compliant (uniform 400)",
         ros_controller="lbr_joint_position_command_controller",
         run_name="iiwa7_apple_pluck_impedance_control",
-        launch_args={"ctrl": "lbr_joint_position_command_controller"},
-    ),
-    Experiment(
-        key="perturb", label="Apple Pluck Perturb",
-        summary="As Apple Pluck, but the apple is displaced by a polar (r, θ) offset after the go cue.",
-        launch_file="iiwa7_apple_pluck_impedance_perturb.launch.py",
-        params_yaml="apple_pluck_impedance_perturb.yaml", node="perturb_orchestrator",
-        stiffness_profile="Maze compliant (uniform 400)",
-        ros_controller="lbr_joint_position_command_controller",
-        run_name="iiwa7_apple_pluck_impedance_perturb",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
     ),
     Experiment(

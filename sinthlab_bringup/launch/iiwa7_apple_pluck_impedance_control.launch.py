@@ -1,4 +1,8 @@
-"""Apple-pluck experiment. Thin wrapper over experiment_base.launch.py."""
+"""Apple-pluck experiment -- pluck or perturb paradigm. Thin wrapper over experiment_base.launch.py.
+
+    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py                     # YAML's paradigm
+    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb
+"""
 import os
 
 from launch import LaunchDescription
@@ -24,6 +28,11 @@ def generate_launch_description():
                 ),
                 description="Experiment parameter YAML.",
             ),
+            DeclareLaunchArgument(
+                "paradigm",
+                default_value="",
+                description="pluck | perturb. Empty = the `paradigm` in the params YAML.",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -35,6 +44,7 @@ def generate_launch_description():
                     "run_name": RUN_NAME,
                     "orchestrator": "apple_pluck_orchestrator.py",
                     "ctrl": "lbr_joint_position_command_controller",
+                    "paradigm": LaunchConfiguration("paradigm"),
                 }.items(),
             ),
         ]

@@ -23,6 +23,14 @@
 
     # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
     # MoveToPositionJointSpace action; the cabinet (LbrImpedanceControlServer) provides compliance.
+    # ==== PARADIGM -- fixed for the run ====
+    #   pluck    the pull from a fixed start: go cue -> pull -> threshold -> hold -> recover.
+    #   perturb  the same, but after the go cue the apple is displaced by a polar (r, theta) offset
+    #            (perturb_start, below), and the pull is measured from where it settles.
+    # Dashboard: Apple Pluck -> "Pluck normal" / "Pluck perturb". Launch: paradigm:=perturb overrides it.
+    # Every trial is recorded as experiment "apple_pluck", with this paradigm in its sidecar.
+    paradigm: "pluck"  # pluck | perturb
+
     apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
       update_rate: 200  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
@@ -102,6 +110,58 @@
       physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+    # ==== PERTURB PARADIGM ONLY: the displacement of the apple after the go cue (live) ====
+    # Used only when paradigm is "perturb"; shown on the dashboard only under Pluck perturb. To run
+    # unperturbed trials inside a perturb run, set polar_r_m to 0 (live).
+    perturb_start:  # the perturbation: polar offset from the start, jerk-limited joint move
+      update_rate: 200  # loop rate of this action [Hz]
+      # WHERE -- a POLAR offset (r, theta) from the start EE position, re-solved every trial by position
+      # IK seeded at the start posture.
+      #   polar_r_m        how far [m]. The apple points at the monkey, so keep it small.
+      #   polar_plane      the plane theta turns in:
+      #                      frontal    Y-Z, the plane FACING the monkey (theta from +Y toward +Z). The
+      #                                 apple never moves toward or away from the monkey.
+      #                      horizontal X-Y (theta from +X toward +Y); theta 0 = toward the monkey.
+      #                      sagittal   X-Z (theta from +X toward +Z); theta 0 = toward the monkey.
+      #   polar_theta_deg  direction in that plane. frontal: 0 = +Y (sideways), 90 = up, 180 = -Y
+      #                    (the other side), 270 = down.
+      #   polar_r_m is CAPPED PER PLANE: frontal 0.15, horizontal 0.175, sagittal 0.10 m. Checked by IK
+      #   from this start pose, every direction in 15 deg steps: all solve exactly, stay >= 10 deg from
+      #   every joint limit (>= 19 deg after a further 15 cm pull toward the monkey) and well conditioned
+      #   (smallest singular value >= 0.10). The next step out breaks the 10 deg margin in each plane.
+      #   Position-only IK lets the flange tilt: up to ~22 / 19 / 14 deg at the caps. The caps live in
+      #   sinthlab_bringup/helpers/live_params.py (PERTURB_R_MAX); the dashboard and the orchestrator
+      #   both enforce them, and the action warns if a solution still lands within 5 deg of a limit.
+      polar_r_m: 0.05  # perturbation distance from the start [m]
+      polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
+      polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)
+      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
+      # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. On a move this
+      # short the joints travel a few degrees, so ACCELERATION and JERK set the duration and the speed cap
+      # never binds. Measured from the start pose, r = 0.05 m:
+      #   a_max 2  / j_max 5    -> 0.73 s, peak 0.13 m/s   (these defaults)
+      #   a_max 5  / j_max 20   -> 0.46 s, peak 0.20 m/s
+      #   a_max 10 / j_max 50   -> 0.34 s, peak 0.28 m/s
+      #   a_max 20 / j_max 150  -> 0.23 s, peak 0.40 m/s
+      #   (v_max 20 or 80 instead of 40 changes none of these.) r = 0.10 m: 0.92 s at the defaults.
+      # The physical apple follows the anchor through the impedance spring, so it lags a very fast move.
+      move_to_pos_v_max:  # peak joint speed [deg/s], per joint
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      - 40.0
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      start_delay_sec: 1.5  # delay after the start cue before the perturbation move begins [s]
+      # The arm must settle where the perturbation left it before the pull baseline locks (the monitor
+      # starts as soon as the perturbation move completes, while the physical arm still lags it).
+      baseline_settle_sec: 1.0  # wait after the perturbation before locking the pull baseline [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
     audio_cue_play:  # trial-start (go) tone
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
       duration_ms: 1500  # trial-start (go) tone: length [ms]

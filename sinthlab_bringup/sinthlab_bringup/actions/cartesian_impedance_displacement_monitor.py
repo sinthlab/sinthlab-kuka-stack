@@ -169,6 +169,10 @@ class CartesianImpedanceDisplacementMonitor:
             f"Displacement monitor: disp_thr={self._disp_threshold_m:.4f} m, "
             f"dwell={self._release_shutdown_delay:.2f} s, settle={self._baseline_settle_sec:.2f} s")
 
+    def set_baseline_settle(self, sec: float) -> None:
+        """Set the settle wait before the baseline locks (e.g. only after a perturbation move)."""
+        self._baseline_settle_sec = max(0.0, float(sec))
+
     def stop(self) -> None:
         """Disarm the monitor (e.g. on an external safety abort) without firing its callbacks."""
         self._ready = False

@@ -64,6 +64,12 @@ def generate_launch_description():
     # Seconds to wait before starting the orchestrator, so the hardware + controller are fully
     # ACTIVE before the first move streams setpoints (the CLIK resets its target to the current
     # pose on activation). Joint-position experiments can leave it 0.
+    # Optional experiment variant (apple pluck: pluck | perturb). Empty = whatever the params YAML says.
+    paradigm = DeclareLaunchArgument(
+        "paradigm",
+        default_value="",
+        description="Experiment paradigm, overriding the YAML's `paradigm` (apple pluck: pluck | perturb).",
+    )
     startup_delay = DeclareLaunchArgument(
         "startup_delay",
         default_value="0.0",
@@ -102,7 +108,8 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("params_file"),
             robot_description,
-            {"run_name": LaunchConfiguration("run_name")},
+            {"run_name": LaunchConfiguration("run_name"),
+             "paradigm_override": LaunchConfiguration("paradigm")},
         ],
     )
     # Hold the orchestrator back by `startup_delay` s so the controller is active before it streams.
@@ -121,6 +128,7 @@ params_file,
             ctrl,
             extra_inactive_ctrl,
             clik_nullspace_cfg,
+            paradigm,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

@@ -211,6 +211,10 @@ class ExperimentParams:
                 "choices": ex.choices(self.exp, name, self.defaults),
                 "limits": list(lim) if lim else None,
                 "step": ex.live_params.step_for(name),     # set -> the dashboard draws a slider
+                # Paradigm experiments (apple pluck): the paradigm is chosen with the card's nested tabs,
+                # and parameters of one paradigm only are shown only under it.
+                "hidden": bool(self.exp.paradigms) and name == "paradigm",
+                "paradigm_only": ex.live_params.paradigm_of(name) if self.exp.paradigms else None,
             })
         return rows
 

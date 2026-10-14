@@ -251,3 +251,8 @@ input[type=color] { width: 30px; height: 26px; padding: 0; border: 1px solid var
 .param .ctl input[type=range].slider { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .param .ctl input[type=number].slider-box { flex: 0 0 6.5em; width: 6.5em; }
 
+/* Nested paradigm tabs under an experiment card (apple pluck: Pluck normal / Pluck perturb). */
+.paradigm-tabs { margin: -4px 0 4px 14px; border-bottom: 0; }
+.paradigm-tabs .tab { font-size: 12.5px; padding: 4px 10px; }
+.paradigm-tabs .tab:disabled { opacity: .45; cursor: not-allowed; }
+

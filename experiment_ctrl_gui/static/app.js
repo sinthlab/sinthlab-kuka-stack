@@ -5,7 +5,8 @@
 // Cue-delivery tokens (cue_audio_end, cue_visual_ack, cue_snap, freeze) go to the event list only.
 const STEPS = {
   apple_pluck: ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap", "recover_start", "trial_end"],
-  perturb: ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start", "perturb_applied",
+  // Apple pluck, perturb paradigm (picked by the paradigm, see stepsFor).
+  apple_pluck_perturb: ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start", "perturb_applied",
             "armed", "snap", "recover_start", "trial_end"],
   restricted_plane: ["trial_start", "at_start", "cue_go", "armed", "snap", "recover_start", "trial_end"],
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
@@ -108,6 +109,20 @@ function runningKey() {
 }
 function isRunningSelected() { return runningKey() === S.selected; }
 function exp(key) { return S.experiments.find((e) => e.key === key); }
+// Paradigm experiments (apple pluck): the run's paradigm is the `paradigm` parameter.
+function paradigmOf(key) {
+  const d = S.params[key]; const p = d && d.params.find((x) => x.name === "paradigm");
+  return p ? String(p.value) : null;
+}
+function expLabel(key) {
+  const e = exp(key); if (!e) return key ?? "";
+  const pr = (e.paradigms || []).find((x) => x.key === paradigmOf(key));
+  return pr ? `${e.label} · ${pr.label}` : e.label;
+}
+function stepsFor(key) {
+  if (key === "apple_pluck" && paradigmOf(key) === "perturb") return STEPS.apple_pluck_perturb;
+  return STEPS[key] || [];
+}
 
 // ---------------------------------------------------------------- experiments list
 function renderExperiments() {
@@ -134,6 +149,26 @@ function renderExperiments() {
       <div class="d">${esc(e.summary)}</div>`;
     b.onclick = () => select(e.key);
     list.appendChild(b);
+    // Nested paradigm tabs (apple pluck: Pluck normal / Pluck perturb), on the selected card. They set
+    // `paradigm` for the next Start; locked while that experiment runs.
+    if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
+      const cur = paradigmOf(e.key), locked = rk === e.key;
+      const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
+      sub.setAttribute("aria-label", `${e.label} paradigm`);
+      for (const pr of e.paradigms) {
+        const t = document.createElement("button");
+        t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
+        t.setAttribute("aria-selected", String(pr.key === cur)); t.textContent = pr.label; t.disabled = locked && pr.key !== cur;
+        t.title = locked ? "Fixed for this run — stop to change it" : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+        t.onclick = async () => {
+          if (locked || pr.key === cur) return;
+          await act(() => api(`/api/params/${e.key}`, { name: "paradigm", value: pr.key }));
+          await loadParams(e.key, true); renderExperiments(); renderControls();
+        };
+        sub.appendChild(t);
+      }
+      list.appendChild(sub);
+    }
   }
 }
 async function select(key) {
@@ -141,6 +176,7 @@ async function select(key) {
   S.group = exp(key)?.group ?? S.group;
   renderExperiments(); renderChecklist();
   await loadParams(key);
+  renderExperiments();          // the paradigm tabs need the parameters
   renderControls();
 }
 function renderChecklist() {
@@ -163,7 +199,7 @@ function renderControls() {
   const rk = runningKey();
 
   $("#btn-start").disabled = mine || stopping || external;
-  $("#btn-start").textContent = rk && rk !== S.selected ? `▶ Start (stop ${exp(rk)?.label ?? rk} first)` : `▶ Start ${exp(S.selected)?.label ?? ""}`;
+  $("#btn-start").textContent = rk && rk !== S.selected ? `▶ Start (stop ${expLabel(rk)} first)` : `▶ Start ${expLabel(S.selected)}`;
   $("#btn-stop").disabled = !mine;
   $("#btn-stop-trial").disabled = !mine || a.stop_after_trial;
   $("#btn-restart").disabled = !mine;
@@ -189,8 +225,8 @@ function renderControls() {
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
-  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Paused · ${exp(s.experiment)?.label ?? ""}`; }
-  else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${exp(s.experiment)?.label ?? s.experiment} · trial ${s.trial}`; }
+  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
+  else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${expLabel(s.experiment)} · trial ${s.trial}`; }
   else if (mine) { pl.className = "pill warn"; pl.textContent = `Starting ${exp(r.experiment)?.label ?? ""}…`; }
   else { pl.className = "pill"; pl.textContent = r.exit_code != null ? `Idle (last exit ${r.exit_code})` : "Idle"; }
 
@@ -205,7 +241,7 @@ function renderControls() {
 
   // run info
   const rows = [];
-  if (r.experiment) rows.push(["Experiment", exp(r.experiment)?.label ?? r.experiment]);
+  if (r.experiment) rows.push(["Experiment", expLabel(r.experiment)]);
   if (r.started_at && r.state !== "idle") rows.push(["Elapsed", fmtDur(Date.now() / 1000 - r.started_at)]);
   if (r.params_file) rows.push(["Params", r.params_file.split("/").slice(-2).join("/")]);
   if (a.data_folder) rows.push(["Data", a.data_folder.split("/").slice(-2).join("/")]);
@@ -230,7 +266,7 @@ function renderStatus() {
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
 
   const key = s ? s.experiment : S.selected;
-  const steps = STEPS[key] || [];
+  const steps = stepsFor(key);
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip") cur = "goal";
   if (cur === "cue_snap" || cur === "freeze") cur = "snap";
@@ -343,8 +379,11 @@ function renderParams(force = false) {
   }
   S.renderSig = sig; S.renderDeferred = false;
 
+  // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm.
+  const para = paradigmOf(S.selected);
+  const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only === para));
   const counts = { live: 0, run: 0 };
-  data.params.forEach((p) => counts[p.tier]++);
+  shown.forEach((p) => counts[p.tier]++);
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
@@ -352,7 +391,7 @@ function renderParams(force = false) {
   $("#btn-reset-edits").disabled = mode === "running" || !data.params.some((p) => p.edited);
 
   const f = S.paramFilter.toLowerCase();
-  const rows = data.params.filter((p) => p.tier === S.tab && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
+  const rows = shown.filter((p) => p.tier === S.tab && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
   const root = $("#params"); root.innerHTML = ""; TIPS.clear(); hideTip();
   const groups = data.groups || {};
   const byGroup = new Map();
@@ -553,6 +592,7 @@ async function init() {
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
   renderExperiments(); renderChecklist();
   await loadParams(S.selected);
+  renderExperiments();          // the paradigm tabs need the parameters
   renderControls();
   connect();
   wireTips();

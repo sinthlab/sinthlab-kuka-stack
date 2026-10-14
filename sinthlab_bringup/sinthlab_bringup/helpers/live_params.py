@@ -59,9 +59,9 @@ _RAIL = _COMMON + _SPEED + _TASK + _RING + ["timeout_sec", "virtual_fixtures.rai
 _RESIST = ["resistance.stiffness_n_per_m"]
 
 LIVE_PARAMS: Dict[str, List[str]] = {
-    "apple_pluck": _COMMON + _PULL + _SPEED + _POSE + _RESIST,
-    "perturb": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
-        "apple_pluck_impedance_control_displacement.baseline_settle_sec",
+    # Both paradigms (pluck, perturb). The perturb_start.* ones only act in the perturb paradigm.
+    "apple_pluck": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
+        "perturb_start.baseline_settle_sec",
         # The perturbation itself -- the manipulated variable, so it is the one most worth varying
         # trial to trial. Recorded per trial in the sidecar's `perturbation` block.
         "perturb_start.polar_r_m",
@@ -139,6 +139,21 @@ IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
 _START, _RECOVER = _POSE
 
+# Paradigm-only parameters: in an experiment with a `paradigm` (apple pluck), these act -- and the
+# dashboard shows them -- only in that paradigm.
+PARADIGM_ONLY: Dict[str, str] = {
+    "perturb_start.*": "perturb",
+}
+
+
+def paradigm_of(name: str) -> Optional[str]:
+    """The paradigm a parameter belongs to, or None if it applies to every paradigm."""
+    for pattern, paradigm in PARADIGM_ONLY.items():
+        if fnmatch(name, pattern):
+            return paradigm
+    return None
+
+
 # Slider steps: a parameter listed here gets a slider (plus its text box) on the dashboard. The text box
 # still takes any value within LIMITS; the slider moves in these steps.
 STEPS: Dict[str, float] = {
@@ -157,6 +172,7 @@ CHOICES: Dict[str, List[str]] = {
     "*.restricted_axis": ["x", "y", "z"],
     "*.corridor_frame": ["relative", "absolute"],
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
+    "paradigm": ["pluck", "perturb"],
     "travel_task.direction": ["both", "positive", "negative"],
     "travel_task.axis": ["x", "y", "z", "norm"],
 }

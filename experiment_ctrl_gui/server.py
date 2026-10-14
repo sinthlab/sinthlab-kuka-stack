@@ -243,6 +243,7 @@ def make_handler(app: App):
                     "key": e.key, "label": e.label, "summary": e.summary,
                     "launch_file": e.launch_file, "params_yaml": e.params_yaml, "node": e.node,
                     "run_name": e.run_name, "smartpad": e.smartpad(), "group": e.group,
+                    "paradigms": [{"key": k, "label": lab} for k, lab in e.paradigms],
                 } for e in ex.EXPERIMENTS])
             if path == "/api/groups":
                 return self._json([{"key": k, "label": v} for k, v in ex.GROUPS])
