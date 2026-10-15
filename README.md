@@ -100,7 +100,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness. The app
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (each
+   dialog also offers **Close**, and a **Close** side key ends the app at any time later). The app
    then **always** moves the arm to mechanical zero and on to the ready pose `[0, 10, 0, −80, 0, 90, 0]`
    (no prompt; hold the enabling switch while it moves; see
    [Start-up posture](#start-up-posture-zero-then-ready)). It then waits about 60 s for ROS.
@@ -330,6 +331,9 @@ None of these are committed to git.
   ```powershell
   Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
   ```
+  This also lets in the SmartPad app's settings report (UDP 30001, see
+  [Closing the app / settings report](#smartpad-app-close-and-settings-report)). If the dashboard says
+  *No report from the SmartPad app* while FRI works, check that port first.
 
 ### Install Application to Robot
 Follow [these steps](https://lbr-stack.readthedocs.io/en/latest/lbr_fri_ros2_stack/lbr_fri_ros2_stack/doc/hardware_setup.html#install-applications-to-the-robot)
@@ -1446,6 +1450,31 @@ flowchart LR
   enabling switch while it moves (T1). Separately, the dashboard and orchestrator refuse a *start pose*
   that is nearly straight (max(|A2|, |A4|, |A6|) < 12°), so ROS never parks the arm in a singular pose.
 
+  <a id="smartpad-app-close-and-settings-report"></a>**Closing the app.** Every set-up dialog has a
+  **Close** choice, and once set up the app shows a **Close** user key on the SmartPad's side keys.
+  It ends the app at any point — during the zero / ready moves, while waiting for ROS, or while
+  running: the motion under way is cancelled, `run()` returns and FRI is closed. ROS sees the FRI
+  session end. It is a normal end, not a safety function — the E-stop is the E-stop. (If ROS does not
+  connect within 60 s, the app now also ends instead of holding with no client.)
+
+  **The app reports its settings to ROS.** FRI carries robot state only, so ROS cannot see what was
+  chosen on the SmartPad. Once the dialogs are answered, the app sends its selections — profile name,
+  the stiffness values, damping, elbow stiffness and damping, FRI send period, tool — as one JSON line
+  over UDP to the chosen remote IP, port **30001**, once a second until it ends. The selections
+  cannot change during a run; the report is repeated only so it gets through (ROS starts after the
+  app, and UDP can drop a packet). Whether the app is still running is FRI's to say, not this.
+  [`helpers/smartpad_link.py`](sinthlab_bringup/sinthlab_bringup/helpers/smartpad_link.py) listens
+  and keeps the latest report:
+
+  - every trial's sidecar records it (`smartpad`), so the data says what the cabinet actually ran;
+  - the dashboard shows it under *Before you start* and flags any difference from the checklist;
+  - apple pluck warns at every trial start if `resistance.base_stiffness_n_per_m` differs from the
+    reported stiffness (every pull would feel base-to-actual times the slider's stiffness).
+
+  It is best effort: if no report arrives (an older app on the cabinet, the network, a firewall), the
+  experiment runs exactly as before and the sidecar says `received: false` with the reason. The port
+  is `SETTINGS_PORT` on both sides (the Java app and `smartpad_link.py`); keep them equal.
+
   A trial is then literally a chain of actions — e.g. apple‑pluck:
   `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
 
@@ -2132,6 +2161,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
 | `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
+| `smartpad` | What the SmartPad app reported it runs with (`settings`: `stiffness_profile`, `stiffness` {X,Y,Z,A,B,C}, `damping`, `nullspace_stiffness`, `nullspace_damping`, `send_period_ms`, `tool`), with `received` and `from` — or `received: false` and why. See [the settings report](#smartpad-app-close-and-settings-report). |
 | `moves` | Every joint-space move of the trial (start, perturbation, recover), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
 | `live_changes` | Live parameters applied **mid-trial** (only the move `speed_scale`s do that): each with `name`, `value`, `t`, `t_wall` and the CSV `row` it took effect at. The move it applies to is the next one that starts. Absent when nothing changed. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |

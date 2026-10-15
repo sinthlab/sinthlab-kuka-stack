@@ -36,6 +36,7 @@ from std_srvs.srv import SetBool
 from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_immediate, is_live
 from sinthlab_bringup.helpers.live_params import PAIRED
+from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 # Event token -> code sent to the NSP. Two per trial are enough for alignment (trial_start and
 # trial_end give offset and rate); the rest make a dropped pulse visible instead of silently
@@ -88,6 +89,7 @@ class ExperimentControl:
             for name in node._parameters if is_live(experiment, name)}   # noqa: SLF001
         self._nsp_enabled = bool(get_required_param(node, "nsp_sync.enabled"))
         self._nsp_warned = False
+        self._smartpad = SmartPadLink.get(self._log)    # what the SmartPad app reports it runs with
 
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
@@ -158,6 +160,7 @@ class ExperimentControl:
             "pending": self._pending,
             "live": self._effective,
             "nsp_sync": self._nsp_enabled,
+            "smartpad": self._smartpad.snapshot(),
         }
         self._pub.publish(String(data=json.dumps(status, default=str)))
 

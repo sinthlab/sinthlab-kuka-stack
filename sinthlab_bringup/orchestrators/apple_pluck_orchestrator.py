@@ -18,6 +18,7 @@ from sinthlab_bringup.actions.resistance_softener import ResistanceSoftener
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
+from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 PARADIGMS = ("pluck", "perturb", "perturb_bump", "random_start")
 # random_start: the origin C and the 8 compass directions around it (random_start.positions).
@@ -196,6 +197,17 @@ class ApplePluckOrchestratorNode(rclpyNode):
                 "random_start.positions.C differs from move_to_start.target_joint_position: the grid was "
                 "solved around another start pose. Re-solve it (solve_start_grid.py) if that is not intended.")
 
+    def _check_resistance_base(self):
+        """The resistance base must equal the stiffness the SmartPad app reports running with; if they
+        differ, every pull feels softer or stiffer than the slider says. Checked every trial."""
+        k = SmartPadLink.get(self.get_logger()).translational_stiffness()
+        base = self.resistance.describe()["base_stiffness_n_per_m"]
+        if k is not None and abs(k - base) > 0.5:
+            self.get_logger().warn(
+                f"resistance.base_stiffness_n_per_m is {base:g} N/m but the SmartPad app reports {k:g} N/m: "
+                f"every pull feels {k / base:.2g}x the slider's stiffness. Set the base to {k:g} "
+                f"(Per-run) or change the SmartPad profile.")
+
     def _next_start_position(self) -> str:
         # Shuffled blocks: every position once, in a random order, before any repeats.
         if not self._start_queue:
@@ -221,6 +233,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
                                        "delay_mode": self._delay_mode}
         self.recorder.start(trial_index=self.trial_count, **sidecar)
         self.recorder.annotate(resistance=self.resistance.describe())
+        self._check_resistance_base()
         self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()
 

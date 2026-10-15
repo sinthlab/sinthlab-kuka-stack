@@ -44,6 +44,7 @@ from rclpy.node import Node as rclpyNode
 
 from lbr_fri_idl.msg import LBRState
 from sinthlab_bringup.helpers.node_utils import get_launch_param
+from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 # Core schema, in file order. Experiment columns are appended after these -- never substituted, so
 # one loader reads every experiment. See README.md section 7, Data Collected §4 and §11.
@@ -168,6 +169,8 @@ class TrialRecorder:
             "fri": self._fri_snapshot(),
             "git": _git_describe(os.path.dirname(os.path.abspath(__file__))),
             "params": self._param_dump(),
+            # What the SmartPad app reported it runs with (helpers/smartpad_link.py).
+            "smartpad": SmartPadLink.get(self._node.get_logger()).snapshot(),
         }
         self._sidecar.update(sidecar)
         self._active = True

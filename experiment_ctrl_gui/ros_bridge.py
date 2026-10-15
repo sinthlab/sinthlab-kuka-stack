@@ -198,6 +198,11 @@ class DemoBridge:
             "t": time.time(), "paused": self._paused, "held": self._held,
             "pending": dict(self._pending), "live": dict(self._effective),
             "nsp_sync": bool(self._effective.get("nsp_sync.enabled", False)), "_rx": time.time(),
+            # As the real app would report it, set up as the checklist says.
+            "smartpad": {"received": True, "from": "demo", "settings": {
+                "app": "LbrImpedanceControlServer", "stiffness_profile": self._exp.stiffness_profile,
+                "stiffness": ex.SMARTPAD_PROFILES[self._exp.stiffness_profile], "damping": 0.7,
+                "nullspace_stiffness": 30.0, "nullspace_damping": 0.7, "send_period_ms": 10}},
         }
         self._on_status(self._status)
 

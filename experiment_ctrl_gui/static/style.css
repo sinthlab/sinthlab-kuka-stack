@@ -132,6 +132,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 .checklist { margin: 0; padding-left: 18px; font-size: 13px; }
 .checklist li { margin: 3px 0; }
 .checklist code { word-break: break-all; }
+.sp-report { margin-top: 10px; font-size: 12.5px; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
+.sp-report.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.sp-report.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.sp-report code { font-family: var(--mono); font-size: 11.5px; }
 .checklist code, .param code { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 0 4px; border-radius: 4px; }
 
 /* ---------- status ---------- */

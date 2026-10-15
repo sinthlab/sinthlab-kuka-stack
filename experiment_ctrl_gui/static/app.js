@@ -286,6 +286,8 @@ function renderStatus() {
   $("#steps").innerHTML = steps.map((st, i) =>
     `<li class="${!s ? "" : i < idx ? "done" : i === idx ? "now" : ""}">${esc(STEP_LABEL[st] || st)}</li>`).join("");
 
+  renderSmartpadReport(s);
+
   const pend = s && s.pending ? Object.entries(s.pending) : [];
   const pe = $("#pending");
   if (pend.length) {
@@ -293,6 +295,30 @@ function renderStatus() {
     pe.innerHTML = `<strong>Applies from trial ${s.trial + 1}:</strong> ` +
       pend.map(([k, v]) => `<code>${esc(k)}</code> = ${esc(JSON.stringify(v))}`).join(", ");
   } else pe.classList.add("hidden");
+}
+// What the SmartPad app reports it is running with (helpers/smartpad_link.py), against the checklist.
+function renderSmartpadReport(s) {
+  const box = $("#smartpad-report"), e = exp(s ? s.experiment : S.selected);
+  const r = s && s.smartpad;
+  if (!r) { box.className = "sp-report"; box.innerHTML = "SmartPad report: shown once the experiment is running."; return; }
+  if (!r.received) {
+    box.className = "sp-report warn";
+    box.innerHTML = `<strong>No report from the SmartPad app</strong> — ${esc(r.reason)}. Trials record the settings as unavailable.`;
+    return;
+  }
+  const g = r.settings, want = e ? e.smartpad : {};
+  const num = (v) => parseFloat(String(v));
+  const diffs = [];
+  if (want["Cartesian stiffness (K diagonal)"] && g.stiffness_profile !== want["Cartesian stiffness (K diagonal)"])
+    diffs.push(`stiffness “${g.stiffness_profile}”, checklist says “${want["Cartesian stiffness (K diagonal)"]}”`);
+  if (want["Damping ratio (D0)"] && Math.abs(num(g.damping) - num(want["Damping ratio (D0)"])) > 1e-6)
+    diffs.push(`damping ${g.damping}, checklist says ${num(want["Damping ratio (D0)"])}`);
+  if (want["Null-space (elbow) stiffness"] && Math.abs(num(g.nullspace_stiffness) - num(want["Null-space (elbow) stiffness"])) > 1e-6)
+    diffs.push(`elbow ${g.nullspace_stiffness}, checklist says ${num(want["Null-space (elbow) stiffness"])}`);
+  box.className = `sp-report ${diffs.length ? "warn" : "ok"}`;
+  box.innerHTML = `<strong>SmartPad reports:</strong> ${esc(g.stiffness_profile)} <code>[${(g.stiffness || []).join(", ")}]</code>, ` +
+    `damping ${esc(g.damping)}, elbow ${esc(g.nullspace_stiffness)}` +
+    (diffs.length ? `<br><strong>Differs from the checklist:</strong> ${diffs.map(esc).join("; ")}.` : " — matches the checklist.");
 }
 function noteEvent(s) {
   if (!s || s.phase_t === S.lastPhaseT) return;

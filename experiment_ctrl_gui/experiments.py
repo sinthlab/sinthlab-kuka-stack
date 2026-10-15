@@ -32,6 +32,17 @@ from sinthlab_bringup.helpers import live_params  # noqa: E402
 
 
 
+# The SmartPad app's stiffness profiles {X, Y, Z, A, B, C} -- a copy of stiffness_profiles_ /
+# stiffness_vals_ in sunrise_controller_code/LbrImpedanceControlServer.java, kept in step with it. Every
+# experiment's stiffness_profile must be one of these (checked at import).
+SMARTPAD_PROFILES: Dict[str, List[float]] = {
+    "Uniform 100": [100.0, 100.0, 100.0, 300.0, 300.0, 300.0],
+    "Uniform 400": [400.0, 400.0, 400.0, 300.0, 300.0, 300.0],
+    "Uniform 1000": [1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0],
+    "X lock 2500, Y/Z 1000, rot 120": [2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0],
+}
+
+
 @dataclass
 class Experiment:
     key: str                       # also the `experiment` name the orchestrator reports
@@ -146,6 +157,8 @@ EXPERIMENTS += [
     ),
 ]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
+for _e in EXPERIMENTS:
+    assert _e.stiffness_profile in SMARTPAD_PROFILES, f"{_e.key}: unknown SmartPad profile {_e.stiffness_profile!r}"
 GROUPS = [("experiments", "Experiments"), ("pretraining", "Pre-training")]
 
 # Launch arguments every experiment shares (experiment_base.launch.py defaults).
