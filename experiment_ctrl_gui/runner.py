@@ -14,14 +14,18 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _LEVEL = re.compile(r"\[(DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\]")
 
 SIGINT_GRACE_SEC = 20.0
+# Command-line fragments of the processes a launch starts; any still running blocks the next launch.
+LEFTOVER_MARKERS = ("ros2_control_node", "robot_state_publisher", "controller_manager/spawner",
+                    "lib/controller_manager/spawner", "_orchestrator.py", "launch sinthlab_bringup")
 SIGTERM_GRACE_SEC = 5.0
+CLEANUP_GRACE_SEC = 3.0   # per signal, when ending processes a run left behind
 
 
 def classify(line: str) -> str:
@@ -51,6 +55,60 @@ class LaunchRunner:
 
     # ------------------------------------------------------------------ control
 
+    @staticmethod
+    def _procs() -> List[Tuple[int, int, str]]:
+        """(pid, process group, command line) of every process we can see, except this one."""
+        out = []
+        for d in Path("/proc").iterdir():
+            if not d.name.isdigit() or int(d.name) == os.getpid():
+                continue
+            try:
+                stat = (d / "stat").read_text()
+                pgrp = int(stat[stat.rindex(")") + 2:].split()[2])     # after "(comm) state ppid"
+                cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace").strip()
+            except (OSError, ValueError, IndexError):
+                continue
+            out.append((int(d.name), pgrp, cmd))
+        return out
+
+    def _end_all(self, pids: List[int], why: str) -> None:
+        """Ctrl-C, then SIGTERM, then SIGKILL, to these processes until none is left."""
+        for sig, grace in ((signal.SIGINT, CLEANUP_GRACE_SEC), (signal.SIGTERM, CLEANUP_GRACE_SEC),
+                           (signal.SIGKILL, 1.0)):
+            alive = [p for p in pids if Path(f"/proc/{p}").exists()]
+            if not alive:
+                return
+            self.emit(f"Cleaning up {why}: {sig.name} to {', '.join(map(str, alive))}", "warn")
+            for p in alive:
+                try:
+                    os.kill(p, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            end = time.time() + grace
+            while time.time() < end and any(Path(f"/proc/{p}").exists() for p in alive):
+                time.sleep(0.1)
+
+    def reap_group(self, pgid: int) -> None:
+        """End whatever is left of a finished launch: its nodes keep its process group after ros2 launch
+        itself exits, and one still holding the FRI connection blocks the next run."""
+        left = [pid for pid, grp, _ in self._procs() if grp == pgid]
+        if left:
+            self._end_all(left, "processes the launch left behind")
+
+    def clean_leftovers(self) -> None:
+        """End processes of any earlier run -- a dashboard run, or one started from a terminal."""
+        left = self.leftovers()
+        if left:
+            self._end_all([pid for pid, _ in left], "processes from an earlier run")
+
+    @staticmethod
+    def leftovers() -> List[Tuple[int, str]]:
+        """Processes from an earlier run that would block a new one: a ros2_control_node still holding
+        the FRI port (the new launch then never connects -- its controller spawners wait forever), an
+        orchestrator, a spawner, a robot_state_publisher. (pid, command line) for each."""
+        return [(pid, cmd[:160]) for pid, _, cmd in LaunchRunner._procs()
+                if any(k in cmd for k in LEFTOVER_MARKERS)]
+
     def start(self, experiment: str, command: List[str], params_file: Optional[str]) -> None:
         with self._lock:
             if self.proc is not None and self.proc.poll() is None:
@@ -68,6 +126,7 @@ class LaunchRunner:
                 env={**os.environ, "RCUTILS_COLORIZED_OUTPUT": "0", "PYTHONUNBUFFERED": "1"})
             self.state = "running"
         threading.Thread(target=self._pump, args=(self.proc,), daemon=True).start()
+        threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
         self._on_state()
 
     def stop(self, reason: str = "stopped from the dashboard") -> None:
@@ -96,10 +155,18 @@ class LaunchRunner:
         for sig, grace in ((signal.SIGTERM, SIGINT_GRACE_SEC), (signal.SIGKILL, SIGTERM_GRACE_SEC)):
             try:
                 proc.wait(timeout=grace)
-                return
+                break
             except subprocess.TimeoutExpired:
                 self.emit(f"Launch still running after {grace:.0f} s; sending {sig.name}.", "warn")
                 self._signal(proc, sig)
+        self.reap_group(proc.pid)        # its nodes may outlive ros2 launch itself
+
+    def _watch(self, proc: subprocess.Popen) -> None:
+        """However the launch ends -- stopped, finished, crashed -- end the nodes it left behind. Waits on
+        the launch process itself: a leftover holding its output pipe would keep _pump reading forever."""
+        proc.wait()
+        time.sleep(CLEANUP_GRACE_SEC)    # nodes still shutting down normally get to finish first
+        self.reap_group(proc.pid)
 
     def _pump(self, proc: subprocess.Popen) -> None:
         for raw in proc.stdout:

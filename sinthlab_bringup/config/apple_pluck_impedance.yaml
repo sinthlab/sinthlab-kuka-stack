@@ -142,7 +142,7 @@
       #   Position-only IK lets the flange tilt: up to ~22 / 19 / 14 deg at the caps. The caps live in
       #   sinthlab_bringup/helpers/live_params.py (PERTURB_R_MAX); the dashboard and the orchestrator
       #   both enforce them, and the action warns if a solution still lands within 5 deg of a limit.
-      polar_r_m: 0.05  # perturbation distance from the start [m]
+      polar_r_m: 0.10  # perturbation distance from the start [m] (~10 N on a held apple at Uniform 100)
       polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
       polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)
       joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
@@ -194,9 +194,14 @@
     # Pick threshold_n with debug_log_enabled on: it prints the force while waiting, so you can see the
     # resting noise and a real grasp. Too low triggers on noise; too high misses light grasps.
     grasp:  # grasp detection (perturb_bump)
-      threshold_n: 3.0  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
+      threshold_n: 1.5  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
       hold_sec: 0.03  # the force must stay above threshold_n this long -- rejects single-sample spikes [s]
       timeout_sec: 10.0  # no grasp within this long after the go cue -> end the trial and reset [s]
+      # HOW FAST the bump moves -- used instead of perturb_start.speed_scale in this paradigm. A bump must
+      # be sudden: at perturb's gentle default (1) the spring position barely moves for ~0.2 s and a held
+      # apple feels a slow lean. At r = 0.10 m: 1 -> 5 mm at 185 ms, done 0.92 s; 3 -> 5 mm at 65 ms,
+      # done 0.31 s. Capped at 3 = the fastest acceleration / jerk validated for the perturbation.
+      bump_speed_scale: 3.0  # LIVE, applies at once, from the next bump: speed of the bump move (0.25-3)
       # The delay from the detected grasp to the perturbation. Default 0: the bump follows the grasp at
       # once (the detection itself lags first contact by ~hold_sec plus the force rising to threshold).
       # Random draws it per trial so the animal cannot predict it; each trial's delay is recorded

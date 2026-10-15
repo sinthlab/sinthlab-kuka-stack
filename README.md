@@ -130,6 +130,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
      skip)**: a second press Ctrl-Cs at once, wherever the arm is. If the orchestrator does not
      answer, or the arm has not parked within 60 s, the launch is stopped anyway.
    - **↻ Restart:** Ctrl-C at once (no parking), then Start again with the current edits.
+   - **However a run ends** — any Stop, a finished run or a crash — the dashboard then ends every node
+     the launch left behind, so a lingering process can never block the next run.
    - **From a terminal**, Ctrl-C reaches every process at once, so nothing parks first. To park, call
      `ros2 service call /lbr/<orchestrator>/stop std_srvs/srv/Trigger` and Ctrl-C once the log says it
      is holding.
@@ -189,8 +191,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Experiment | Extra live parameters |
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
-| Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (applies at once) |
-| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random) |
+| Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (perturb only; applies at once) |
+| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random); **how fast** the bump moves: `grasp.bump_speed_scale` (slider, 0.25–3, default 3; applies at once) |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
@@ -706,7 +708,7 @@ perturb run**, set `polar_r_m` to 0.
 
 | Knob | Effect |
 |---|---|
-| `polar_r_m` | How far the apple is displaced [m]. Default `0.05`. **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 18° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.10` (on a held apple at Uniform 100, ~10 N). **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 18° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
@@ -740,7 +742,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb
    ```
 3. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
-   the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
+   the apple **10 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
    any direction counts.
 
 ### Scenario 3c — Apple Pluck, perturb bump paradigm
@@ -759,7 +761,7 @@ go cue → wait for the grasp → delay (fixed, or random per trial) → perturb
 sensors (as in Free Move, `helpers/hand_force.py`). The resting force (the tool-load model's error, a
 few N) is measured over the last `grasp.tare_sec` (1 s) of the quiet window, with the apple untouched
 and the arm settled after its move from park, and subtracted; a grasp is the
-remaining force at or above `grasp.threshold_n` (3 N) for `grasp.hold_sec` (30 ms — single-sample
+remaining force at or above `grasp.threshold_n` (1.5 N) for `grasp.hold_sec` (30 ms — single-sample
 spikes are ignored). It detects **force on the apple, not touch**: a hand resting on it without
 pushing or pulling is not seen. If the monkey is already holding the apple during the quiet window, the
 resting force exceeds `grasp.tare_max_n` and the previous trial's tare is kept, with a warning.
@@ -777,6 +779,21 @@ perturbation's **target** (the perturbed spring position), locked the instant th
 threshold means the same as in the normal pluck. `disp_m` may already be a few cm at `armed` (the
 hand resisting the bump) — that is signal, not error. `baseline_settle_sec` does not apply. Everything
 before the bump is still in the CSV (pose and joint torques from trial start).
+
+**How fast.** A bump must be sudden, so the move uses its own `grasp.bump_speed_scale` (live slider,
+0.25–3, default **3**) instead of the perturb paradigm's gentle `perturb_start.speed_scale`. At the
+gentle setting the spring position barely moves for ~0.2 s, and a held apple only feels the spring as
+it stretches (K × displacement), so the bump reads as a slow lean. At r = 0.10 m:
+
+| `bump_speed_scale` | spring position moves 5 mm | 2 cm | 10 cm, done |
+|---|---|---|---|
+| 1 | 185 ms | 305 ms | 920 ms |
+| 3 *(default)* | **65 ms** | **105 ms** | 310 ms |
+
+3 is the cap: perturb's base limits × 3 / 9 / 27 give a 18 rad/s², j 135 rad/s³, within the fastest
+perturbation validated (a 20, j 150). The force the hand feels is the spring's: ~10 N for 10 cm on
+Uniform 100. Grasp detection adds `hold_sec` (30 ms) plus the time the grasp force takes to rise to
+`threshold_n`.
 
 **When.** By default the bump follows the grasp **at once** (`grasp.delay_sec: 0`). `grasp.delay_mode`
 `fixed` waits `grasp.delay_sec` after the grasp; `random` draws a delay per trial from
@@ -2375,6 +2392,22 @@ delete rather than a row range you have to remember to exclude.
 **All of it is gitignored** (`analysis/expt_*/`, and any loose `analysis/*.csv` / `*.meta.json`). Recorded data is never version-controlled.
 
 ## 8. Troubleshooting
+- **A new run hangs at the controller spawners** (e.g. waiting on `estimated_wrench_interface` /
+  the wrench broadcaster) and nothing moves. The spawners only finish once the new launch's FRI
+  connection to the SmartPad app is up, so the connection never came up. In order of likelihood:
+  1. **A process from the previous run is still alive** — typically an old `ros2_control_node`
+     still holding the FRI connection. **The dashboard cleans these up itself**: whenever a run ends
+     (stopped, finished or crashed) it ends anything the launch left behind (Ctrl-C, then SIGTERM, then
+     SIGKILL, logged as *Cleaning up …*), and before every Start it ends leftovers of any earlier run,
+     including one started from a terminal. From a terminal alone, check and clean with
+     `ps -ef | grep -E "ros2_control_node|spawner|_orchestrator|robot_state_publisher" | grep -v grep`
+     and `pkill -f "ros2_control_node|controller_manager/spawner|_orchestrator.py|robot_state_publisher"`.
+  2. **The app's 60 s window ran out.** After (re)starting, the app moves to zero and the ready pose,
+     then waits 60 s for ROS; if nothing connects it **ends** (SmartPad log: *Connection timeout:
+     Could not find ROS 2 client after 60 seconds*). Restart the app and Start the experiment within
+     the window.
+  3. **Started too early** — before the app reached *Creating FRI connection to …* (still moving to
+     zero / ready). Stop, wait for that line on the SmartPad, Start again.
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
   ROS were doing, reproduce the problem, and read the summary:
   ```bash

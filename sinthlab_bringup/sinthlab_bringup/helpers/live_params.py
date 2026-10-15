@@ -79,6 +79,7 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "grasp.threshold_n",
         "grasp.hold_sec",
         "grasp.timeout_sec",
+        "grasp.bump_speed_scale",
         "grasp.delay_mode",
         "grasp.delay_sec",
         "grasp.delay_min_sec",
@@ -123,6 +124,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "grasp.threshold_n": (0.5, 30.0),
     "grasp.hold_sec": (0.0, 0.5),
     "grasp.timeout_sec": (1.0, 120.0),
+    # The bump: perturb's base limits x 3 / 9 / 27 at most = a 18 rad/s^2, j 135 rad/s^3, within the
+    # fastest perturbation validated (a 20, j 150).
+    "grasp.bump_speed_scale": (0.25, 3.0),
     "grasp.delay_sec": (0.0, 10.0),
     "grasp.delay_min_sec": (0.0, 10.0),
     "grasp.delay_max_sec": (0.0, 10.0),
@@ -168,6 +172,7 @@ _START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_join
 # dashboard shows them -- only in those paradigms. The first matching pattern wins.
 PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.baseline_settle_sec": ("perturb",),
+    "perturb_start.speed_scale": ("perturb",),           # perturb_bump: grasp.bump_speed_scale
     "perturb_start.start_delay_*": ("perturb",),
     "perturb_start.*": ("perturb", "perturb_bump"),
     "grasp.*": ("perturb_bump",),
@@ -188,13 +193,14 @@ def paradigm_of(name: str) -> Optional[Tuple[str, ...]]:
 STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
     "*.speed_scale": 0.05,
+    "grasp.bump_speed_scale": 0.05,
 }
 
 # Live parameters applied the moment they are set, instead of at the next trial boundary. Only for
 # what cannot change the trial's outcome or its measurement: how fast the arm is driven -- from the
 # next move on, even within the current trial. Each change is logged in the trial's sidecar
 # (`live_changes`) with when it happened.
-IMMEDIATE: List[str] = ["*.speed_scale"]
+IMMEDIATE: List[str] = ["*.speed_scale", "grasp.bump_speed_scale"]
 
 
 def is_immediate(name: str) -> bool:

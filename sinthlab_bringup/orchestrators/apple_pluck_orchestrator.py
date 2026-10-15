@@ -107,6 +107,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             )
         # Perturb bump only: wait for the grasp, for at most grasp.timeout_sec.
         if self.bump:
+            self.perturb.set_speed_scale(float(get_required_param(self, "grasp.bump_speed_scale")))
             self.grasp = GraspDetector(self, param_prefix="grasp", on_grasp=self.on_grasp)
             self.grasp_timeout = WaitAction(
                 self, duration_sec=float(get_required_param(self, "grasp.timeout_sec")),
@@ -154,7 +155,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         speeds = {"move_to_start.speed_scale": self.move_to_start.set_speed_scale,
                   "move_to_park.speed_scale": self.move_park.set_speed_scale}
         if self.perturbing:
-            speeds["perturb_start.speed_scale"] = self.perturb.set_speed_scale
+            # perturb_bump moves faster -- a bump -- at its own grasp.bump_speed_scale.
+            speeds["grasp.bump_speed_scale" if self.bump else "perturb_start.speed_scale"] = self.perturb.set_speed_scale
         self.control.apply_immediately(speeds, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
         for move in (self.move_to_start, self.move_park) + ((self.perturb,) if self.perturbing else ()):
@@ -369,6 +371,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self._check_origin()         # start_trial sets this trial's start pose after this reload
         if self.perturbing:
             self.perturb.reload()        # the perturbation: r, theta, plane
+            if self.bump:
+                self.perturb.set_speed_scale(float(get_required_param(self, "grasp.bump_speed_scale")))
             self._read_delay()           # fixed or random delay, and its values
         if self.bump:
             self.grasp.reload()          # threshold, hold time

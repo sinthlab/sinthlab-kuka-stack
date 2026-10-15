@@ -164,6 +164,15 @@ class App:
         if s and not s["stale"]:
             raise RuntimeError(f"{s.get('experiment')} is already running outside the dashboard "
                                f"({s.get('node')}). Stop it in its terminal first.")
+        if not self.demo:
+            # Leftovers of an earlier run (e.g. an old ros2_control_node holding the FRI connection) make
+            # a new launch hang at its controller spawners: end them first. A live experiment started
+            # outside the dashboard was refused above, so anything matching now is a leftover.
+            self.runner.clean_leftovers()
+            left = self.runner.leftovers()
+            if left:
+                raise RuntimeError("Could not end processes from an earlier run: "
+                                   + "; ".join(f"{pid}: {cmd}" for pid, cmd in left[:4]))
         p = self.params[key]
         p.reload()                               # pick up YAML edits made since the page loaded
         overrides = p.launch_overrides()          # edited YAML (+ CLIK posture) or nothing
