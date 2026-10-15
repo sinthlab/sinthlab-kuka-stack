@@ -45,6 +45,9 @@ NSP_CODES: Dict[str, int] = {
     "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
     "threshold": 10,    # pre-training: the travel threshold was reached
     "session_end": 11,  # free move: the session ended (Pause / Stop after trial, or session_sec)
+    "grasp": 12,        # apple pluck, perturb bump: the grasp was detected
+    "perturb_applied": 13,   # apple pluck, perturb / perturb bump: the perturbation move finished
+    "grasp_timeout": 14,     # apple pluck, perturb bump: no grasp in time, the trial resets
 }
 
 STATUS_TOPIC = "experiment_status"

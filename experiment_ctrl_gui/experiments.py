@@ -30,13 +30,6 @@ ANALYSIS = REPO / "analysis"
 sys.path.insert(0, str(BRINGUP))
 from sinthlab_bringup.helpers import live_params  # noqa: E402
 
-_FRI_COMMON = {
-    "SmartPad application": "LbrImpedanceControlServer",
-    "FRI send period [ms]": "10",
-    "Remote IP address": "172.31.1.148 (this ROS computer)",
-    "Damping ratio (D0)": "0.7 (Standard)",
-    "Null-space (elbow) stiffness": "30 (Standard)",
-}
 
 
 @dataclass
@@ -59,11 +52,17 @@ class Experiment:
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
 
     def smartpad(self) -> Dict[str, str]:
-        out = dict(_FRI_COMMON)
-        out["Cartesian stiffness (K diagonal)"] = self.stiffness_profile
-        out["Then, automatically"] = ("arm moves to mechanical zero, then the ready pose; hold the "
-                                      "enabling switch and keep the space above the arm clear")
-        return out
+        """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
+        return {
+            "SmartPad application": "LbrImpedanceControlServer",
+            "FRI send period [ms]": "10",
+            "Remote IP address": "172.31.1.148 (this ROS computer)",
+            "Cartesian stiffness (K diagonal)": self.stiffness_profile,
+            "Damping ratio (D0)": "0.7 (Standard)",
+            "Null-space (elbow) stiffness": "30 (Standard)",
+            "Then, automatically": ("arm moves to mechanical zero, then the ready pose; "
+                                    "keep the space above the arm clear"),
+        }
 
 
 EXPERIMENTS: List[Experiment] = [
@@ -71,12 +70,13 @@ EXPERIMENTS: List[Experiment] = [
         key="apple_pluck", label="Apple Pluck",
         summary="Pull the apple 0.1 m in any direction; snap cue, hold, recover. Normal: from a fixed start. "
                 "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue. "
+                "Perturb bump: the same perturbation, triggered when the monkey grasps the apple. "
                 "Random start: each trial starts at one of 9 positions (origin + 8 compass directions).",
         paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb"),
-                   ("random_start", "Pluck random start")],
+                   ("perturb_bump", "Pluck perturb bump"), ("random_start", "Pluck random start")],
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
-        stiffness_profile="Maze compliant (uniform 400)",
+        stiffness_profile="Uniform 100",
         ros_controller="lbr_joint_position_command_controller",
         run_name="iiwa7_apple_pluck_impedance_control",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
@@ -86,7 +86,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="Virtual fixture (sine rail by default): free along the pull axis, walled elsewhere.",
         launch_file="iiwa7_move_restricted_plane.launch.py",
         params_yaml="virtual_fixtures_params.yaml", node="restricted_plane_orchestrator",
-        stiffness_profile="Rail guide (uniform 1000)",
+        stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_move_restricted_plane",
         launch_args={"ctrl": "lbr_joint_position_command_controller",
@@ -98,7 +98,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="Drive the arm along vertical-plane rails; reward at the forks, goal or timeout ends it.",
         launch_file="iiwa7_maze.launch.py",
         params_yaml="maze_params.yaml", node="maze_orchestrator",
-        stiffness_profile="Maze walls + easy guiding (rot 120)",
+        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_maze",
         launch_args={"ctrl": "lbr_joint_position_command_controller",
@@ -119,7 +119,7 @@ EXPERIMENTS += [
         summary="Admittance: the arm goes wherever it is pushed and holds where it is let go. No goal, no boundary.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
-        stiffness_profile="Rail guide (uniform 1000)",
+        stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_free_move",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
@@ -129,7 +129,7 @@ EXPERIMENTS += [
         summary="One vertical rail: up or down to the threshold (ring green → red), then back to start.",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="rail_training_orchestrator",
-        stiffness_profile="Maze walls + easy guiding (rot 120)",
+        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
@@ -139,7 +139,7 @@ EXPERIMENTS += [
         summary="One horizontal rail: left or right to the threshold (ring green → red), then back to start.",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="rail_training_orchestrator",
-        stiffness_profile="Maze walls + easy guiding (rot 120)",
+        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
@@ -173,9 +173,9 @@ CAUTION: Dict[str, str] = {
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
     "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
     "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y).",
-    "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Maze compliant "
-                                          "(uniform 400) = 400). If they differ, every pull feels softer or stiffer "
-                                          "than the resistance slider says."),
+    "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Uniform 100 = "
+                                          "100, Uniform 400 = 400). If they differ, every pull feels softer or "
+                                          "stiffer than the resistance slider says."),
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),

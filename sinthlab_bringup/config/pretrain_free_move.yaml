@@ -10,10 +10,10 @@
     # actions/admittance_move.py. The feel is set HERE (damping, threshold, max speed), not on the
     # SmartPad.
     #
-    # >>> SmartPad: "Rail guide (uniform 1000)", damping 0.7, elbow 30 (Standard).
+    # >>> SmartPad: "Uniform 1000", damping 0.7, elbow 30 (Standard).
     #   * The cabinet spring is what makes the arm follow the moving equilibrium and hold where it
     #     stops, so it must be reasonably stiff: at 1000 N/m the arm trails the equilibrium by only a few
-    #     mm. A soft or near-free profile (the diagnostic one, the apple-pluck ones) makes it sag and
+    #     mm. A soft profile (the apple-pluck ones, Uniform 100 / 400) makes it sag and
     #     lag -- not admittance any more.
     #   * Rotation 300 holds the tool orientation (rotation is not part of the free move).
     #   * Too heavy? Lower free_move.damping_ns_per_m (live). Creeps when nobody touches it? Raise

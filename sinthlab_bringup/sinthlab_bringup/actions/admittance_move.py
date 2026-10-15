@@ -65,6 +65,7 @@ from rclpy.node import Node as rclpyNode
 import optas
 
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
+from sinthlab_bringup.helpers.hand_force import HandForce
 
 
 class AdmittanceMoveAction:
@@ -84,9 +85,8 @@ class AdmittanceMoveAction:
         model = optas.RobotModel(urdf_string=robot_description)
         self._fk = model.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
-        # Base-frame geometric Jacobian of the EE: rows [linear; angular] (checked against FK).
-        self._jac = model.get_global_link_geometric_jacobian_function(link=self.ee_link, numpy_output=True)
-        self._jac_damping = max(0.0, float(get_required_param(node, self._p + "jacobian_damping")))
+        self._jac_damping = float(get_required_param(node, self._p + "jacobian_damping"))
+        self._hand = HandForce(robot_description, self.ee_link, self._jac_damping)
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
@@ -173,16 +173,9 @@ class AdmittanceMoveAction:
 
     # ------------------------------------------------------------------ loop
     def _hand_force(self, msg: LBRState, q: np.ndarray, T: np.ndarray) -> np.ndarray:
-        """The force the hand applies to the tool, base frame [N]."""
-        tau = np.array(msg.external_torque, dtype=float)
-        self._tau_ext = tau                                             # for the debug line
-        if not np.all(np.isfinite(tau)):
-            return np.zeros(3)
-        J = np.array(self._jac(q), dtype=float)
-        U, sv, Vt = np.linalg.svd(J, full_matrices=False)
-        lam2 = self._jac_damping ** 2
-        J_pinv = Vt.T @ np.diag(sv / (sv * sv + lam2)) @ U.T            # damped pseudo-inverse, 7x6
-        return (J_pinv.T @ tau)[0:3]                                    # wrench = pinv(J)^T tau; force part
+        """The force the hand applies to the tool, base frame [N] (helpers/hand_force.py)."""
+        self._tau_ext = np.array(msg.external_torque, dtype=float)     # for the debug line
+        return self._hand.force(self._tau_ext, q)
 
     def _threshold(self, f: np.ndarray) -> np.ndarray:
         """Zero below the dead band; the FULL force from twice the dead band; a linear ramp between."""

@@ -56,6 +56,7 @@ class CartesianImpedanceDisplacementMonitor:
         # interpolated to sub-millisecond, which the 10 ms cabinet stamp cannot give on its own.
         self._last_disp: float = float("nan")
         self._baseline: Optional[TransformStamped] = None
+        self._fixed_baseline = None
         self._settle_elapsed = 0.0
         self._stopping = False
         self._shutdown_requested = False
@@ -99,8 +100,11 @@ class CartesianImpedanceDisplacementMonitor:
             return abs(dz)
         return (dx * dx + dy * dy + dz * dz) ** 0.5
     
-    def start(self) -> None:
-        """Trigger the action to start monitoring displacement."""
+    def start(self, baseline_xyz=None) -> None:
+        """Start monitoring. The baseline is the measured EE pose once settled (set_baseline_settle) --
+        or, with `baseline_xyz` (base frame [m]), that point, locked at once: apple pluck's
+        perturb_bump paradigm measures the pull from where the perturbation moved the spring to, since
+        a held apple never settles there."""
         if self._ready:
             self._node.get_logger().warn("DisplacementMonitor is already running.")
             return
@@ -108,6 +112,7 @@ class CartesianImpedanceDisplacementMonitor:
         self._baseline = None
         self._last_disp = float("nan")   # not measuring until the baseline locks
         self._settle_elapsed = 0.0
+        self._fixed_baseline = baseline_xyz
         self._stopping = False
         self._shutdown_requested = False
 
@@ -169,17 +174,20 @@ class CartesianImpedanceDisplacementMonitor:
         if self._baseline is None:
             # Wait for the arm to settle before locking the baseline, so the "initial position"
             # is the settled (post-perturbation) rest pose rather than a still-moving one.
-            if self._settle_elapsed < self._baseline_settle_sec:
+            if self._fixed_baseline is None and self._settle_elapsed < self._baseline_settle_sec:
                 self._settle_elapsed += self._dt
                 return
             ts = self._lookup()
+            if ts is not None and self._fixed_baseline is not None:
+                t = ts.transform.translation
+                t.x, t.y, t.z = (float(v) for v in self._fixed_baseline)
             if ts is not None:
                 self._baseline = ts
                 self._last_disp = 0.0
                 self._node.get_logger().info(
-                    f"Captured baseline EE pose for displacement thresholding "
-                    f"(after {self._settle_elapsed:.2f}s settle)"
-                )
+                    "Baseline set to the perturbed spring position" if self._fixed_baseline is not None
+                    else f"Captured baseline EE pose for displacement thresholding "
+                         f"(after {self._settle_elapsed:.2f}s settle)")
                 if self._on_armed is not None:
                     self._on_armed()  # baseline locked -> signal "pull now"
             return

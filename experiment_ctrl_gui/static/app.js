@@ -8,6 +8,9 @@ const STEPS = {
   // Apple pluck, perturb paradigm (picked by the paradigm, see stepsFor).
   apple_pluck_perturb: ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start", "perturb_applied",
             "armed", "snap", "recover_start", "trial_end"],
+  // Apple pluck, perturb bump paradigm: the perturbation waits for the grasp.
+  apple_pluck_perturb_bump: ["trial_start", "at_start", "quiet_end", "cue_go", "grasp_wait", "grasp",
+            "perturb_delay_start", "perturb_applied", "armed", "snap", "recover_start", "trial_end"],
   restricted_plane: ["trial_start", "at_start", "cue_go", "armed", "snap", "recover_start", "trial_end"],
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
          "release_wait", "released", "trial_end"],
@@ -23,7 +26,7 @@ const STEP_LABEL = {
   snap: "threshold", recover_start: "recover", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
-  session_end: "session over",
+  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
@@ -36,6 +39,8 @@ const PHASE_TEXT = {
   paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
+  grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
+  grasp_timeout: "no grasp — resetting",
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
@@ -121,6 +126,7 @@ function expLabel(key) {
 }
 function stepsFor(key) {
   if (key === "apple_pluck" && paradigmOf(key) === "perturb") return STEPS.apple_pluck_perturb;
+  if (key === "apple_pluck" && paradigmOf(key) === "perturb_bump") return STEPS.apple_pluck_perturb_bump;
   return STEPS[key] || [];
 }
 
@@ -185,7 +191,6 @@ function renderChecklist() {
   const e = exp(S.selected); if (!e) return;
   const sp = Object.entries(e.smartpad).map(([k, v]) => `<li>${esc(k)}: <code>${esc(v)}</code></li>`).join("");
   $("#checklist").innerHTML = `
-    <li>Arm powered, cabinet in <strong>T1</strong> for a first run; hand on the E-stop.</li>
     <li>On the SmartPad start the app and choose:<ul>${sp}</ul></li>
     <li>The app waits ~60 s for ROS — press <strong>Start</strong> here within that window.</li>
     <li>Visual cue over Wi-Fi? Join this computer to <code>KUKA_NEOPIXEL</code> first.</li>
@@ -383,7 +388,7 @@ function renderParams(force = false) {
 
   // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm.
   const para = paradigmOf(S.selected);
-  const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only === para));
+  const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
   const counts = { live: 0, run: 0 };
   shown.forEach((p) => counts[p.tier]++);
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;

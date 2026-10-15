@@ -179,7 +179,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Experiment | Extra live parameters |
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
-| Apple Pluck — **perturb paradigm only** (shown under *Pluck perturb*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`, `perturb_start.start_delay_sec`, `perturb_start.baseline_settle_sec`, and its speed `perturb_start.speed_scale` (applies at once) |
+| Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when**: `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (applies at once) |
+| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec` |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start / recover pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
@@ -505,6 +506,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 1 | Apple Pluck          | `iiwa7_apple_pluck_impedance_control.launch.py` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 2 | Restricted on Plane  | `iiwa7_move_restricted_plane.launch.py`         | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 3 | Apple Pluck, perturb paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
+| 3c | Apple Pluck, perturb bump paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb_bump` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
@@ -513,7 +515,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 (`LbrImpedanceControlServer`) running the Cartesian impedance spring at 1000 Hz. They differ only in
 what ROS streams into it:
 
-- **Apple Pluck, all paradigms (1, 3 & 3b)** — **joint** setpoints via `LBRJointPositionCommandController`
+- **Apple Pluck, all paradigms (1, 3, 3b & 3c)** — **joint** setpoints via `LBRJointPositionCommandController`
   (straight to the FRI position command, no IK).
 - **Restricted-plane / Maze (2 & 4)** — a fixture-constrained **Cartesian equilibrium** via
   `kuka_clik_controller` (Cartesian target → IK → joint positions).
@@ -558,14 +560,14 @@ pose in `config/apple_pluck_impedance.yaml`.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Maze compliant (uniform 400)` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
+   | Cartesian stiffness (K diagonal) | `Uniform 100` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
-   *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. The other
-   stiffness profiles (`Very Soft Z`, `Soft Z (Apple Pluck)`, `Stiff (firm walls)`, …), damping ratios
-   (`0.1`, `0.2`, `0.3`, `1.0`) and elbow stiffnesses (`15`, `5`) are available if you want to change
-   the feel.*
+   *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. Its four
+   stiffness profiles are named by their values: `Uniform 100`, `Uniform 400` (a stiffer base for the
+   resistance slider), `Uniform 1000` and `X lock 2500, Y/Z 1000, rot 120`. Other damping ratios (`0.1`, `0.2`,
+   `0.3`, `1.0`) and elbow stiffnesses (`15`, `5`) are available if you want to change the feel.*
    The app then waits (~60 s) for the ROS client to connect.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
    (nothing happens until you run this):
@@ -580,10 +582,10 @@ pose in `config/apple_pluck_impedance.yaml`.
 How hard the apple pulls back is selectable per trial from the dashboard: **`resistance.stiffness_n_per_m`**
 on the Live tab, a **slider (steps of 10) plus a text box** for any value in its range.
 
-**The range runs from 50 N/m up to the SmartPad base.** Choose any stiffness profile on the SmartPad
+**The range runs from 50 N/m up to the SmartPad base.** Choose a stiffness profile on the SmartPad
 and enter its translational stiffness as `resistance.base_stiffness_n_per_m` (Per-run): the slider then
-covers **50 N/m to that value**. E.g. Uniform Medium (100) gives 50–100, Maze compliant (400) gives
-50–400, Rail guide (1000) gives 50–1000.
+covers **50 N/m to that value**. The default is `Uniform 100` (base 100: 50–100 N/m); `Uniform 400`
+gives 50–400.
 
 ROS cannot read the SmartPad's stiffness (FRI carries positions and torques only), so the base is the
 value you set to match it. Change it on the Per-run tab and the slider's range follows; a value the
@@ -592,12 +594,12 @@ Like every live setting it applies **from the next trial**, and each trial's sid
 resistance it ran with (`resistance`: base, felt stiffness, fraction followed).
 
 **How.** ROS cannot change the cabinet's stiffness — the SmartPad fixes it when the app starts, and FRI
-streams only the spring's equilibrium. So the SmartPad runs a **stiffer base**, `Maze compliant
-(uniform 400)` (400 N/m, rotation 300 like Uniform Medium), and ROS **softens** it: from the moment
-the monitor arms until the threshold, the equilibrium follows a fraction *f* of the pull, so the
-spring is stretched by only (1 − *f*) of it:
+streams only the spring's equilibrium. So the SmartPad runs the **base** (by default `Uniform 100`:
+100 N/m, rotation 300), and ROS can **soften** it: from the moment the monitor arms until the
+threshold, the equilibrium follows a fraction *f* of the pull, so the spring is stretched by only
+(1 − *f*) of it:
 
-> **felt stiffness = base × (1 − *f*)** — on the 400 base, 100 N/m (the usual Uniform-Medium feel) is *f* = 0.75.
+> **felt stiffness = base × (1 − *f*)** — on the 100 base, 50 N/m is *f* = 0.5; on a 400 base, 100 N/m is *f* = 0.75.
 
 It works in joint space on the same joint controller, measured from the settled pose at `armed`,
 so the resting sag is unchanged ([`resistance_softener.py`](sinthlab_bringup/sinthlab_bringup/actions/resistance_softener.py)).
@@ -605,9 +607,10 @@ At the threshold the freeze takes over from wherever the softening left the equi
 
 - **It can only soften:** at most the base, and never below **50 N/m** — that much spring always
   remains; following the arm completely would leave nothing holding it up.
-- **`resistance.base_stiffness_n_per_m` must equal the SmartPad profile** (400). If the SmartPad
-  runs Uniform Medium (100) while this says 400, every pull feels 4× softer than the slider says.
-  Setting the slider to the base (400) switches softening off: the arm feels the bare profile.
+- **`resistance.base_stiffness_n_per_m` must equal the SmartPad profile** (100 by default). If the
+  SmartPad runs Uniform 100 while this says 400, every pull feels 4× softer than the slider says.
+  Setting the slider to the base switches softening off: the arm feels the bare profile — which is
+  the default (100 on 100).
 - **Quick pulls feel somewhat stiffer** than the setting: the equilibrium follows from ROS at
   100 Hz, slightly behind the arm. Slow, steady pulls get the setting. The further below the base you
   go, the stronger this is (at 50 on a 1000 base, ROS follows 95 % of the pull): **choose a base near
@@ -632,7 +635,7 @@ the manifold it stays put, so the spring pulls the arm back.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Rail guide (uniform 1000)`** |
+   | Cartesian stiffness (K diagonal) | **`Uniform 1000`** |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
@@ -644,7 +647,7 @@ the manifold it stays put, so the spring pulls the arm back.
 3. The arm rises to the workspace; pull it and feel it held onto the sine rail — free along the pull
    axis, walled in the other two.
 
-> **Tune the feel with the SmartPad stiffness profile.** `Rail guide (uniform 1000)` pins X and holds
+> **Tune the feel with the SmartPad stiffness profile.** `Uniform 1000` pins X and holds
 > the arm to the rail in Y, while Z (the pull axis) stays free because the equilibrium tracks it. If
 > the pull feels heavy *while moving* rather than at the rail, that is tracking lag, not stiffness —
 > raise `kuka_clik_controller.max_linear_velocity`.
@@ -677,12 +680,13 @@ the apple is displaced by a sudden, programmatic Cartesian shift, to study the r
 perturbation. The pluck threshold is **0.1 m** in any direction, measured from where the arm settles
 after the perturbation (`perturb_start.baseline_settle_sec`, 1 s).
 
-**Choosing the paradigm.** On the dashboard, the **Apple Pluck** card has three nested tabs — **Pluck
-normal**, **Pluck perturb** and **Pluck random start** ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm))
+**Choosing the paradigm.** On the dashboard, the **Apple Pluck** card has four nested tabs — **Pluck
+normal**, **Pluck perturb**, **Pluck perturb bump** ([Scenario 3c](#scenario-3c--apple-pluck-perturb-bump-paradigm))
+and **Pluck random start** ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm))
 — that set `paradigm` for the next Start (fixed for the run). From a terminal, `paradigm:=perturb`
-(or `random_start`) on the launch overrides the YAML. Every trial is recorded as experiment
+(or `perturb_bump`, `random_start`) on the launch overrides the YAML. Every trial is recorded as experiment
 `apple_pluck`, with `paradigm` in its sidecar. The perturbation settings below act, and are shown on
-the dashboard, only in the perturb paradigm; they are **live**. To run **unperturbed trials inside a
+the dashboard, only in the perturb paradigms; they are **live**. To run **unperturbed trials inside a
 perturb run**, set `polar_r_m` to 0.
 
 **Tuning the perturbation** — `perturb_start` in `config/apple_pluck_impedance.yaml`:
@@ -693,7 +697,7 @@ perturb run**, set `polar_r_m` to 0.
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
-| `start_delay_sec` | Wait after the start cue before the perturbation begins [s]. Default `1.5`. |
+| `start_delay_mode` | **When**, counted from the go cue (perturb) or the grasp (perturb bump): `fixed` — `start_delay_sec` every trial (default `1.5` s); `random` — drawn per trial, uniformly from `start_delay_min_sec`..`start_delay_max_sec` (default 0.2–0.6 s), so the animal cannot predict it. The delay each trial used is the `perturb_delay_start` event's arg. |
 
 At r = 0.05 m from the start pose (motion of the impedance anchor):
 
@@ -713,7 +717,7 @@ The physical apple follows the anchor through the impedance spring, so it lags a
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | `Maze compliant (uniform 400)` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
+   | Cartesian stiffness (K diagonal) | `Uniform 100` — the base the resistance slider softens; see [Resistance](#resistance--the-felt-stiffness-of-the-pull) |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
@@ -725,6 +729,58 @@ The physical apple follows the anchor through the impedance spring, so it lags a
 3. The arm acts as the standard pluck, but **1.5 s after the start cue** (`start_delay_sec`) it moves
    the apple **5 cm sideways** in the plane facing the monkey. Pull from where it settles: **0.1 m** in
    any direction counts.
+
+### Scenario 3c — Apple Pluck, perturb bump paradigm
+The **perturb paradigm, triggered by the grasp** (`paradigm: perturb_bump`): the same perturbation —
+same `polar_r_m`, `polar_theta_deg`, `polar_plane`, speed and delay settings — but instead of a fixed
+time after the go cue, it fires once the monkey **takes hold of the apple**. The hand is on the apple
+when the spring jumps, so it is felt as a **bump**.
+
+```
+go cue → wait for the grasp → delay (fixed, or random per trial) → perturbation (apple's spring moves, stays there)
+       → pull measured from the PERTURBED spring position → snap at 10 cm → hold → recover to the start
+       (no grasp within grasp.timeout_sec → the trial ends, the arm resets, next trial)
+```
+
+**Detecting the grasp — no force sensor.** The hand force is computed from the arm's joint torque
+sensors (as in Free Move, `helpers/hand_force.py`). The resting force (the tool-load model's error, a
+few N) is measured during the quiet window, with the apple untouched, and subtracted; a grasp is the
+remaining force at or above `grasp.threshold_n` (3 N) for `grasp.hold_sec` (30 ms — single-sample
+spikes are ignored). It detects **force on the apple, not touch**: a hand resting on it without
+pushing or pulling is not seen. If the monkey is already holding the apple during the quiet window, the
+resting force exceeds `grasp.tare_max_n` and the previous trial's tare is kept, with a warning.
+
+*Choosing the threshold.* Turn on `grasp.debug_log_enabled` (Per-run): while waiting it prints the
+measured force, so you can see the resting noise and what a real grasp reads. Too low triggers on
+noise; too high misses light grasps. The estimate uses `grasp.jacobian_damping` 0.02, which reads 99% of
+the true force at every apple start pose (Free Move's 0.1 would read ~20% low; it needs that damping
+for stability while moving, the grasp detector does not).
+
+**What the pull is measured from.** The apple is held, so it never settles where the perturbation
+sends its spring — it ends up wherever the spring's pull and the hand balance. So the baseline is the
+perturbation's **target** (the perturbed spring position), locked the instant the move ends:
+`disp_m` is how far the monkey holds the apple from where the spring now wants it, and the 10 cm
+threshold means the same as in the normal pluck. `disp_m` may already be a few cm at `armed` (the
+hand resisting the bump) — that is signal, not error. `baseline_settle_sec` does not apply. Everything
+before the bump is still in the CSV (pose and joint torques from trial start).
+
+**When.** `perturb_start.start_delay_mode`: `fixed` waits `start_delay_sec` after the grasp (0 = at
+once); `random` draws a delay per trial from `start_delay_min_sec`..`start_delay_max_sec`, so the
+animal cannot anticipate the bump. The same setting applies in the perturb paradigm, counted from the
+go cue there. Both modes and all values are live.
+
+**Before the bump** the pull is against the SmartPad profile's full stiffness: the resistance
+softening starts at `armed`, after the perturbation (as in the perturb paradigm).
+
+**Settings** (shown under *Pluck perturb bump*): the perturbation and delay (`perturb_start.*`, as
+Scenario 3), and `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec` (live), `tare_max_n`,
+`jacobian_damping`, debug (per-run).
+
+**Steps to run:** as Scenario 1 (same SmartPad selections), with the **Pluck perturb bump** tab
+selected, or from a terminal:
+```bash
+ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb_bump
+```
 
 ### Scenario 3b — Apple Pluck, random start paradigm
 The **same experiment as Scenario 1** — same SmartPad setup, resistance, threshold and trial — in its
@@ -969,7 +1025,7 @@ Work up the ladder and stop at the first rung that feels wrong.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`Maze walls + easy guiding (rot 120)`** — `{2500, 1000, 1000, 120, 120, 120}` |
+   | Cartesian stiffness (K diagonal) | **`X lock 2500, Y/Z 1000, rot 120`** — `{2500, 1000, 1000, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
@@ -977,13 +1033,12 @@ Work up the ladder and stop at the first rung that feels wrong.
    > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
    > never win: 400 made the walls mushy, 3000 made everything heavy.
    >
-   > Four maze profiles ship, differing **only in rotational stiffness** — `Maze walls (X lock, Y/Z
-   > firm)` 300, `… easy guiding` 120, `… light guiding` 60, `… very light guiding` 30 — so you can A/B
-   > the one knob that matters for feel. The maze's constraints are all *translational* (X = the plane, Y/Z =
+   > **Rotation 120, not 300.** The maze's constraints are all *translational* (X = the plane, Y/Z =
    > the rails), so orientation stiffness defines nothing about the maze — it only stops the tool
-   > twisting. But holding orientation *while translating* is the expensive motion, so dropping it to
-   > 120 (or 60, or 30) reduces guiding effort **without** softening the plane or the rails. Trade-off:
-   > the tool twists more as rot drops — watch the apple angle.
+   > twisting. But holding orientation *while translating* is the expensive motion, so 120 reduces
+   > guiding effort **without** softening the plane or the rails. Trade-off: the tool twists a little
+   > more — watch the apple angle. (To try another rotational stiffness, add a profile to
+   > `LbrImpedanceControlServer.java`.)
 2. **Launch:**
    ```bash
    ros2 launch sinthlab_bringup iiwa7_maze.launch.py
@@ -1026,9 +1081,9 @@ Work up the ladder and stop at the first rung that feels wrong.
 > 2. **Damping ratio** (SmartPad: 0.1 / 0.2 / 0.3 / 0.7 / 1.0). The cabinet damps the arm's velocity,
 >    which is felt as drag along the rail that grows with speed. Lower is lighter; check the walls and
 >    the return to start do not ring.
-> 3. **Rotational stiffness** (SmartPad maze profile: rot 300 / 120 / 60 / 30): the biggest lever on
->    how heavy guiding feels even when moving slowly, and it costs no fixture fidelity — only more tool
->    twist.
+> 3. **Rotational stiffness** (the maze profile's rot 120): the biggest lever on how heavy guiding
+>    feels even when moving slowly, and it costs no fixture fidelity — only more tool twist. To try
+>    another value, add a profile to `LbrImpedanceControlServer.java`.
 > 4. **Null-space (elbow) stiffness** (SmartPad: 30 / 15 / 5 Nm/rad): how firmly the elbow is held.
 >    Moving the flange moves the elbow too, so this is felt as a steady resistance; lower is lighter,
 >    but watch the elbow does not swing.
@@ -1036,11 +1091,9 @@ Work up the ladder and stop at the first rung that feels wrong.
 >
 > **What is left when all of these are at their lightest** is the arm's own inertia and drive
 > friction (about 23 kg of links to move), and the walls catching the part of your push that is not
-> exactly along the rail. Separate the two with the ladder: profile **"Diagnostic: nearly free
-> (uniform 50, rot 10)"** + `virtual_fixture_profile: free_plane` shows the floor — how light the arm
-> can feel at all (diagnostic only; walls and plane lock are meaningless at that stiffness). Then the
-> maze profile + `free_plane` adds the plane lock, `single_line` adds one wall pair, and `maze` adds
-> the rails. Wherever it gets clearly heavier is the part to work on.
+> exactly along the rail. Separate the two with the ladder: the maze profile with
+> `virtual_fixture_profile: free_plane` has the plane lock only, `single_line` adds one wall pair, and
+> `maze` adds the rails. Wherever it gets clearly heavier is the part to work on.
 >
 > Damping 0.1 / 0.2 apply to the Cartesian spring only; the elbow's damping stays at 0.3, Sunrise's
 > minimum for it.
@@ -1086,9 +1139,9 @@ they are under the **Pre-training** tab. All three:
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
-| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Rail guide (uniform 1000)** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Maze walls + easy guiding (rot 120)** | slides it left or right along one horizontal rail, then back | back at the start |
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **X lock 2500, Y/Z 1000, rot 120** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
+| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **X lock 2500, Y/Z 1000, rot 120** | slides it left or right along one horizontal rail, then back | back at the start |
 
 Use **damping 0.7** and **elbow 30** for all three. Move Vertical and Move Horizontal share one
 orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free Move has its own
@@ -1145,7 +1198,7 @@ does the IK; ROS only moves the target point.
   model error — then raise `deadband_n` or `jacobian_damping`. With `debug_log_enabled` (Per-run) the
   log shows the per-joint torques. A per-joint torque dead band is not a fix: an X push loads A2 and
   A4 in opposite directions, so it would bend X pushes by 34–86°.
-- **Why "Rail guide (uniform 1000)".** The spring is what makes the arm follow the moving
+- **Why "Uniform 1000".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool
   orientation.
@@ -1546,6 +1599,25 @@ stateDiagram-v2
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
+**Flow 3c — Apple Pluck, perturb bump paradigm** (joint controller throughout). The perturbation waits
+for the grasp, so it lands while the hand is on the apple.
+```mermaid
+stateDiagram-v2
+    [*] --> MoveToStart : [trial_start]
+    MoveToStart --> QuietWindow : at start [at_start]<br/>resting force measured (tare)
+    QuietWindow --> GoCue : quiet_window_sec [quiet_end]
+    GoCue --> GraspWait : audio + visual cue [cue_go]
+    GraspWait --> Delay : |F − tare| ≥ threshold_n for hold_sec [grasp]
+    GraspWait --> Recover : grasp.timeout_sec, no grasp [grasp_timeout]
+    Delay --> Perturb : fixed or random delay [perturb_delay_start]
+    Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
+    Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap]
+    Snap --> Hold : snap cue, freeze [freeze]
+    Hold --> Recover : dwell [recover_start]
+    Recover --> NextTrial : [trial_end]
+    NextTrial --> MoveToStart : next trial (or hold if paused)
+```
+
 **Flow 4 — Maze** (joint moves, CLIK fixture)
 ```mermaid
 stateDiagram-v2
@@ -1719,13 +1791,13 @@ Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
 below.
 
-| | Apple pluck (pluck) | Apple pluck (perturb) | Apple pluck (random start) | Restricted Plane | Maze |
-|---|---|---|---|---|---|
-| Columns | **42** | **42** | **42** | **42** | **47** |
-| Extra over the core | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
-| Events | 10 | 12 | 10 | 7 (`snap` or `safety_trip`) | 12 |
-| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `start_position`, `start_joint_deg` | `threshold_m`, `fixture` | `maze_geometry` |
-| Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
+| | Apple pluck (pluck) | Apple pluck (perturb) | Apple pluck (perturb bump) | Apple pluck (random start) | Restricted Plane | Maze |
+|---|---|---|---|---|---|---|
+| Columns | **42** | **42** | **42** | **42** | **42** | **47** |
+| Extra over the core | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
+| Events | 10 | 12 | 14 (8 on `grasp_timeout`) | 10 | 7 (`snap` or `safety_trip`) | 12 |
+| Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `start_position`, `start_joint_deg` | `threshold_m`, `fixture` | `maze_geometry` |
+| Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
 **The 41-column core**
 
@@ -1803,6 +1875,21 @@ post-perturbation rest pose.
 
 The applied perturbation **vector** is constant within a trial and goes in the sidecar, not in a
 column.
+
+#### Apple pluck, perturb bump paradigm
+
+As perturb, but between `cue_go` and `perturb_delay_start` the trial waits for the grasp:
+
+| Orchestrator callback | `event` | `event_arg` | Marked when |
+|---|---|---|---|
+| `on_audio_complete()` | `grasp_wait` | — | the go cue is out; the grasp detector is armed |
+| `on_grasp()` | `grasp` | force, N | the hand force (after the tare) has stayed ≥ `grasp.threshold_n` for `grasp.hold_sec` |
+| `on_grasp_timeout()` | `grasp_timeout` | — | no grasp within `grasp.timeout_sec`; followed by `recover_start` and `trial_end` |
+
+`perturb_delay_start` (arg: the delay this trial drew) then counts from `grasp`, and `armed` comes the
+moment the perturbation finishes, with the baseline at the perturbed spring position — no settle wait.
+Bump latency is `perturb_applied − grasp`; the detection itself lags the first contact by about the
+hold time plus the force reaching the threshold.
 
 #### Maze
 
@@ -1902,7 +1989,8 @@ so the two cannot drift apart in a later edit. The codes are in
 ```python
 NSP_CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
              "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
-             "threshold": 10, "session_end": 11}
+             "threshold": 10, "session_end": 11,
+             "grasp": 12, "perturb_applied": 13, "grasp_timeout": 14}
 ```
 
 Sending is switched by **`nsp_sync.enabled`** in each experiment YAML. It is a live parameter, so the
@@ -2029,7 +2117,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 |---|---|
 | `schema_version` | Bump when columns change, so loaders can branch. |
 | `experiment` | `apple_pluck` · `maze` (and the pre-training tasks). Older perturb recordings say `perturb`; `validate_recording.py` reads both |
-| `paradigm` | Apple pluck: `pluck`, `perturb` or `random_start` |
+| `paradigm` | Apple pluck: `pluck`, `perturb`, `perturb_bump` or `random_start` |
 | `trial_index` | Counter within the session. |
 | `session_id` | Shared by every trial from one launch. |
 | `subject` | Animal identifier, from a ROS param. |
@@ -2040,7 +2128,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_pose` | Commanded and measured joint vectors at trial start. |
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
-| `perturbation` | Apple pluck, perturb paradigm: the applied offset vector. Constant per trial, hence metadata not a column. |
+| `perturbation` | Apple pluck, perturb / perturb bump: the perturbation (`r_m`, `theta_deg`, `plane`), its `trigger` (`go_cue` or `grasp`) and `delay_mode` (`fixed` / `random`; the delay itself is the `perturb_delay_start` event's arg). Constant per trial, hence metadata not a column. |
 | `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
 | `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
@@ -2321,7 +2409,7 @@ track the hand*. Position mode gets both from two settings:
   `max_target_step_m` (0.05 m) let the commanded equilibrium keep up with hand-guiding speed, so it never
   falls behind cumulatively.
 - **An anisotropic cabinet stiffness:** `LbrImpedanceControlServer` takes a full per-axis
-  `{X,Y,Z,A,B,C}` diagonal, e.g. `Maze walls + easy guiding (rot 120)` =
+  `{X,Y,Z,A,B,C}` diagonal, e.g. `X lock 2500, Y/Z 1000, rot 120` =
   `{2500, 1000, 1000, 120, 120, 120}` — lock the constrained axis hard, keep the free axes firm enough
   for walls.
 

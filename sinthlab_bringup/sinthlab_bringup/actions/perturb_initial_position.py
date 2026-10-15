@@ -63,6 +63,7 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         self._joint_pos_target = q_target
 
         achieved = np.asarray(self._fk_func(q_target), dtype=float)[0:3, 3]
+        self._target_xyz = achieved
         residual_mm = float(np.linalg.norm(achieved - target_pos)) * 1000.0
         self._node.get_logger().info(
             f"Polar perturbation: r={r:.3f} m, theta={self._polar_theta_deg:.1f} deg, plane={self._polar_plane} "
@@ -130,6 +131,10 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
             dq[i] += eps
             jac[:, i] = (np.asarray(self._fk_func(dq), dtype=float)[0:3, 3] - base) / eps
         return jac
+
+    def target_xyz(self) -> np.ndarray:
+        """EE position [m, base frame] the last perturbation moved the spring to (its joint target, by FK)."""
+        return np.array(self._target_xyz, dtype=float)
 
     def _describe_target(self) -> str:
         return f"POLAR r={self._polar_r_m:.3f} m, theta={self._polar_theta_deg:.1f} deg, plane={self._polar_plane}"

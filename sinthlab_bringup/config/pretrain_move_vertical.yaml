@@ -5,7 +5,7 @@
     # the travel quarters of the ring from GREEN to RED; bringing it back to the start ends the trial
     # with the reward. Same start pose, plane and SmartPad setup as the maze, so it leads straight into it.
     #
-    # >>> SmartPad: "Maze walls + easy guiding (rot 120)" (or a lighter-rot sister), damping 0.7, elbow 30
+    # >>> SmartPad: "X lock 2500, Y/Z 1000, rot 120", damping 0.7, elbow 30
     # -- exactly the maze's setup. X 2500 holds the plane; Y 1000 holds the arm on the rail.
     #
     # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): down is easy (at

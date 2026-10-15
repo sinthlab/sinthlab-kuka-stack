@@ -70,8 +70,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private CartesianImpedanceControlMode control_mode_;
 
     // COMPLIANCE PARAMETERS
-    // Per-axis Cartesian stiffness:  X,Y,Z in [N/m],  A,B,C in [Nm/rad]
-    private double[] K = { 1000.0, 1000.0, 30.0, 300.0, 300.0, 300.0 };
+    // Per-axis Cartesian stiffness:  X,Y,Z in [N/m],  A,B,C in [Nm/rad] -- the chosen profile, below
+    private double[] K;
     // Per-axis damping ratio [0.1 .. 1.0]
     private double[] D = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.7 };
     private double ns_stiffness = 30.0;
@@ -81,59 +81,35 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private static final double[] K_MAX = { 5000.0, 5000.0, 5000.0, 300.0, 300.0, 300.0 };
     private static final double NS_DAMPING_MIN = 0.3;
 
-    // UI Options for Compliance. Each profile is a full per-axis {X,Y,Z,A,B,C} stiffness diagonal,
-    // so the cabinet can enforce axis-aligned virtual fixtures in hardware (e.g. a flat table =
-    // free X/Y + stiff Z).
+    // UI Options for Compliance. Each profile is a full per-axis {X,Y,Z,A,B,C} stiffness diagonal
+    // (X,Y,Z [N/m], A,B,C [Nm/rad]), named by its values, not by an experiment. The first is listed
+    // first on the SmartPad. Which experiment uses which: experiment_ctrl_gui/experiments.py (the
+    // dashboard's SmartPad checklist) and the README.
     private String[] stiffness_profiles_ = {
-        "Soft Z (Apple Pluck)",
-        "Uniform Medium (Apple Pluck)",
-        "Very Soft Z",
-        "Flat table (free X/Y, stiff Z)",
-        "Rail guide (uniform 1000)",
-        "Stiff (firm walls)",
-        "Maze compliant (uniform 400)",
-        "Maze walls (X lock, Y/Z firm)",
-        "Maze walls + easy guiding (rot 120)",
-        "Maze walls + light guiding (rot 60)",
-        "Maze walls + very light guiding (rot 30)",
-        "Diagnostic: nearly free (uniform 50, rot 10)"
+        "Uniform 100",
+        "Uniform 400",
+        "Uniform 1000",
+        "X lock 2500, Y/Z 1000, rot 120"
     };
     private double[][] stiffness_vals_ = {
-        { 1000.0, 1000.0,   30.0, 300.0, 300.0, 300.0 }, // apple pluck: soft in Z
-        {  100.0,  100.0,  100.0, 300.0, 300.0, 300.0 }, // apple pluck: uniform medium (preferred)
-        {  800.0,  800.0,   10.0, 200.0, 200.0, 200.0 }, // apple pluck: extra-soft Z
-        {   80.0,   80.0, 4000.0, 300.0, 300.0, 300.0 }, // plane fixture: free X/Y, hard Z wall
-        { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // fixture experiments: uniform guide
-        { 3000.0, 3000.0, 3000.0, 300.0, 300.0, 300.0 }, // firm everywhere
-        { 400.0, 400.0, 400.0, 300.0, 300.0, 300.0 },    // maze: compliant uniform guide
-        // MAZE (vertical Y-Z plane, restricted_axis "x"): ANISOTROPIC and the one to use.
-        //   X 2500 = lock the radial axis -> the plane is enforced by the CABINET, hard.
-        //   Y/Z 1000 = firm corridor walls (~10 N per cm of penetration).
-        // The corridor INTERIOR still feels free: there the fixture's projection returns the measured
-        // pose, so spring error ~ 0 and force ~ 0 regardless of these numbers. Only the walls and the
-        // locked axis see a real error. This is why a uniform profile could never win -- 400 made the
-        // walls mushy, 3000 made everything heavy.
-        { 2500.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 }, // maze: X lock + firm Y/Z walls
-        // MAZE, tuned for SMOOTH guiding. IDENTICAL translational stiffness to the profile above --
-        // the maze's constraints are ALL translational (X = the plane lock, Y/Z = the corridor walls),
-        // so those must stay firm or the fixture itself goes mushy. ONLY the rotational terms are
-        // relaxed:
-        //   rot 300 -> 120. Orientation locking defines nothing about the maze; it merely stops the
-        //   tool twisting. But holding orientation while translating is the EXPENSIVE motion (it is
-        //   what makes a badly chosen start posture feel like treacle), so this is the one knob that reduces drag
-        //   on guiding WITHOUT weakening the plane or the walls.
-        // Trade-off: the tool may twist a little more -- watch the apple angle.
-        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }, // maze: firm constraints, easy guiding
-        // MAZE, lighter still: the same walls and plane lock, rotational stiffness lowered further. Holding
-        // orientation while translating is the costly motion, so this is the knob for "moving along a
-        // rail feels heavy". The price is more tool twist under load -- watch the apple angle.
-        { 2500.0, 1000.0, 1000.0,  60.0,  60.0,  60.0 }, // maze: firm constraints, light guiding
-        { 2500.0, 1000.0, 1000.0,  30.0,  30.0,  30.0 }, // maze: firm constraints, very light guiding
-        // DIAGNOSTIC ONLY -- not for trials. Almost no spring anywhere, so what is still felt when guiding
-        // the arm is its own inertia and drive friction: the floor no fixture setting can go below. Walls
-        // and the plane lock are too soft to mean anything here. The ROS moves still work (slowly).
-        {   50.0,   50.0,   50.0,  10.0,  10.0,  10.0 }  // diagnostic: nearly free
+        // Apple pluck. The resistance slider softens it further from ROS (50 N/m up to this base).
+        {  100.0,  100.0,  100.0, 300.0, 300.0, 300.0 },
+        // Apple pluck with a stiffer base: the resistance slider then spans 50-400 N/m.
+        {  400.0,  400.0,  400.0, 300.0, 300.0, 300.0 },
+        // Restricted plane (the sine rail) and Free Move: firm everywhere, so the arm follows its
+        // moving equilibrium closely; the fixture or the admittance decides where that is.
+        { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 },
+        // Maze and the rail pre-training tasks (vertical Y-Z plane, restricted_axis "x"):
+        //   X 2500 locks the radial axis, so the plane is enforced by the CABINET, hard.
+        //   Y/Z 1000 = firm rail walls (~10 N per cm off the rail). Along a rail the fixture's
+        //   projection returns the measured pose, so the spring is slack there whatever these are.
+        //   rot 120: orientation stiffness defines nothing about the maze (its constraints are all
+        //   translational), but holding orientation while translating is the expensive motion, so a
+        //   lower rot makes guiding lighter without softening the plane or the rails. The price is a
+        //   little more tool twist -- watch the apple angle.
+        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }
     };
+
     // Start-up sequence, every run: MECHANICAL ZERO (a known, repeatable posture whatever the arm was
     // left in), then the READY POSE -- the restricted-plane start: well conditioned (smallest singular
     // value of the Jacobian 0.206, against 0.0 when straight), and every experiment's start is

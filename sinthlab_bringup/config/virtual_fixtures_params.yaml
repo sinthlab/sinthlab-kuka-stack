@@ -2,8 +2,8 @@
   ros__parameters:
     # Restricted-plane runs in POSITION mode: move_to_start/recover use MoveToPositionJointSpace, and
     # MoveRestrictedOnAPlaneAction streams the fixture-constrained equilibrium to kuka_clik_controller.
-    # The CABINET (LbrImpedanceControlServer) provides the compliance -- pair with "Rail guide
-    # (uniform 1000)". This scenario already worked; the raised CLIK clamps only make the rail easier
+    # The CABINET (LbrImpedanceControlServer) provides the compliance -- pair with "Uniform
+    # 1000". This scenario already worked; the raised CLIK clamps only make the rail easier
     # to pull at speed.
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the fixture works in
@@ -151,9 +151,9 @@
         # steeper slope (amplitude*spatial_freq = 1.2, a 50 deg rail) costs no extra force — it only
         # makes the wave tighter. But it DOES demand lateral speed: v_y = slope * v_pull, so the CLIK's
         # max_linear_velocity (1.0 m/s) must exceed it or the rail gets rate-limited flat.
-        # Pair with the "Rail guide (uniform 1000)" cabinet profile.
+        # Pair with the "Uniform 1000" cabinet profile.
         # Keep the slope moderate: 0.1 / 20.0 would be slope 2.0 (63 deg), and a 10 cm error = 300 N at
-        # "Stiff" -- enough to slam the arm sideways and trip the cabinet.
+        # 3000 N/m -- enough to slam the arm sideways and trip the cabinet.
         amplitude: 0.04  # sideways swing of the rail [m] -- this sets the force
         spatial_freq: 30.0  # rail frequency along the pull [rad/m]; wavelength = 2*pi / this
         pull_axis: "z"  # axis the operator pulls along (free)

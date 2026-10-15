@@ -37,7 +37,7 @@ CORE = (["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
         + ["tracking", "session", "quality", "safety", "drive", "control", "event", "event_arg"])
 
 # "perturb" = apple pluck in the perturb paradigm (see validate()).
-EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "restricted_plane": ["disp_m"],
+EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["disp_m"], "restricted_plane": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
@@ -48,10 +48,15 @@ ORDER = {
     "perturb": ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start",
                 "perturb_applied", "armed", "snap", "cue_snap", "freeze", "recover_start",
                 "trial_end"],
+    # perturb_bump: the rest depends on the grasp -- see BUMP_GRASPED below.
+    "perturb_bump": ["trial_start", "at_start", "quiet_end", "cue_go", "grasp_wait", "recover_start",
+                     "trial_end"],
     "restricted_plane": ["trial_start", "at_start", "cue_go", "armed", "recover_start", "trial_end"],
     "maze": ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "trial_end"],
 }
 MAZE_ENDINGS = ("goal", "timeout", "safety_trip")
+# A perturb_bump trial either times out waiting for the grasp, or runs these, in order.
+BUMP_GRASPED = ["grasp", "perturb_delay_start", "perturb_applied", "armed", "snap", "cue_snap", "freeze"]
 
 HEALTHY = {"session": (4, "COMMANDING_ACTIVE"), "safety": (0, "NORMAL_OPERATION"),
            "drive": (2, "ACTIVE")}
@@ -110,10 +115,10 @@ def validate(path) -> bool:
         exp = None
     else:
         exp = meta.get("experiment")
-        # Apple pluck runs in two paradigms; a perturb-paradigm trial is checked as "perturb" (the
-        # experiment name older perturb recordings carry, so both read the same way).
-        if exp == "apple_pluck" and meta.get("paradigm") == "perturb":
-            exp = "perturb"
+        # Apple pluck trials in the perturb / perturb_bump paradigms are checked against those
+        # paradigms' events ("perturb" is also the experiment name older perturb recordings carry).
+        if exp == "apple_pluck" and meta.get("paradigm") in ("perturb", "perturb_bump"):
+            exp = meta["paradigm"]
 
     # ---- SCHEMA ----
     print("\n [SCHEMA]")
@@ -218,7 +223,17 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
-    if exp in ("apple_pluck", "perturb") and "disp_m" in head:
+    if exp == "perturb_bump":
+        if "grasp_timeout" in got:
+            r.check("grasp" not in got and "perturb_applied" not in got,
+                    "no grasp within the timeout: no perturbation either")
+        else:
+            for tok in BUMP_GRASPED:
+                r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
+            seq = [got.index(t) for t in BUMP_GRASPED if t in got]
+            r.check(seq == sorted(seq) and got.index("grasp_wait") < got.index("grasp") < got.index("recover_start"),
+                    "grasp -> delay -> perturbation -> armed -> snap, in order")
+    if exp in ("apple_pluck", "perturb", "perturb_bump") and "disp_m" in head:
         # NaN = monitor not measuring (before armed / after completion); v == v drops it.
         vals = [v for v in col(head, body, "disp_m") if v is not None and v == v]
         peak = max(vals) if vals else 0.0

@@ -6,19 +6,19 @@
     # less -- felt stiffness = base x (1 - fraction followed). It can only SOFTEN, never stiffen, and at
     # least 50 N/m of spring always remains. See actions/resistance_softener.py.
     #
-    # >>> SmartPad: any profile -- e.g. "Maze compliant (uniform 400)" (400 N/m, rotation 300, like Uniform
-    #     Medium but 4x stiffer translationally). Enter its translational stiffness below as the base: the
-    #     slider then runs from 50 N/m up to the base, in steps of 10 (100, the usual feel, is mid-range
-    #     on 400). The further below the base you go, the more a quick pull feels like the base (see below):
+    # >>> SmartPad: "Uniform 100" (100 N/m, rotation 300) -- the usual feel, and the default here. Enter
+    #     the profile's translational stiffness below as the base: the slider then runs from 50 N/m up to
+    #     the base, in steps of 10. For a stiffer range pick "Uniform 400" and enter 400 (50-400 N/m).
+    #     The further below the base you go, the more a quick pull feels like the base (see below):
     #     choose a base near the stiffest you will actually use.
     #     base_stiffness_n_per_m MUST equal the profile's translational stiffness: if it says 400 while
-    #     the SmartPad runs Uniform Medium (100), every pull feels 4x softer than the slider says.
+    #     the SmartPad runs Uniform 100, every pull feels 4x softer than the slider says.
     #     Equal values (stiffness = base) switch the softening off: the arm feels the bare profile.
     # Quick pulls feel somewhat stiffer than the setting (the equilibrium follows from ROS at 100 Hz,
     # slightly behind the arm), and at a fixed damping ratio a stiffer base is more damped -- pick a
     # lower damping ratio on the SmartPad if pulls feel viscous.
     resistance:  # felt stiffness of the pull
-      base_stiffness_n_per_m: 400.0  # the SmartPad profile's translational stiffness [N/m] (per-run; must match the SmartPad)
+      base_stiffness_n_per_m: 100.0  # the SmartPad profile's translational stiffness [N/m] (per-run; must match the SmartPad)
       stiffness_n_per_m: 100.0  # felt stiffness of the pull [N/m] (live, from the next trial): 50 up to the base
 
     # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
@@ -27,12 +27,14 @@
     #   pluck         the pull from a fixed start: go cue -> pull -> threshold -> hold -> recover.
     #   perturb       the same, but after the go cue the apple is displaced by a polar (r, theta) offset
     #                 (perturb_start, below), and the pull is measured from where it settles.
+    #   perturb_bump  the same perturbation, but triggered when the hand GRASPS the apple (grasp, below),
+    #                 so it is felt as a bump; the pull is measured from the perturbed spring position.
     #   random_start  the pull as in pluck, but each trial starts at one of 9 positions -- the origin
     #                 and the 8 compass directions around it (random_start, below).
-    # Dashboard: Apple Pluck -> "Pluck normal" / "Pluck perturb" / "Pluck random start".
-    # Launch: paradigm:=perturb (or random_start) overrides it.
+    # Dashboard: Apple Pluck -> "Pluck normal" / "Pluck perturb" / "Pluck perturb bump" / "Pluck random start".
+    # Launch: paradigm:=perturb (or perturb_bump, random_start) overrides it.
     # Every trial is recorded as experiment "apple_pluck", with this paradigm in its sidecar.
-    paradigm: "pluck"  # pluck | perturb | random_start
+    paradigm: "pluck"  # pluck | perturb | perturb_bump | random_start
 
     apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
       update_rate: 200  # loop rate of this action [Hz]
@@ -118,9 +120,10 @@
       physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-    # ==== PERTURB PARADIGM ONLY: the displacement of the apple after the go cue (live) ====
-    # Used only when paradigm is "perturb"; shown on the dashboard only under Pluck perturb. To run
-    # unperturbed trials inside a perturb run, set polar_r_m to 0 (live).
+    # ==== PERTURB PARADIGMS ONLY: the displacement of the apple (live) ====
+    # Used when paradigm is "perturb" (after the go cue) or "perturb_bump" (after the grasp); shown on
+    # the dashboard only under those tabs. To run unperturbed trials inside a perturb run, set polar_r_m
+    # to 0 (live).
     perturb_start:  # the perturbation: polar offset from the start, jerk-limited joint move
       update_rate: 200  # loop rate of this action [Hz]
       # WHERE -- a POLAR offset (r, theta) from the start EE position, re-solved every trial by position
@@ -165,15 +168,43 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      start_delay_sec: 1.5  # delay after the start cue before the perturbation move begins [s]
-      # The arm must settle where the perturbation left it before the pull baseline locks (the monitor
-      # starts as soon as the perturbation move completes, while the physical arm still lags it).
-      baseline_settle_sec: 1.0  # wait after the perturbation before locking the pull baseline [s]
+      # WHEN -- the delay before the perturbation, counted from the go cue (perturb) or from the
+      # detected grasp (perturb_bump). Fixed, or drawn per trial so the animal cannot predict it; the
+      # delay each trial used is recorded (event perturb_delay_start, its arg).
+      start_delay_mode: "fixed"  # fixed = start_delay_sec every trial; random = uniform in [min, max] each trial
+      start_delay_sec: 1.5  # the delay in fixed mode [s]
+      start_delay_min_sec: 0.2  # the shortest delay in random mode [s]
+      start_delay_max_sec: 0.6  # the longest delay in random mode [s]
+      # perturb only: the arm must settle where the perturbation left it before the pull baseline
+      # locks (the monitor starts as soon as the move completes, while the physical arm still lags
+      # it). perturb_bump does not wait: its baseline is the perturbed spring position, at once.
+      baseline_settle_sec: 1.0  # perturb only: wait after the perturbation before locking the pull baseline [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m] (only when waiting)
       physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+
+    # ==== PERTURB_BUMP PARADIGM ONLY: detecting the grasp that triggers the perturbation (live) ====
+    # Used only when paradigm is "perturb_bump"; shown on the dashboard only under Pluck perturb bump.
+    # No force sensor: the hand force comes from the arm's joint torque sensors (as in Free Move), so a
+    # grasp is FORCE on the apple -- a hand resting on it without pushing or pulling is not detected.
+    # The resting force is measured during the quiet window (apple untouched) and subtracted; a grasp
+    # is the remaining force at or above threshold_n for hold_sec. No grasp within timeout_sec -> the
+    # trial ends (event grasp_timeout), the arm resets, and the next trial starts.
+    # Pick threshold_n with debug_log_enabled on: it prints the force while waiting, so you can see the
+    # resting noise and a real grasp. Too low triggers on noise; too high misses light grasps.
+    grasp:  # grasp detection (perturb_bump)
+      threshold_n: 3.0  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
+      hold_sec: 0.03  # the force must stay above threshold_n this long -- rejects single-sample spikes [s]
+      timeout_sec: 10.0  # no grasp within this long after the go cue -> end the trial and reset [s]
+      tare_max_n: 10.0  # a resting force above this means the apple was held during the quiet window: keep the previous tare [N]
+      # The arm is still and well conditioned while waiting, so this can be far below Free Move's 0.1
+      # (which reads ~20% low at these poses): 0.02 reads 99% of the true force at every apple start.
+      jacobian_damping: 0.02  # damping of the Jacobian inverse in the force estimate: larger = steadier near singularities, but reads force weaker
+      ee_frame: lbr_link_ee  # the link the force is estimated at (the flange the apple is mounted on)
+      debug_log_enabled: false  # print the measured force periodically while waiting for the grasp
+      debug_log_rate_hz: 5.0  # how often that debug line prints [Hz]
 
     # ==== RANDOM_START PARADIGM ONLY: a different start position every trial (per-run) ====
     # Used only when paradigm is "random_start"; shown on the dashboard only under Pluck random start.
