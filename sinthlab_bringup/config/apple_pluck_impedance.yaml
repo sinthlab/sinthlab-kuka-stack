@@ -82,14 +82,14 @@
       - 40.0
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       # The arm comes from park (~40 cm) on a soft spring, so it lags the command: wait until it is
       # really there, so the quiet window (and the grasp detector's resting-force tare) starts at rest.
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # apple within this of the start counts as arrived [m] (the soft spring sags ~cm)
-      physical_arrival_timeout_sec: 5.0  # stop waiting for the measured arm after this long, with a warning [s]
+      physical_arrival_timeout_sec: 1.5  # stop waiting for the measured arm after this long, with a warning [s] (the soft spring can sag past the tolerance)
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
     # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
     # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
@@ -112,7 +112,7 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here, from wherever the arm is (per-run)
+      first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run); this family never crosses the straight elbow, so no need to crawl
       hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # apple within this of the park pose counts as arrived [m]
@@ -210,7 +210,7 @@
       delay_sec: 0.0  # the delay after the grasp in fixed mode [s]; 0 = at once
       delay_min_sec: 0.0  # the shortest delay after the grasp in random mode [s]
       delay_max_sec: 0.3  # the longest delay after the grasp in random mode [s]
-      tare_sec: 1.0  # the resting force is averaged over this last stretch of the quiet window, before the go cue [s]
+      tare_sec: 0.5  # the resting force is averaged over this last stretch of the quiet window, before the go cue [s]; <= quiet_window_sec
       tare_max_n: 10.0  # a resting force above this means the apple was held during the quiet window: keep the previous tare [N]
       # The arm is still and well conditioned while waiting, so this can be far below Free Move's 0.1
       # (which reads ~20% low at these poses): 0.02 reads 99% of the true force at every apple start.
@@ -260,7 +260,7 @@
     # while the experiment runs; they apply from the NEXT trial. So may the cue blocks
     # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
     # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
-    quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
+    quiet_window_sec: 1.0      # at the start pose, before the go cue [s]; keep >= grasp.tare_sec
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # event codes to the Blackrock NSP

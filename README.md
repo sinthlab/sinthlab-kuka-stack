@@ -176,7 +176,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Parameter | Meaning |
 |---|---|
-| `quiet_window_sec` | pause at the start pose before the go cue [s] (default 2.0) |
+| `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
 | `audio_cue_*.frequency_hz`, `audio_cue_*.duration_ms` | each tone (37–32767 Hz, 10–10000 ms) |
@@ -759,7 +759,7 @@ go cue → wait for the grasp → delay (fixed, or random per trial) → perturb
 
 **Detecting the grasp — no force sensor.** The hand force is computed from the arm's joint torque
 sensors (as in Free Move, `helpers/hand_force.py`). The resting force (the tool-load model's error, a
-few N) is measured over the last `grasp.tare_sec` (1 s) of the quiet window, with the apple untouched
+few N) is measured over the last `grasp.tare_sec` (0.5 s) of the quiet window, with the apple untouched
 and the arm settled after its move from park, and subtracted; a grasp is the
 remaining force at or above `grasp.threshold_n` (1.5 N) for `grasp.hold_sec` (30 ms — single-sample
 spikes are ignored). It detects **force on the apple, not touch**: a hand resting on it without
@@ -1508,8 +1508,10 @@ flowchart LR
   *The first move.* The SmartPad app always leaves the arm at its ready pose (elbow −). For the maze
   family the run's first move, ready → park, therefore **passes the straight elbow once** — as every
   maze-family run did before parking existed (ready → maze start). It runs slowly for that,
-  `move_to_park.first_move_speed_scale` (0.25), and a live speed change during it applies only after
-  it. Every later move stays on one side.
+  `move_to_park.first_move_speed_scale` (0.25 in the maze family; 1.0 for apple pluck and Restricted
+  Plane, whose first move stays on one side of the elbow), and a live speed change during it applies
+  only after it. Every later move stays on one side. The move from park to the start runs at
+  `move_to_start.speed_scale` 0.7 (live) — a little slower than the other moves.
 
   *The wait at park.* After reaching park — the first time and after every trial — the arm waits
   `move_to_park.hold_sec` (live, 2 s) before it moves to the next trial's start. Pausing during that
@@ -1519,7 +1521,7 @@ flowchart LR
   at park before anything else happens; FRI closes only after that (see Running an experiment).
 
   *Arriving at the start.* Apple pluck's move to the start waits until the apple is really there
-  (`move_to_start.wait_for_physical_arrival`, within 3 cm, 5 s at most): it comes ~40 cm from park on
+  (`move_to_start.wait_for_physical_arrival`, within 3 cm, 1.5 s at most): it comes ~40 cm from park on
   a soft spring and lags the command, and the quiet window — the grasp detector's tare, the pull's
   baseline — must start with the arm at rest.
 
@@ -1666,7 +1668,7 @@ stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
     FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> QuietWindow : at start [at_start]
-    QuietWindow --> GoCue : quiet_window_sec (2 s) [quiet_end]
+    QuietWindow --> GoCue : quiet_window_sec (1 s) [quiet_end]
     GoCue --> Monitor : audio + visual cue [cue_go]
     Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
     Snap --> Hold : snap cue [cue_snap], freeze the equilibrium on the arm [freeze]
