@@ -4,7 +4,7 @@
 The restricted-plane / maze experiments drive the arm to a precise start posture on the
 ``lbr_joint_position_command_controller``, then hand off to the ``kuka_clik_controller`` for the
 virtual-fixture phase. This action wraps the controller_manager ``switch_controller`` service so the
-orchestrator can do that hand-off (and the reverse, before the recover move) as just another step in
+orchestrator can do that hand-off (and the reverse, before the park move) as just another step in
 the trial.
 
 The fixture controller is spawned ``--inactive`` in PARALLEL with the orchestrator, so at the first

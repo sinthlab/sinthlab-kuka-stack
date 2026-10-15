@@ -24,7 +24,7 @@
     # Apple-pluck drives a joint position controller (LBRJointPositionCommandController) via the
     # MoveToPositionJointSpace action; the cabinet (LbrImpedanceControlServer) provides compliance.
     # ==== PARADIGM -- fixed for the run ====
-    #   pluck         the pull from a fixed start: go cue -> pull -> threshold -> hold -> recover.
+    #   pluck         the pull from a fixed start: go cue -> pull -> threshold -> hold -> park.
     #   perturb       the same, but after the go cue the apple is displaced by a polar (r, theta) offset
     #                 (perturb_start, below), and the pull is measured from where it settles.
     #   perturb_bump  the same perturbation, but triggered when the hand GRASPS the apple (grasp, below),
@@ -36,7 +36,7 @@
     # Every trial is recorded as experiment "apple_pluck", with this paradigm in its sidecar.
     paradigm: "pluck"  # pluck | perturb | perturb_bump | random_start
 
-    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
+    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> park
       update_rate: 200  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
@@ -45,7 +45,7 @@
       # base axis carries the pull. (x | y | z would measure just that base-frame axis.)
       cartesian_axis: norm  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
       cartesian_displacement_threshold_m: 0.1  # pull from the baseline that counts as success (snap) [m]
-      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then recover [s]
+      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then park [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
     move_to_start:  # joint-space move to the trial start pose
@@ -56,7 +56,7 @@
       #   This is C, the origin of the random_start grid (random_start.positions.C, below).
       #   6D condition number 10.5; every joint >= 33.4 deg from its limit; the arm can be pulled at
       #   least 0.35 m toward the monkey (along +X or along the apple) before nearing a limit or singularity.
-      # KNOBS -- edit move_to_start AND move_to_start_recover together (and re-solve random_start):
+      # KNOBS (re-solve random_start after changing the start; keep A4 negative, like the park pose):
       #   A6 (6th value)  tilt. +10 -> 35 deg down (apple ~0.53, 0.68); -10 -> 15 deg down (apple ~0.58,
       #                   0.78). The apple pivots about the wrist.
       #   A7 (7th value)  turns the effector about its own axis without moving the apple, e.g. to put the
@@ -88,17 +88,16 @@
       wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m] (only when waiting)
       physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
-    move_to_start_recover:  # joint-space move back to the start at the end of each trial
+    # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
+    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
+    # every trial is park -> start -> trial -> park. Pausing holds here.
+    # This is the elbow-NEGATIVE posture (A4 < 0), like this experiment's start. The maze family parks at
+    # the same place with the elbow the other way. Start and park must bend the elbow the same way, or
+    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
+    move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
       update_rate: 200  # loop rate of this action [Hz]
-      # Same pose as move_to_start (see the notes there).
-      target_joint_position:  # recover pose A1..A7 [deg], same as move_to_start
-      - 0.0
-      - -13.7
-      - 0.0
-      - -85.6
-      - 0.0
-      - 43.1
-      - 0.0
+      target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
       joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       move_to_pos_v_max:  # peak joint speed [deg/s]
       - 40.0
@@ -111,13 +110,10 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here, from wherever the arm is (per-run)
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
-      # Physical arrival is judged by where the APPLE is, not by joint angles: the elbow can swing with the
-      # apple exactly home (at this start a 1.6 cm elbow swing moves A1 by 0.15 rad), so a joint test can
-      # wait forever after some pulls. If the arm is held off, carry on after the timeout (a warning says
-      # how far off it was).
-      cartesian_move_tolerance: 0.03      # apple within 3 cm of the start counts as arrived [m]
-      physical_arrival_timeout_sec: 5.0   # stop waiting after this long [s]
+      cartesian_move_tolerance: 0.03  # apple within this of the park pose counts as arrived [m]
+      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
     # ==== PERTURB PARADIGMS ONLY: the displacement of the apple (live) ====

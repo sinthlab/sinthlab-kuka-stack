@@ -5,8 +5,8 @@ From the arm's current configuration, drive to an absolute target joint configur
 (``target_joint_position``), streaming ``LBRJointPositionCommand`` to the
 ``LBRJointPositionCommandController``. The joint positions go straight to the FRI position
 command (exact, no IK); the cabinet (LbrImpedanceControlServer) provides the compliance.
-Completion is judged in joint space. Used for every start and recover move (and, via
-PerturbInitialPosition, the perturbation).
+Completion is judged in joint space. Used for every start move, and via subclasses the park move
+(ParkMove) and the perturbation (PerturbInitialPosition).
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ class MoveToPositionJointSpace(MoveActionBase):
     def _completion_reached(self) -> bool:
         # The COMMANDED trajectory is always judged in joint space (the controller commands exactly these
         # joints), so a move can't "finish" before Ruckig has ramped the equilibrium there. When
-        # wait_for_physical_arrival is set (e.g. recover), the measured arm must also have arrived.
+        # wait_for_physical_arrival is set (e.g. park), the measured arm must also have arrived.
         # (Checking measured alone let recover complete early when the arm sprang back near the target
         # before the ramp finished -- leaving the equilibrium parked at the perturbed pose.)
         #

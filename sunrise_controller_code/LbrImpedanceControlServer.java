@@ -17,14 +17,8 @@ import com.kuka.roboticsAPI.deviceModel.JointPosition;
 import com.kuka.roboticsAPI.deviceModel.LBR;
 import com.kuka.roboticsAPI.geometricModel.CartDOF;
 import com.kuka.roboticsAPI.geometricModel.Tool;
-import com.kuka.roboticsAPI.motionModel.IMotionContainer;
 import com.kuka.roboticsAPI.uiModel.ApplicationDialogType;
 import com.kuka.roboticsAPI.uiModel.IApplicationUI;
-import com.kuka.roboticsAPI.uiModel.userKeys.IUserKey;
-import com.kuka.roboticsAPI.uiModel.userKeys.IUserKeyBar;
-import com.kuka.roboticsAPI.uiModel.userKeys.IUserKeyListener;
-import com.kuka.roboticsAPI.uiModel.userKeys.UserKeyAlignment;
-import com.kuka.roboticsAPI.uiModel.userKeys.UserKeyEvent;
 import com.kuka.roboticsAPI.motionModel.controlModeModel.CartesianImpedanceControlMode;
 import com.kuka.connectivity.fastRobotInterface.ClientCommandMode;
 import com.kuka.connectivity.fastRobotInterface.FRIChannelInformation;
@@ -51,11 +45,9 @@ import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
  *      state ROS reads -- and the start of its first move -- is the ready pose.
  *   3. Hold the pose in Cartesian impedance with the FRI overlay; ROS moves the equilibrium.
  *
- * CLOSE: a "Cancel" user key (on the SmartPad, beside the display) ends the app at any point once
- * set up -- during the start-up moves, the wait for ROS, or while running. It cancels the current
- * motion and returns from run(); dispose() closes FRI. A Sunrise app cannot add a cross to the
- * SmartPad's own window, so this key is the app's close button. It is a normal end, not a safety
- * function: the E-stop is the E-stop.
+ * CANCEL: every set-up question has a "Cancel" choice, which ends the app before anything moves. Once
+ * running, the app is ended with the SmartPAD's own stop. Neither is a safety function: the E-stop is
+ * the E-stop.
  *
  * SETTINGS REPORT: once the selections are made, the app sends them to the ROS computer (the remote
  * IP chosen) once a second, as one JSON line over UDP to SETTINGS_PORT, until it ends. ROS records
@@ -87,10 +79,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private String profile_name_ = "";
     private double ns_damping_used_ = 0.0;
 
-    // Close (user key): checked between steps; cancels the motion under way.
-    private static final String CLOSE = "Cancel";
-    private volatile boolean close_requested_ = false;
-    private volatile IMotionContainer motion_ = null;
+    // Cancel: the last choice of every set-up question; ends the app before anything moves.
+    private static final String CANCEL = "Cancel";
+    private boolean cancelled_ = false;
 
     // FRI Networking Parameters
     private String client_name_;
@@ -166,33 +157,49 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private String[] ns_stiffness_options_ = { "30 (Standard)", "15 (Light)", "5 (Very light)" };
     private double[] ns_stiffness_vals_ = { 30.0, 15.0, 5.0 };
 
-    /** One SmartPAD selection dialog; returns the chosen index. */
+    /**
+     * One SmartPAD selection dialog, with "Cancel" as its last choice. Returns the chosen index, or -1
+     * for Cancel (which also requests the app to end).
+     */
     private int ask(String question, String[] options) {
-        return applicationUi.displayModalDialog(ApplicationDialogType.QUESTION, question, options);
+        String[] withCancel = new String[options.length + 1];
+        System.arraycopy(options, 0, withCancel, 0, options.length);
+        withCancel[options.length] = CANCEL;
+        int i = applicationUi.displayModalDialog(ApplicationDialogType.QUESTION, question, withCancel);
+        if (i == options.length) {
+            cancelled_ = true;
+            getLogger().info("Cancelled from the set-up questions.");
+            return -1;
+        }
+        return i;
     }
 
     /**
-     * Prompts the user on the SmartPAD to configure the connection.
+     * Prompts the user on the SmartPAD to configure the connection. Returns false if Cancel was chosen.
      */
-    public void request_user_config() {
+    public boolean request_user_config() {
         // Ask for Send Period
         int selectedButtonIndex = ask("Select the desired FRI send period [ms]:", send_periods_);
+        if (selectedButtonIndex < 0) return false;
         send_period_ = Integer.valueOf(send_periods_[selectedButtonIndex]);
         getLogger().info("Send period set to: " + send_period_);
 
         // Ask for Remote IP
         selectedButtonIndex = ask("Select your remote IP address:", client_names_);
+        if (selectedButtonIndex < 0) return false;
         client_name_ = client_names_[selectedButtonIndex];
         getLogger().info("Remote address set to: " + client_name_);
 
         // Ask for Stiffness Profile
         selectedButtonIndex = ask("Select Cartesian Stiffness (K diagonal):", stiffness_profiles_);
+        if (selectedButtonIndex < 0) return false;
         K = stiffness_vals_[selectedButtonIndex];
         profile_name_ = stiffness_profiles_[selectedButtonIndex];
         getLogger().info("Stiffness Profile set to: " + stiffness_profiles_[selectedButtonIndex]);
 
         // Ask for Damping Ratio
         selectedButtonIndex = ask("Select Damping Ratio (D0):", damping_options_);
+        if (selectedButtonIndex < 0) return false;
         double d0 = damping_vals_[selectedButtonIndex];
         for (int i = 0; i < 6; i++) {
             D[i] = d0;
@@ -202,6 +209,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
 
         // Ask for Null-space (elbow) Stiffness
         selectedButtonIndex = ask("Select Null-space (elbow) Stiffness [Nm/rad]:", ns_stiffness_options_);
+        if (selectedButtonIndex < 0) return false;
         ns_stiffness = ns_stiffness_vals_[selectedButtonIndex];
         getLogger().info("Null-space stiffness set to: " + ns_stiffness);
 
@@ -215,6 +223,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ns_damping_used_ = Math.max(NS_DAMPING_MIN, Math.min(ns_damping, 1.0));
         getLogger().info("Damping " + d0 + " (elbow damping " + ns_damping_used_
                          + "), null-space stiffness " + ns_stiffness);
+        return true;
     }
 
     /**
@@ -243,58 +252,18 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
      */
     private void moveToReadyViaZero() {
         getLogger().info("Moving to mechanical zero in position control...");
-        if (!ptpDeg(ZERO_POSE_DEG)) return;
+        ptpDeg(ZERO_POSE_DEG);
         getLogger().info("Moving to the ready pose [0, 10, 0, -80, 0, 90, 0] in position control...");
-        if (!ptpDeg(READY_POSE_DEG)) return;
+        ptpDeg(READY_POSE_DEG);
         getLogger().info("At the ready pose.");
     }
 
-    /** Joint PTP; false if Close cancelled it. */
-    private boolean ptpDeg(double[] deg) {
+    private void ptpDeg(double[] deg) {
         double[] rad = new double[deg.length];
         for (int i = 0; i < rad.length; i++) {
             rad[i] = Math.toRadians(deg[i]);
         }
-        return runMotion(lbr_.moveAsync(ptp(new JointPosition(rad)).setJointVelocityRel(READY_VEL_REL)));
-    }
-
-    /** Wait for a motion to end; Close cancels it. False if it was cancelled (or Close came first). */
-    private boolean runMotion(IMotionContainer m) {
-        motion_ = m;
-        if (close_requested_) {
-            m.cancel();
-        }
-        try {
-            m.await();
-        } catch (Exception e) {
-            if (!close_requested_) {
-                throw new RuntimeException(e);
-            }
-        } finally {
-            motion_ = null;
-        }
-        return !close_requested_;
-    }
-
-    /** The "Close" user key on the SmartPAD: ends the app from anywhere after set-up. */
-    private void addCloseKey() {
-        IUserKeyBar bar = applicationUi.createUserKeyBar("FRI app");
-        IUserKey key = bar.addUserKey(0, new IUserKeyListener() {
-            @Override
-            public void onKeyEvent(IUserKey k, UserKeyEvent event) {
-                if (event != UserKeyEvent.KeyDown || close_requested_) {
-                    return;
-                }
-                close_requested_ = true;
-                getLogger().info("Close pressed: ending the app.");
-                IMotionContainer m = motion_;
-                if (m != null) {
-                    m.cancel();
-                }
-            }
-        }, false);
-        key.setText(UserKeyAlignment.TopMiddle, CLOSE);
-        bar.publish();
+        lbr_.move(ptp(new JointPosition(rad)).setJointVelocityRel(READY_VEL_REL));
     }
 
     /**
@@ -348,8 +317,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     }
 
     /**
-     * Initializes the Fast Robot Interface connection. Returns false if ROS did not connect within
-     * 60 s, or Close was pressed while waiting.
+     * Initializes the Fast Robot Interface connection. Returns false if ROS did not connect within 60 s.
      */
     public boolean configure_fri() {
         fri_configuration_ = FRIConfiguration.createRemoteConfiguration(lbr_, client_name_);
@@ -378,20 +346,12 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
             }
         });
 
-        // Wait for the ROS 2 client, in 1 s steps so Close is noticed while waiting.
-        for (int waited = 0; ; waited++) {
-            if (close_requested_) {
-                return false;
-            }
-            try {
-                fri_session_.await(1, TimeUnit.SECONDS);
-                break;
-            } catch (final TimeoutException e) {
-                if (waited >= 59) {
-                    getLogger().error("Connection timeout: Could not find ROS 2 client after 60 seconds.");
-                    return false;
-                }
-            }
+        // Block and wait for ROS 2 node to spin up and connect
+        try {
+            fri_session_.await(60, TimeUnit.SECONDS);
+        } catch (final TimeoutException e) {
+            getLogger().error("Connection timeout: Could not find ROS 2 client after 60 seconds.");
+            return false;
         }
 
         getLogger().info("FRI connection established.");
@@ -407,26 +367,27 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ee_tool_.attachTo(lbr_.getFlange());
         getLogger().info("Attached tool template '" + EE_TOOL_TEMPLATE + "' to the flange.");
 
-        request_user_config();
-        startSettingsReport();
+        if (request_user_config()) {
+            startSettingsReport();
+        }
     }
 
     @Override
     public void run() {
-        addCloseKey();
+        if (cancelled_) {
+            return;                 // Cancel chosen in a set-up question
+        }
         // Zero, then ready, in position control BEFORE ROS connects -- see the class doc.
         moveToReadyViaZero();
-        if (close_requested_ || !configure_fri()) {
-            return;
+        if (!configure_fri()) {
+            return;                 // no ROS client: end rather than hold with nobody commanding
         }
 
         // Execute the motion holding command. The overlay lets ROS 2 update the target dynamically.
-        // Runs until Close (or the app is stopped on the SmartPAD).
-        runMotion(lbr_.getFlange().moveAsync(
+        lbr_.getFlange().move(
             positionHold(control_mode_, -1, TimeUnit.SECONDS)
             .addMotionOverlay(fri_overlay_)
-        ));
-        getLogger().info("Holding ended.");
+        );
     }
     
     @Override

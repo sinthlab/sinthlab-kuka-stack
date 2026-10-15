@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.park_move import ParkMove
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.travel_monitor import TravelMonitor
@@ -28,10 +29,11 @@ class RailTrainingOrchestratorNode(rclpyNode):
     One leg of the maze. The same orchestrator runs MOVE VERTICAL and MOVE HORIZONTAL; which one is
     set by the YAML (`experiment`, the rail in `virtual_fixtures`, `travel_task.axis`).
 
+    [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> rail on (anchors while the quiet window runs)
     -> go cue (ring: travel quarters GREEN) -> travel monitor + timeout + safety
     -> |travel| >= threshold: ring RED (+ threshold tone)
-    -> back at the start (require_return) -> reward -> release wait -> switch to JOINT -> recover.
+    -> back at the start (require_return) -> reward -> release wait -> switch to JOINT -> park.
 
     Timeout and safety end the trial exactly as in the maze.
     """
@@ -83,20 +85,21 @@ class RailTrainingOrchestratorNode(rclpyNode):
         self.switch_to_joint = SwitchControllerAction(
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint")
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete)
+        self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
         self._check_threshold_on_rail()
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
             "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
-            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+            "move_to_park.speed_scale": self.move_park.set_speed_scale,
         }, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
-        for move in (self.move_to_start, self.move_recover):
+        for move in (self.move_to_start, self.move_park):
             move.report_moves_to(self.recorder.note_move)
         self.get_logger().info(f"=== PRE-TRAINING: {self.experiment} INITIALIZED ===")
-        self.start_trial()
+        # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
+        self.control.on_event("parking")
+        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
 
     # ------------------------------------------------------------------ trial
     def start_trial(self):
@@ -156,7 +159,7 @@ class RailTrainingOrchestratorNode(rclpyNode):
         self.safety.stop()
         self.rail.stop()
         if reason == "safety":
-            self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+            self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.ring.show("off")
             self.switch_to_joint.start()
             return
@@ -177,9 +180,9 @@ class RailTrainingOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
-        self.move_recover.start()
+        self.move_park.start()
 
-    def on_recover_complete(self):
+    def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
@@ -192,7 +195,7 @@ class RailTrainingOrchestratorNode(rclpyNode):
         self.ring.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()
-        self.move_recover.reload()
+        self.move_park.reload()
         self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
         self.rail.reload()
         self.travel.reload()

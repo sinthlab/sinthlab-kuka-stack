@@ -38,18 +38,18 @@ _PULL = [
     "apple_pluck_impedance_control_displacement.force_release_shutdown_delay_sec",
 ]
 
-# Move speed of every joint-space move (start, recover, the perturbation): one scale per move that
+# Move speed of every joint-space move (start, park, the perturbation): one scale per move that
 # time-stretches it -- 0.5 = twice as long, 2 = half as long. It scales that move's v/a/j limits
 # (move_to_pos_*, per-run) by s, s^2, s^3, so it changes every move, however short. The raw limits
 # barely do: on these few-degree moves v never binds and a/j act through square / cube roots.
 # IMMEDIATE (below): applied the moment it is set, from the next move on (a move under way keeps its speed).
 _SPEED = ["*.speed_scale"]
 
-# The start pose, and the recover pose that must equal it. Live ONLY where the joint controller alone
-# drives the arm (apple pluck, perturb). Restricted plane and maze also hand the arm to the CLIK, whose
-# redundancy posture must equal the start pose and is read once when the controller is configured --
-# and the maze's whole geometry hangs off the start. There the pose stays per-run.
-_POSE = ["move_to_start.target_joint_position", "move_to_start_recover.target_joint_position"]
+# The start pose. Live ONLY where the joint controller alone drives the arm (apple pluck). Restricted
+# plane and maze also hand the arm to the CLIK, whose redundancy posture must equal the start pose and
+# is read once when the controller is configured -- and the maze's whole geometry hangs off the start.
+# There the pose stays per-run. The park pose (move_to_park) is per-run everywhere.
+_POSE = ["move_to_start.target_joint_position"]
 
 # Pre-training: the out-and-back task and the quarter-ring state colours.
 _TASK = ["travel_task.threshold_m", "travel_task.direction", "travel_task.require_return",
@@ -160,7 +160,7 @@ LIMITS: Dict[str, Tuple[float, float]] = {
 # singular (checked against the Jacobian: the same as "smallest singular value < 0.05").
 IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
-_START, _RECOVER = _POSE
+_START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_joint_position"
 
 # Paradigm-only parameters: in an experiment with a `paradigm` (apple pluck), these act -- and the
 # dashboard shows them -- only in those paradigms. The first matching pattern wins.
@@ -229,8 +229,7 @@ _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
 # Delay ranges (min, max): perturb's after the go cue, perturb_bump's after the grasp.
 _DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"),
                  ("grasp.delay_min_sec", "grasp.delay_max_sec"))
-PAIRED = (_R, _PLANE, "move_to_start.target_joint_position",
-          "move_to_start_recover.target_joint_position", _K, _K_BASE) + sum(_DELAY_RANGES, ())   # checked together: see check_value(context=...)
+PAIRED = (_R, _PLANE, _START, _PARK, _K, _K_BASE) + sum(_DELAY_RANGES, ())   # checked together: see check_value(context=...)
 
 
 def check_perturbation(r, plane) -> Optional[str]:
@@ -327,20 +326,29 @@ def check_pose(name: str, value) -> Optional[str]:
     return None
 
 
+def check_same_elbow(start, park) -> Optional[str]:
+    """None if the start and park poses bend the elbow (A4) the same way, else the reason. Moving
+    between poses whose A4 have opposite signs passes A4 = 0 -- a straight, singular elbow, where the
+    cabinet's Cartesian impedance cannot follow -- on every park <-> start move."""
+    if start is None or park is None:
+        return None
+    a4s, a4p = float(start[3]), float(park[3])
+    if (a4s > 0) != (a4p > 0):
+        return (f"the park pose's elbow (A4 = {a4p:g} deg) bends the other way from the start pose's "
+                f"(A4 = {a4s:g} deg): every park <-> start move would pass a straight, singular elbow. "
+                f"Use a park pose with A4 on the same side as the start.")
+    return None
+
+
 def _check_pair(name, value, context) -> Optional[str]:
     if name.startswith("random_start.positions."):
         return check_pose(name, value)
     if name.endswith("target_joint_position"):
         problem = check_pose(name, value)
-        if problem or context is None or name not in (_START, _RECOVER):
+        if problem or context is None or name not in (_START, _PARK):
             return problem
-        # The next trial starts where the last one recovered to, so the two must stay equal. Set them
-        # in the same call (the dashboard does); one on its own is refused rather than half-applied.
-        other = _RECOVER if name == _START else _START
-        if other in context and [float(v) for v in context[other]] != [float(v) for v in value]:
-            return (f"{name} must equal {other} -- set both together, in one call "
-                    f"(the dashboard does this for you)")
-        return None
+        start, park = (value, context.get(_PARK)) if name == _START else (context.get(_START), value)
+        return check_same_elbow(start, park)
     if name in (_K, _K_BASE):
         ctx = context or {}
         k = value if name == _K else ctx.get(_K)

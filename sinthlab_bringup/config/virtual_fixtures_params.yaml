@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    # Restricted-plane runs in POSITION mode: move_to_start/recover use MoveToPositionJointSpace, and
+    # Restricted-plane runs in POSITION mode: move_to_start/move_to_park use MoveToPositionJointSpace, and
     # MoveRestrictedOnAPlaneAction streams the fixture-constrained equilibrium to kuka_clik_controller.
     # The CABINET (LbrImpedanceControlServer) provides the compliance -- pair with "Uniform
     # 1000". This scenario already worked; the raised CLIK clamps only make the rail easier
@@ -28,28 +28,36 @@
     audio_cue_play:  # trial-start (go) tone
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
       duration_ms: 1500  # trial-start (go) tone: length [ms]
-    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> recover
+    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> park
       update_rate: 200  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       cartesian_axis: z  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
       cartesian_displacement_threshold_m: 0.5  # pull from the baseline that counts as success (snap) [m]
-      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then recover [s]
+      force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then park [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-    move_to_start_recover:  # joint-space move back to the start at the end of each trial
+    # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
+    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
+    # every trial is park -> start -> trial -> park. Pausing holds here.
+    # This is the elbow-NEGATIVE posture (A4 < 0), like this experiment's start. The maze family parks at
+    # the same place with the elbow the other way. Start and park must bend the elbow the same way, or
+    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
+    move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
       update_rate: 200  # loop rate of this action [Hz]
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # recover pose A1..A7 [deg], same as move_to_start
-      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
+      target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
+      cartesian_move_tolerance: 0.03  # apple within this of the park pose counts as arrived [m]
       joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here, from wherever the arm is (per-run)
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
     audio_cue_snap:  # threshold-reached tone
       frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
       duration_ms: 500  # threshold-reached tone: length [ms]
@@ -85,7 +93,7 @@
         snap: [255, 0, 0, 0]       # pull threshold reached -- red
 
     # Runaway safety-stop (backstop for a gravity-driven fall on the free pull axis, which the FRI
-    # velocity guard does not halt). On a trip the trial aborts straight to recovery.
+    # velocity guard does not halt). On a trip the trial aborts straight to park.
     #   max_displacement_m: the sine pull legitimately travels up to the displacement-monitor threshold
     #     (0.5 m in z), so this only trips well beyond that.
     #   max_speed_mps: must clear a brisk legitimate pull. The CLIK lets the commanded equilibrium chase
@@ -94,7 +102,7 @@
     #     16 cm).
     #   speed_trip_samples: speed is a single-sample TF difference and therefore noisy; require this many
     #     CONSECUTIVE over-threshold samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort.
-    plane_safety:  # runaway stop: abort to recovery if the arm goes too far or too fast
+    plane_safety:  # runaway stop: abort to park if the arm goes too far or too fast
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked

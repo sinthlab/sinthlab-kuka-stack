@@ -100,8 +100,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (after
-   that, a **Cancel** key beside the SmartPad display ends the app at any time). The app
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (each
+   question also offers **Cancel**). The app
    then **always** moves the arm to mechanical zero and on to the ready pose `[0, 10, 0, −80, 0, 90, 0]`
    (no prompt; hold the enabling switch while it moves; see
    [Start-up posture](#start-up-posture-zero-then-ready)). It then waits about 60 s for ROS.
@@ -110,12 +110,13 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    help.
 4. **▶ Start.** This runs `ros2 launch sinthlab_bringup <experiment>.launch.py`, plus your edited
    parameters if you changed any. The status card then follows each trial, e.g.
-   `start → at start → quiet → go cue → armed → threshold → recover → end`.
+   `start → at start → quiet → go cue → armed → threshold → park → end`. Before the first trial the
+   arm makes one slow move to the [park pose](#park-pose--out-of-reach-between-trials), out of reach.
 5. **Change live settings** on the **Live** tab at any time. A change applies **from the next
    trial**; the trial in progress is never changed. Until then the row shows a purple
    `next trial → …` badge, and the log records when the change was accepted and when it was applied.
-6. **⏸ Pause after trial** lets the current trial finish. The arm recovers to the start and **holds
-   there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
+6. **⏸ Pause after trial** lets the current trial finish. The arm moves to the park pose, out of the
+   monkey's reach, and **holds there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
    changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
    **Free Move** has no trial end, so there the button (labelled **End session & pause**) ends the
    session at once: the arm holds, waits to be let go, returns to the start and holds.
@@ -148,9 +149,10 @@ from the page; stop it with Ctrl-C in its own terminal.
   recorded trial's sidecar keeps the full parameter set it ran with, live changes included.
 - **Poses** are 7 joint angles in degrees. They are checked against the iiwa7 joint limits, and a
   nearly straight (singular) arm is refused — by the dashboard and again by the orchestrator.
-  - **Start and recover are edited together**, because the next trial starts where the last one
-    recovered to. A live change sends both in one call; one on its own is refused.
-  - **Apple Pluck:** the pose is live. The next trial moves to it and recovers to it.
+  - **Start and park must bend the elbow the same way** (A4 on the same side); an edit that flips one
+    is refused — see [Park pose](#park-pose--out-of-reach-between-trials).
+  - **Apple Pluck:** the start pose is live. The next trial moves to it from park. The park pose is
+    Per-run everywhere.
   - **Restricted Plane and Maze:** the CLIK redundancy posture follows an edited start pose
     automatically.
   - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
@@ -173,16 +175,16 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
 | `nsp_sync.enabled` | send event codes to the Blackrock NSP. **The DIO is not wired yet**: when on, it warns once and sends nothing ([§7](#sync-to-the-blackrock-nsp)) |
-| `move_to_start.speed_scale`, `move_to_start_recover.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
+| `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
 
 | Experiment | Extra live parameters |
 |---|---|
-| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
+| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
 | Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (applies at once) |
 | Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random) |
-| Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start / recover pose above does not apply in this paradigm |
+| Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
@@ -201,24 +203,24 @@ These are deliberately **not** live:
 - **The pre-training rails:** checked by IK for reach; edit them per-run.
 
 ### Move speed
-Every joint-space move — to the start, the recover, the perturbation — has one **`speed_scale`**
+Every joint-space move — to the start, to park, the perturbation — has one **`speed_scale`**
 slider (Live tab, 0.25–2, default 1). It time-stretches the whole move: it multiplies that move's
 limits `move_to_pos_v_max` / `_a_max` / `_j_max` (Per-run, the base) by s, s² and s³, which makes the
 move take exactly **1/s as long** along the same path. 0.5 = twice as slow, 2 = twice as fast.
 
 *Why a scale and not the limits themselves.* These moves are short — a few to ~18° of joint travel —
 so the joints never reach `v_max` (changing it does nothing), and `a_max` / `j_max` act only through
-square and cube roots: quartering `a_max` stretches a 1.1 s recover to just 1.5 s. The scale changes
+square and cube roots: quartering `a_max` stretches a 1.1 s move to just 1.5 s. The scale changes
 all three together, so every move, however short, changes by exactly the factor you set.
 
 | Move (apple pluck, from the start pose) | ×0.5 | ×1 | ×2 |
 |---|---|---|---|
-| Recover after a 10 cm pull | 2.3 s | 1.1 s | 0.6 s |
+| Back from a 10 cm pull to the start | 2.3 s | 1.1 s | 0.6 s |
 | Perturbation, 5 cm | 1.5 s | 0.7 s | 0.4 s |
 | Random start, C → N (5 cm) | 2.1 s | 1.0 s | 0.5 s |
 
-*When it applies.* **At once, from the next move** — not at the next trial: lower the recover speed
-during a pull and that trial's recover already uses it. A move already under way finishes at the
+*When it applies.* **At once, from the next move** — not at the next trial: lower the park speed
+during a pull and that trial's park move already uses it. A move already under way finishes at the
 speed it started with: lowering the limits mid-move would leave the trajectory generator holding an
 acceleration above the new limit, and its correction overshoots the target. Every change goes into the
 trial sidecar's `live_changes` (name, value, time and CSV row), and every move into its `moves`: the
@@ -257,9 +259,8 @@ ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{dat
 ```
 
 A `ros2 param set` on anything that is not live is **rejected with the reason**, because the
-orchestrator read it once at start-up. The start and recover poses must change together, so set them
-in one atomic call, `ros2 service call /lbr/apple_pluck_orchestrator/set_parameters_atomically …`, or
-from the dashboard; `ros2 param set` on one of them alone is refused. The maze, restricted-plane and
+orchestrator read it once at start-up. A start pose whose elbow bends the other way from the park
+pose is refused. The maze, restricted-plane and
 pre-training launches also accept `clik_nullspace_cfg:=`.
 
 ### Files the dashboard writes
@@ -332,7 +333,7 @@ None of these are committed to git.
   Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
   ```
   This also lets in the SmartPad app's settings report (UDP 30001, see
-  [Closing the app / settings report](#smartpad-app-close-and-settings-report)). If the dashboard says
+  [Cancelling the app / settings report](#smartpad-app-close-and-settings-report)). If the dashboard says
   *No report from the SmartPad app* while FRI works, check that port first.
 
 ### Install Application to Robot
@@ -742,8 +743,8 @@ when the spring jumps, so it is felt as a **bump**.
 
 ```
 go cue → wait for the grasp → delay (fixed, or random per trial) → perturbation (apple's spring moves, stays there)
-       → pull measured from the PERTURBED spring position → snap at 10 cm → hold → recover to the start
-       (no grasp within grasp.timeout_sec → the trial ends, the arm resets, next trial)
+       → pull measured from the PERTURBED spring position → snap at 10 cm → hold → park
+       (no grasp within grasp.timeout_sec → the trial ends: park, next trial)
 ```
 
 **Detecting the grasp — no force sensor.** The hand force is computed from the arm's joint torque
@@ -810,8 +811,8 @@ origin and the 8 compass directions around it, chosen at random.
   the tightest), ≥ 36° after a further 10 cm pull toward the monkey, and the arm is well conditioned
   (smallest Jacobian singular value ≥ 0.16).
 - **Order: shuffled blocks of 9.** Each block visits every position once, in a random order, before any
-  repeats, so the positions stay balanced however many trials you run. A trial **recovers to its own
-  start**, and the next trial's move-to-start goes from there to the next position.
+  repeats, so the positions stay balanced however many trials you run. Every trial ends at the park
+  pose, and the next trial's move-to-start goes from there to its position.
 - **Recorded:** the sidecar's `start_position` (`C`, `N`, `NE`, …) and `start_joint_deg`, besides
   `paradigm: random_start`. The trial's events are the same as the normal pluck.
 
@@ -1307,7 +1308,7 @@ via `get_launch_param`. Live changes go through the dashboard ([Live parameters]
 
 ### 6.1 System Overview — data flow
 Both paths end in a joint **position command** over FRI, and the **cabinet's Cartesian impedance
-provides the compliance**. Every start and recover move sends **joint** setpoints via
+provides the compliance**. Every start and park move sends **joint** setpoints via
 `LBRJointPositionCommandController`, and so does the whole apple-pluck / perturb trial. For their
 fixture phase, restricted-plane / maze switch to `kuka_clik_controller` and send a fixture-constrained
 **Cartesian equilibrium**, which it IKs to joints. Robot state flows *back up* to the Python actions
@@ -1320,7 +1321,7 @@ flowchart TB
     ACT["<b>Layer 3</b> · Actions<br/>moves · perturbation · freeze · fixture / maze · monitors · cues"]
     REC["<b>Layer 3</b> · TrialRecorder<br/>CSV + JSON sidecar per trial"]
     KIN["<b>Layer 2</b> · Kinematics<br/>optas FK · tf2 poses"]
-    JPC["<b>Layer 1</b> · LBRJointPositionCommandController<br/>joint positions → FRI<br/>apple / perturb, every start / recover move"]
+    JPC["<b>Layer 1</b> · LBRJointPositionCommandController<br/>joint positions → FRI<br/>apple / perturb, every start / park move"]
     CLIK["<b>Layer 1</b> · kuka_clik_controller<br/>Cartesian equilibrium → IK → joints<br/>fixture phase (switched in by the orchestrator)"]
     EE["End-effector cue ring"]
     APP["<b>Cabinet · 1000 Hz</b> · LbrImpedanceControlServer (FRI app)<br/>per-axis Cartesian impedance · POSITION mode"]
@@ -1398,7 +1399,8 @@ flowchart LR
 
   | Action | Responsibility |
   |--------|----------------|
-  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start / recover move |
+  | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start move |
+  | `ParkMove` | the move to the park pose, out of reach: the run's first move (slow) and the end of every trial. Refuses a park pose whose elbow bends the other way from the start |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
   | `FreezeAtPoseAction` | at the snap, move the equilibrium onto the arm and hold it there (apple / perturb) |
   | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's (apple / perturb) |
@@ -1408,8 +1410,8 @@ flowchart LR
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
   | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary |
   | `TravelMonitor` | Move Vertical / Horizontal: travel ≥ threshold, then (optionally) back at the start |
-  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to recovery (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`) |
-  | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task recovers |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`) |
+  | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task parks |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
   | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
@@ -1451,12 +1453,55 @@ flowchart LR
   enabling switch while it moves (T1). Separately, the dashboard and orchestrator refuse a *start pose*
   that is nearly straight (max(|A2|, |A4|, |A6|) < 12°), so ROS never parks the arm in a singular pose.
 
-  <a id="smartpad-app-close-and-settings-report"></a>**Closing the app.** Once set up, the app shows a
-  **Cancel** user key beside the SmartPad display — its close button (a Sunrise app cannot add a cross
-  to the SmartPad's own window). It ends the app at any point — during the zero / ready moves, while
-  waiting for ROS, or while running: the motion under way is cancelled, `run()` returns and FRI is closed. ROS sees the FRI
-  session end. It is a normal end, not a safety function — the E-stop is the E-stop. (If ROS does not
-  connect within 60 s, the app now also ends instead of holding with no client.)
+  <a id="park-pose--out-of-reach-between-trials"></a>**Park pose — out of reach between trials.** Every
+  experiment runs
+
+  ```
+  wherever the arm is  →(slow)→  PARK  →  start → trial → PARK  →  start → trial → PARK  → …
+  ```
+
+  so between trials — and while paused — the apple is **out of the monkey's reach**: pulled back over
+  the robot's base and raised, at about **(0.2, 0, 1.1) m** in every experiment. The pose is
+  `move_to_park.target_joint_position` in each experiment's YAML (Per-run); the move is `ParkMove`.
+
+  *Two postures, one place.* The experiments hold the arm in two elbow postures: apple pluck and
+  Restricted Plane bend the elbow one way (A4 < 0), the maze, rails and Free Move the other (A4 > 0).
+  Between the two, every joint-space path passes **A4 = 0 — a straight, singular elbow**, where the
+  cabinet's Cartesian impedance cannot follow (the same failure as a straight arm at start-up). The
+  maze's hand pose has no usable elbow-negative solution (only mirror postures 6° from the joint
+  limits), so the two families stay, and each parks at the same place with its own elbow:
+
+  | Family | Experiments | Park pose (A1..A7, deg) |
+  |---|---|---|
+  | elbow − | Apple pluck (all paradigms), Restricted Plane | `[0, −55, 0, −95, 0, 10, 0]` |
+  | elbow + | Maze, Move Vertical / Horizontal, Free Move | `[−3.6, 45, −3.6, 95, 0.7, 90, −15.7]` |
+
+  A park pose whose elbow bends the other way from the start is **refused** — by the dashboard, at a
+  live start-pose change, and at start-up.
+
+  *The first move.* The SmartPad app always leaves the arm at its ready pose (elbow −). For the maze
+  family the run's first move, ready → park, therefore **passes the straight elbow once** — as every
+  maze-family run did before parking existed (ready → maze start). It runs slowly for that,
+  `move_to_park.first_move_speed_scale` (0.25), and a live speed change during it applies only after
+  it. Every later move stays on one side.
+
+  *Checked offline* (σ_min = smallest singular value of the Jacobian, 0 = singular): park ↔ every start
+  in its family, including the 9 random-start positions, σ_min ≥ 0.16 and ≥ 24° from every joint
+  limit. From the end of a trial straight to park: as good as from there back to the start was, for a
+  12 cm pull in any direction, the whole maze / rail region and Free Move within 0.30 m — except the far
+  end of Restricted Plane's 0.5 m sine pull, where the path to park dips to σ_min 0.076 (0.169 back to
+  the start): still far from singular, but the least conditioned move in the stack. Park takes two
+  extra moves per trial, ~2–3 s each at speed scale 1.
+
+  *Is it out of reach?* "Pulled back ~40–50 cm and raised" is a judgement from the robot's side — check
+  it against the chair. To move it, edit `move_to_park.target_joint_position` (Per-run) keeping A4's
+  sign, and check the path to the start before running:
+  `IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup check_park.py --params <the edited YAML>`.
+
+  <a id="smartpad-app-close-and-settings-report"></a>**Cancelling the app.** Every set-up question has a
+  **Cancel** choice, which ends the app before anything moves. Once it is running, end it with the
+  SmartPad's own stop; ROS sees the FRI session end. Neither is a safety function — the E-stop is the
+  E-stop. If ROS does not connect within 60 s, the app ends rather than holding with no client.
 
   **The app reports its settings to ROS.** FRI carries robot state only, so ROS cannot see what was
   chosen on the SmartPad. Once the dialogs are answered, the app sends its selections — profile name,
@@ -1479,7 +1524,7 @@ flowchart LR
   is `SETTINGS_PORT` on both sides (the Java app and `smartpad_link.py`); keep them equal.
 
   A trial is then literally a chain of actions — e.g. apple‑pluck:
-  `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_recover → repeat`.
+  `move_to_start → quiet_window → audio_cue → monitor → (snap cue) → move_park → repeat`.
 
 ### 6.3 Hardware Bring‑up Sequence
 Controllers are spawned in a deliberate order: `joint_state_broadcaster` first (it needs no URDF
@@ -1576,17 +1621,19 @@ next trial, or holds at the start if a pause was requested. Free Move's session 
 is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 6).
 
 **Flow 1 — Apple Pluck** (joint controller throughout). The **random start** paradigm runs this same flow;
-only `MoveToStart` and `Recover` target that trial's start position, picked at `trial_start`.
+only `MoveToStart` targets that trial's start position, picked at `trial_start`. Every flow begins
+with one slow move to the [park pose](#park-pose--out-of-reach-between-trials) and ends each trial there.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> QuietWindow : at start [at_start]
     QuietWindow --> GoCue : quiet_window_sec (2 s) [quiet_end]
     GoCue --> Monitor : audio + visual cue [cue_go]
     Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
     Snap --> Hold : snap cue [cue_snap], freeze the equilibrium on the arm [freeze]
-    Hold --> Recover : force_release_shutdown_delay_sec (0.8 s) [recover_start]
-    Recover --> NextTrial : apple back within 3 cm [trial_end]
+    Hold --> Park : force_release_shutdown_delay_sec (0.8 s) [recover_start]
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial
     NextTrial --> Paused : pause requested
     Paused --> MoveToStart : resume
@@ -1596,7 +1643,8 @@ stateDiagram-v2
 with `disp_m` as the extra column.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
@@ -1609,8 +1657,8 @@ stateDiagram-v2
     Fixture --> Snap : pull ≥ threshold (0.5 m, z) [snap]<br/>fixture off, snap cue
     Snap --> SwitchToJoint : dwell (force_release_shutdown_delay_sec)
     Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip]
-    SwitchToJoint --> Recover : [recover_start]
-    Recover --> NextTrial : [trial_end]
+    SwitchToJoint --> Park : [recover_start]
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
@@ -1618,7 +1666,8 @@ stateDiagram-v2
 perturbation: the monkey starts reaching, then the apple is displaced.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> QuietWindow : at start [at_start]
     QuietWindow --> GoCue : quiet_window_sec [quiet_end]
     GoCue --> PerturbDelay : audio + visual cue [cue_go]
@@ -1626,8 +1675,8 @@ stateDiagram-v2
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap]
     Snap --> Hold : snap cue, freeze [freeze]
-    Hold --> Recover : dwell [recover_start]
-    Recover --> NextTrial : apple back within 3 cm [trial_end]
+    Hold --> Park : dwell [recover_start]
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
@@ -1635,25 +1684,27 @@ stateDiagram-v2
 for the grasp, so it lands while the hand is on the apple.
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> QuietWindow : at start [at_start]<br/>resting force measured (tare)
     QuietWindow --> GoCue : quiet_window_sec [quiet_end]
     GoCue --> GraspWait : audio + visual cue [cue_go]
     GraspWait --> Delay : |F − tare| ≥ threshold_n for hold_sec [grasp]
-    GraspWait --> Recover : grasp.timeout_sec, no grasp [grasp_timeout]
+    GraspWait --> Park : grasp.timeout_sec, no grasp [grasp_timeout]
     Delay --> Perturb : grasp.delay_* (default 0, at once) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap]
     Snap --> Hold : snap cue, freeze [freeze]
-    Hold --> Recover : dwell [recover_start]
-    Recover --> NextTrial : [trial_end]
+    Hold --> Park : dwell [recover_start]
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
 **Flow 4 — Maze** (joint moves, CLIK fixture)
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : [fixture_active]
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
@@ -1662,15 +1713,16 @@ stateDiagram-v2
     Maze --> ReleaseWait : goal [goal] or timeout_sec [timeout]<br/>fixture off, goal / timeout cue [release_wait]
     ReleaseWait --> SwitchToJoint : operator lets go [released]
     Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip]
-    SwitchToJoint --> Recover
-    Recover --> NextTrial : [trial_end]
+    SwitchToJoint --> Park
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
 **Flow 5 — Move Vertical / Move Horizontal** (joint moves, CLIK with one rail)
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : rail anchors [fixture_active]
     QuietWindow --> Out : quiet_window_sec, ring green [cue_go]<br/>monitor + timeout + safety on [armed]
@@ -1680,8 +1732,8 @@ stateDiagram-v2
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Out --> SwitchToJoint : SAFETY trip [safety_trip]
     Back --> SwitchToJoint : SAFETY trip [safety_trip]
-    SwitchToJoint --> Recover
-    Recover --> NextTrial : [trial_end]
+    SwitchToJoint --> Park
+    Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 With `require_return: false`, `threshold` and `goal` fire together.
@@ -1689,16 +1741,17 @@ With `require_return: false`, `threshold` and `goal` fire together.
 **Flow 6 — Free Move** (joint moves, CLIK with admittance; no goal)
 ```mermaid
 stateDiagram-v2
-    [*] --> MoveToStart : [trial_start]
+    [*] --> FirstPark : from wherever the arm is, slow [parking]
+    FirstPark --> MoveToStart : at park [trial_start]
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
     Free --> ReleaseWait : Pause / Stop after trial (or session_sec), end tone, the arm holds [session_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip]
-    SwitchToJoint --> Recover
-    Recover --> NextTrial : [trial_end]
-    NextTrial --> MoveToStart : holds at the start (paused) or the launch stops; Resume = new session
+    SwitchToJoint --> Park
+    Park --> NextTrial : at park, out of reach [trial_end]
+    NextTrial --> MoveToStart : holds at park (paused) or the launch stops; Resume = new session
 ```
 
 ### 6.7 End-effector board — the visual cue
@@ -1862,7 +1915,7 @@ Why each earns its place:
 
 #### Apple pluck
 
-**Records from** `start_trial()` **to** `on_recover_complete()` — the whole trial including the
+**Records from** `start_trial()` **to** `on_park_complete()` — the whole trial including the
 return to start, not just the pull.
 
 **Extra column (1):** `disp_m` — displacement from the locked baseline, computed by
@@ -1881,7 +1934,7 @@ return to start, not just the pull.
 | `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
 | `on_monitor_snap()` | `freeze` | — | the equilibrium is frozen on the arm (`freeze_hold.start()`) |
 | `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
-| `on_recover_complete()` | `trial_end` | trial index | the arm is back at the start |
+| `on_park_complete()` | `trial_end` | trial index | the arm is at the park pose |
 
 **Cue delivery events** (all three experiments, fired from the cue classes rather than the state
 machine, so they can appear anywhere and more than once):
@@ -1930,7 +1983,7 @@ hold time plus the force reaching the threshold.
 
 #### Maze
 
-**Records from** `start_trial()` **to** recover complete — the approach and the settle included, not
+**Records from** `start_trial()` **to** park complete — the approach and the settle included, not
 just the maze phase.
 
 **Extra columns (6):** `rel_a`, `rel_b`, `corridor`, `off_rail`, `rail_dist`, `rail_nearest`
@@ -1950,13 +2003,13 @@ just the maze phase.
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |
-| recover complete | `trial_end` | trial index |
+| park complete | `trial_end` | trial index |
 
 `off_rail` transitions stay a column rather than events — it toggles too often to be useful as one.
 
 #### Pre-training
 
-**Records from** `start_trial()` **to** recover complete, like the maze.
+**Records from** `start_trial()` **to** park complete, like the maze.
 
 **Extra columns:** Move Vertical / Move Horizontal have the maze's six (`rel_a` … `rail_nearest`).
 Free Move has six of its own: `eq_dx`, `eq_dy`, `eq_dz` (the commanded equilibrium minus the start,
@@ -1979,7 +2032,7 @@ past the threshold, base frame, N).
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |
-| recover complete | `trial_end` | trial index |
+| park complete | `trial_end` | trial index |
 
 ---
 
@@ -2169,7 +2222,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
 | `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
-| `moves` | Every joint-space move of the trial (start, perturbation, recover), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
+| `moves` | Every joint-space move of the trial (start, perturbation, park), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
 | `live_changes` | Live parameters applied **mid-trial** (only the move `speed_scale`s do that): each with `name`, `value`, `t`, `t_wall` and the CSV `row` it took effect at. The move it applies to is the next one that starts. Absent when nothing changed. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
 | `events` | **Every `mark()` with the moment it actually happened** — `t`, `t_wall`, `t_ros`, `fri_s`, `fri_ns` and the CSV row it landed on. The CSV column is quantised to the 10 ms sample grid; this is not. Use the column to *find* an event, this to *time* it — and it is what a TTL pulse lines up against. |

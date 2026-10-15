@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.park_move import ParkMove
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
@@ -22,13 +23,14 @@ CLIK_CTRL = "kuka_clik_controller"
 class RestrictedPlaneOrchestratorNode(rclpyNode):
     """Restricted-plane trial loop, composed entirely of actions:
 
+    [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> quiet_window -> audio_cue
     -> (restricted_plane + monitor) -> snap (stop fixtures + cue)
-    -> switch to JOINT -> move_recover (JOINT) -> repeat.
+    -> switch to JOINT -> move_park (JOINT, out of reach) -> repeat.
 
-    The start/recover moves run on the joint-position controller so the arm reaches the EXACT
+    The start and park moves run on the joint-position controller so the arm reaches the EXACT
     configuration (deterministic posture, like apple-pluck). The Cartesian virtual fixture needs
-    the CLIK, so we switch to it once the arm is at start, and switch back before recovering.
+    the CLIK, so we switch to it once the arm is at start, and switch back before parking.
     """
 
     def __init__(self):
@@ -80,9 +82,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint",
         )
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
-        )
+        self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
         # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
@@ -101,13 +101,15 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
             "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
-            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+            "move_to_park.speed_scale": self.move_park.set_speed_scale,
         }, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
-        for move in (self.move_to_start, self.move_recover):
+        for move in (self.move_to_start, self.move_park):
             move.report_moves_to(self.recorder.note_move)
         self.get_logger().info("=== MULTI-TRIAL RESTRICTED PLANE EXPERIMENT INITIALIZED ===")
-        self.start_trial()
+        # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
+        self.control.on_event("parking")
+        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
 
     def start_trial(self):
         self.trial_count += 1
@@ -148,8 +150,8 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.visual_cue_snap.start()
 
     def on_safety_trip(self, reason: str):
-        # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to recovery.
-        self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+        # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to park.
+        self.get_logger().error("SAFETY ABORT: parking immediately.")
         self.recorder.mark("safety_trip")
         self.safety.stop()
         self.monitor.stop()
@@ -157,16 +159,16 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_monitor_complete(self):
-        self.get_logger().info("User released tension. Switching to joint controller to recover.")
+        self.get_logger().info("User released tension. Switching to joint controller to park.")
         self.safety.stop()
         self.restricted_plane.stop()  # idempotent; ensure the fixture isn't still streaming
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
         self.recorder.mark("recover_start")
-        self.move_recover.start()
+        self.move_park.start()
 
-    def on_recover_complete(self):
+    def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
@@ -179,7 +181,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.monitor.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()      # speed limits
-        self.move_recover.reload()
+        self.move_park.reload()
 
 
 def main(args=None):

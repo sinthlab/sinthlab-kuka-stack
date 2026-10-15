@@ -12,8 +12,8 @@ live is decided in helpers/live_params.py;
 a set on anything else is REJECTED with a reason, because the orchestrator read it once at start-up
 and the change would otherwise look accepted while doing nothing.
 
-PAUSE takes effect when the current trial ends: the arm finishes recovering to the start pose and
-holds there. A trial with no natural end (free move) registers on_pause_request() and ends its trial
+PAUSE takes effect when the current trial ends: the arm finishes moving to the park pose (out of
+reach) and holds there. A trial with no natural end (free move) registers on_pause_request() and ends its trial
 when the pause arrives -- that is also how the dashboard's "Stop after trial" reaches it. Resume starts the next trial (and applies any live changes made meanwhile). Pause is
 not a stop and not a safety function -- the arm stays under control and compliant throughout.
 

@@ -205,9 +205,8 @@ class ExperimentParams:
                 "help": self.desc.get(name, ""),
                 "notes": self._notes_for(name),
                 "caution": ex.caution(name),
-                "linked": [n for n in ex.linked(name) if n != name and n in self.defaults]
-                          + (["kuka_clik_controller.nullspace_desired_configuration"]
-                             if name in ex.linked(ex.START_POSE) and self.exp.clik_nullspace else []),
+                "linked": (["kuka_clik_controller.nullspace_desired_configuration"]
+                           if name == ex.START_POSE and self.exp.clik_nullspace else []),
                 "choices": ex.choices(self.exp, name, self.defaults),
                 "limits": list(lim) if lim else None,
                 "step": ex.live_params.step_for(name),     # set -> the dashboard draws a slider
@@ -242,13 +241,12 @@ class ExperimentParams:
         return out
 
     def set_edit(self, name: str, raw) -> object:
-        """Edit one parameter for the next Start (and every parameter linked to it)."""
+        """Edit one parameter for the next Start."""
         if name not in self.defaults:
             raise KeyError(f"unknown parameter {name}")
         default = self.defaults[name]
         value = coerce(raw, default)
-        # Linked parameters change together, so check against all of them at their new value.
-        context = {**self.current(), **{n: value for n in ex.linked(name) if n in self.defaults}}
+        context = {**self.current(), name: value}
         problem = ex.live_params.check_value(name, value, context)
         if problem is None:
             ch = ex.choices(self.exp, name, self.defaults)
@@ -262,13 +260,10 @@ class ExperimentParams:
                        f"arrays. To add or remove a rail or checkpoint, edit the YAML.")
         if problem:
             raise ValueError(problem)
-        for n in ex.linked(name):
-            if n not in self.defaults:
-                continue
-            if value == self.defaults[n]:
-                self.edits.pop(n, None)
-            else:
-                self.edits[n] = value
+        if value == default:
+            self.edits.pop(name, None)
+        else:
+            self.edits[name] = value
         return value
 
     def start_pose(self):
@@ -336,7 +331,7 @@ LAUNCH_HELP = {
     "startup_delay": "seconds to hold the orchestrator back so the controllers are active first",
     "orchestrator": "the experiment's state machine node",
     "run_name": "names the recording folder: analysis/expt_<run_name>_<time>/",
-    "ctrl": "controller spawned ACTIVE (moves to start and recover)",
+    "ctrl": "controller spawned ACTIVE (moves to start and park)",
     "extra_inactive_ctrl": "second controller spawned INACTIVE; the orchestrator switches to it for the fixture",
     "clik_nullspace_cfg": "CLIK redundancy posture file (must equal the start pose)",
     "params_file": "the experiment parameter YAML loaded onto the orchestrator",

@@ -333,8 +333,7 @@ def make_handler(app: App):
                     raise KeyError(f"unknown parameter {name}")
                 from params import coerce
                 value = coerce(body["value"], p.defaults[name])
-                # Linked parameters (start + recover pose) go together, in one atomic call.
-                values = {n: value for n in ex.linked(name) if n in p.defaults}
+                values = {name: value}
                 st = app.status() or {}
                 context = {**(st.get("live") or {}), **(st.get("pending") or {}), **values}
                 for n, v in values.items():

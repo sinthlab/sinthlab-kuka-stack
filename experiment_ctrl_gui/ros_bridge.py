@@ -101,8 +101,7 @@ class RosBridge:
         return True, future.result()
 
     def set_params(self, exp: ex.Experiment, values: Dict[str, object]) -> Tuple[bool, str]:
-        """Set several live parameters atomically -- linked ones (start + recover pose) must land
-        together or the node refuses them. set_parameters_atomically: all or nothing."""
+        """Set live parameters atomically (set_parameters_atomically: all or nothing)."""
         from rcl_interfaces.srv import SetParametersAtomically
         from rclpy.parameter import Parameter
         req = SetParametersAtomically.Request()

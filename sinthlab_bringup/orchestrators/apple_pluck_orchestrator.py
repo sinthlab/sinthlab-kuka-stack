@@ -7,6 +7,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.park_move import ParkMove
 from sinthlab_bringup.actions.perturb_initial_position import PerturbInitialPosition
 from sinthlab_bringup.actions.grasp_detector import GraspDetector
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
@@ -28,8 +29,9 @@ START_POSITIONS = ("C", "N", "NE", "E", "SE", "S", "SW", "W", "NW")
 class ApplePluckOrchestratorNode(rclpyNode):
     """Apple-pluck trial loop, in one of the PARADIGMS (`paradigm`, fixed for the run):
 
-      pluck    move_to_start -> quiet_window -> go cue -> monitor -> (threshold) snap cue + freeze
-               -> move_recover -> repeat.
+      pluck    [first: move_park, slowly, from wherever the arm is]
+               move_to_start -> quiet_window -> go cue -> monitor -> (threshold) snap cue + freeze
+               -> move_park (out of reach) -> repeat.
       perturb  the same, but after the go cue the apple is displaced: perturb_delay -> perturbation
                (a polar (r, theta) offset in a plane, perturb_start.*) -> the monitor arms once the arm
                has settled there (perturb_start.baseline_settle_sec).
@@ -38,7 +40,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
                trial ends and resets) -> perturb_delay -> perturbation -> the pull is measured from the
                perturbed SPRING position (the perturbation's target), locked at once: a held apple
                never settles there.
-      random_start  as pluck, but each trial starts (and recovers) at one of 9 positions
+      random_start  as pluck, but each trial starts at one of 9 positions
                (random_start.positions), in shuffled blocks: all 9 once before any repeats.
 
     Two cues only: the go cue at trial start and the snap cue at the threshold -- no cue when the
@@ -117,14 +119,12 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self._apply_settle()
         # At threshold, freeze the equilibrium on the arm's current pose so it stops pulling back
         # (the "give") but stays supported — NOT limp. Held for the monitor's
-        # force_release_shutdown_delay_sec, then recover.
+        # force_release_shutdown_delay_sec, then park.
         self.freeze_hold = FreezeAtPoseAction(self)
         # Felt stiffness of the pull, below the SmartPad profile (live: resistance.stiffness_n_per_m).
         # Softens from the moment the monitor arms until the threshold, where the freeze takes over.
         self.resistance = ResistanceSoftener(self, param_prefix="resistance")
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
-        )
+        self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
         # Trial data -- see README.md section 7, Data Collected.
         # disp_m is the dependent variable and is sampled here every state message, so the threshold
@@ -150,18 +150,20 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         speeds = {"move_to_start.speed_scale": self.move_to_start.set_speed_scale,
-                  "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale}
+                  "move_to_park.speed_scale": self.move_park.set_speed_scale}
         if self.perturbing:
             speeds["perturb_start.speed_scale"] = self.perturb.set_speed_scale
         self.control.apply_immediately(speeds, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
-        for move in (self.move_to_start, self.move_recover) + ((self.perturb,) if self.perturbing else ()):
+        for move in (self.move_to_start, self.move_park) + ((self.perturb,) if self.perturbing else ()):
             move.report_moves_to(self.recorder.note_move)
         if self.paradigm == "random_start":
             self._check_origin()
         self.get_logger().info(
             f"=== AUTOMATED MULTI-TRIAL APPLE PLUCK EXPERIMENT INITIALIZED (paradigm: {self.paradigm}) ===")
-        self.start_trial()
+        # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
+        self.control.on_event("parking")
+        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
 
     def _apply_settle(self):
         # perturb: the arm must settle where the perturbation left it before the pull baseline locks.
@@ -224,7 +226,6 @@ class ApplePluckOrchestratorNode(rclpyNode):
             name = self._next_start_position()
             pose = self.start_positions[name]
             self.move_to_start.set_target_deg(pose)
-            self.move_recover.set_target_deg(pose)     # recover to this trial's own start
             sidecar.update(start_position=name, start_joint_deg=pose)
             where = f", start {name}"
         self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ({self.paradigm}{where}) ---")
@@ -272,12 +273,12 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self._start_delay()
 
     def on_grasp_timeout(self):
-        # No grasp in time: end the trial and reset (the arm is still at the start).
+        # No grasp in time: end the trial -- park, then the next trial starts as usual.
         self.grasp.stop()
         self.get_logger().info("No grasp within grasp.timeout_sec. Resetting for the next trial.")
         self.recorder.mark("grasp_timeout")
         self.recorder.mark("recover_start")
-        self.move_recover.start()
+        self.move_park.start()
 
     def start_perturb(self):
         self.get_logger().info("Initiating Perturbation Move.")
@@ -307,14 +308,14 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.recorder.mark("freeze")
 
     def on_monitor_complete(self):
-        # Dwell elapsed: stop holding and return to start for the next trial.
-        self.get_logger().info("Apple plucked! Returning to start.")
+        # Dwell elapsed: stop holding and park, out of reach, until the next trial.
+        self.get_logger().info("Apple plucked! Parking.")
         self.recorder.mark("recover_start")
         self.freeze_hold.stop()
         self.resistance.stop()
-        self.move_recover.start()
+        self.move_park.start()
 
-    def on_recover_complete(self):
+    def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
@@ -328,8 +329,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self._apply_settle()
         self.resistance.reload()    # felt stiffness of the pull
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
-        self.move_to_start.reload()      # speed limits and the start / recover pose
-        self.move_recover.reload()
+        self.move_to_start.reload()      # speed limits and the start pose
+        self.move_park.reload()
         if self.paradigm == "random_start":
             self._check_origin()         # start_trial sets this trial's start pose after this reload
         if self.perturbing:

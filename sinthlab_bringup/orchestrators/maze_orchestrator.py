@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.park_move import ParkMove
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
@@ -23,16 +24,17 @@ CLIK_CTRL = "kuka_clik_controller"
 class MazeOrchestratorNode(rclpyNode):
     """Maze-exploration trial loop, composed entirely of actions:
 
+    [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> quiet_window -> go_cue
     -> (maze_fixtures + checkpoint_monitor + timeout) -> [reward_cue per checkpoint, any order]
     -> goal OR timeout -> stop fixtures -> force_release (wait until the operator lets go)
-    -> switch to JOINT -> move_recover (JOINT) -> repeat.
+    -> switch to JOINT -> move_park (JOINT, out of reach) -> repeat.
 
-    The start/recover moves run on the joint-position controller so the arm reaches the EXACT
+    The start and park moves run on the joint-position controller so the arm reaches the EXACT
     configuration (deterministic posture). The corridor virtual fixtures need the CLIK, so we switch
-    to it once the arm is at start, and switch back before recovering. The operator drives the
+    to it once the arm is at start, and switch back before parking. The operator drives the
     compliant arm through the corridors; the cabinet impedance provides the walls. Both the goal and
-    the timeout converge on the same safe ending: stop the fixtures, wait for release, return to start.
+    the timeout converge on the same safe ending: stop the fixtures, wait for release, park.
     """
 
     def __init__(self) -> None:
@@ -113,20 +115,20 @@ class MazeOrchestratorNode(rclpyNode):
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint",
         )
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete
-        )
+        self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
             "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
-            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+            "move_to_park.speed_scale": self.move_park.set_speed_scale,
         }, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
-        for move in (self.move_to_start, self.move_recover):
+        for move in (self.move_to_start, self.move_park):
             move.report_moves_to(self.recorder.note_move)
         self.get_logger().info("=== MULTI-TRIAL MAZE EXPERIMENT INITIALIZED ===")
-        self.start_trial()
+        # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
+        self.control.on_event("parking")
+        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
 
     def start_trial(self):
         self.recorder.start(trial_index=self.trial_count + 1,
@@ -189,9 +191,9 @@ class MazeOrchestratorNode(rclpyNode):
         self.safety.stop()
         self.maze_fixtures.stop()
         if reason == "safety":
-            # Do not play a cue or wait for release — drive straight back to the safe start posture, which
-            # (in the cabinet's impedance) sets the equilibrium at start and pulls the arm out of the fault.
-            self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+            # Do not play a cue or wait for release — drive straight to park, which (in the cabinet's
+            # impedance) moves the equilibrium there and pulls the arm out of the fault.
+            self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
             return
         if reason == "goal":
@@ -202,19 +204,19 @@ class MazeOrchestratorNode(rclpyNode):
             self.get_logger().info("Timeout reached. Playing timeout cue; waiting for release before reset.")
             self.timeout_cue.start()
             self.timeout_cue_visual.start()
-        # Return to start only once the operator lets go (external force ~ 0).
+        # Park only once the operator lets go (external force ~ 0).
         self.recorder.mark("release_wait")
         self.force_release.start()
 
     def on_force_released(self):
         self.recorder.mark("released")
-        self.get_logger().info("Arm released. Switching to joint controller to recover.")
+        self.get_logger().info("Arm released. Switching to joint controller to park.")
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
-        self.move_recover.start()
+        self.move_park.start()
 
-    def on_recover_complete(self):
+    def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
@@ -228,7 +230,7 @@ class MazeOrchestratorNode(rclpyNode):
             cue.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
-        self.move_recover.reload()
+        self.move_park.reload()
         self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
         self.maze_fixtures.reload()      # rail_lead_sec: how easy moving along a rail feels
 

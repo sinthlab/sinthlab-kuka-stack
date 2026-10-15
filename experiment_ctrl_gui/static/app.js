@@ -23,7 +23,7 @@ STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed
                    "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
-  snap: "threshold", recover_start: "recover", trial_end: "end", perturb_delay_start: "delay",
+  snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
   session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped",
@@ -31,11 +31,12 @@ const STEP_LABEL = {
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
   cue_go: "go cue", armed: "waiting for the pull", snap: "threshold reached — holding", freeze: "holding",
-  cue_snap: "threshold reached — holding", recover_start: "recovering to start", trial_end: "trial complete",
+  cue_snap: "threshold reached — holding", recover_start: "moving to park", trial_end: "trial complete — at park",
+  parking: "first move: to the park pose (slow)",
   perturb_delay_start: "delay before perturbation", perturb_applied: "perturbed — settling",
   fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
-  safety_trip: "SAFETY ABORT — recovering", release_wait: "waiting for release", released: "recovering to start",
+  safety_trip: "SAFETY ABORT — parking", release_wait: "waiting for release", released: "moving to park",
   paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
@@ -243,7 +244,7 @@ function renderControls() {
   if (a.ros.demo) { msg = "Demo mode — a simulated experiment. Nothing is launched and no robot is connected."; cls += " demo"; }
   else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes, pause and robot state need ROS.`;
   if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes and pause work from here; stop it with Ctrl-C in its terminal.`;
-  if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is recovering to the start pose."; }
+  if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is moving to the park pose."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
 
   // run info

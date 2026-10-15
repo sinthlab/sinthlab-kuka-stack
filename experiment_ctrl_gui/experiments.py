@@ -173,11 +173,12 @@ CAUTION: Dict[str, str] = {
     "base_link": "URDF link name. Must exist in the robot description.",
     "end_effector_link": "URDF link name. Must exist in the robot description.",
     "move_to_start.target_joint_position": (
-        "Start pose, joint angles in degrees. Kept equal to move_to_start_recover (edited together), "
-        "and for the CLIK experiments the CLIK redundancy posture follows it. Checked against the "
-        "iiwa7 joint limits; reachability of anything relative to it (the maze) is not checked here."),
-    "move_to_start_recover.target_joint_position": (
-        "Recover pose. Kept equal to move_to_start (edited together) -- the next trial starts here."),
+        "Start pose, joint angles in degrees. For the CLIK experiments the CLIK redundancy posture "
+        "follows it. Checked against the iiwa7 joint limits, and its elbow (A4) must bend the same way "
+        "as the park pose's; reachability of anything relative to it (the maze) is not checked here."),
+    "move_to_park.target_joint_position": (
+        "Park pose: out of the monkey's reach, between trials. Its elbow (A4) must bend the same way as "
+        "the start pose's -- otherwise every park <-> start move passes a straight, singular elbow."),
     "virtual_fixtures.maze.*": "Maze rail. Run check_maze.py on the edited YAML (runs/…) to confirm reachability.",
     "checkpoint_monitor.checkpoint_*": "Checkpoints must sit on the rails. Arrays stay the same length.",
     "checkpoint_monitor.goal_[xyz]": "The goal must sit on a rail.",
@@ -194,11 +195,7 @@ CAUTION: Dict[str, str] = {
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
 }
 
-# Parameters kept equal to each other: an edit to one sets them all. The YAML notes say "change it in
-# BOTH blocks"; the dashboard does it for you. (The CLIK posture follows too -- see params.py.)
-LINKED: List[List[str]] = [
-    ["move_to_start.target_joint_position", "move_to_start_recover.target_joint_position"],
-]
+# The start pose: for the CLIK experiments the CLIK redundancy posture follows it (see params.py).
 START_POSE = "move_to_start.target_joint_position"
 
 
@@ -211,13 +208,6 @@ def caution(name: str) -> Optional[str]:
         if fnmatch(name, pattern):
             return note
     return None
-
-
-def linked(name: str) -> List[str]:
-    for group in LINKED:
-        if name in group:
-            return group
-    return [name]
 
 
 def choices(exp: Experiment, name: str, flat: Dict[str, object]) -> Optional[List[str]]:

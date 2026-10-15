@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.actions.park_move import ParkMove
 from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.admittance_move import AdmittanceMoveAction
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
@@ -25,10 +26,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
     No goal, no reward, no boundary. A trial is one free-movement SESSION that runs until it is ended:
     by Pause or "Stop after trial" on the dashboard (the pause service), or after session_sec if > 0.
 
+    [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
     -> session ended (end tone, ring dark): the arm holds where it is -> release wait
-    -> switch to JOINT -> recover to the start -> holds there (paused) or the launch stops.
+    -> switch to JOINT -> park (out of reach) -> holds there (paused) or the launch stops.
     """
 
     def __init__(self) -> None:
@@ -56,7 +58,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.control = ExperimentControl(self, "free_move")
         self.control.on_reload(self._reload_live)
         # The session has no natural end: a pause request (Pause, or the dashboard's "Stop after trial")
-        # ends it now, so the arm returns to the start and the pause / stop can take effect there.
+        # ends it now, so the arm parks and the pause / stop can take effect there.
         self.control.on_pause_request(self.on_end_requested)
         self._session_live = False
         self.recorder = TrialRecorder(
@@ -77,19 +79,20 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.switch_to_joint = SwitchControllerAction(
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint")
-        self.move_recover = MoveToPositionJointSpace(
-            self, param_prefix="move_to_start_recover", on_complete=self.on_recover_complete)
+        self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
             "move_to_start.speed_scale": self.move_to_start.set_speed_scale,
-            "move_to_start_recover.speed_scale": self.move_recover.set_speed_scale,
+            "move_to_park.speed_scale": self.move_park.set_speed_scale,
         }, log=self.recorder.note_change)
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
-        for move in (self.move_to_start, self.move_recover):
+        for move in (self.move_to_start, self.move_park):
             move.report_moves_to(self.recorder.note_move)
         self.get_logger().info("=== PRE-TRAINING: FREE MOVE INITIALIZED ===")
-        self.start_trial()
+        # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
+        self.control.on_event("parking")
+        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
 
     def start_trial(self):
         self.recorder.start(trial_index=self.trial_count + 1)
@@ -152,7 +155,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.admittance.stop()          # holds where it is
         self.ring.show("off")
         if reason == "safety":
-            self.get_logger().error("SAFETY ABORT: recovering to the start posture immediately.")
+            self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
             return
         self.get_logger().info("Session over. The arm holds; waiting for release before reset.")
@@ -165,9 +168,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
-        self.move_recover.start()
+        self.move_park.start()
 
-    def on_recover_complete(self):
+    def on_park_complete(self):
         self.get_logger().info(f"--- SESSION {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
@@ -179,7 +182,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.ring.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.move_to_start.reload()
-        self.move_recover.reload()
+        self.move_park.reload()
         self._session_sec = float(get_required_param(self, "session_sec"))
         self.session.set_duration(max(self._session_sec, 1.0))
         self.admittance.reload()

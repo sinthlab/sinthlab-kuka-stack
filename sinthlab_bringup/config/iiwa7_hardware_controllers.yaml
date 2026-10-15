@@ -21,7 +21,7 @@
 
     # LBR ROS 2 control controllers.
     # lbr_joint_position_command_controller -> apple-pluck / perturb (joint positions -> FRI)
-    lbr_joint_position_command_controller:  # apple pluck / perturb, and every start / recover move
+    lbr_joint_position_command_controller:  # apple pluck / perturb, and every start / park move
       type: lbr_ros2_control/LBRJointPositionCommandController  # joint positions straight to FRI
 
     # ROS 2 control controllers
