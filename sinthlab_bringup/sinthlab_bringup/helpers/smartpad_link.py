@@ -11,16 +11,20 @@ a second until it ends:
 
 SmartPadLink listens in a background thread and keeps the latest report -- what the app last said it
 runs with. The selections cannot change during a run, so the report never goes out of date; it is
-repeated only so it gets through (ROS starts after the app, and UDP can drop a packet). It goes into
-every trial's sidecar (`smartpad`) and the experiment status (the dashboard shows it). Best effort: if
-nothing arrives (an old app, the network, a firewall), everything runs as before and the snapshot
-says so.
+repeated only so it gets through (ROS starts after the app, and UDP can drop a packet).
+
+It is written ONCE PER RUN to `smartpad_params.json` in the run's folder (write_to: TrialRecorder
+names the folder) -- rewritten when a report arrives, so it holds the report however late in the run
+it came; until then it says `received: false` and why. The experiment status carries it too (the
+dashboard shows it). Best effort: if nothing arrives (an old app, the network, a firewall), everything
+runs as before.
 
 One listener per process (the port can only be bound once): use SmartPadLink.get(logger).
 """
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 from typing import Optional
@@ -44,6 +48,7 @@ class SmartPadLink:
         self._settings: Optional[dict] = None
         self._sender: Optional[str] = None
         self._error: Optional[str] = None
+        self._out: Optional[str] = None     # the run's smartpad_params.json (write_to)
         try:
             self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._sock.bind(("", SETTINGS_PORT))
@@ -68,6 +73,23 @@ class SmartPadLink:
             if first or changed:
                 first = False
                 self._log.info(f"SmartPad settings from {host}: {settings}")
+                self._write()
+
+    def write_to(self, run_dir: str) -> None:
+        """Keep `<run_dir>/smartpad_params.json` up to date: written now (received or not) and again
+        when a report arrives."""
+        self._out = os.path.join(run_dir, "smartpad_params.json")
+        self._write()
+
+    def _write(self) -> None:
+        if self._out is None:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._out), exist_ok=True)
+            with open(self._out, "w") as f:
+                json.dump(self.snapshot(), f, indent=2)
+        except OSError as exc:
+            self._log.warn(f"SmartPad settings: could not write {self._out}: {exc}")
 
     def snapshot(self) -> dict:
         """The latest report, for the sidecar and status: `received`, `from`, `settings` -- or

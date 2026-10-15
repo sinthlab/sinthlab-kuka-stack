@@ -135,6 +135,8 @@ class TrialRecorder:
         self._last_msg: Optional[LBRState] = None
         self._sidecar: dict = {}
         self._subject = get_launch_param(node, "subject", None)   # set at launch, if at all
+        # What the SmartPad app runs with: one file per run, beside the trials (helpers/smartpad_link.py).
+        SmartPadLink.get(node.get_logger()).write_to(self._save_dir)
 
         node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
 
@@ -169,8 +171,6 @@ class TrialRecorder:
             "fri": self._fri_snapshot(),
             "git": _git_describe(os.path.dirname(os.path.abspath(__file__))),
             "params": self._param_dump(),
-            # What the SmartPad app reported it runs with (helpers/smartpad_link.py).
-            "smartpad": SmartPadLink.get(self._node.get_logger()).snapshot(),
         }
         self._sidecar.update(sidecar)
         self._active = True

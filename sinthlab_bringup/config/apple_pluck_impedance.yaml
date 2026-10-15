@@ -168,9 +168,9 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      # WHEN -- the delay before the perturbation, counted from the go cue (perturb) or from the
-      # detected grasp (perturb_bump). Fixed, or drawn per trial so the animal cannot predict it; the
-      # delay each trial used is recorded (event perturb_delay_start, its arg).
+      # WHEN (perturb only) -- the delay after the go cue before the perturbation. Fixed, or drawn per
+      # trial so the animal cannot predict it; the delay each trial used is recorded (event
+      # perturb_delay_start, its arg). perturb_bump has its own, counted from the grasp: grasp.delay_*.
       start_delay_mode: "fixed"  # fixed = start_delay_sec every trial; random = uniform in [min, max] each trial
       start_delay_sec: 1.5  # the delay in fixed mode [s]
       start_delay_min_sec: 0.2  # the shortest delay in random mode [s]
@@ -198,6 +198,14 @@
       threshold_n: 3.0  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
       hold_sec: 0.03  # the force must stay above threshold_n this long -- rejects single-sample spikes [s]
       timeout_sec: 10.0  # no grasp within this long after the go cue -> end the trial and reset [s]
+      # The delay from the detected grasp to the perturbation. Default 0: the bump follows the grasp at
+      # once (the detection itself lags first contact by ~hold_sec plus the force rising to threshold).
+      # Random draws it per trial so the animal cannot predict it; each trial's delay is recorded
+      # (event perturb_delay_start, its arg).
+      delay_mode: "fixed"  # fixed = delay_sec every trial; random = uniform in [delay_min_sec, delay_max_sec] each trial
+      delay_sec: 0.0  # the delay after the grasp in fixed mode [s]; 0 = at once
+      delay_min_sec: 0.0  # the shortest delay after the grasp in random mode [s]
+      delay_max_sec: 0.3  # the longest delay after the grasp in random mode [s]
       tare_max_n: 10.0  # a resting force above this means the apple was held during the quiet window: keep the previous tare [N]
       # The arm is still and well conditioned while waiting, so this can be far below Free Move's 0.1
       # (which reads ~20% low at these poses): 0.02 reads 99% of the true force at every apple start.

@@ -172,15 +172,16 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.monitor.set_baseline_settle(settle)
 
     def _read_delay(self):
-        """The delay before the perturbation: fixed (start_delay_sec) or drawn per trial, uniformly from
-        [start_delay_min_sec, start_delay_max_sec]. Re-read between trials."""
-        p = "perturb_start."
-        self._delay_mode = str(get_required_param(self, p + "start_delay_mode")).strip().lower()
+        """The delay before the perturbation, fixed or drawn per trial (uniformly from [min, max]).
+        perturb: after the go cue, perturb_start.start_delay_*; perturb_bump: after the grasp,
+        grasp.delay_* (default 0 -- the bump follows the grasp at once). Re-read between trials."""
+        p = "grasp.delay_" if self.bump else "perturb_start.start_delay_"
+        self._delay_mode = str(get_required_param(self, p + "mode")).strip().lower()
         if self._delay_mode not in ("fixed", "random"):
-            raise ValueError(f"{p}start_delay_mode must be fixed or random, got {self._delay_mode!r}")
-        self._delay_fixed = float(get_required_param(self, p + "start_delay_sec"))
-        self._delay_range = (float(get_required_param(self, p + "start_delay_min_sec")),
-                             float(get_required_param(self, p + "start_delay_max_sec")))
+            raise ValueError(f"{p}mode must be fixed or random, got {self._delay_mode!r}")
+        self._delay_fixed = float(get_required_param(self, p + "sec"))
+        self._delay_range = (float(get_required_param(self, p + "min_sec")),
+                             float(get_required_param(self, p + "max_sec")))
 
     def _start_delay(self):
         delay = (self._delay_fixed if self._delay_mode == "fixed"

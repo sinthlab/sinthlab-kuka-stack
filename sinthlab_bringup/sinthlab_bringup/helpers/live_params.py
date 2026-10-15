@@ -74,10 +74,14 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "perturb_start.start_delay_sec",
         "perturb_start.start_delay_min_sec",
         "perturb_start.start_delay_max_sec",
-        # perturb_bump: detecting the grasp that triggers the perturbation.
+        # perturb_bump: detecting the grasp that triggers the perturbation, and the delay after it.
         "grasp.threshold_n",
         "grasp.hold_sec",
         "grasp.timeout_sec",
+        "grasp.delay_mode",
+        "grasp.delay_sec",
+        "grasp.delay_min_sec",
+        "grasp.delay_max_sec",
     ],
     "restricted_plane": _COMMON + _PULL + _SPEED,
     "maze": _COMMON + _SPEED + [
@@ -117,6 +121,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "grasp.threshold_n": (0.5, 30.0),
     "grasp.hold_sec": (0.0, 0.5),
     "grasp.timeout_sec": (1.0, 120.0),
+    "grasp.delay_sec": (0.0, 10.0),
+    "grasp.delay_min_sec": (0.0, 10.0),
+    "grasp.delay_max_sec": (0.0, 10.0),
     "timeout_sec": (5.0, 600.0),
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
     # Drag may go further -- it only ever resists.
@@ -159,6 +166,7 @@ _START, _RECOVER = _POSE
 # dashboard shows them -- only in those paradigms. The first matching pattern wins.
 PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.baseline_settle_sec": ("perturb",),
+    "perturb_start.start_delay_*": ("perturb",),
     "perturb_start.*": ("perturb", "perturb_bump"),
     "grasp.*": ("perturb_bump",),
     "random_start.*": ("random_start",),
@@ -204,6 +212,7 @@ CHOICES: Dict[str, List[str]] = {
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
+    "grasp.delay_mode": ["fixed", "random"],
     "travel_task.direction": ["both", "positive", "negative"],
     "travel_task.axis": ["x", "y", "z", "norm"],
 }
@@ -217,9 +226,11 @@ CHOICES: Dict[str, List[str]] = {
 # at 0.20). Position-only IK lets the flange tilt: up to ~22 / 19 / 14 deg at these caps.
 PERTURB_R_MAX: Dict[str, float] = {"frontal": 0.15, "horizontal": 0.175, "sagittal": 0.10}
 _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
-_DMIN, _DMAX = "perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"
+# Delay ranges (min, max): perturb's after the go cue, perturb_bump's after the grasp.
+_DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"),
+                 ("grasp.delay_min_sec", "grasp.delay_max_sec"))
 PAIRED = (_R, _PLANE, "move_to_start.target_joint_position",
-          "move_to_start_recover.target_joint_position", _K, _K_BASE, _DMIN, _DMAX)   # checked together: see check_value(context=...)
+          "move_to_start_recover.target_joint_position", _K, _K_BASE) + sum(_DELAY_RANGES, ())   # checked together: see check_value(context=...)
 
 
 def check_perturbation(r, plane) -> Optional[str]:
@@ -335,13 +346,14 @@ def _check_pair(name, value, context) -> Optional[str]:
         k = value if name == _K else ctx.get(_K)
         base = value if name == _K_BASE else ctx.get(_K_BASE)
         return check_stiffness(k, base)
-    if name in (_DMIN, _DMAX):
-        ctx = context or {}
-        lo = value if name == _DMIN else ctx.get(_DMIN)
-        hi = value if name == _DMAX else ctx.get(_DMAX)
-        if lo is not None and hi is not None and float(lo) > float(hi):
-            return f"{_DMIN} ({lo}) must not exceed {_DMAX} ({hi})"
-        return None
+    for dmin, dmax in _DELAY_RANGES:
+        if name in (dmin, dmax):
+            ctx = context or {}
+            lo = value if name == dmin else ctx.get(dmin)
+            hi = value if name == dmax else ctx.get(dmax)
+            if lo is not None and hi is not None and float(lo) > float(hi):
+                return f"{dmin} ({lo}) must not exceed {dmax} ({hi})"
+            return None
     if context is None or name not in (_R, _PLANE):
         return None
     r = value if name == _R else context.get(_R)

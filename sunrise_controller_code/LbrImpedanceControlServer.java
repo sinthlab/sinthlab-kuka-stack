@@ -51,15 +51,16 @@ import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
  *      state ROS reads -- and the start of its first move -- is the ready pose.
  *   3. Hold the pose in Cartesian impedance with the FRI overlay; ROS moves the equilibrium.
  *
- * CLOSE: every set-up dialog has a "Close" choice, and a "Close" user key (the SmartPad's side keys)
- * ends the app at any point after that -- during the start-up moves, the wait for ROS, or while
- * running. It cancels the current motion and returns from run(); dispose() closes FRI. It is a
- * normal end, not a safety function: the E-stop is the E-stop.
+ * CLOSE: a "Cancel" user key (on the SmartPad, beside the display) ends the app at any point once
+ * set up -- during the start-up moves, the wait for ROS, or while running. It cancels the current
+ * motion and returns from run(); dispose() closes FRI. A Sunrise app cannot add a cross to the
+ * SmartPad's own window, so this key is the app's close button. It is a normal end, not a safety
+ * function: the E-stop is the E-stop.
  *
  * SETTINGS REPORT: once the selections are made, the app sends them to the ROS computer (the remote
  * IP chosen) once a second, as one JSON line over UDP to SETTINGS_PORT, until it ends. ROS records
- * them in every trial's sidecar (`smartpad`) and checks them against the experiment
- * (sinthlab_bringup/helpers/smartpad_link.py). Best effort: if the network drops the packets, the
+ * them once per run (smartpad_params.json in the run's folder) and checks them against the experiment
+ * (sinthlab_bringup/helpers/smartpad_link.py). Repeated only so the report gets through. Best effort: if the network drops the packets, the
  * app runs exactly as before and ROS reports that it has heard nothing.
  */
 public class LbrImpedanceControlServer extends RoboticsAPIApplication {
@@ -86,8 +87,8 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private String profile_name_ = "";
     private double ns_damping_used_ = 0.0;
 
-    // Close (dialog choice or user key): checked between steps; cancels the motion under way.
-    private static final String CLOSE = "Close";
+    // Close (user key): checked between steps; cancels the motion under way.
+    private static final String CLOSE = "Cancel";
     private volatile boolean close_requested_ = false;
     private volatile IMotionContainer motion_ = null;
 
@@ -165,49 +166,33 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     private String[] ns_stiffness_options_ = { "30 (Standard)", "15 (Light)", "5 (Very light)" };
     private double[] ns_stiffness_vals_ = { 30.0, 15.0, 5.0 };
 
-    /**
-     * One SmartPAD selection dialog, with "Close" as its last choice. Returns the chosen index, or -1
-     * for Close (which also requests the app to end).
-     */
+    /** One SmartPAD selection dialog; returns the chosen index. */
     private int ask(String question, String[] options) {
-        String[] withClose = new String[options.length + 1];
-        System.arraycopy(options, 0, withClose, 0, options.length);
-        withClose[options.length] = CLOSE;
-        int i = applicationUi.displayModalDialog(ApplicationDialogType.QUESTION, question, withClose);
-        if (i == options.length) {
-            close_requested_ = true;
-            getLogger().info("Closed from the set-up dialogs.");
-            return -1;
-        }
-        return i;
+        return applicationUi.displayModalDialog(ApplicationDialogType.QUESTION, question, options);
     }
 
     /**
-     * Prompts the user on the SmartPAD to configure the connection. Returns false if Close was chosen.
+     * Prompts the user on the SmartPAD to configure the connection.
      */
-    public boolean request_user_config() {
+    public void request_user_config() {
         // Ask for Send Period
         int selectedButtonIndex = ask("Select the desired FRI send period [ms]:", send_periods_);
-        if (selectedButtonIndex < 0) return false;
         send_period_ = Integer.valueOf(send_periods_[selectedButtonIndex]);
         getLogger().info("Send period set to: " + send_period_);
 
         // Ask for Remote IP
         selectedButtonIndex = ask("Select your remote IP address:", client_names_);
-        if (selectedButtonIndex < 0) return false;
         client_name_ = client_names_[selectedButtonIndex];
         getLogger().info("Remote address set to: " + client_name_);
 
         // Ask for Stiffness Profile
         selectedButtonIndex = ask("Select Cartesian Stiffness (K diagonal):", stiffness_profiles_);
-        if (selectedButtonIndex < 0) return false;
         K = stiffness_vals_[selectedButtonIndex];
         profile_name_ = stiffness_profiles_[selectedButtonIndex];
         getLogger().info("Stiffness Profile set to: " + stiffness_profiles_[selectedButtonIndex]);
 
         // Ask for Damping Ratio
         selectedButtonIndex = ask("Select Damping Ratio (D0):", damping_options_);
-        if (selectedButtonIndex < 0) return false;
         double d0 = damping_vals_[selectedButtonIndex];
         for (int i = 0; i < 6; i++) {
             D[i] = d0;
@@ -217,7 +202,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
 
         // Ask for Null-space (elbow) Stiffness
         selectedButtonIndex = ask("Select Null-space (elbow) Stiffness [Nm/rad]:", ns_stiffness_options_);
-        if (selectedButtonIndex < 0) return false;
         ns_stiffness = ns_stiffness_vals_[selectedButtonIndex];
         getLogger().info("Null-space stiffness set to: " + ns_stiffness);
 
@@ -231,7 +215,6 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ns_damping_used_ = Math.max(NS_DAMPING_MIN, Math.min(ns_damping, 1.0));
         getLogger().info("Damping " + d0 + " (elbow damping " + ns_damping_used_
                          + "), null-space stiffness " + ns_stiffness);
-        return true;
     }
 
     /**
@@ -424,16 +407,12 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ee_tool_.attachTo(lbr_.getFlange());
         getLogger().info("Attached tool template '" + EE_TOOL_TEMPLATE + "' to the flange.");
 
-        if (request_user_config()) {
-            startSettingsReport();
-        }
+        request_user_config();
+        startSettingsReport();
     }
 
     @Override
     public void run() {
-        if (close_requested_) {
-            return;                 // Close chosen in a set-up dialog
-        }
         addCloseKey();
         // Zero, then ready, in position control BEFORE ROS connects -- see the class doc.
         moveToReadyViaZero();

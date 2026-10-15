@@ -100,8 +100,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    on the card), Restricted Plane or Maze; or, under
    **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
-   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (each
-   dialog also offers **Close**, and a **Close** side key ends the app at any time later). The app
+   *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (after
+   that, a **Cancel** key beside the SmartPad display ends the app at any time). The app
    then **always** moves the arm to mechanical zero and on to the ready pose `[0, 10, 0, −80, 0, 90, 0]`
    (no prompt; hold the enabling switch while it moves; see
    [Start-up posture](#start-up-posture-zero-then-ready)). It then waits about 60 s for ROS.
@@ -180,8 +180,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Experiment | Extra live parameters |
 |---|---|
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start / recover pose** (`move_to_start.target_joint_position`, `move_to_start_recover.target_joint_position`, set together) |
-| Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when**: `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (applies at once) |
-| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec` |
+| Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (applies at once) |
+| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random) |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start / recover pose above does not apply in this paradigm |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
@@ -701,7 +701,7 @@ perturb run**, set `polar_r_m` to 0.
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
-| `start_delay_mode` | **When**, counted from the go cue (perturb) or the grasp (perturb bump): `fixed` — `start_delay_sec` every trial (default `1.5` s); `random` — drawn per trial, uniformly from `start_delay_min_sec`..`start_delay_max_sec` (default 0.2–0.6 s), so the animal cannot predict it. The delay each trial used is the `perturb_delay_start` event's arg. |
+| `start_delay_mode` | **When**, counted from the go cue (perturb only; perturb bump has its own delay after the grasp, `grasp.delay_*`): `fixed` — `start_delay_sec` every trial (default `1.5` s); `random` — drawn per trial, uniformly from `start_delay_min_sec`..`start_delay_max_sec` (default 0.2–0.6 s), so the animal cannot predict it. The delay each trial used is the `perturb_delay_start` event's arg. |
 
 At r = 0.05 m from the start pose (motion of the impedance anchor):
 
@@ -768,16 +768,17 @@ threshold means the same as in the normal pluck. `disp_m` may already be a few c
 hand resisting the bump) — that is signal, not error. `baseline_settle_sec` does not apply. Everything
 before the bump is still in the CSV (pose and joint torques from trial start).
 
-**When.** `perturb_start.start_delay_mode`: `fixed` waits `start_delay_sec` after the grasp (0 = at
-once); `random` draws a delay per trial from `start_delay_min_sec`..`start_delay_max_sec`, so the
-animal cannot anticipate the bump. The same setting applies in the perturb paradigm, counted from the
-go cue there. Both modes and all values are live.
+**When.** By default the bump follows the grasp **at once** (`grasp.delay_sec: 0`). `grasp.delay_mode`
+`fixed` waits `grasp.delay_sec` after the grasp; `random` draws a delay per trial from
+`grasp.delay_min_sec`..`grasp.delay_max_sec`, so the animal cannot anticipate the bump. These are this
+paradigm's own — the perturb paradigm's delay after the go cue (`perturb_start.start_delay_*`, 1.5 s)
+is separate. Both modes and all values are live.
 
 **Before the bump** the pull is against the SmartPad profile's full stiffness: the resistance
 softening starts at `armed`, after the perturbation (as in the perturb paradigm).
 
-**Settings** (shown under *Pluck perturb bump*): the perturbation and delay (`perturb_start.*`, as
-Scenario 3), and `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec` (live), `tare_max_n`,
+**Settings** (shown under *Pluck perturb bump*): the perturbation (`perturb_start.*`, as Scenario 3),
+and `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`, `grasp.delay_*` (live), `tare_max_n`,
 `jacobian_damping`, debug (per-run).
 
 **Steps to run:** as Scenario 1 (same SmartPad selections), with the **Pluck perturb bump** tab
@@ -1450,10 +1451,10 @@ flowchart LR
   enabling switch while it moves (T1). Separately, the dashboard and orchestrator refuse a *start pose*
   that is nearly straight (max(|A2|, |A4|, |A6|) < 12°), so ROS never parks the arm in a singular pose.
 
-  <a id="smartpad-app-close-and-settings-report"></a>**Closing the app.** Every set-up dialog has a
-  **Close** choice, and once set up the app shows a **Close** user key on the SmartPad's side keys.
-  It ends the app at any point — during the zero / ready moves, while waiting for ROS, or while
-  running: the motion under way is cancelled, `run()` returns and FRI is closed. ROS sees the FRI
+  <a id="smartpad-app-close-and-settings-report"></a>**Closing the app.** Once set up, the app shows a
+  **Cancel** user key beside the SmartPad display — its close button (a Sunrise app cannot add a cross
+  to the SmartPad's own window). It ends the app at any point — during the zero / ready moves, while
+  waiting for ROS, or while running: the motion under way is cancelled, `run()` returns and FRI is closed. ROS sees the FRI
   session end. It is a normal end, not a safety function — the E-stop is the E-stop. (If ROS does not
   connect within 60 s, the app now also ends instead of holding with no client.)
 
@@ -1466,7 +1467,9 @@ flowchart LR
   [`helpers/smartpad_link.py`](sinthlab_bringup/sinthlab_bringup/helpers/smartpad_link.py) listens
   and keeps the latest report:
 
-  - every trial's sidecar records it (`smartpad`), so the data says what the cabinet actually ran;
+  - the run's folder gets **`smartpad_params.json`** (one per run, beside the trials), so the data says
+    what the cabinet actually ran. It is written when the run starts (`received: false` until a report
+    arrives) and rewritten when the report comes in, so it holds the report however late it arrived;
   - the dashboard shows it under *Before you start* and flags any difference from the checklist;
   - apple pluck warns at every trial start if `resistance.base_stiffness_n_per_m` differs from the
     reported stiffness (every pull would feel base-to-actual times the slider's stiffness).
@@ -1638,7 +1641,7 @@ stateDiagram-v2
     GoCue --> GraspWait : audio + visual cue [cue_go]
     GraspWait --> Delay : |F − tare| ≥ threshold_n for hold_sec [grasp]
     GraspWait --> Recover : grasp.timeout_sec, no grasp [grasp_timeout]
-    Delay --> Perturb : fixed or random delay [perturb_delay_start]
+    Delay --> Perturb : grasp.delay_* (default 0, at once) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap]
     Snap --> Hold : snap cue, freeze [freeze]
@@ -1815,6 +1818,11 @@ commissioning step.
 ## 7. Data Collected
 
 ### One CSV + one JSON sidecar per trial, for every experiment
+
+Plus, once per run in the same folder, **`smartpad_params.json`**: what the SmartPad app reported it
+runs with (`settings`: `stiffness_profile`, `stiffness` {X,Y,Z,A,B,C}, `damping`,
+`nullspace_stiffness`, `nullspace_damping`, `send_period_ms`, `tool`; `received`, `from`) — or
+`received: false` and why. See [the settings report](#smartpad-app-close-and-settings-report).
 
 Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck events captured in
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
@@ -2161,7 +2169,6 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
 | `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
-| `smartpad` | What the SmartPad app reported it runs with (`settings`: `stiffness_profile`, `stiffness` {X,Y,Z,A,B,C}, `damping`, `nullspace_stiffness`, `nullspace_damping`, `send_period_ms`, `tool`), with `received` and `from` — or `received: false` and why. See [the settings report](#smartpad-app-close-and-settings-report). |
 | `moves` | Every joint-space move of the trial (start, perturbation, recover), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
 | `live_changes` | Live parameters applied **mid-trial** (only the move `speed_scale`s do that): each with `name`, `value`, `t`, `t_wall` and the CSV `row` it took effect at. The move it applies to is the next one that starts. Absent when nothing changed. |
 | `params` | Full resolved ROS parameter dump for the orchestrator node, taken when the trial starts, so it includes any live change applied at that trial (dashboard or `ros2 param set`) and a dashboard run's per-run edits. |
