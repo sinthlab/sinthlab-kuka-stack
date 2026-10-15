@@ -57,6 +57,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
         self.control = ExperimentControl(self, "free_move")
         self.control.on_reload(self._reload_live)
+        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self._stopping = False
         # The session has no natural end: a pause request (Pause, or the dashboard's "Stop after trial")
         # ends it now, so the arm parks and the pause / stop can take effect there.
         self.control.on_pause_request(self.on_end_requested)
@@ -92,9 +94,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.get_logger().info("=== PRE-TRAINING: FREE MOVE INITIALIZED ===")
         # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
         self.control.on_event("parking")
-        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
+        self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
 
     def start_trial(self):
+        self._stopping = False
         self.recorder.start(trial_index=self.trial_count + 1)
         self.recorder.mark("trial_start", self.trial_count + 1)
         self.trial_count += 1
@@ -108,6 +111,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
+        if self._stopping:                 # Stop now came during the switch: straight back
+            self.switch_to_joint.start()
+            return
         # Hold still and measure the resting force while the quiet window runs; the arm only
         # starts following the hand at the go cue. Keep quiet_window_sec >= free_move.tare_sec.
         self.recorder.mark("fixture_active")
@@ -120,6 +126,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.go_cue.start()
 
     def on_go_complete(self):
+        if self._stopping:
+            return
         self.recorder.mark("armed")
         self.admittance.enable_motion()
         self.safety.start()
@@ -174,7 +182,38 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.get_logger().info(f"--- SESSION {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
-        self.control.begin_trial(self.start_trial)
+        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+
+    def _next_trial(self):
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+
+    def _stop_now(self):
+        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
+        release wait. The control is paused, so it then holds at park and the launch can end."""
+        if self._stopping:
+            return
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+            self.control.begin_trial(self._next_trial)
+            return
+        if self.move_park.active() or self.switch_to_joint.active():
+            return                                # already on the way to park
+        self._stopping = True
+        self.recorder.mark("stop_requested")
+        self._trial_ending = True
+        self._session_live = False
+        self.quiet_window.stop()
+        self.session.stop()
+        self.safety.stop()
+        self.admittance.stop()
+        self.force_release.stop()
+        self.ring.show("off")
+        if self.move_to_start.active():           # still on the joint controller
+            self.move_to_start.cancel()
+            self.recorder.mark("recover_start")
+            self.move_park.start()
+        elif not self.switch_to_fixture.active():  # on the CLIK: back to joint, then park
+            self.switch_to_joint.start()
+        # (mid-switch to the CLIK, on_switched_to_fixture turns back)
 
     def _reload_live(self):
         for cue in (self.go_cue, self.end_cue):

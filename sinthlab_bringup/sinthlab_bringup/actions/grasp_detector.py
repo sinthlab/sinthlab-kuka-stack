@@ -7,7 +7,8 @@ is not seen. The arm is still while this runs, which is when that estimate is cl
 
     start()   at the start pose, apple untouched: collect the resting force (the TARE -- the
               tool-load model's error, a few N)
-    arm()     at the go cue: the tare is fixed, detection begins
+    arm()     at the go cue: the tare is fixed -- the mean over the last tare_sec only, so the arm's
+              settling at the start of the quiet window is left out -- and detection begins
               |F - tare| >= threshold_n, continuously for hold_sec  ->  on_grasp(|F - tare|)
     stop()    disarm (timeout, safety, end of trial)
 
@@ -16,7 +17,8 @@ tare is kept instead, with a warning, so a hand already on the apple is not lear
 """
 from __future__ import annotations
 
-from typing import Callable, List
+from collections import deque
+from typing import Callable
 
 import numpy as np
 from lbr_fri_idl.msg import LBRState
@@ -40,7 +42,7 @@ class GraspDetector:
 
         self._taring = False
         self._armed = False
-        self._samples: List[np.ndarray] = []
+        self._samples: deque = deque()          # (cabinet time, force), the last tare_sec of them
         self._tare = np.zeros(3)
         self._above_sec = 0.0
         self._last_t = None
@@ -52,17 +54,18 @@ class GraspDetector:
         self._threshold = float(get_required_param(n, p + "threshold_n"))
         self._hold_sec = float(get_required_param(n, p + "hold_sec"))
         self._tare_max = float(get_required_param(n, p + "tare_max_n"))
+        self._tare_sec = float(get_required_param(n, p + "tare_sec"))
         self._debug = bool(get_required_param(n, p + "debug_log_enabled"))
 
     def start(self) -> None:
         """Begin measuring the resting force (apple untouched)."""
-        self._samples = []
+        self._samples = deque()
         self._taring, self._armed = True, False
 
     def arm(self) -> None:
         """Fix the tare and start detecting."""
         if self._samples:
-            tare = np.mean(self._samples, axis=0)
+            tare = np.mean([f for _, f in self._samples], axis=0)
             if np.linalg.norm(tare) <= self._tare_max:
                 self._tare = tare
             else:
@@ -85,10 +88,12 @@ class GraspDetector:
         if not np.all(np.isfinite(q)):
             return
         f = self._hand.force(msg.external_torque, q)
-        if self._taring:
-            self._samples.append(f)
-            return
         t = msg.time_stamp_sec + msg.time_stamp_nano_sec * 1e-9    # cabinet clock: exact sample spacing
+        if self._taring:
+            self._samples.append((t, f))
+            while self._samples and t - self._samples[0][0] > self._tare_sec:
+                self._samples.popleft()
+            return
         dt = 0.0 if self._last_t is None else min(max(t - self._last_t, 0.0), 0.05)
         self._last_t = t
         mag = float(np.linalg.norm(f - self._tare))

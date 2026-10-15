@@ -2,7 +2,8 @@
 """What every orchestrator exposes for being driven from outside -- the dashboard or the CLI.
 
     <ns>/experiment_status       std_msgs/String, JSON, latched   where the experiment is right now
-    <ns>/<orchestrator>/pause    std_srvs/SetBool                 hold at the start between trials
+    <ns>/<orchestrator>/pause    std_srvs/SetBool                 hold at park between trials
+    <ns>/<orchestrator>/stop     std_srvs/Trigger                 end the trial NOW, park, and hold
     ros2 param set <ns>/<orchestrator> <name> <value>             live parameters only
 
 LIVE PARAMETERS apply at the next trial boundary, never mid-trial, so each trial runs under one
@@ -16,6 +17,10 @@ PAUSE takes effect when the current trial ends: the arm finishes moving to the p
 reach) and holds there. A trial with no natural end (free move) registers on_pause_request() and ends its trial
 when the pause arrives -- that is also how the dashboard's "Stop after trial" reaches it. Resume starts the next trial (and applies any live changes made meanwhile). Pause is
 not a stop and not a safety function -- the arm stays under control and compliant throughout.
+
+STOP (the dashboard's Stop now) ends the trial in progress at once -- the orchestrator's on_stop_request
+hook stops whatever is running and parks the arm -- and pauses, so the control then holds at park. Only
+then does the dashboard end the launch, so FRI always closes with the arm parked, out of reach.
 
 NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); with
 `nsp_sync.enabled` it sends that event's code to the Blackrock NSP. The DIO device is not wired
@@ -31,7 +36,7 @@ from rclpy.node import Node as rclpyNode
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rcl_interfaces.msg import SetParametersResult
 from std_msgs.msg import String
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 
 from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_immediate, is_live
@@ -79,6 +84,7 @@ class ExperimentControl:
         self._pending: Dict[str, object] = {}               # accepted, applies at the next trial
         self._reloaders: List[Callable[[], None]] = []
         self._pause_hooks: List[Callable[[], None]] = []
+        self._stop_hooks: List[Callable[[], None]] = []
         self._immediate: Dict[str, Callable[[object], None]] = {}   # name -> apply(value), right away
         self._change_log: Optional[Callable[[str, object], None]] = None
         # The values the CURRENT trial runs with. rclpy stores an accepted set immediately, but the
@@ -95,6 +101,7 @@ class ExperimentControl:
                              reliability=ReliabilityPolicy.RELIABLE)
         self._pub = node.create_publisher(String, STATUS_TOPIC, latched)
         node.create_service(SetBool, "~/pause", self._on_pause)
+        node.create_service(Trigger, "~/stop", self._on_stop)
         node.add_on_set_parameters_callback(self._gate)
         node.create_timer(_HEARTBEAT_SEC, self._publish)
         self._publish()
@@ -112,6 +119,10 @@ class ExperimentControl:
         change (TrialRecorder.note_change: the trial's sidecar)."""
         self._immediate.update(handlers)
         self._change_log = log
+
+    def on_stop_request(self, fn: Callable[[], None]) -> None:
+        """Register the orchestrator's Stop now: end the trial in progress at once and park."""
+        self._stop_hooks.append(fn)
 
     def on_pause_request(self, fn: Callable[[], None]) -> None:
         """Register a function called when a pause is requested -- for a trial with no natural end, so
@@ -190,8 +201,24 @@ class ExperimentControl:
             self._apply_pending()
             start_fn()
         response.success = True
-        response.message = ("pause requested: holds at the start once this trial ends"
+        response.message = ("pause requested: holds at park once this trial ends"
                             if self._paused else "running")
+        self._publish()
+        return response
+
+    def _on_stop(self, request, response):
+        self._paused = True
+        if self._held is None:
+            self._log.warn("STOP requested: ending the trial now and parking; then holding.")
+            for fn in self._stop_hooks:
+                try:
+                    fn()
+                except Exception as exc:
+                    self._log.error(f"stop hook failed: {exc}")
+            response.message = "stopping: the trial ends now, the arm parks, then holds"
+        else:
+            response.message = "already holding at park"
+        response.success = True
         self._publish()
         return response
 

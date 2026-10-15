@@ -182,14 +182,19 @@ def validate(path) -> bool:
 
     # ---- EVENTS ----
     print("\n [EVENTS]")
-    if meta and meta.get("partial"):
-        # The trial never reached stop_and_save(): Ctrl-C, a crash, or an abort. The data up to that
-        # point is real and the checks above still apply -- but demanding the full event sequence
-        # from it would just be reporting the interruption ten times over.
+    stopped = bool(meta) and any(e.get("event") == "stop_requested" for e in meta.get("events", []))
+    if meta and (meta.get("partial") or stopped):
+        # The trial did not run to its natural end: Ctrl-C, a crash (`partial` -- it never reached
+        # stop_and_save), or the dashboard's Stop now (`stop_requested` -- it ended at park and was
+        # saved). The data up to that point is real and the checks above still apply -- but demanding
+        # the full event sequence from it would just be reporting the interruption ten times over.
         got_p = ([e["event"] for e in meta.get("events", [])]
                  or [row[head.index("event")].strip() for row in body if row[head.index("event")].strip()])
         r.note(f"{len(got_p)} events: {', '.join(got_p) if got_p else '(none)'}")
-        r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
+        if meta.get("partial"):
+            r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
+        else:
+            r.note("TRIAL STOPPED (Stop now) at stop_requested -- the arm then parked and the trial was saved.")
         r.note("Everything before that point is valid; event-sequence checks are skipped.")
         print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
         return not r.bad

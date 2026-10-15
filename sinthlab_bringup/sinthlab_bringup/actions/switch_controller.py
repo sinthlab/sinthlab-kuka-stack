@@ -53,6 +53,10 @@ class SwitchControllerAction:
         self._deadline = None
         self._last_loaded = set()  # most recent list_controllers result, for a precise timeout message
         self._last_states = {}     # name -> state from the same result
+        self._busy = False         # between start() and the switch completing or failing
+
+    def active(self) -> bool:
+        return self._busy
 
     def start(self) -> None:
         self._cancel_poll()  # trials repeat; never leave a previous poll timer running
@@ -61,6 +65,7 @@ class SwitchControllerAction:
                 f"{self._name}: service {self._srv_name} unavailable; cannot switch controllers."
             )
             return
+        self._busy = True
         # Poll until the controllers we touch are loaded, THEN switch (see module docstring).
         self._deadline = self._node.get_clock().now() + Duration(seconds=self._load_timeout)
         self._list_pending = False
@@ -76,6 +81,7 @@ class SwitchControllerAction:
     def _poll_loaded(self) -> None:
         if self._node.get_clock().now() > self._deadline:
             self._cancel_poll()
+            self._busy = False
             # Report only what is actually MISSING -- printing the whole required set makes an
             # unbuilt/unspawned controller look like a broader failure than it is.
             missing = sorted(self._need_loaded - self._last_loaded)
@@ -112,6 +118,7 @@ class SwitchControllerAction:
         if not todo_on and not todo_off:
             self._cancel_poll()
             self._node.get_logger().info(f"{self._name}: already in place ({self._states_text()}).")
+            self._busy = False
             self._on_complete()
             return
         ready = (all(states[c] == "inactive" for c in todo_on)
@@ -140,6 +147,7 @@ class SwitchControllerAction:
             ok = future.result().ok
         except Exception as exc:
             self._node.get_logger().error(f"{self._name}: switch service call failed: {exc}")
+            self._busy = False
             return
         if not ok:
             if self._node.get_clock().now() < self._deadline:
@@ -151,6 +159,8 @@ class SwitchControllerAction:
             self._node.get_logger().error(
                 f"{self._name}: controller switch returned not-ok; states {self._states_text()}. "
                 f"See the controller_manager log above for its reason.")
+            self._busy = False
             return
         self._node.get_logger().info(f"{self._name}: switch complete.")
+        self._busy = False
         self._on_complete()

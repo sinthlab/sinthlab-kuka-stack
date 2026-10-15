@@ -42,6 +42,7 @@ const PHASE_TEXT = {
   session_end: "session over — waiting for release",
   grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
   grasp_timeout: "no grasp — resetting",
+  stop_requested: "STOP — ending the trial, parking",
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
@@ -209,6 +210,7 @@ function renderControls() {
   $("#btn-start").disabled = mine || stopping || external;
   $("#btn-start").textContent = rk && rk !== S.selected ? `▶ Start (stop ${expLabel(rk)} first)` : `▶ Start ${expLabel(S.selected)}`;
   $("#btn-stop").disabled = !mine;
+  $("#btn-stop").textContent = a.stopping_now ? "■ Parking… (press to skip)" : "■ Stop now";
   $("#btn-stop-trial").disabled = !mine || a.stop_after_trial;
   $("#btn-restart").disabled = !mine;
   const canPause = (mine || external) && s;
@@ -644,7 +646,12 @@ async function init() {
   }, 300);
 
   $("#btn-start").onclick = () => act(() => api("/api/start", { experiment: S.selected }), "Starting");
-  $("#btn-stop").onclick = () => { if (confirm("Stop now? The current trial is cut short and saved as partial.")) act(() => api("/api/stop", { mode: "now" }), "Stopping"); };
+  $("#btn-stop").onclick = () => {
+    const q = S.app && S.app.stopping_now
+      ? "Skip parking and stop the launch now? FRI closes wherever the arm is."
+      : "Stop now? The current trial is cut short (saved, marked stop_requested), the arm parks, then the launch stops.";
+    if (confirm(q)) act(() => api("/api/stop", { mode: "now" }), "Stopping");
+  };
   $("#btn-stop-trial").onclick = () => act(() => api("/api/stop", { mode: "after_trial" }), "Will stop after this trial");
   $("#btn-restart").onclick = () => { if (confirm("Restart? This stops the launch (the current trial is saved as partial) and starts it again with the current edits.")) act(() => api("/api/restart", {}), "Restarting"); };
   $("#btn-pause").onclick = () => { const s = statusLive(); act(() => api("/api/pause", { paused: !(s && s.paused) }), s && s.paused ? "Resumed" : "Pause requested"); };

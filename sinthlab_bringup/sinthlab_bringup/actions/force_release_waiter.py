@@ -56,6 +56,10 @@ class ForceReleaseWaiter:
             f"sustained for {self._release_duration:.1f}s..."
         )
 
+    def stop(self) -> None:
+        """Stop waiting, without calling on_complete (Stop now)."""
+        self._ready = False
+
     def _on_wrench(self, msg: WrenchStamped) -> None:
         f = msg.wrench.force
         self._latest_force = float(np.sqrt(f.x * f.x + f.y * f.y + f.z * f.z))
@@ -80,7 +84,7 @@ class ForceReleaseWaiter:
         if self._below_elapsed >= self._release_duration:
             self._done = True
             self._ready = False
-            self._node.get_logger().info("Arm released — proceeding to recovery.")
+            self._node.get_logger().info("Arm released — proceeding to park.")
             try:
                 self._on_complete()
             except Exception as exc:

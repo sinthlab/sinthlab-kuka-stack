@@ -133,6 +133,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "apple_pluck")
         self.control.on_reload(self._reload_live)
+        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self._stopping = False
         self.recorder = TrialRecorder(
             self, experiment="apple_pluck",
             extra_header=["disp_m"],
@@ -163,7 +165,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             f"=== AUTOMATED MULTI-TRIAL APPLE PLUCK EXPERIMENT INITIALIZED (paradigm: {self.paradigm}) ===")
         # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
         self.control.on_event("parking")
-        self.move_park.start_first(lambda: self.control.begin_trial(self.start_trial))
+        self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
 
     def _apply_settle(self):
         # perturb: the arm must settle where the perturbation left it before the pull baseline locks.
@@ -218,6 +220,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         return self._start_queue.pop()
 
     def start_trial(self):
+        self._stopping = False
         self.trial_count += 1
         # Record the WHOLE trial, approach included -- analysis can trim, it cannot un-discard.
         sidecar = {"paradigm": self.paradigm, "threshold_m": self.monitor.threshold_m()}
@@ -254,6 +257,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.recorder.mark("cue_go")
 
     def on_audio_complete(self):
+        if self._stopping:
+            return
         if self.bump:
             self.get_logger().info("Audio cue played. Waiting for the grasp...")
             self.grasp.arm()
@@ -319,7 +324,36 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
         self.recorder.mark("trial_end", self.trial_count)
         self.recorder.stop_and_save()
-        self.control.begin_trial(self.start_trial)   # holds here instead if paused
+        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+
+    def _next_trial(self):
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+
+    def _stop_now(self):
+        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park. The control is
+        paused, so it then holds at park and the launch can end."""
+        if self._stopping:
+            return
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+            self.control.begin_trial(self._next_trial)
+            return
+        if self.move_park.active():
+            return                                # already on the way to park
+        self._stopping = True
+        self.recorder.mark("stop_requested")
+        self.quiet_window.stop()
+        if self.perturbing:
+            self.perturb_delay.stop()
+            self.perturb.cancel()
+        if self.bump:
+            self.grasp_timeout.stop()
+            self.grasp.stop()
+        self.move_to_start.cancel()
+        self.monitor.stop()
+        self.freeze_hold.stop()
+        self.resistance.stop()
+        self.recorder.mark("recover_start")
+        self.move_park.start()
 
     def _reload_live(self):
         """Re-read the live parameters (helpers/live_params.py). Runs between trials only."""

@@ -54,6 +54,7 @@
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
       first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here, from wherever the arm is (per-run)
+      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]

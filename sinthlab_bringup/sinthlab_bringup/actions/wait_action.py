@@ -39,6 +39,9 @@ class WaitAction:
         # rclpy timers are periodic; cancel on the first fire to make this one-shot.
         self._timer = self._node.create_timer(self._duration_sec, self._fire)
 
+    def active(self) -> bool:
+        return self._timer is not None
+
     def stop(self) -> None:
         """Cancel a pending wait without firing on_complete (e.g. a timeout the goal beat)."""
         if self._timer is not None:

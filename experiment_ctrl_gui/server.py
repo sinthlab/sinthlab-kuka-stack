@@ -34,6 +34,7 @@ from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
 STATUS_STALE_SEC = 3.0         # the orchestrator heartbeats every 1 s
+STOP_PARK_TIMEOUT_SEC = 60.0   # Stop now: end the launch anyway if the arm has not parked by then
 CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom header without CORS
 
 
@@ -44,7 +45,7 @@ class App:
         self.params: Dict[str, ExperimentParams] = {e.key: ExperimentParams(e) for e in ex.EXPERIMENTS}
         self._clients: List[queue.Queue] = []
         self._clients_lock = threading.Lock()
-        self.stop_after_trial = False
+        self.stopping = None    # None | "after_trial" | "now" (parking, then the launch stops)
         self.restart_pending: Optional[str] = None
         self.runner = LaunchRunner(on_line=lambda e: self.broadcast("log", e),
                                    on_state=self._on_runner_state)
@@ -105,7 +106,8 @@ class App:
             "status": status,
             "external": external,
             "robot": self.bridge.robot(),
-            "stop_after_trial": self.stop_after_trial,
+            "stop_after_trial": self.stopping == "after_trial",
+            "stopping_now": self.stopping == "now",
             "data_folder": self.data_folder(),
             "edited": {k: len(p.edits) for k, p in self.params.items()},
         }
@@ -121,16 +123,17 @@ class App:
 
     def _on_status(self, status: dict) -> None:
         self.broadcast("state", self.state())
-        # "Stop after this trial" = pause, then stop once the orchestrator reports it is holding.
-        if self.stop_after_trial and status.get("held") and self.runner.running():
-            self.stop_after_trial = False
-            self.runner.stop("the trial finished and the arm is holding at the start")
+        # "Stop after this trial" = pause, then stop once the orchestrator reports it is holding at park.
+        # "Stop now" = the orchestrator ends the trial at once and parks; the same hold ends the launch.
+        if self.stopping and status.get("held") and self.runner.running():
+            self.stopping = None
+            self.runner.stop("the arm is parked and holding")
 
     def _on_runner_state(self) -> None:
         if isinstance(self.bridge, DemoBridge) and not self.runner.running():
             self.bridge.launch_ended()
         if not self.runner.running():
-            self.stop_after_trial = False
+            self.stopping = None
             if self.restart_pending:
                 key, self.restart_pending = self.restart_pending, None
                 threading.Timer(1.0, lambda: self._safe_start(key)).start()
@@ -170,7 +173,7 @@ class App:
         else:
             cmd = ["ros2", "launch", "sinthlab_bringup", exp.launch_file]
             cmd += [f"{k}:={v}" for k, v in overrides.items()]
-        self.stop_after_trial = False
+        self.stopping = None
         self.runner.start(key, cmd, params_file)
         if p.edits:
             self.runner.emit(f"Per-run edits: {json.dumps(p.edits)} -> {params_file}", "gui")
@@ -192,11 +195,30 @@ class App:
             ok, msg = self.bridge.pause(exp, True)
             if not ok:
                 raise RuntimeError(f"could not request a stop after this trial: {msg}")
-            self.stop_after_trial = True
-            self.runner.emit("Will stop once this trial ends and the arm is back at the start.", "gui")
+            self.stopping = "after_trial"
+            self.runner.emit("Will stop once this trial ends and the arm is parked.", "gui")
             return {"ok": True, "message": msg}
-        self.runner.stop()
-        return {"ok": True}
+        # Stop now: park first, then end the launch -- so FRI always closes with the arm parked. A second
+        # press while it parks skips the wait, as does an orchestrator that does not answer.
+        if self.stopping == "now":
+            self.stopping = None
+            self.runner.stop("Stop now pressed again: not waiting for the arm to park")
+            return {"ok": True}
+        ok, msg = self.bridge.stop(exp)
+        if not ok:
+            self.runner.emit(f"The orchestrator did not take the stop ({msg}); stopping without parking.", "warn")
+            self.runner.stop()
+            return {"ok": True, "message": msg}
+        self.stopping = "now"
+        self.runner.emit("Stopping: the trial ends now, the arm parks, then the launch stops "
+                         "(press Stop now again to skip parking).", "gui")
+        run = self.runner.proc
+        def fallback():
+            if self.stopping == "now" and self.runner.proc is run and self.runner.running():
+                self.stopping = None
+                self.runner.stop(f"the arm did not report parked within {STOP_PARK_TIMEOUT_SEC:.0f} s")
+        threading.Timer(STOP_PARK_TIMEOUT_SEC, fallback).start()
+        return {"ok": True, "message": msg}
 
     def restart(self) -> dict:
         if not self.runner.running():
@@ -320,7 +342,7 @@ def make_handler(app: App):
                 if not ok:
                     raise RuntimeError(msg)
                 if not body.get("paused"):
-                    app.stop_after_trial = False
+                    app.stopping = None
                 app.runner.emit(f"{'Pause' if body.get('paused') else 'Resume'}: {msg}", "gui")
                 return {"ok": True, "message": msg}
             if path == "/api/live":

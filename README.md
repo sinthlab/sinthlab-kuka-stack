@@ -58,8 +58,8 @@ Every experiment can still be run from a terminal instead: see
 [§5](#5-running-experiments-on-hardware) and [Without the dashboard](#without-the-dashboard). How the
 dashboard is built is in [`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md).
 
-> ⚠️ **Stop is not an emergency stop.** It sends Ctrl-C to the launch. **The SmartPad E-stop is the
-> E-stop.** On the first run of any experiment, work in **T1** with a hand on it.
+> ⚠️ **Stop is not an emergency stop.** It parks the arm, then sends Ctrl-C to the launch. **The SmartPad
+> E-stop is the E-stop.** On the first run of any experiment, work in **T1** with a hand on it.
 
 ### Start the dashboard
 On the ROS computer wired to the arm, with the workspace built ([§3](#3-building-the-stack)):
@@ -119,14 +119,20 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
    monkey's reach, and **holds there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
    changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
    **Free Move** has no trial end, so there the button (labelled **End session & pause**) ends the
-   session at once: the arm holds, waits to be let go, returns to the start and holds.
+   session at once: the arm holds, waits to be let go, parks and holds.
 7. **Stop:**
-   - **■ Stop after trial:** finishes this trial, returns to the start, then stops cleanly, so every
-     trial on disk is complete. **Use this one.** In **Free Move** (labelled **End session & stop**) it
-     ends the session at once, waits for the hand to let go, returns to the start, then stops.
-   - **■ Stop now:** Ctrl-C at once. The trial in progress is saved with `"partial": true`, and the
-     arm stays where it is — it is not returned to the start.
-   - **↻ Restart:** Stop now, then Start again with the current edits.
+   - **■ Stop after trial:** finishes this trial, parks, then stops cleanly, so every trial on disk is
+     complete. **Use this one.** In **Free Move** (labelled **End session & stop**) it ends the session
+     at once, waits for the hand to let go, parks, then stops.
+   - **■ Stop now:** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
+     and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
+     trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
+     skip)**: a second press Ctrl-Cs at once, wherever the arm is. If the orchestrator does not
+     answer, or the arm has not parked within 60 s, the launch is stopped anyway.
+   - **↻ Restart:** Ctrl-C at once (no parking), then Start again with the current edits.
+   - **From a terminal**, Ctrl-C reaches every process at once, so nothing parks first. To park, call
+     `ros2 service call /lbr/<orchestrator>/stop std_srvs/srv/Trigger` and Ctrl-C once the log says it
+     is holding.
 8. **Validate recording** checks this run's data folder
    (`analysis/validate_recording.py --folder …`) and prints the result in the log. To plot the
    run afterwards, see [Working with the data](#working-with-the-data).
@@ -169,6 +175,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Parameter | Meaning |
 |---|---|
 | `quiet_window_sec` | pause at the start pose before the go cue [s] (default 2.0) |
+| `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
 | `audio_cue_*.frequency_hz`, `audio_cue_*.duration_ms` | each tone (37–32767 Hz, 10–10000 ms) |
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
@@ -256,6 +263,7 @@ ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false           
 ros2 param set /lbr/apple_pluck_orchestrator move_to_start.speed_scale 0.5                  # half-speed approach, now
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"   # pause after trial
 ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: false}"  # resume
+ros2 service call /lbr/apple_pluck_orchestrator/stop std_srvs/srv/Trigger                    # end trial now, park, hold
 ```
 
 A `ros2 param set` on anything that is not live is **rejected with the reason**, because the
@@ -749,7 +757,8 @@ go cue → wait for the grasp → delay (fixed, or random per trial) → perturb
 
 **Detecting the grasp — no force sensor.** The hand force is computed from the arm's joint torque
 sensors (as in Free Move, `helpers/hand_force.py`). The resting force (the tool-load model's error, a
-few N) is measured during the quiet window, with the apple untouched, and subtracted; a grasp is the
+few N) is measured over the last `grasp.tare_sec` (1 s) of the quiet window, with the apple untouched
+and the arm settled after its move from park, and subtracted; a grasp is the
 remaining force at or above `grasp.threshold_n` (3 N) for `grasp.hold_sec` (30 ms — single-sample
 spikes are ignored). It detects **force on the apple, not touch**: a hand resting on it without
 pushing or pulling is not seen. If the monkey is already holding the apple during the quiet window, the
@@ -1156,9 +1165,9 @@ orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free 
 #### Free Move — admittance, no goal, no boundary
 The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
 no wall. It runs as one free-movement **session** until you end it with **Pause** or **■ Stop after
-trial** on the dashboard: an end tone plays, the arm holds where it is, waits to be let go, and returns
-to the start. There it holds (Pause; **▶ Resume** starts a new session) or the launch stops (Stop after
-trial). **■ Stop now** does not return it: the arm stays where it is. For timed sessions instead, set
+trial** on the dashboard: an end tone plays, the arm holds where it is, waits to be let go, and parks.
+There it holds (Pause; **▶ Resume** starts a new session) or the launch stops (Stop after trial).
+**■ Stop now** skips the wait for the hand to let go: it parks at once, then stops. For timed sessions instead, set
 `session_sec` (live; 0, the default, means no limit).
 
 ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportional to the hand's force
@@ -1415,7 +1424,7 @@ flowchart LR
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
   | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
-  | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, the live-parameter gate, and the NSP event hook |
+  | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, `<ns>/<orchestrator>/stop` (end the trial now, park, hold), the live-parameter gate, and the NSP event hook |
 
   **Outside control.** Every orchestrator creates one
   [`ExperimentControl`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py) and ends each
@@ -1457,7 +1466,7 @@ flowchart LR
   experiment runs
 
   ```
-  wherever the arm is  →(slow)→  PARK  →  start → trial → PARK  →  start → trial → PARK  → …
+  wherever the arm is  →(slow)→  PARK  →(hold_sec)→ start → trial → PARK  →(hold_sec)→ start → …
   ```
 
   so between trials — and while paused — the apple is **out of the monkey's reach**: pulled back over
@@ -1484,6 +1493,18 @@ flowchart LR
   maze-family run did before parking existed (ready → maze start). It runs slowly for that,
   `move_to_park.first_move_speed_scale` (0.25), and a live speed change during it applies only after
   it. Every later move stays on one side.
+
+  *The wait at park.* After reaching park — the first time and after every trial — the arm waits
+  `move_to_park.hold_sec` (live, 2 s) before it moves to the next trial's start. Pausing during that
+  wait holds there.
+
+  *Ending a run parks first.* Stop after trial, Pause and the dashboard's Stop now all leave the arm
+  at park before anything else happens; FRI closes only after that (see Running an experiment).
+
+  *Arriving at the start.* Apple pluck's move to the start waits until the apple is really there
+  (`move_to_start.wait_for_physical_arrival`, within 3 cm, 5 s at most): it comes ~40 cm from park on
+  a soft spring and lags the command, and the quiet window — the grasp detector's tare, the pull's
+  baseline — must start with the arm at rest.
 
   *Checked offline* (σ_min = smallest singular value of the Jacobian, 0 = singular): park ↔ every start
   in its family, including the 9 random-start positions, σ_min ≥ 0.16 and ≥ 24° from every joint
@@ -2271,8 +2292,9 @@ It checks each trial for:
 - a complete sidecar;
 - for pluck / perturb, that the `disp_m` peak agrees with whether `snap` happened.
 
-Exit code 1 if any trial fails, so it can gate a batch script. A trial cut off by **Stop now** or
-Ctrl-C passes as `PASS (partial)`: what is there is sound, but it did not finish.
+Exit code 1 if any trial fails, so it can gate a batch script. A trial cut off by a Ctrl-C passes as
+`PASS (partial)`: what is there is sound, but it did not finish. One ended by **Stop now** is
+complete on disk (it ends at park) but carries `stop_requested` and lacks the events after it.
 
 **3. Plot it.**
 

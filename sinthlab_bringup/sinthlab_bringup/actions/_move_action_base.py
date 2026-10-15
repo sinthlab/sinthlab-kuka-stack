@@ -221,6 +221,19 @@ class MoveActionBase:
         self._ready = True
         self._node.get_logger().info(f"{type(self).__name__} started.")
 
+    def active(self) -> bool:
+        """True from start() until the move completes or is cancelled."""
+        return self._ready and not self._shutdown_requested
+
+    def cancel(self) -> None:
+        """Stop streaming this move where it is, WITHOUT calling on_complete (Stop now). The arm holds
+        at the last commanded point until the next move starts from there."""
+        if self.active():
+            self._shutdown_requested = True
+            self._ready = False
+            self._moving = False
+            self._node.get_logger().info(f"{type(self).__name__} cancelled.")
+
     def _step(self) -> None:
         if not self._ready or self._shutdown_requested:
             return

@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Tuple
 # Cue and sync switches every experiment has.
 _COMMON = [
     "quiet_window_sec",            # pause at the start pose before the go cue
+    "move_to_park.hold_sec",       # wait at park before each trial's move to the start
     "audio_cue.enabled",           # master switch for every beep
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
@@ -107,6 +108,7 @@ LIVE_PARAMS: Dict[str, List[str]] = {
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
 LIMITS: Dict[str, Tuple[float, float]] = {
     "quiet_window_sec": (0.0, 60.0),
+    "move_to_park.hold_sec": (0.0, 600.0),
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
     "visual_cue.colours.*": (0, 255),
