@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KUKA Diagnostics</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Diagnostics</h1>
+      <p class="sub">sinthlab · end-effector hardware checks — nothing here moves the arm</p>
+    </div>
+  </div>
+  <div class="pills">
+    <a class="btn small" href="/">← Dashboard</a>
+  </div>
+</header>
+
+<main class="diag">
+  <div class="tabs diag-tabs" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true" data-tab="visual">Visual cue</button>
+  </div>
+
+  <section id="tab-visual" class="diag-panel">
+    <!-- ---------------- the board ---------------- -->
+    <div class="card">
+      <h2>Cue board</h2>
+      <p class="note">The NeoPixel ring is driven by the Metro board in the end effector. This page talks to it
+        over the board's own Wi-Fi: <strong>join this computer to <code>KUKA_NEOPIXEL</code> first</strong>.
+        Its address on that network is always <code>192.168.4.1</code>.</p>
+      <div class="diag-row">
+        <label>Board address <input id="addr" value="192.168.4.1" size="14" spellcheck="false"></label>
+        <button class="btn" id="btn-check">Check board</button>
+        <span id="reach" class="pill">not checked</span>
+      </div>
+      <dl class="kv diag-kv" id="board-status"></dl>
+    </div>
+
+    <!-- ---------------- path ---------------- -->
+    <div class="card">
+      <h2>Path to test</h2>
+      <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Trigger path">
+        <button class="tab active" role="tab" data-path="wifi">Wi-Fi — fire from here</button>
+        <button class="tab" role="tab" data-path="wire">Wire — X76 → tool pin 9 → Metro D2</button>
+      </div>
+      <p class="note" id="path-note"></p>
+    </div>
+
+    <!-- ---------------- Wi-Fi path ---------------- -->
+    <div id="path-wifi">
+      <div class="card">
+        <h2>What a cue looks like</h2>
+        <div class="diag-grid">
+          <label>Red <input type="number" id="r" min="0" max="255" value="0"></label>
+          <label>Green <input type="number" id="g" min="0" max="255" value="0"></label>
+          <label>Blue <input type="number" id="b" min="0" max="255" value="0"></label>
+          <label>White <input type="number" id="w" min="0" max="255" value="255"></label>
+          <label>Pattern <select id="pattern"></select></label>
+          <label>Segments <input type="number" id="segments" min="1" max="30" value="4"></label>
+          <label>Duration [s] <input type="number" id="duration" min="0.05" max="300" step="0.1" value="2"></label>
+          <label>Period [s] <input type="number" id="period" min="0.02" max="10" step="0.05" value="0.5"></label>
+          <label>Brightness <input type="number" id="brightness" min="0" max="1" step="0.05" value="0.2"></label>
+          <label class="chk"><input type="checkbox" id="enabled"> Enabled</label>
+        </div>
+        <p class="note warn-text" id="bright-warn">Brightness is not capped on the board. Above ~0.3 with
+          colour (not white) the ring can draw more than the effector's 5 V converter supplies — see the
+          POWER note in end_effector_metro_code/code.py.</p>
+        <div class="row-actions">
+          <button class="btn primary" id="btn-apply">Apply to board</button>
+          <button class="btn" id="btn-fire">▶ Fire cue</button>
+          <button class="btn" id="btn-solid">Solid colour</button>
+          <button class="btn" id="btn-off">Off</button>
+          <button class="btn" id="btn-save">Save on board</button>
+          <button class="btn warn" id="btn-reset">Reset to defaults</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>LED-by-LED test</h2>
+        <p class="note">Lights each LED red, green, blue, white in turn. Where the ring goes dark is the fault:
+          the ring is 4 arcs of 15 (pixels 0–14, 15–29, 30–44, 45–59). Watch the pixel number below.</p>
+        <div class="diag-row">
+          <label>From <input type="number" id="lt-from" min="0" max="59" value="0"></label>
+          <label>To <input type="number" id="lt-to" min="0" max="59" value="59"></label>
+          <label>Step [s] <input type="number" id="lt-step" min="0.05" max="5" step="0.05" value="0.25"></label>
+          <label class="chk"><input type="checkbox" id="lt-loop"> Loop</label>
+          <button class="btn" id="btn-lt">Start test</button>
+          <button class="btn" id="btn-lt-off">Stop</button>
+          <span class="pill" id="lt-pixel">pixel –</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- wire path ---------------- -->
+    <div id="path-wire" class="hidden">
+      <div class="card">
+        <h2>Wire monitor</h2>
+        <p class="note">Nothing on this computer can close the wire yet (its switch hardware is not chosen),
+          so test it by hand: <strong>short X76 contacts 1 and 2 at the robot base</strong> and watch below. The
+          board reports what its D2 input sees, over Wi-Fi.</p>
+        <div class="diag-row">
+          <button class="btn primary" id="btn-watch">Start watching</button>
+          <span class="pill" id="w-raw">pin –</span>
+          <span class="pill" id="w-asserted">idle</span>
+          <span class="pill" id="w-fired">fired 0</span>
+          <span class="pill" id="w-cue">cue –</span>
+        </div>
+        <p class="note warn-text hidden" id="w-polarity"></p>
+        <h2 style="margin-top:12px">Edges seen</h2>
+        <ol class="diag-log" id="w-log"></ol>
+      </div>
+      <div class="card">
+        <h2>Trigger settings on the board</h2>
+        <div class="diag-grid">
+          <label class="chk"><input type="checkbox" id="active_low" checked> Active low (short = asserted)</label>
+          <label>Debounce [ms] <input type="number" id="debounce_ms" min="1" max="200" value="5"></label>
+          <label class="chk"><input type="checkbox" id="retrigger"> Retrigger</label>
+          <label>Mode <select id="mode"><option>pulse</option><option>follow</option></select></label>
+          <label class="chk"><input type="checkbox" id="enabled2"> Enabled</label>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" id="btn-apply-trig">Apply to board</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- replies ---------------- -->
+    <div class="card">
+      <h2>Board replies</h2>
+      <pre class="diag-reply" id="reply"></pre>
+    </div>
+  </section>
+</main>
+<script src="diag.js"></script>
+</body>
+</html>

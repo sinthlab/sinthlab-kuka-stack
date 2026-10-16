@@ -13,6 +13,7 @@ classified, where the parameter help comes from, and how to extend it.
 - [Robot side: ExperimentControl](#robot-side-experimentcontrol)
 - [Parameter model](#parameter-model)
 - [Parameter documentation](#parameter-documentation)
+- [Diagnostics page](#diagnostics-page)
 - [HTTP API](#http-api)
 - [Process control](#process-control)
 - [Demo mode](#demo-mode)
@@ -169,6 +170,30 @@ The Fixed tab's SmartPad and launch-argument rows are not YAML keys; their help 
 
 ---
 
+## Diagnostics page
+
+`/diagnostics.html` — the **Diagnostics** button at the top right of the dashboard. Hardware checks
+that never move the arm, one tab per device. **Visual cue** checks the end-effector NeoPixel ring
+through its Metro board, over the board's own Wi-Fi (join this computer to `KUKA_NEOPIXEL`):
+
+- **Cue board:** is the board reachable, and what it reports — enabled, brightness, colour, pattern,
+  LEDs, whether a cue is running, how many wire cues it has fired, uptime.
+- **Path: Wi-Fi.** Set what a cue looks like (colour, pattern, segments, duration, period,
+  brightness, enabled) and apply it; fire a cue; solid colour; off; save on the board; reset to the
+  firmware defaults; the **LED-by-LED test**, showing which pixel is lit so a dead stretch of the ring
+  can be located. If the ring lights here, the board, the Pixel Shifter and the ring are fine.
+- **Path: Wire** (X76 1–2 → tool pin 9 → Metro D2). Nothing on the computer can close the wire yet,
+  so it is tested by hand: short X76 1–2 at the robot base while **Start watching** polls the board's
+  D2 input (4×/s) and logs every edge and every cue the wire fires. It flags a line that reads
+  asserted with nothing shorted (inverted polarity: untick *Active low*, no rewiring) and a board
+  that is not enabled. The trigger settings (active low, debounce, retrigger, mode, enabled) are
+  set here too. `diagnostics.html#wire` opens on this path.
+- **Board replies:** the raw text of the last reply.
+
+The browser cannot read the board's replies itself (another origin), so the server relays each
+command (`board.py`). In `--demo` a simulated board answers, so the page can be tried without
+hardware. The command-line equivalent for the wire is `sinthlab_bringup/diagnostics/check_cue_wiring.py`.
+
 ## HTTP API
 
 POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": false, "error": …}`.
@@ -181,14 +206,15 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
 | GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state", "data": …}` |
-| POST | `/api/params/<exp>` `{name, value}` | per-run edit (linked keys follow); refused while that experiment runs |
+| POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal |
-| POST | `/api/stop` `{mode: "now" \| "after_trial"}` | Ctrl-C now, or pause and stop once the orchestrator reports it is holding |
+| POST | `/api/stop` `{mode: "now" \| "after_trial"}` | now: the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking); after_trial: pause, then Ctrl-C once it holds at park |
 | POST | `/api/restart` | stop now, then start the same experiment with the current edits |
 | POST | `/api/pause` `{paused}` | the orchestrator's pause service |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |
+| POST | `/api/diag/board` `{addr, cmd, params}` | Diagnostics page: relays one command to the end-effector cue board (`board.py`): only its own commands (`status`, `config`, `cue`, `set_color`, `segments`, `off`, `led_test`), only to a private address |
 
 ---
 

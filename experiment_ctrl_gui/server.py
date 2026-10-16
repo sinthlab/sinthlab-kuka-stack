@@ -30,6 +30,7 @@ sys.path.insert(0, str(HERE))
 import experiments as ex  # noqa: E402
 from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
+import board as cue_board  # noqa: E402
 from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
@@ -41,6 +42,7 @@ CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom hea
 class App:
     def __init__(self, demo: bool, robot_name: str) -> None:
         self.demo = demo
+        self.fake_board = cue_board.FakeBoard()      # the Diagnostics page's board, in --demo
         self.robot_name = robot_name
         self.params: Dict[str, ExperimentParams] = {e.key: ExperimentParams(e) for e in ex.EXPERIMENTS}
         self._clients: List[queue.Queue] = []
@@ -229,6 +231,12 @@ class App:
         threading.Timer(STOP_PARK_TIMEOUT_SEC, fallback).start()
         return {"ok": True, "message": msg}
 
+    def board(self, addr: str, cmd: str, params: dict) -> dict:
+        """Diagnostics page: one command to the end-effector cue board (board.py)."""
+        cue_board.check(addr, cmd)
+        ok, text, ms = self.fake_board.call(cmd, params) if self.demo else cue_board.call(addr, cmd, params)
+        return {"ok": ok, "text": text, "ms": round(ms, 1)}
+
     def restart(self) -> dict:
         if not self.runner.running():
             raise RuntimeError("nothing is running")
@@ -339,6 +347,8 @@ def make_handler(app: App):
         def _post(self, path: str, body: dict) -> dict:
             if path == "/api/start":
                 return app.start(body["experiment"])
+            if path == "/api/diag/board":
+                return app.board(str(body.get("addr", "")), str(body.get("cmd", "")), dict(body.get("params") or {}))
             if path == "/api/stop":
                 return app.stop(body.get("mode", "now"))
             if path == "/api/restart":
