@@ -1304,19 +1304,15 @@ The quarter cues use the board's existing `/segments` endpoint, so **the firmwar
 They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
 one bit, not a pattern.
 
-**Reach and gravity** (IK from the maze start, holding the tool orientation). The start is the
-apple-pluck height, close to the arm's full stretch:
-- **Sideways is easy.**
-- **Down is easy:** at −0.25 m every joint is still ≥ 13° from its limit.
-- **Up is short:** only about +0.03 m before the arm runs out of reach. Hence the vertical rail is
-  −0.15 … +0.03 m and counts **downward only** (`travel_task.direction: "negative"`); the
-  horizontal rail is ±0.15 m. Both use a 0.10 m threshold.
+**Reach and gravity** (IK from the maze start, holding the tool orientation):
+- **Sideways is easy:** at ±0.25 m every joint is still ≥ 39° from its limit.
+- **Down is easy.**
+- **Up is the limit.** The arm nears a singular pose above +0.12 m, and +0.20 m is unreachable.
+  Hence the vertical rail is ±0.12 m and the horizontal ±0.15 m, both with a 0.10 m threshold.
 - **On the vertical rail nothing holds the arm up** except the load data. An untouched arm sinks a
-  few cm and stops — and down is now the direction that counts. The rail anchors after that settle
-  (`anchor_settle_sec`, during the 4 s quiet window). **Check that an untouched arm never reaches the
-  threshold** before a session with a subject.
-- **Free Move has no boundary**, so pushing the tool upward runs the arm into its full stretch,
-  where it simply stops.
+  few cm and stops; the rail anchors after that settle (`anchor_settle_sec`, during the 4 s quiet
+  window). **Check that an untouched arm never reaches the threshold** before a session with a
+  subject.
 
 The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end.
 
@@ -1514,21 +1510,31 @@ flowchart LR
   ```
 
   so between trials — and while paused — the apple is **out of the monkey's reach**: pulled back over
-  the robot's base, at about **(0.2, 0, 1.1) m** in every experiment. The pose is
+  the robot's base and raised, at about **(0.2, 0, 1.1) m** in every experiment. The pose is
   `move_to_park.target_joint_position` in each experiment's YAML (Per-run); the move is `ParkMove`.
 
-  *One posture family.* Every experiment bends the elbow the same way (A4 < 0) and parks at
-  `[0, −55, 0, −95, 0, 10, 0]`. Start and park must bend the elbow the same way: between the two
-  bends, every joint-space path passes **A4 = 0 — a straight, singular elbow**, where the cabinet's
-  Cartesian impedance cannot follow (the same failure as a straight arm at start-up). A park pose
-  whose elbow bends the other way from the start is **refused** — by the dashboard, at a live
-  start-pose change, and at start-up.
+  *Two postures, one place.* The experiments hold the arm in two elbow postures: apple pluck and
+  Restricted Plane bend the elbow one way (A4 < 0), the maze, rails and Free Move the other (A4 > 0).
+  Between the two, every joint-space path passes **A4 = 0 — a straight, singular elbow**, where the
+  cabinet's Cartesian impedance cannot follow (the same failure as a straight arm at start-up). The
+  maze's hand pose has no usable elbow-negative solution (only mirror postures 6° from the joint
+  limits), so the two families stay, and each parks at the same place with its own elbow:
 
-  *The first move.* The SmartPad app always leaves the arm at its ready pose (also elbow −), so no
-  move in a run crosses the straight elbow. The first move, ready → park, runs at
-  `move_to_park.first_move_speed_scale` (1.0), and a live speed change during it applies only after
-  it. The move from park to the start runs at `move_to_start.speed_scale` 0.7 (live) — a little
-  slower than the other moves.
+  | Family | Experiments | Park pose (A1..A7, deg) |
+  |---|---|---|
+  | elbow − | Apple pluck (all paradigms), Restricted Plane | `[0, −55, 0, −95, 0, 10, 0]` |
+  | elbow + | Maze, Move Vertical / Horizontal, Free Move | `[−3.6, 45, −3.6, 95, 0.7, 90, −15.7]` |
+
+  A park pose whose elbow bends the other way from the start is **refused** — by the dashboard, at a
+  live start-pose change, and at start-up.
+
+  *The first move.* The SmartPad app always leaves the arm at its ready pose (elbow −). For the maze
+  family the run's first move, ready → park, therefore **passes the straight elbow once** — as every
+  maze-family run did before parking existed (ready → maze start). It runs slowly for that,
+  `move_to_park.first_move_speed_scale` (0.25 in the maze family; 1.0 for apple pluck and Restricted
+  Plane, whose first move stays on one side of the elbow), and a live speed change during it applies
+  only after it. Every later move stays on one side. The move from park to the start runs at
+  `move_to_start.speed_scale` 0.7 (live) — a little slower than the other moves.
 
   *The wait at park.* After reaching park — the first time and after every trial — the arm waits
   `move_to_park.hold_sec` (live, 2 s) before it moves to the next trial's start. Pausing during that

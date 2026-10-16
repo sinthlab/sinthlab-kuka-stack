@@ -17,16 +17,18 @@
     #
     # GEOMETRY IS SOLVED, NOT GUESSED. Every position below is in metres, base frame (lbr_link_0), and
     # was checked by IK against the real iiwa7 URDF: the start posture points the tool axis (the EE
-    # frame's Z axis, the approach direction) exactly along +X, and every corridor of the maze is
+    # frame's Z axis, the approach direction) along +X to within ~11 deg, and all corridor corners are
     # reachable while HOLDING that orientation (the fixture locks orientation, so a corner the arm can
-    # only reach by twisting the tool is unusable) -- diagnostics/check_maze.py, all rails sound.
+    # only reach by twisting the tool is unusable).
     #
-    # NOTE only the EE frame's local Z (the tool/approach axis) is the +X one -- read the third column
-    # of the EE transform, not the first, when checking where the tool points.
+    # NOTE the EE frame's other axes are NOT aligned with the base: local X is ~22 deg off straight
+    # DOWN and local Y is ~base +Y. Only local Z (the tool/approach axis) is the ~+X one -- read the
+    # third column of the EE transform, not the first, when checking where the tool points.
     #
-    # The start is the apple-pluck height, high and close to the arm's full stretch: the maze reaches
-    # down and sideways from it, but there is only ~3 cm of room ABOVE it. If you move the maze, run
-    # diagnostics/check_maze.py before trusting it.
+    # The horizontal-tool pose costs reach: holding the tool along +X, the arm can only work in
+    #   X in [0.50, 0.75], Y in [-0.25, +0.25]  at z = 0.50
+    # (below X~0.50 the wrist folds back and the pose becomes unreachable). The whole maze lives inside
+    # that box with margin. If you move the maze, re-run the reach check before trusting it.
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the fixture works in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link the fixture constrains
@@ -41,21 +43,23 @@
       update_rate: 200  # loop rate of this action [Hz]
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
       # this joint array is the one knob that positions the whole maze — change it and the maze follows.
-      # EE (flange) ≈ (0.325, 0.000, 1.031) m -- the apple-pluck start height -- tool exactly +X. This
-      # anchors the fixture: its X becomes the locked radial plane and this orientation is held for the
-      # whole trial; the maze lives in the vertical Y-Z plane through the start (tool points +X,
-      # perpendicular into it). Elbow NEGATIVE (A4 < 0), like the park pose and every other experiment.
-      # >>> GUIDING COST: both fixtures LOCK ORIENTATION, and translating the EE while holding orientation
-      #     is far harder in some postures than others. Measured cost of 1 m/s of pure translation with
-      #     orientation held, ||qdot|| (full 6D Jacobian -- the linear part alone ignores the lock):
-      #         this posture : ~6 sideways at the start, up to ~10 across the maze (check_maze.py)
-      #         (a low elbow-positive start at z 0.9 was 2.5 .. 8; a "treacle" posture is 20-34)
-      #     A search over the arm's redundancy found no cheaper elbow-negative posture at this hand pose.
-      #     Rot stiffness (120) stays the knob that lightens guiding.
+      # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
+      # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
+      # plane through the start (tool points +X, perpendicular into it).
+      # >>> WHY THIS POSTURE: the same EE pose (position and tool orientation) is also reached by
+      #     [0,0,0,-70,-20,10,0], but this solution has the elbow flipped. That matters because both
+      #     fixtures LOCK ORIENTATION, and translating the EE while holding orientation is far harder in
+      #     some postures than others. Measured cost of 1 m/s of pure sideways (Y) translation with
+      #     orientation held, ||qdot||:
+      #         [0,0,0,-70,-20,10,0]: 19.8 at start, up to 33.6 across the maze   -> treacle
+      #         this posture       :  2.5 at start, up to  8.2 across the maze   -> like the sine rail
+      #     (6D condition number 10.1 vs 45.0.) Judge postures with the FULL 6D Jacobian: the linear
+      #     Jacobian alone ignores the orientation lock and makes Y look cheap (1.4) in the bad one.
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
-      #     posture and fights you.
-      target_joint_position: [2.7, -9.9, -1.7, -52.0, -1.4, 47.9, -19.4]  # start pose, joint angles A1..A7 [deg]
+      #     posture and fights you. (This start was verified: the whole maze footprint is reachable
+      #     while holding this orientation at z=0.9.)
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory
@@ -74,16 +78,17 @@
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
-    # the robot's base, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
     # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
     # every trial is park -> start -> trial -> park. Pausing holds here.
-    # The elbow-NEGATIVE posture (A4 < 0), like this experiment's start and every other experiment's: start
-    # and park must bend the elbow the same way, or every park <-> start move passes a straight, singular
-    # elbow (refused by the dashboard and at start-up). The SmartPad app's ready pose is elbow-negative
-    # too, so no move in the run crosses it.
+    # This is the elbow-POSITIVE posture (A4 > 0), like this experiment's start. The apple / plane family
+    # parks at the same place with the elbow the other way. Start and park must bend the elbow the same way, or
+    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
+    # The SmartPad app leaves the arm at its ready pose, elbow NEGATIVE: so the run's first move (ready ->
+    # park) passes the straight elbow once. It runs slowly for that (first_move_speed_scale).
     move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
       update_rate: 200  # loop rate of this action [Hz]
-      target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
+      target_joint_position: [-3.6, 45.0, -3.6, 95.0, 0.7, 90.0, -15.7]  # park pose A1..A7 [deg] (per-run)
       joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.05  # apple within this of the park pose counts as arrived [m]
@@ -91,7 +96,7 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run); this posture never crosses the straight elbow, so no need to crawl
+      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here (per-run); slow: ready -> park crosses the straight elbow
       hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
