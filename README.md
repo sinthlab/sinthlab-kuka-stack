@@ -93,7 +93,27 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   current phase, the trial's steps, and a list of every event.
 - **Log:** on the right on a wide screen, below on a narrow one.
 - **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
-  run state.
+  run state. **Diagnostics** (top right) opens the hardware checks — see below.
+
+### Diagnostics — hardware checks
+The **Diagnostics** button at the top right opens a separate page (`/diagnostics.html`) of hardware
+checks that **never move the arm**. Its first tab is **Visual cue**, for the end-effector NeoPixel ring.
+It talks to the ring's Metro board over the board's own Wi-Fi, so **join this computer to
+`KUKA_NEOPIXEL` first**.
+
+- **Cue board** — *Check board*: is it reachable, and what does it report (enabled, brightness, colour,
+  pattern, whether a cue is running, how many wire cues it has fired, uptime). Start here.
+- **Path: Wi-Fi** — set what a cue looks like (colour, pattern, duration, brightness, enabled), apply
+  it, fire a cue, show a solid colour, turn it off, save the settings on the board, or reset them. The
+  **LED-by-LED test** lights each LED in turn and shows which one is lit, to find where a ring goes
+  dark. *If the ring lights from here, the board, the Pixel Shifter and the ring are fine.*
+- **Path: Wire** — the experiment trigger (X76 1–2 → tool pin 9 → Metro D2). Nothing on the computer
+  can close it yet, so **short X76 contacts 1 and 2 by hand** while *Start watching* shows the board's
+  D2 input live and logs every edge and every cue the wire fires. It flags a line that reads
+  "asserted" with nothing shorted (inverted polarity — untick *Active low*, no rewiring) and a board
+  that is not enabled. *If Wi-Fi works but the wire does not, the fault is in the trigger wiring.*
+
+It works in `--demo` too, against a simulated board. Details: `experiment_ctrl_gui/README.md`.
 
 ### Running an experiment
 1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb** / **Pluck random start**
@@ -293,6 +313,8 @@ None of these are committed to git.
   wrong type. A per-run parameter needs Stop, edit, Start.
 - **Stop takes a while.** The nodes shut down in order. After 20 s the dashboard escalates, and the
   log says so.
+- **The cue ring does not light.** Open **Diagnostics → Visual cue**: *Check board*, then *Fire cue* over
+  Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics--hardware-checks).
 - **"Dashboard disconnected".** The dashboard server stopped. Restart it. If it was running an
   experiment, that experiment was stopped cleanly when the server stopped.
 
@@ -556,13 +578,14 @@ go straight to the FRI position command — no IK), while the KUKA cabinet runs 
 natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
 recoils when pushed off its commanded anchor.
 
-**Start pose — the apple points at the monkey.** The effector is tilted **25° below horizontal** toward
-the monkey (+X), so the monkey pulls the apple toward itself and the NeoPixel ring faces it. Flange
-≈ (0.40, 0, 0.80) m, apple ≈ (0.56, 0, 0.73) m in `lbr_link_0`, reached with the in-plane posture
-`[0, −13.7, 0, −85.6, 0, 43.1, 0]`. It was solved by IK against the iiwa7 URDF: every joint is
-≥ 33° from its limit, and the arm can be pulled at least 0.35 m toward the monkey before nearing a
-joint limit or singularity. The same pose is used by all three paradigms (in random start it is the
-grid's origin, C). A **pluck** is any
+**Start pose — the apple points at the monkey.** The posture `[0, −13, 0, −60, 0, 30, 0]` holds the
+apple at about the park height, pointing toward the monkey (+X) and tilted **13° up**: flange
+≈ (0.33, 0, 1.03) m, apple ≈ (0.53, 0, 1.08) m in `lbr_link_0` (park: ~1.09 m). Every joint is ≥ 59°
+from its limit and the pose is well conditioned (smallest Jacobian singular value 0.125), but the arm
+is **close to full stretch**: a pull toward the monkey gets ~0.16 m before nearing a limit or
+singularity (the pluck threshold is 0.10 m), and a 10 cm perturbation in some directions brings the
+singular value down to ~0.07 — a little less crisp, not singular. The same pose is used by every
+apple paradigm (in random start it is the grid's origin, C). A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
 pose in `config/apple_pluck_impedance.yaml`.
@@ -708,7 +731,7 @@ perturb run**, set `polar_r_m` to 0.
 
 | Knob | Effect |
 |---|---|
-| `polar_r_m` | How far the apple is displaced [m]. Default `0.10` (on a held apple at Uniform 100, ~10 N). **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 18° from every joint limit. Larger r also tilts the flange more (up to ~22° at the frontal cap). |
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.10` (on a held apple at Uniform 100, ~10 N). **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 36° from every joint limit. From the near-stretched start the arm's conditioning drops toward the caps (smallest singular value ~0.07 at r 0.10, ~0.055 at the frontal cap): a smaller r is crisper. Larger r also tilts the flange more. |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
@@ -831,11 +854,11 @@ origin and the 8 compass directions around it, chosen at random.
   paradigms). Every other position is **5 cm from C** — the diagonals too, so the 8 lie on a circle,
   not a square. The grid spans 10 cm side to side and 10 cm top to bottom.
 - **The apple only translates.** Every position keeps the start orientation, so the apple points at the
-  monkey with the same 25° tilt wherever it starts. Each pose is solved by 6-D IK (position and
+  monkey with the same 13° upward tilt wherever it starts. Each pose is solved by 6-D IK (position and
   orientation) from C.
-- **All 9 are safe to pull from.** Every joint stays ≥ 24.7° from its limit (S, the lowest, is
-  the tightest), ≥ 36° after a further 10 cm pull toward the monkey, and the arm is well conditioned
-  (smallest Jacobian singular value ≥ 0.16).
+- **All 9 are safe to pull from.** Every joint stays ≥ 46° from its limit (S, the lowest, is
+  the tightest), ≥ 56° after a further 10 cm pull toward the monkey, and the arm is well conditioned
+  (smallest Jacobian singular value ≥ 0.118).
 - **Order: shuffled blocks of 9.** Each block visits every position once, in a random order, before any
   repeats, so the positions stay balanced however many trials you run. Every trial ends at the park
   pose, and the next trial's move-to-start goes from there to its position.
@@ -1533,7 +1556,8 @@ flowchart LR
   the start): still far from singular, but the least conditioned move in the stack. Park takes two
   extra moves per trial, ~2–3 s each at speed scale 1.
 
-  *Is it out of reach?* "Pulled back ~40–50 cm and raised" is a judgement from the robot's side — check
+  *Is it out of reach?* For apple pluck, park holds the apple ~34 cm behind its start at the same
+  height; for the maze family, ~50 cm back and 20 cm up. That is a judgement from the robot's side — check
   it against the chair. To move it, edit `move_to_park.target_joint_position` (Per-run) keeping A4's
   sign, and check the path to the start before running:
   `IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup check_park.py --params <the edited YAML>`.
