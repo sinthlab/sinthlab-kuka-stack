@@ -94,16 +94,6 @@ protected:
   bool readJointCmds(ctrl::VectorND &joint_position_commands);
 
   /**
-   * @brief Compute one control step using forward dynamics simulation
-   *
-   * Check \ref ForwardDynamicsSolver for details.
-   *
-   * @param error The error to minimize
-   * @param period The period for this control cycle
-   */
-  void computeJointEffortCmds(const ctrl::VectorND &error);
-
-  /**
    * @brief Display the given vector in the given robot base link
    *
    * @param vector The quantity to transform

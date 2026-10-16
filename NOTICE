@@ -1,0 +1,8 @@
+sinthlab-kuka-stack
+Copyright 2026 Matt Perich
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The controllers in vendored_controllers/ (kuka_clik_controller, controller_base, debug_msg) are by
+the IDRA Lab, University of Trento, from idra-lab/ros2_effort_controller, and are distributed
+under their own license (see vendored_controllers/LICENSE).

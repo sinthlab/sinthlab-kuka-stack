@@ -2529,6 +2529,10 @@ Trento), from [`idra-lab/ros2_effort_controller`](https://github.com/idra-lab/ro
 [`idra-lab/kuka_lbr_control`](https://github.com/idra-lab/kuka_lbr_control). They are distributed
 under the Apache License 2.0 (see [`vendored_controllers/LICENSE`](vendored_controllers/LICENSE)).
 
+## License
+Copyright 2026 Matt Perich. Licensed under the [Apache License 2.0](LICENSE); see also
+[`NOTICE`](NOTICE). The vendored controllers keep their own license and authors (above).
+
 [^1]: LBR-Stack: ROS 2 and Python Integration of KUKA FRI for Med and IIWA Robots, Journal of Open Source Software. [doi](https://doi.org/10.21105/joss.06138)
 
 ---

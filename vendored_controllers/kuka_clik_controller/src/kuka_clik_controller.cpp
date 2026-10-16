@@ -156,8 +156,8 @@ KukaClikController::on_deactivate(
   RCLCPP_WARN(get_node()->get_logger(), "\n\nFlushing logger\n\n");
   m_logger.reset();
 #endif
-  // Stop drifting by sending zero joint velocities
-  Base::computeJointEffortCmds(ctrl::Vector6D::Zero());
+  // Nothing to zero: in position mode the hardware holds the last commanded joint positions until
+  // the next controller (the joint controller, for the park move) writes its own.
   Base::on_deactivate(previous_state);
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::
