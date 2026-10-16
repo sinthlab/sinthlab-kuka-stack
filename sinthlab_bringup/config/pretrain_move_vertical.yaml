@@ -8,10 +8,10 @@
     # >>> SmartPad: "X lock 2500, Y/Z 1000, rot 120", damping 0.7, elbow 30
     # -- exactly the maze's setup. X 2500 holds the plane; Y 1000 holds the arm on the rail.
     #
-    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): down is easy (at
-    # -0.25 m every joint is still >= 11 deg from its limit); UP is the limit -- the arm nears a singular
-    # pose above +0.12 m (smallest singular value 0.11 at +0.12, 0.07 at +0.15) and +0.20 m is unreachable.
-    # Hence a rail of +/-0.12 m and a 0.10 m threshold.
+    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): the start is high,
+    # near the arm's full stretch, so UP is short -- about +0.03 m before the arm runs out of reach -- while
+    # DOWN is easy (at -0.25 m every joint is still >= 13 deg from its limit, smallest singular value
+    # >= 0.14). Hence a rail of -0.15 .. +0.03 m and a 0.10 m threshold counted DOWNWARD only.
     #
     # GRAVITY: along a free vertical rail nothing holds the arm up except the load-data gravity model.
     # The residual (~5 N down at the tool) lets an untouched arm sink a few cm and stop. The rail anchors
@@ -26,9 +26,9 @@
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
-      # The maze start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject. Keep equal to
+      # The maze start: EE ~ (0.325, 0.00, 1.031) m (apple-pluck height), tool exactly +X toward the subject. Keep equal to
       # nullspace_desired_configuration in config/clik_nullspace_maze.yaml.
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      target_joint_position: [2.7, -9.9, -1.7, -52.0, -1.4, 47.9, -19.4]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive: the rail anchors on it
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
@@ -40,17 +40,16 @@
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
-    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # the robot's base, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
     # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
     # every trial is park -> start -> trial -> park. Pausing holds here.
-    # This is the elbow-POSITIVE posture (A4 > 0), like this experiment's start. The apple / plane family
-    # parks at the same place with the elbow the other way. Start and park must bend the elbow the same way, or
-    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
-    # The SmartPad app leaves the arm at its ready pose, elbow NEGATIVE: so the run's first move (ready ->
-    # park) passes the straight elbow once. It runs slowly for that (first_move_speed_scale).
+    # The elbow-NEGATIVE posture (A4 < 0), like this experiment's start and every other experiment's: start
+    # and park must bend the elbow the same way, or every park <-> start move passes a straight, singular
+    # elbow (refused by the dashboard and at start-up). The SmartPad app's ready pose is elbow-negative
+    # too, so no move in the run crosses it.
     move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
       update_rate: 200  # loop rate of this action [Hz]
-      target_joint_position: [-3.6, 45.0, -3.6, 95.0, 0.7, 90.0, -15.7]  # park pose A1..A7 [deg] (per-run)
+      target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
       joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.05  # apple within this of the park pose counts as arrived [m]
@@ -58,7 +57,7 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here (per-run); slow: ready -> park crosses the straight elbow
+      first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run); this posture never crosses the straight elbow, so no need to crawl
       hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
@@ -69,7 +68,7 @@
       update_rate: 50  # loop rate of this monitor [Hz]
       axis: "z"  # which base axis counts as travel: z = up/down (per-run; the rail decides it)
       threshold_m: 0.10  # travel from the start that turns the ring red [m]; must be short of the rail end
-      direction: "both"  # which way counts: both | positive (up) | negative (down)
+      direction: "negative"  # which way counts: both | positive (up) | negative (down); down only -- up is out of reach from this start
       require_return: true  # true: the trial succeeds back at the start; false: at the threshold
       return_tolerance_m: 0.02  # "back at the start" = within this of it [m]
       debug_log_enabled: false  # print the travel periodically
@@ -90,8 +89,8 @@
         corridor_frame: "relative"  # offsets from the anchored start (a = Y, b = Z)
         corridor_a_min: [0.0]  # rail Y start [m] (0 = straight up/down through the start)
         corridor_a_max: [0.0]  # rail Y end [m]
-        corridor_b_min: [-0.12]  # bottom end of the rail [m] -- the end stop below
-        corridor_b_max: [0.12]  # top end of the rail [m] -- the end stop above (reach limit ~ +0.12)
+        corridor_b_min: [-0.15]  # bottom end of the rail [m] -- the end stop below
+        corridor_b_max: [0.03]  # top end of the rail [m] -- the end stop above (reach limit ~ +0.03 from this start)
 
     # Runaway stop: abort to park if the arm goes too far or too fast.
     rail_safety:  # runaway stop

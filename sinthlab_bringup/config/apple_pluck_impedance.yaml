@@ -65,23 +65,9 @@
       #                   ring's dead quarter out of the monkey's view.
       #   height          [0, -6.3, 0, -44.4, 0, 38.9, 0]  -> apple 5 cm higher (random_start N)
       #                   [0, -17.9, 0, -72.5, 0, 22.5, 0] -> apple 5 cm lower (random_start S)
-      target_joint_position:  # start pose, joint angles A1..A7 [deg]
-      - 0.0
-      - -13.0
-      - 0.0
-      - -60.0
-      - 0.0
-      - 30.0
-      - 0.0
+      target_joint_position: [0.0, -13.0, 0.0, -60.0, 0.0, 30.0, 0.0]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
-      move_to_pos_v_max:  # peak joint speed [deg/s] (converted to rad/s in code)
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s] (converted to rad/s in code)
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
@@ -103,14 +89,7 @@
       update_rate: 200  # loop rate of this action [Hz]
       target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
       joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
-      move_to_pos_v_max:  # peak joint speed [deg/s]
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
@@ -158,14 +137,7 @@
       # joints travel a few degrees, so v_max never binds and a_max / j_max act only through square /
       # cube roots -- which is why changing them alone hardly changes the move.
       # The physical apple follows the anchor through the impedance spring, so it lags a very fast move.
-      move_to_pos_v_max:  # peak joint speed [deg/s], per joint
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
-      - 40.0
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s], per joint
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
