@@ -784,7 +784,7 @@ go cue → wait for the grasp → delay (fixed, or random per trial) → perturb
 sensors (as in Free Move, `helpers/hand_force.py`). The resting force (the tool-load model's error, a
 few N) is measured over the last `grasp.tare_sec` (0.5 s) of the quiet window, with the apple untouched
 and the arm settled after its move from park, and subtracted; a grasp is the
-remaining force at or above `grasp.threshold_n` (1.5 N) for `grasp.hold_sec` (30 ms — single-sample
+remaining force at or above `grasp.threshold_n` (2.5 N) for `grasp.hold_sec` (30 ms — single-sample
 spikes are ignored). It detects **force on the apple, not touch**: a hand resting on it without
 pushing or pulling is not seen. If the monkey is already holding the apple during the quiet window, the
 resting force exceeds `grasp.tare_max_n` and the previous trial's tare is kept, with a warning.

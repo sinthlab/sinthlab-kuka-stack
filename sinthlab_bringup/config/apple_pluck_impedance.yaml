@@ -196,7 +196,7 @@
     # Pick threshold_n with debug_log_enabled on: it prints the force while waiting, so you can see the
     # resting noise and a real grasp. Too low triggers on noise; too high misses light grasps.
     grasp:  # grasp detection (perturb_bump)
-      threshold_n: 1.5  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
+      threshold_n: 2.5  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
       hold_sec: 0.03  # the force must stay above threshold_n this long -- rejects single-sample spikes [s]
       timeout_sec: 10.0  # no grasp within this long after the go cue -> end the trial and reset [s]
       # HOW FAST the bump moves -- used instead of perturb_start.speed_scale in this paradigm. A bump must
