@@ -54,6 +54,12 @@ import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
  * them once per run (smartpad_params.json in the run's folder) and checks them against the experiment
  * (sinthlab_bringup/helpers/smartpad_link.py). Repeated only so the report gets through. Best effort: if the network drops the packets, the
  * app runs exactly as before and ROS reports that it has heard nothing.
+ *
+ * NEURAL SYNC: TTL pulses on the EL2124 outputs 1-4 (TtlPulser), for the Blackrock NSP. Call
+ * sendTtlPulse(output, widthMs) from this app, or send "PULSE <output> <width ms>" over UDP to
+ * TtlPulser.DEFAULT_PORT (30002) from the ROS computer. Until the NspSync I/O configuration is in the
+ * project the outputs are simply unavailable (logged once) and the app runs as before. Test the
+ * outputs on their own with the PulseTestServer app. README, "Neural synchronisation".
  */
 public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     // Injectable dependencies
@@ -71,6 +77,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     // The Java does not change between those cases — only the tool's loadData does.
     private static final String EE_TOOL_TEMPLATE = "SinthLabIiwa7EE";
     private Tool ee_tool_;
+
+    // Neural-sync TTL outputs (see the class doc). Never null after initialize().
+    private TtlPulser ttl_;
 
     // Settings report to ROS -- must equal SETTINGS_PORT in sinthlab_bringup/helpers/smartpad_link.py.
     private static final int SETTINGS_PORT = 30001;
@@ -317,6 +326,29 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     }
 
     /**
+     * TTL pulse on EL2124 output `output` (1-4) for `widthMs`, for the NSP. Returns at once; false if
+     * the outputs are unavailable or the arguments are out of range (TtlPulser).
+     */
+    public boolean sendTtlPulse(int output, int widthMs) {
+        return ttl_ != null && ttl_.pulse(output, widthMs);
+    }
+
+    /** Open the TTL outputs and their UDP command port. Optional: the app runs the same without them. */
+    private void startTtlOutputs() {
+        ttl_ = TtlPulser.create(lbr_.getController());
+        if (!ttl_.isAvailable()) {
+            getLogger().info("Neural-sync TTL outputs unavailable (" + ttl_.reason() + ").");
+            return;
+        }
+        if (ttl_.listen(TtlPulser.DEFAULT_PORT)) {
+            getLogger().info("Neural-sync TTL outputs ready; pulse commands on UDP " + TtlPulser.DEFAULT_PORT + ".");
+        } else {
+            getLogger().warn("Neural-sync TTL outputs ready, but UDP " + TtlPulser.DEFAULT_PORT
+                             + " is busy: only sendTtlPulse() in this app can pulse them.");
+        }
+    }
+
+    /**
      * Initializes the Fast Robot Interface connection. Returns false if ROS did not connect within 60 s.
      */
     public boolean configure_fri() {
@@ -366,6 +398,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         ee_tool_ = getApplicationData().createFromTemplate(EE_TOOL_TEMPLATE);
         ee_tool_.attachTo(lbr_.getFlange());
         getLogger().info("Attached tool template '" + EE_TOOL_TEMPLATE + "' to the flange.");
+        startTtlOutputs();
 
         if (request_user_config()) {
             startSettingsReport();
@@ -393,6 +426,9 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
     @Override
     public void dispose() {
         reporting_ = false;
+        if (ttl_ != null) {
+            ttl_.close();           // every output low
+        }
         if (fri_session_ != null) {
             getLogger().info("Disposing FRI session.");
             fri_session_.close();

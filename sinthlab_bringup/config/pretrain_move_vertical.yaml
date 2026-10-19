@@ -128,7 +128,7 @@
       frequency_hz: 800  # timeout tone: pitch [Hz]
       duration_ms: 800  # timeout tone: length [ms]
     nsp_sync:  # event codes to the Blackrock NSP
-      enabled: false  # send event codes to the Blackrock NSP -- needs the DIO (README §7)
+      enabled: false  # send sync pulses to the Blackrock NSP -- the ROS side is not wired yet (README §8)
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout

@@ -29,7 +29,7 @@ _COMMON = [
     "visual_cue.enabled",          # master switch for the NeoPixel ring
     "visual_cue.remote_test_trigger",
     "visual_cue.colours.*",
-    "nsp_sync.enabled",            # event codes to the Blackrock NSP (needs the DIO; see README §7)
+    "nsp_sync.enabled",            # sync pulses to the Blackrock NSP (ROS side not wired yet; see README §8)
 ]
 
 # The pull threshold and its dwell. Deliberately NOT cartesian_axis: that changes what the

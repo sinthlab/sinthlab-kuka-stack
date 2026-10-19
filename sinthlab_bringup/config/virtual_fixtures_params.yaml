@@ -71,7 +71,7 @@
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # event codes to the Blackrock NSP
-      enabled: false           # send event codes to the Blackrock NSP -- needs the DIO (README §7)
+      enabled: false           # send sync pulses to the Blackrock NSP -- the ROS side is not wired yet (README §8)
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
