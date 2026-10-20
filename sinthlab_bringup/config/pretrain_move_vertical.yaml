@@ -3,7 +3,7 @@
     # PRE-TRAINING: MOVE VERTICAL. One straight vertical rail through the start -- one leg of the maze.
     # The arm can only slide up and down it. Moving it travel_task.threshold_m away from the start turns
     # the travel quarters of the ring from GREEN to RED; bringing it back to the start ends the trial
-    # with the reward. Same start pose, plane and SmartPad setup as the maze, so it leads straight into it.
+    # with the reward. Same plane orientation and SmartPad setup as the maze; it starts at the height of the maze's lowest row.
     #
     # >>> SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30
     # -- exactly the maze's setup. Z 2500 (flange Z = tool axis, along base +X) holds the plane;
@@ -25,10 +25,11 @@
 
     timeout_sec: 30.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
 
-    move_to_start:  # joint-space move to the trial start pose (the maze start)
+    move_to_start:  # joint-space move to the trial start pose (the pre-training start)
       update_rate: 200  # loop rate of this action [Hz]
-      # The maze start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject. Keep equal to
-      # nullspace_desired_configuration in config/clik_nullspace_maze.yaml.
+      # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
+      # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
+      # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive: the rail anchors on it

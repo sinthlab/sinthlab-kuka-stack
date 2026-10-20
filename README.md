@@ -912,7 +912,14 @@ its EE pose with the **elbow flipped** relative to the obvious solution, which p
 motion at ‖q̇‖ ≈ 2.5 instead of ≈ 19.8 (6D condition number 10 instead of 45). In the other posture the
 maze is heavy in exactly the directions it is supposed to be free.
 
-**Workspace limits (measured by IK, holding tool orientation).** From the shipped start the arm can
+**Where the start is.** The maze start is EE ≈ **(0.45, 0.00, 1.01) m**. The maze hangs below it, so
+its lowest row (b = −0.11) is at **z ≈ 0.90 m** — the pre-training start height, the lowest the subject
+should have to reach. It is **5 cm closer to the robot** than the pre-training start: at this height the
+arm is more stretched, and pulling back keeps vertical guiding lighter (cost 7.1 at the top row instead
+of 8.7, σ_min 0.12 instead of 0.10). For comparison the old start, 11 cm lower, cost 4.7: expect the
+vertical legs near the top to feel somewhat heavier than in the pre-training tasks.
+
+**Workspace limits (measured by IK, holding tool orientation).** From the pre-training start the arm can
 reach **a ∈ [−0.40, +0.40] m** sideways and **b ∈ [−0.35, +0.20] m** up/down — but that envelope is a
 **trapezoid**: full width low down, pinched at the top (at b = +0.20 only a ∈ ±0.10).
 
@@ -1026,7 +1033,8 @@ non-zero you have made a *box* — an open area the arm can wander inside — no
 and that envelope is a **trapezoid** — full width low down, sharply pinched at the top (at b = +0.20
 only a ∈ ±0.10). Vertical room is the scarce resource; sideways room is plentiful.
 
-**If you change `move_to_start`**, you must also update `config/clik_nullspace_maze.yaml`
+**If you change `move_to_start`**, you must also update `config/clik_nullspace_maze.yaml` (the
+pre-training tasks have their own, `config/clik_nullspace_pretrain.yaml`)
 (`nullspace_desired_configuration`) to the same joint array, or the CLIK will hold the right EE pose in
 the wrong arm posture. And re-check the *orientation-constrained* cost of the free directions — that is
 what decides whether guiding feels light or like treacle, and it is not visible in reach alone.
@@ -1195,8 +1203,9 @@ Work up the ladder and stop at the first rung that feels wrong.
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
 they are under the **Pre-training** tab. All three:
 
-- start at the **maze start** (tool along +X toward the subject), so they share one posture with the
-  maze;
+- start at the **pre-training start**, EE ≈ (0.50, 0.00, 0.90) m, tool along +X toward the subject —
+  the height of the maze's lowest row (the maze start is 11 cm higher and 5 cm back). Their CLIK posture
+  is `config/clik_nullspace_pretrain.yaml`;
 - run on the CLIK, like the maze;
 - end like the maze: a cue, then the arm holds and waits for the hand to let go, then it returns to
   the start.
@@ -1314,7 +1323,7 @@ The quarter cues use the board's existing `/segments` endpoint, so **the firmwar
 They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
 one bit, not a pattern.
 
-**Reach and gravity** (IK from the maze start, holding the tool orientation):
+**Reach and gravity** (IK from the pre-training start, holding the tool orientation):
 - **Sideways is easy:** at ±0.25 m every joint is still ≥ 39° from its limit.
 - **Down is easy.**
 - **Up is the limit.** The arm nears a singular pose above +0.12 m, and +0.20 m is unreachable.

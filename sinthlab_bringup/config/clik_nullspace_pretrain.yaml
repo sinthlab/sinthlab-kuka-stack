@@ -1,0 +1,13 @@
+/**/kuka_clik_controller:
+  ros__parameters:
+    # CLIK redundancy posture for the PRE-TRAINING tasks (Free Move, Move Vertical, Move Horizontal), in DEGREES (controller_base converts to rad).
+    #
+    # The CLIK matches only the EE *pose* and resolves the arm's redundant 7th DOF toward this posture.
+    # It MUST equal the pre-training YAMLs' move_to_start.target_joint_position — otherwise the arm holds the
+    # right EE pose in a different arm shape and drifts toward this one while you guide it, which
+    # feels like the fixture fighting you.
+    #
+    #   >>> SYNC with move_to_start.target_joint_position in config/pretrain_free_move.yaml,
+    #       pretrain_move_vertical.yaml and pretrain_move_horizontal.yaml (all three share it).
+    # EE ≈ (0.500, 0.000, 0.900) m in lbr_link_0, tool ≈ +X (tilted up ~10°).
+    nullspace_desired_configuration: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # preferred arm posture A1..A7 [deg]

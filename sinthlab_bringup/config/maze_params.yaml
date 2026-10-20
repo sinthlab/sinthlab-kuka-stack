@@ -46,7 +46,11 @@
       update_rate: 200  # loop rate of this action [Hz]
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
       # this joint array is the one knob that positions the whole maze — change it and the maze follows.
-      # EE ≈ (0.500, 0.000, 0.900) m, tool ≈ +X. This anchors the fixture: its X (0.5) becomes the locked
+      # EE ≈ (0.450, 0.000, 1.010) m, tool ≈ +X. The maze hangs BELOW the start, so this height puts its
+      # lowest row (b = -0.11) at z ≈ 0.90 -- the pre-training start height, the lowest the subject should
+      # have to reach. It sits 5 cm closer to the robot than the pre-training start: at this height the
+      # arm is more stretched, and pulling back keeps vertical guiding lighter (cost 7.1 at the top row
+      # vs 8.7 without; sigma_min 0.12 vs 0.10). This anchors the fixture: its X (0.45) becomes the locked
       # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
       # plane through the start (tool points +X, perpendicular into it).
       # >>> WHY THIS POSTURE: the same EE pose (position and tool orientation) is also reached by
@@ -61,8 +65,8 @@
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
-      #     while holding this orientation at z=0.9.)
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      #     while holding this orientation at z=1.01.)
+      target_joint_position: [-3.1, 51.8, -3.3, 50.3, 1.2, 77.9, -16.5]  # start pose, joint angles A1..A7 [deg]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory

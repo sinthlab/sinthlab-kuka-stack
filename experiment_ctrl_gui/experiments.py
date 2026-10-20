@@ -120,10 +120,11 @@ EXPERIMENTS: List[Experiment] = [
 ]
 
 # Pre-training: shorter tasks that get a subject used to the arm before the real experiments. All
-# three start at the maze start (tool along +X) and run on the CLIK like the maze.
+# three start 11 cm below and 5 cm in front of the maze start (tool along +X; the maze's lowest row is
+# at their start height) and run on the CLIK like the maze.
 _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
-                "clik_nullspace_cfg": "config/clik_nullspace_maze.yaml"}
+                "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
@@ -133,7 +134,7 @@ EXPERIMENTS += [
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_free_move",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
         key="move_vertical", label="Move Vertical", group="pretraining",
@@ -143,7 +144,7 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
         key="move_horizontal", label="Move Horizontal", group="pretraining",
@@ -153,7 +154,7 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
