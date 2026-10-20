@@ -53,6 +53,9 @@ class RosBridge:
                                            qos_profile_sensor_data)
         except ImportError:
             pass     # robot panel shows "unknown"; everything else works
+        # Reach calibration: the orchestrator's live pose read-out (JSON, 10 Hz).
+        self._pose: Optional[dict] = None
+        self._node.create_subscription(String, f"{self._ns}/reach_calib_pose", self._on_pose, 10)
         self._clients: Dict[Tuple[str, str], object] = {}
         self._executor = MultiThreadedExecutor(num_threads=2)
         self._executor.add_node(self._node)
@@ -72,6 +75,19 @@ class RosBridge:
         self._state_times.append(time.monotonic())
         self._session_state = int(msg.session_state)
 
+    def _on_pose(self, msg) -> None:
+        try:
+            pose = json.loads(msg.data)
+        except ValueError:
+            return
+        pose["_rx"] = time.time()
+        self._pose = pose
+
+    def pose(self) -> Optional[dict]:
+        """The latest reach-calibration pose, or None if none arrived in the last 2 s."""
+        p = self._pose
+        return p if p is not None and time.time() - p["_rx"] < 2.0 else None
+
     def status(self) -> Optional[dict]:
         return self._status
 
@@ -124,6 +140,14 @@ class RosBridge:
         """Stop now: the orchestrator ends the trial at once, parks the arm, and holds."""
         from std_srvs.srv import Trigger
         ok, res = self._call(Trigger, f"{self._ns}/{exp.node}/stop", Trigger.Request())
+        if not ok:
+            return False, res
+        return bool(res.success), res.message
+
+    def trigger(self, exp: ex.Experiment, service: str) -> Tuple[bool, str]:
+        """Call one of the orchestrator's std_srvs/Trigger services, e.g. reach calibration's end_attempt."""
+        from std_srvs.srv import Trigger
+        ok, res = self._call(Trigger, f"{self._ns}/{exp.node}/{service}", Trigger.Request())
         if not ok:
             return False, res
         return bool(res.success), res.message
@@ -762,6 +786,12 @@ class UnavailableBridge:
         return False, f"ROS is not available here: {self.reason}"
 
     def pause(self, exp, paused):
+        return False, f"ROS is not available here: {self.reason}"
+
+    def pose(self):
+        return None
+
+    def trigger(self, exp, service):
         return False, f"ROS is not available here: {self.reason}"
 
     def shutdown(self) -> None:
@@ -939,6 +969,30 @@ class DemoBridge:
     def status(self):
         return self._status
 
+    def pose(self) -> Optional[dict]:
+        """Reach calibration in demo: the test pose with a little jitter, and a rough planar apple position."""
+        if self._status is None or self._exp.key != "reach_calib":
+            return None
+        q = [float(v) for v in self._effective.get("move_to_start.target_joint_position",
+                                                   [0, -13, 0, -60, 0, 30, 0])]
+        qj = [v + random.uniform(-0.3, 0.3) for v in q]
+        armed = self._phase == "armed"
+        return {"t": time.time(), "trial": self._trial, "state": self._phase,
+                "joints_deg": [round(v, 2) for v in qj], "apple_m": _demo_apple(qj),
+                "test_pose_deg": q, "test_apple_m": _demo_apple(q), "disp_m": 0.0 if armed else None,
+                "force_n": round(random.uniform(0, 2), 1) if armed else None,
+                "peak_force_n": 0.0, "message": "", "_rx": time.time(),
+                "limits": {k: self._params.get(f"limits.{k}") for k in
+                           ("joint_min_deg", "joint_max_deg", "apple_box_min_m", "apple_box_max_m")}}
+
+    def trigger(self, exp: ex.Experiment, service: str) -> Tuple[bool, str]:
+        if self._status is None:
+            return False, "no experiment is running"
+        if service == "end_attempt" and self._phase == "armed" and self._in_trial:
+            self._stop_now = True        # the demo's way to cut a trial short
+            return True, "attempt ended (demo)"
+        return False, f"nothing to end right now (demo phase: {self._phase})"
+
     def robot(self) -> dict:
         running = self._status is not None
         return {"lbr_state_hz": 100 if running else 0,
@@ -985,6 +1039,18 @@ class DemoBridge:
 
     def shutdown(self) -> None:
         self.launch_ended()
+
+
+def _demo_apple(q_deg) -> list:
+    """Demo only: the apple from A1, A2, A4, A6 alone (in-plane iiwa7 links 0.34 / 0.40 / 0.40 / 0.126 m,
+    plus 0.205 m to the apple). Close to the real FK for in-plane poses, rough otherwise."""
+    import math
+    a1, a2, a4, a6 = (math.radians(float(q_deg[i])) for i in (0, 1, 3, 5))
+    r, z = 0.0, 0.34
+    for length, pitch in ((0.40, a2), (0.40, a2 - a4), (0.126 + 0.205, a2 - a4 + a6)):
+        r += length * math.sin(pitch)
+        z += length * math.cos(pitch)
+    return [round(r * math.cos(a1), 4), round(r * math.sin(a1), 4), round(z, 4)]
 
 
 def make_bridge(demo: bool, robot_name: str, on_status: Callable[[dict], None]):

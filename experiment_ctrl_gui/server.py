@@ -12,6 +12,7 @@ library only (plus PyYAML, which ROS already installs), so there is nothing extr
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import mimetypes
 import queue
@@ -37,6 +38,8 @@ STATIC = HERE / "static"
 STATUS_STALE_SEC = 3.0         # the orchestrator heartbeats every 1 s
 STOP_PARK_TIMEOUT_SEC = 60.0   # Stop now: end the launch anyway if the arm has not parked by then
 CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom header without CORS
+REACH = "reach_calib"               # the reach-calibration experiment: its Robot position panel
+REACH_POSE_HZ = 5.0                 # how often the panel's read-out is pushed to the page
 
 
 class App:
@@ -57,6 +60,7 @@ class App:
         if not self.bridge.available:
             self.runner.emit(f"ROS not available: {self.bridge.reason}", "warn")
         threading.Thread(target=self._ticker, daemon=True).start()
+        threading.Thread(target=self._pose_ticker, daemon=True).start()
 
     # ------------------------------------------------------------------ events out
 
@@ -84,6 +88,90 @@ class App:
         while True:
             time.sleep(1.0)
             self.broadcast("state", self.state())
+
+    def _pose_ticker(self) -> None:
+        """Reach calibration: push the orchestrator's pose read-out to the page (not part of `state`,
+        which goes out once a second)."""
+        while True:
+            time.sleep(1.0 / REACH_POSE_HZ)
+            try:
+                pose = self.bridge.pose()
+            except Exception:
+                pose = None
+            if pose is not None:
+                self.broadcast("pose", pose)
+
+    # ------------------------------------------------------------------ reach calibration
+
+    def _reach_exp(self) -> ex.Experiment:
+        exp = self.running_experiment()
+        if exp is None or exp.key != REACH:
+            raise RuntimeError("Reach Calibration is not running")
+        return exp
+
+    def reach_move(self, joints) -> dict:
+        """Set a new test pose, then end the attempt in progress so the arm goes there now."""
+        exp = self._reach_exp()
+        try:
+            q = [float(v) for v in joints]
+        except (TypeError, ValueError):
+            raise ValueError("the new target needs 7 numbers (degrees)")
+        if len(q) != 7:
+            raise ValueError("the new target needs 7 joint angles, A1..A7 (degrees)")
+        name = ex.START_POSE
+        st = self.status() or {}
+        park = self.params[exp.key].current().get("move_to_park.target_joint_position")  # per-run, so not in `live`
+        context = {"move_to_park.target_joint_position": park,
+                   **(st.get("live") or {}), **(st.get("pending") or {}), name: q}
+        problem = ex.live_params.check_value(name, q, context)
+        if problem:
+            raise ValueError(problem)
+        ok, msg = self.bridge.set_params(exp, {name: q})        # the orchestrator checks the limits
+        if not ok:
+            self.runner.emit(f"New test pose {q} refused: {msg}", "warn")
+            raise RuntimeError(msg)
+        self.runner.emit(f"New test pose {q} deg accepted.", "gui")
+        ok2, msg2 = self.bridge.trigger(exp, "end_attempt")
+        if ok2:
+            message = "moving to the new test pose now"
+        elif st.get("held"):
+            message = "paused at park: press Resume to go to the new test pose"
+        else:
+            message = f"the arm goes there at the next attempt ({msg2})"
+        self.runner.emit(f"New test pose: {message}", "gui")
+        return {"ok": True, "message": message}
+
+    def reach_end_attempt(self) -> dict:
+        ok, msg = self.bridge.trigger(self._reach_exp(), "end_attempt")
+        if not ok:
+            raise RuntimeError(msg)
+        self.runner.emit(f"End attempt: {msg}", "gui")
+        return {"ok": True, "message": msg}
+
+    def reach_log(self, note: str) -> dict:
+        """Log the arm's current position (and a note) to reach_calib_positions.csv in the run folder."""
+        self._reach_exp()
+        pose = self.bridge.pose()
+        if pose is None or pose.get("joints_deg") is None:
+            raise RuntimeError("no position from the robot yet")
+        folder = Path(self.data_folder() or (HERE / "runs"))
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "reach_calib_positions.csv"
+        new = not path.exists()
+        st = self.status() or {}
+        apple = pose.get("apple_m") or [None] * 3
+        with path.open("a", newline="") as fh:
+            w = csv.writer(fh)
+            if new:
+                w.writerow(["time", "attempt", "phase", "note"] + [f"A{i}_deg" for i in range(1, 8)]
+                           + ["apple_x_m", "apple_y_m", "apple_z_m"]
+                           + [f"test_A{i}_deg" for i in range(1, 8)])
+            w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), pose.get("trial"), st.get("phase"), note]
+                       + list(pose["joints_deg"]) + list(apple) + list(pose.get("test_pose_deg") or []))
+        a = ", ".join(f"{v:.3f}" for v in apple) if apple[0] is not None else "?"
+        self.runner.emit(f"Position logged: joints {pose['joints_deg']} deg, apple ({a}) m"
+                         + (f", note: {note}" if note else "") + f" -> {path}", "gui")
+        return {"ok": True, "message": f"logged to {path.name}"}
 
     # ------------------------------------------------------------------ state
 
@@ -398,6 +486,12 @@ def make_handler(app: App):
                 value = p.set_edit(body["name"], body["value"])
                 app.broadcast("state", app.state())
                 return {"ok": True, "value": value}
+            if path == "/api/reach/move":
+                return app.reach_move(body.get("joints"))
+            if path == "/api/reach/end_attempt":
+                return app.reach_end_attempt()
+            if path == "/api/reach/log":
+                return app.reach_log(str(body.get("note", "")).strip())
             if path == "/api/validate":
                 folder = app.data_folder()
                 if not folder:

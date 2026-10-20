@@ -117,6 +117,17 @@ EXPERIMENTS: List[Experiment] = [
                      "clik_nullspace_cfg": "config/clik_nullspace_maze.yaml"},
         clik_nullspace="clik_nullspace_maze.yaml",
     ),
+    Experiment(
+        key="reach_calib", label="Reach Calibration",
+        summary="Manual: you set the test position (Robot position panel); the monkey pulls the apple 0.1 m, "
+                "snap beep, and the arm goes straight back to the same position for the next attempt.",
+        launch_file="iiwa7_reach_calib.launch.py",
+        params_yaml="reach_calib.yaml", node="reach_calib_orchestrator",
+        stiffness_profile="Uniform 100",
+        ros_controller="lbr_joint_position_command_controller",
+        run_name="iiwa7_reach_calib",
+        launch_args={"ctrl": "lbr_joint_position_command_controller"},
+    ),
 ]
 
 # Pre-training: shorter tasks that get a subject used to the arm before the real experiments. All
@@ -190,6 +201,9 @@ CAUTION: Dict[str, str] = {
     "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Uniform 100 = "
                                           "100, Uniform 400 = 400). If they differ, every pull feels softer or "
                                           "stiffer than the resistance slider says."),
+    "limits.*": ("Reach calibration safety limit. A test pose outside these is refused, and the apple leaving "
+                 "the box (plus pull_margin_m) during an attempt parks the arm and pauses the run."),
+    "apple_offset_m": "Where the apple centre is in the flange frame. Every position shown and checked uses it.",
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),

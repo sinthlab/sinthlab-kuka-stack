@@ -290,3 +290,20 @@ input[type=color] { width: 30px; height: 26px; padding: 0; border: 1px solid var
   background: var(--panel-2); padding: 8px; border-radius: 6px; }
 .warn-text { color: var(--warn); }
 @media (max-width: 600px) { .diag { padding: 12px; } }
+
+/* ---- Reach Calibration: Robot position panel ---- */
+.reach-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.reach-wrap { overflow-x: auto; }
+.reach-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.reach-table th, .reach-table td { padding: 3px 8px; text-align: right; white-space: nowrap; }
+.reach-table th:first-child, .reach-table td:first-child { text-align: left; font-weight: 600; }
+.reach-table tbody tr.sep td { border-top: 1px solid rgba(127, 127, 127, 0.35); }
+.reach-table td.cur { font-weight: 600; }
+.reach-table td.tgt { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+.reach-table td.tgt input { width: 6.5em; text-align: right; }
+.reach-table td.tgt input.bad { outline: 2px solid #d9534f; }
+.reach-table td.tgt button { min-width: 1.9em; padding: 1px 4px; }
+.reach-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.reach-tools #reach-note { flex: 1; min-width: 12em; }
+.reach-tools #reach-step { width: 4.5em; }
+.reach-msg { margin: 6px 0; padding: 6px 10px; border-radius: 6px; background: rgba(217, 83, 79, 0.15); font-weight: 600; }

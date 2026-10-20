@@ -84,6 +84,36 @@
       </details>
     </div>
 
+    <!-- Reach Calibration only: live position read-out and a new test pose to move to -->
+    <div class="card reach-card hidden" id="reach-card">
+      <div class="reach-head">
+        <h2>Robot position</h2>
+        <span class="muted small" id="reach-age"></span>
+      </div>
+      <div class="reach-msg hidden" id="reach-msg"></div>
+      <div class="reach-wrap">
+        <table class="reach-table">
+          <thead><tr><th></th><th>Current</th><th>Test pose</th><th>New target</th><th class="muted">allowed</th></tr></thead>
+          <tbody id="reach-rows"></tbody>
+        </table>
+      </div>
+      <div class="reach-tools">
+        <label class="small">Step <input type="number" id="reach-step" value="2" min="0.1" step="0.5" aria-label="Step for the − / + buttons, degrees"> deg</label>
+        <button id="reach-copy-cur" class="btn small">Current → new target</button>
+        <button id="reach-copy-test" class="btn small">Test pose → new target</button>
+        <button id="reach-move" class="btn primary small">Move to new target</button>
+      </div>
+      <div class="reach-tools">
+        <button id="reach-end" class="btn warn small">End attempt (can’t reach)</button>
+        <input id="reach-note" type="text" placeholder="Note, e.g. “touched, couldn’t pull”" aria-label="Note to log with the position">
+        <button id="reach-log" class="btn small">Log position</button>
+      </div>
+      <p class="note">The arm moves to a new target at the start of the next attempt: <strong>Move</strong> ends
+        the attempt in progress, so it goes at once. Targets outside the safety limits are refused.
+        Every attempt is logged automatically (<code>reach_calib_attempts.csv</code>); <strong>Log position</strong>
+        adds a row with your note to <code>reach_calib_positions.csv</code>, both in the run’s data folder.</p>
+    </div>
+
     <div class="card params-card">
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>

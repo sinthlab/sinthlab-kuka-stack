@@ -104,6 +104,13 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     ],
     "move_vertical": _RAIL,
     "move_horizontal": _RAIL,
+    # Reach calibration (manual): apple pluck's pull, with the TEST POSE live -- the dashboard's Robot
+    # position panel sets it, and the arm moves there at the next attempt. The safety `limits` stay
+    # per-run, and the orchestrator refuses a test pose outside them.
+    "reach_calib": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
+        "go_cue.enabled",          # beep before each attempt, or arm silently
+        "reach_timeout_sec",       # end an attempt with no pull after this long (0 = never)
+    ],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -131,6 +138,7 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "grasp.delay_min_sec": (0.0, 10.0),
     "grasp.delay_max_sec": (0.0, 10.0),
     "timeout_sec": (5.0, 600.0),
+    "reach_timeout_sec": (0.0, 600.0),        # reach calibration: 0 = wait until pulled or ended
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
     # Drag may go further -- it only ever resists.
     "virtual_fixtures.rail_lead_sec": (-0.15, 0.05),

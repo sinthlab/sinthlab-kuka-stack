@@ -19,6 +19,8 @@ const STEPS = {
 STEPS.move_vertical = STEPS.move_horizontal =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "threshold", "goal",
    "release_wait", "released", "trial_end"];
+// Reach calibration: each attempt returns to the same test pose instead of parking.
+STEPS.reach_calib = ["trial_start", "at_start", "quiet_end", "armed", "snap", "recover_start", "trial_end"];
 STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
@@ -27,6 +29,10 @@ const STEP_LABEL = {
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
   session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped",
+};
+// Step labels that differ per experiment.
+const STEP_LABEL_BY_EXP = {
+  reach_calib: { trial_start: "to test pose", quiet_end: "quiet", recover_start: "back to pose", trial_end: "next attempt" },
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
@@ -49,6 +55,14 @@ const PHASE_TEXT_BY_EXP = {
   free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release" },
   move_vertical: { armed: "travelling out" },
   move_horizontal: { armed: "travelling out" },
+  reach_calib: {
+    trial_start: "moving to the test pose", at_start: "at the test pose — quiet window",
+    armed: "waiting for the pull — End attempt if he can’t reach", snap: "pulled! — holding, then back to the test pose",
+    cue_snap: "pulled! — holding, then back to the test pose", freeze: "pulled! — holding, then back to the test pose",
+    recover_start: "moving back / away", trial_end: "attempt complete", timeout: "no pull in time — back to the test pose",
+    attempt_ended: "attempt ended — back to the test pose", paused: "paused at park (out of reach)",
+    parking: "moving to park (out of reach)",
+  },
 };
 // Free Move has no trial end: the pause / stop-after-trial buttons end the session instead.
 const NO_TRIAL_END = new Set(["free_move"]);
@@ -77,7 +91,7 @@ const store = {
 const S = {
   experiments: [], groups: [], group: "experiments", selected: new URLSearchParams(location.search).get("exp") || store.get("exp", "apple_pluck"),
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
-  params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
+  params: {}, app: null, pose: null, reachBuilt: false, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
 };
 
@@ -188,6 +202,7 @@ async function select(key) {
   await loadParams(key);
   renderExperiments();          // the paradigm tabs need the parameters
   renderControls();
+  renderReach();
 }
 function renderChecklist() {
   const e = exp(S.selected); if (!e) return;
@@ -287,7 +302,7 @@ function renderStatus() {
     idx = last ? steps.indexOf(last.phase) : -1;
   }
   $("#steps").innerHTML = steps.map((st, i) =>
-    `<li class="${!s ? "" : i < idx ? "done" : i === idx ? "now" : ""}">${esc(STEP_LABEL[st] || st)}</li>`).join("");
+    `<li class="${!s ? "" : i < idx ? "done" : i === idx ? "now" : ""}">${esc((STEP_LABEL_BY_EXP[key] || {})[st] || STEP_LABEL[st] || st)}</li>`).join("");
 
   renderSmartpadReport(s);
 
@@ -548,6 +563,98 @@ function buildControl(ctl, p, value, commit, disabled) {
   ctl.appendChild(inp);
 }
 
+// ---------------------------------------------------------------- reach calibration: Robot position
+// The orchestrator publishes its pose at 10 Hz (reach_calib_pose); server.py pushes it here as "pose" events.
+const REACH = "reach_calib";
+const JOINTS = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"];
+function reachShown() { return S.selected === REACH || runningKey() === REACH; }
+function reachRunning() { return runningKey() === REACH; }
+function fmtN(v, d) { return v == null || Number.isNaN(Number(v)) ? "–" : Number(v).toFixed(d); }
+function buildReach() {
+  const rows = JOINTS.map((j, i) => `<tr data-j="${i}"><td>${j} <span class="muted">deg</span></td>
+      <td class="cur" id="rc-cur-${i}">–</td><td id="rc-test-${i}">–</td>
+      <td class="tgt"><button class="btn small" data-jog="${i}" data-dir="-1" aria-label="${j} minus step">−</button>
+        <input type="number" step="any" id="rc-tgt-${i}" aria-label="${j} new target, degrees">
+        <button class="btn small" data-jog="${i}" data-dir="1" aria-label="${j} plus step">+</button></td>
+      <td class="muted small" id="rc-lim-${i}"></td></tr>`).join("");
+  const xyz = ["x", "y", "z"].map((a, i) => `<tr${i === 0 ? ' class="sep"' : ""}><td>Apple ${a.toUpperCase()} <span class="muted">m</span></td>
+      <td class="cur" id="rc-acur-${i}">–</td><td id="rc-atest-${i}">–</td><td></td><td class="muted small" id="rc-alim-${i}"></td></tr>`).join("");
+  const pull = `<tr class="sep"><td>Pull <span class="muted">m</span></td><td class="cur" id="rc-disp">–</td><td></td><td></td><td></td></tr>
+      <tr><td>Hand force <span class="muted">N</span></td><td class="cur" id="rc-force">–</td><td class="muted" id="rc-peak"></td><td></td><td></td></tr>`;
+  $("#reach-rows").innerHTML = rows + xyz + pull;
+  document.querySelectorAll("#reach-rows [data-jog]").forEach((b) => b.onclick = () => {
+    const inp = $(`#rc-tgt-${b.dataset.jog}`), step = parseFloat($("#reach-step").value) || 0;
+    const cur = parseFloat(inp.value);
+    inp.value = (Number.isFinite(cur) ? cur : 0) + Number(b.dataset.dir) * step;
+    inp.value = Number(inp.value).toFixed(2).replace(/\.?0+$/, "");
+    checkReachTargets();
+  });
+  JOINTS.forEach((_, i) => { $(`#rc-tgt-${i}`).oninput = checkReachTargets; });
+  $("#reach-copy-cur").onclick = () => fillReachTargets(S.pose && S.pose.joints_deg);
+  $("#reach-copy-test").onclick = () => fillReachTargets(S.pose && S.pose.test_pose_deg);
+  $("#reach-move").onclick = () => {
+    const q = JOINTS.map((_, i) => parseFloat($(`#rc-tgt-${i}`).value));
+    if (q.some((v) => !Number.isFinite(v))) { toast("Fill in all 7 target angles first.", "err"); return; }
+    const from = S.pose && S.pose.test_pose_deg ? `\nfrom [${S.pose.test_pose_deg.join(", ")}]` : "";
+    if (!confirm(`Move the arm to the new test pose?${from}\nto   [${q.join(", ")}] deg\n\nMake sure the path is clear.`)) return;
+    act(() => api("/api/reach/move", { joints: q }), "New test pose");
+  };
+  $("#reach-end").onclick = () => act(() => api("/api/reach/end_attempt", {}), "End attempt");
+  $("#reach-log").onclick = async () => {
+    const r = await act(() => api("/api/reach/log", { note: $("#reach-note").value }), "Position logged");
+    if (r) $("#reach-note").value = "";
+  };
+  S.reachBuilt = true;
+}
+function fillReachTargets(q) {
+  if (!q) { toast("No position from the robot yet.", "err"); return; }
+  JOINTS.forEach((_, i) => { $(`#rc-tgt-${i}`).value = Number(q[i]).toFixed(2).replace(/\.?0+$/, ""); });
+  checkReachTargets();
+}
+// Mark a target outside the limits the orchestrator reports (it refuses those anyway).
+function checkReachTargets() {
+  const lim = S.pose && S.pose.limits;
+  JOINTS.forEach((_, i) => {
+    const inp = $(`#rc-tgt-${i}`), v = parseFloat(inp.value);
+    const bad = lim && Number.isFinite(v) && (v < lim.joint_min_deg[i] || v > lim.joint_max_deg[i]);
+    inp.classList.toggle("bad", !!bad);
+    inp.title = bad ? `Outside the allowed range ${lim.joint_min_deg[i]}…${lim.joint_max_deg[i]} deg` : "";
+  });
+}
+function renderReach() {
+  const card = $("#reach-card");
+  if (!reachShown()) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  if (!S.reachBuilt) buildReach();
+  const p = S.pose, fresh = p && reachRunning() && Date.now() / 1000 - p._seen < 2.5;
+  $("#reach-age").textContent = !reachRunning() ? "shown while Reach Calibration runs"
+    : fresh ? `live · attempt ${p.trial} · ${p.state}` : "no position data from the robot";
+  JOINTS.forEach((_, i) => {
+    $(`#rc-cur-${i}`).textContent = fresh && p.joints_deg ? fmtN(p.joints_deg[i], 1) : "–";
+    $(`#rc-test-${i}`).textContent = p && p.test_pose_deg ? fmtN(p.test_pose_deg[i], 1) : "–";
+    $(`#rc-lim-${i}`).textContent = p && p.limits ? `${p.limits.joint_min_deg[i]}…${p.limits.joint_max_deg[i]}` : "";
+  });
+  [0, 1, 2].forEach((i) => {
+    $(`#rc-acur-${i}`).textContent = fresh && p.apple_m ? fmtN(p.apple_m[i], 3) : "–";
+    $(`#rc-atest-${i}`).textContent = p && p.test_apple_m ? fmtN(p.test_apple_m[i], 3) : "–";
+    $(`#rc-alim-${i}`).textContent = p && p.limits ? `${p.limits.apple_box_min_m[i]}…${p.limits.apple_box_max_m[i]}` : "";
+  });
+  $("#rc-disp").textContent = fresh ? fmtN(p.disp_m, 3) : "–";
+  $("#rc-force").textContent = fresh ? fmtN(p.force_n, 1) : "–";
+  $("#rc-peak").textContent = fresh && p.peak_force_n ? `peak ${fmtN(p.peak_force_n, 1)}` : "";
+  const msg = $("#reach-msg");
+  msg.classList.toggle("hidden", !(fresh && p.message)); msg.textContent = fresh && p.message ? p.message : "";
+  ["#reach-move", "#reach-end", "#reach-log"].forEach((id) => { $(id).disabled = !reachRunning(); });
+  ["#reach-copy-cur", "#reach-copy-test"].forEach((id) => { $(id).disabled = !fresh; });
+  // First pose of a run: start the new-target column at the test pose in use.
+  if (fresh && p.test_pose_deg && JOINTS.every((_, i) => $(`#rc-tgt-${i}`).value === "")) fillReachTargets(p.test_pose_deg);
+}
+function onPose(p) {
+  p._seen = Date.now() / 1000;
+  S.pose = p;
+  if (reachShown()) renderReach();
+}
+
 // ---------------------------------------------------------------- log
 function levelShown(l) {
   if (S.logLevel === "all") return true;
@@ -598,6 +705,7 @@ function onState(a) {
   renderControls();
   if (key !== prevKey) renderExperiments();
   renderParams();
+  renderReach();
 }
 function connect() {
   // ?nostream: poll instead of streaming -- for a proxy that breaks Server-Sent Events, and for
@@ -614,6 +722,7 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.type === "log") appendLog(m.data);
     else if (m.type === "state") onState(m.data);
+    else if (m.type === "pose") onPose(m.data);
   };
   es.onerror = () => { $("#pill-run").className = "pill err"; $("#pill-run").textContent = "Dashboard disconnected"; };
 }

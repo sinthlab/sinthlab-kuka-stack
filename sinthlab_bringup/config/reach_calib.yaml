@@ -1,0 +1,133 @@
+/**:
+  ros__parameters:
+    # ==== REACH CALIBRATION (manual) ====
+    # Find out where the monkey can reach and pull the apple. Built on the apple-pluck "pluck" trial:
+    #   [first: park] -> move to the TEST POSE -> quiet window -> [go cue] -> wait for the pull
+    #   -> threshold: snap beep, short hold -> straight BACK to the test pose -> next attempt ...
+    # The arm stays at the test pose between attempts (it does not park), so the monkey can try again.
+    # Change the test pose from the dashboard's "Robot position" panel (or move_to_start below, which
+    # is live): the arm moves there at the start of the next attempt. "End attempt" ends an attempt the
+    # monkey cannot complete. Pause / Stop park the arm out of reach, as in every experiment.
+    # Every attempt is one recorded trial (experiment "reach_calib"), and one row in
+    # reach_calib_attempts.csv in the run folder: the test pose, the apple position and the outcome.
+
+    # ---- RESISTANCE of the pull (as apple pluck) ----
+    # >>> SmartPad: "Uniform 100". base_stiffness_n_per_m MUST equal the profile's translational
+    #     stiffness. stiffness_n_per_m below the base softens the pull (live); equal = the bare profile.
+    resistance:  # felt stiffness of the pull
+      base_stiffness_n_per_m: 100.0  # the SmartPad profile's translational stiffness [N/m] (per-run; must match the SmartPad)
+      stiffness_n_per_m: 100.0  # felt stiffness of the pull [N/m] (live, from the next attempt): 50 up to the base
+
+    # ---- WHERE THE APPLE IS ----
+    # The dashboard shows, and the limits below check, the APPLE position: the flange (lbr_link_ee)
+    # plus this offset along the flange's own axes. By the iiwa7 URDF the apple centre sits ~0.205 m
+    # along the flange's z axis (flange (0.33, 0, 1.03) m -> apple (0.53, 0, 1.08) m at the default
+    # start). Measure it once with a tape and correct it here. [0, 0, 0] reports the flange itself.
+    apple_offset_m: [0.0, 0.0, 0.205]  # apple centre in the flange frame [m] (per-run)
+
+    # ---- SAFETY LIMITS (per-run: never changed mid-session) ----
+    # Placeholders, deliberately wide: find the real ones with the dashboard's position read-out, then
+    # narrow them here. They are independent of the test pose:
+    #   * a new test pose outside them is REFUSED (the dashboard shows why; the arm does not move);
+    #   * while the monkey can touch the apple, the apple leaving the box by more than pull_margin_m,
+    #     or a hand force above max_force_n, ABORTS the attempt: the arm parks and the run pauses.
+    #     Resume from the dashboard to continue.
+    # Positions are in the robot base frame lbr_link_0, as on the dashboard: +X toward the monkey,
+    # +Y the monkey's right, +Z up.
+    limits:  # where test poses may be, and how far / hard a pull may go
+      joint_min_deg: [-90.0, -60.0, -90.0, -110.0, -90.0, -30.0, -90.0]  # lowest allowed test-pose angle per joint A1..A7 [deg]
+      # A4 stays negative: the elbow must bend the same way as the park pose (see move_to_park).
+      joint_max_deg: [90.0, 30.0, 90.0, -20.0, 90.0, 100.0, 90.0]  # highest allowed test-pose angle per joint A1..A7 [deg]
+      apple_box_min_m: [0.35, -0.40, 0.80]  # test poses must put the apple above these x, y, z [m]
+      apple_box_max_m: [0.85, 0.40, 1.40]  # ... and below these x, y, z [m]
+      pull_margin_m: 0.15  # during an attempt the apple may go this far outside the box before the attempt aborts [m]
+      # Hand force from the joint torque sensors (as Free Move and the grasp detector), with the resting
+      # force at the moment the attempt arms subtracted. A normal 10 cm pull on Uniform 100 is ~10 N.
+      # The peak of every attempt is logged (reach_calib_attempts.csv): use that to set this.
+      max_force_n: 40.0  # abort if the hand force stays above this for 50 ms [N]; 0 = no force limit
+
+    # Runaway stop (as restricted plane): watches the flange from the moment the arm reaches the test pose.
+    reach_safety:  # runaway stop: abort to park if the arm goes too far or too fast
+      update_rate: 100  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      max_displacement_m: 0.25  # abort if the flange gets farther than this from the test pose [m]
+      max_speed_mps: 1.5  # abort if the flange moves faster than this [m/s]
+      speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    # ---- THE ATTEMPT ----
+    go_cue:  # the beep at the start of each attempt
+      enabled: false  # play the go cue (beep + ring) before each attempt; false = arm silently after the quiet window (live)
+    reach_timeout_sec: 0.0  # end the attempt if there is no pull within this long after it arms [s]; 0 = wait until pulled or ended from the dashboard (live)
+
+    apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> back to the test pose
+      update_rate: 200  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      cartesian_axis: norm  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
+      cartesian_displacement_threshold_m: 0.1  # pull from the baseline that counts as success (snap beep) [m]
+      # After the snap the arm is frozen where it is (it stops pulling back) for this long, then it moves
+      # back to the test pose. Give the reward at the beep so the hand is off before the arm moves:
+      # moving back while he still grips would drag his hand.
+      force_release_shutdown_delay_sec: 0.5  # after the snap, hold the arm frozen this long, then return [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    move_to_start:  # joint-space move to the TEST POSE (the position being tested)
+      update_rate: 200  # loop rate of this action [Hz]
+      # The test pose. LIVE: set it from the dashboard (Robot position -> Move to new target), and the
+      # arm goes there at the start of the next attempt. Checked against `limits` and against the park
+      # pose's elbow. The default is apple pluck's start: the apple points at the monkey, 13 deg up.
+      target_joint_position: [0.0, -13.0, 0.0, -60.0, 0.0, 30.0, 0.0]  # test pose, joint angles A1..A7 [deg] (live)
+      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s] (converted to rad/s in code)
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 0.5  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.03  # flange within this of the test pose counts as arrived [m] (the soft spring sags ~cm)
+      physical_arrival_timeout_sec: 1.5  # stop waiting for the measured arm after this long, with a warning [s]
+
+    # PARK -- out of the monkey's reach. Used for the run's first move, on Pause / Stop, and after a
+    # safety abort. Not between attempts. Same pose as apple pluck (elbow negative, like the test poses).
+    move_to_park:  # joint-space move to the park pose
+      update_rate: 200  # loop rate of this action [Hz]
+      target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run)
+      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the test pose [s]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.03  # flange within this of the park pose counts as arrived [m]
+      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    audio_cue_play:  # attempt-start (go) tone, only if go_cue.enabled
+      frequency_hz: 1500  # go tone: pitch [Hz]
+      duration_ms: 500  # go tone: length [ms]
+    audio_cue_snap:  # threshold-reached tone: the reward moment
+      frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
+      duration_ms: 500  # threshold-reached tone: length [ms]
+
+    quiet_window_sec: 1.0  # at the test pose, before the attempt arms (or the go cue) [s]
+    audio_cue:  # switch for every beep
+      enabled: true  # false = no beeps at all (not even the snap beep); the sequence is unchanged
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false  # send sync pulses to the Blackrock NSP -- the ROS side is not wired yet (README §8)
+
+    # Visual cue (NeoPixel ring on the end effector), as apple pluck -- see end_effector_metro_code/README.md.
+    visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
+      enabled: true  # master switch for the ring; false = no visual cues at all
+      remote_test_trigger: true  # true = fire over the board's Wi-Fi (demos); false = the X76 wire
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
+      colours:  # RGBW colour per cue site, each channel 0-255 (Wi-Fi trigger only)
+        play: [0, 255, 0, 0]  # attempt start -- green
+        snap: [255, 0, 0, 0]  # pull threshold reached -- red
