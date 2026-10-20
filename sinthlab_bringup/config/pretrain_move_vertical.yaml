@@ -59,7 +59,7 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here (per-run); slow: ready -> park crosses the straight elbow
+      first_move_speed_scale: 0.5  # speed scale of the run's FIRST move here (per-run); slower than normal: ready -> park crosses the straight elbow
       hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
@@ -84,7 +84,7 @@
       anchor_on_measured: true  # anchor on where the arm rests (true) rather than where it was commanded
       debug_log_enabled: false  # print where the arm is on the rails (a, b, which rail) periodically
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      rail_lead_sec: 0.0  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off
+      rail_lead_sec: 0.03  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off. 0.03 cancels most of the ~70 ms CLIK + FRI latency
       vertical_rail:  # one vertical rail through the start
         type: "maze"  # geometry class: the maze's rail fixture with one rail
         restricted_axis: "x"  # locked base axis; the rail lives in the Y-Z plane like the maze

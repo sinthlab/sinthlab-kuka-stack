@@ -144,10 +144,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._end_trial("session_end")
 
     def on_end_requested(self):
-        """Pause / Stop after trial. A live session ends now; one still starting ends as it goes live."""
+        """Pause / End session. A live session ends now; one still starting ends as it goes live. It ends
+        the way Stop now does -- straight to park, no end cue or release wait -- and, being paused, holds
+        there (Resume starts the next session)."""
         if self._session_live:
-            self.get_logger().info("End requested: ending the session.")
-            self._end_trial("session_end")
+            self.get_logger().info("End requested: ending the session and parking.")
+            self._stop_now(mark="session_end")
 
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")
@@ -187,7 +189,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _next_trial(self):
         self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
 
-    def _stop_now(self):
+    def _stop_now(self, mark: str = "stop_requested"):
         """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
         release wait. The control is paused, so it then holds at park and the launch can end."""
         if self._stopping:
@@ -198,7 +200,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.move_park.active() or self.switch_to_joint.active():
             return                                # already on the way to park
         self._stopping = True
-        self.recorder.mark("stop_requested")
+        self.recorder.mark(mark)
         self._trial_ending = True
         self._session_live = False
         self.quiet_window.stop()

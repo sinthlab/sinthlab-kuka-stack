@@ -220,8 +220,9 @@ function renderControls() {
   const noEnd = NO_TRIAL_END.has(rk || S.selected);
   pb.textContent = s && s.paused ? (s.held ? "▶ Resume" : "⏸ Pausing… (undo)")
                                  : (noEnd ? "⏸ End session & pause" : "⏸ Pause after trial");
+  const pre = exp(rk || S.selected)?.group === "pretraining";   // pre-training: ends at once, like Stop now
   $("#btn-stop-trial").textContent = a.stop_after_trial ? (noEnd ? "■ Ending session…" : "■ Stopping after trial…")
-                                                        : (noEnd ? "■ End session & stop" : "■ Stop after trial");
+                                                        : (noEnd || pre ? "■ End session & stop" : "■ Stop after trial");
   $("#btn-validate").disabled = !a.data_folder;
 
   // pills

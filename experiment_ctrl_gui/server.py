@@ -202,6 +202,10 @@ class App:
                 raise RuntimeError("This experiment was started outside the dashboard; stop it with "
                                    "Ctrl-C in its terminal. (Pause works from here.)")
             raise RuntimeError("nothing is running")
+        if mode == "after_trial" and ex.BY_KEY[exp].group == "pretraining":
+            # Pre-training: "End session & stop" ends the session the way Stop now does -- straight to
+            # park, no release wait (holding there for a release is what left the arm stuck or erratic).
+            mode = "now"
         if mode == "after_trial":
             ok, msg = self.bridge.pause(exp, True)
             if not ok:

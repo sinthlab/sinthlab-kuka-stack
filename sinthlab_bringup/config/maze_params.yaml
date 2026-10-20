@@ -99,7 +99,7 @@
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 0.25  # speed scale of the run's FIRST move here (per-run); slow: ready -> park crosses the straight elbow
+      first_move_speed_scale: 0.5  # speed scale of the run's FIRST move here (per-run); slower than normal: ready -> park crosses the straight elbow
       hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
@@ -166,35 +166,35 @@
       # CHECKPOINTS ONLY WHERE A TURN DECISION IS ACTUALLY MADE -- both forks.
       #
       #   ( a  ,  b  )  the choice
-      #   (-0.15,-0.11) drop here for the SHORT route, or carry on left and drop at a=-0.30 (long)
-      #   (-0.15,-0.22) turn right for the goal, or left along the bottom (the long way round)
+      #   (-0.075,-0.055) drop here for the SHORT route, or carry on left and drop at a=-0.15 (long)
+      #   (-0.075,-0.110) turn right for the goal, or left along the bottom (the long way round)
       #
       # The midpoint of the descent rail is deliberately NOT a checkpoint: nothing branches there, so
       # there is nothing to decide. Every other junction is a forced corner and gets no cue either.
       checkpoint_x:      [ 0.000,  0.000]  # checkpoint X, one entry per checkpoint [m]
-      checkpoint_y:      [-0.150, -0.150]  # checkpoint Y, one entry per checkpoint [m]
-      checkpoint_z:      [-0.110, -0.220]  # checkpoint Z, one entry per checkpoint [m]
-      checkpoint_radius: [ 0.040,  0.040]  # reward when the EE comes within this of the checkpoint [m]
+      checkpoint_y:      [-0.075, -0.075]  # checkpoint Y, one entry per checkpoint [m]
+      checkpoint_z:      [-0.055, -0.110]  # checkpoint Z, one entry per checkpoint [m]
+      checkpoint_radius: [ 0.020,  0.020]  # reward when the EE comes within this of the checkpoint [m]
       # On the plane
       goal_x: 0.000  # goal X [m]
       # Far (+Y) end of the BOTTOM goal row R5
-      goal_y:  0.150  # goal Y [m]
-      goal_z: -0.220  # goal Z [m]
-      goal_radius: 0.03  # the goal is reached within this distance [m]
+      goal_y:  0.075  # goal Y [m]
+      goal_z: -0.110  # goal Z [m]
+      goal_radius: 0.015  # the goal is reached within this distance [m]
       debug_log_enabled: true  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # Runaway safety-stop. Trips if the EE leaves the trial-start pose by more than max_displacement_m,
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
-    # The maze footprint reaches ~0.45 m from start (the bottom-left corner), so 0.55 m clears it; normal hand motion is
+    # The maze footprint reaches ~0.19 m from start (the bottom-left corner), so 0.30 m clears it; normal hand motion is
     # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:  # runaway stop: abort to park if the arm goes too far or too fast
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.55  # abort if the EE gets farther than this from the trial start [m]
+      max_displacement_m: 0.30  # abort if the EE gets farther than this from the trial start [m]
       max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s]
       # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
       # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
@@ -266,7 +266,7 @@
       # aims the equilibrium that many seconds AHEAD of the arm along the rail it is on: > 0 cancels
       # the lag (lighter), < 0 makes it trail (a deliberate, speed-dependent drag). It never acts
       # across a rail, so the walls are unchanged. Capped at 2 cm of lead. Start small: 0.01-0.03 s.
-      rail_lead_sec: 0.0  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off
+      rail_lead_sec: 0.03  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off. 0.03 cancels most of the ~70 ms CLIK + FRI latency
       # --- rung 1: open rectangle, X locked, Y/Z free. Deliberately smaller than the full envelope
       #     (a +/-0.20, b -0.18..+0.14) so a drifting arm meets a wall rather than running to the
       #     workspace limit. Note this is a BOX, not a rail -- the only rung that is. ---
@@ -302,10 +302,10 @@
         #
         # Laid out inside the arm's ACTUAL reachable envelope at this start (measured by IK, holding
         # tool orientation): a in [-0.40,+0.40], b in [-0.35,+0.20]. That envelope is a TRAPEZOID --
-        # full width low down, pinched at the top (at b=+0.20 only a in +/-0.10) -- so the grid stops
-        # at b=+0.15 and the top row spans only a in [-0.15,+0.15].
-        # A 2-D MAZE on a 0.15 m grid, ENTIRELY BELOW THE START so every vertical leg is travelled
-        # DOWNWARD. Six rails, two forks, one loop, no dead ends.
+        # full width low down, pinched at the top (at b=+0.20 only a in +/-0.10); the maze below sits
+        # well inside it.
+        # A 2-D MAZE on a 0.075 m grid -- small, so the subject reaches the goal easily -- ENTIRELY BELOW
+        # THE START so every vertical leg is travelled DOWNWARD. Six rails, two forks, one loop, no dead ends.
         #
         # WHY BELOW: climbing is hard on this arm for two independent, measured reasons.
         #   1. The gravity-comp residual is a constant ~5.5 N DOWNWARD at the tool, so climbing fights
@@ -313,32 +313,31 @@
         #   2. Vertical conditioning DEGRADES with height: the cost of 1 m/s of vertical motion with
         #      orientation held is 3.4 at b=-0.15 but 8.6 at b=+0.15 -- 2.5x the sideways cost.
         #
-        # DEPTH IS 0.22 so the arm does not reach uncomfortably low: the goal row sits at z = 0.64 m in
-        # the base frame (0.53 m at a 0.33 depth). A shallow maze beats RAISING the start, because a
+        # DEPTH IS 0.11 m, so the arm never reaches low. A shallow maze beats RAISING the start, because a
         # higher start drags the start row into the badly-conditioned region (start-row vertical cost
         # 4.5 at this height, 6.9 if raised 0.10, 12.6 at 0.15); a shallow maze costs nothing.
         #
-        #   a:      -0.30   -0.15    0.00    +0.15
-        #  b  0.00                   >-------O          (R1 entrance, R2 down-link)
+        #   a:      -0.150  -0.075   0.000  +0.075
+        #  b  0.000                  >-------O          (R1 entrance, R2 down-link)
         #                                    |
-        #  b -0.11   O-------1-------========O          (R3 long row)
+        #  b -0.055  O-------1-------========O          (R3 long row)
         #            |       |                          (R6 far descent | R4 the single descent)
-        #  b -0.22   O-------2-------========*GOAL      (R5 goal row)
+        #  b -0.110  O-------2-------========*GOAL      (R5 goal row)
         #
         #   1,2 = the two FORKS (the only cue points). O = forced corner. > = START, * = GOAL.
         #
         # R4 is a SINGLE rail from fork 1 straight down to fork 2 -- nothing branches off it in
         # between, so its midpoint is not a junction and gets no cue.
         #
-        # THE CHOICE is which way down: drop at a=-0.15 (short) or carry on to a=-0.30 and drop there
+        # THE CHOICE is which way down: drop at a=-0.075 (short) or carry on to a=-0.15 and drop there
         # (long). Both reach the goal row, so there are no dead ends -- a wrong choice costs travel.
-        #   short route 0.97 m  |  long route 1.27 m
+        #   short route 0.49 m  |  long route 0.64 m
         #
         # Every rail verified reachable by IK holding the tool orientation. Re-check with:
         #     ros2 run sinthlab_bringup check_maze.py
         #
         #                R1     R2     R3     R4     R5     R6
-        corridor_a_min: [ 0.00,  0.15, -0.30, -0.15, -0.30, -0.30]  # a (1st free axis) lower bound, per rail [m]
-        corridor_a_max: [ 0.15,  0.15,  0.15, -0.15,  0.15, -0.30]  # a (1st free axis) upper bound, per rail [m]
-        corridor_b_min: [ 0.00, -0.11, -0.11, -0.22, -0.22, -0.22]  # b (2nd free axis) lower bound, per rail [m]
-        corridor_b_max: [ 0.00,  0.00, -0.11, -0.11, -0.22, -0.11]  # b (2nd free axis) upper bound, per rail [m]
+        corridor_a_min: [ 0.000,  0.075, -0.150, -0.075, -0.150, -0.150]  # a (1st free axis) lower bound, per rail [m]
+        corridor_a_max: [ 0.075,  0.075,  0.075, -0.075,  0.075, -0.150]  # a (1st free axis) upper bound, per rail [m]
+        corridor_b_min: [ 0.000, -0.055, -0.055, -0.110, -0.110, -0.110]  # b (2nd free axis) lower bound, per rail [m]
+        corridor_b_max: [ 0.000,  0.000, -0.055, -0.055, -0.110, -0.055]  # b (2nd free axis) upper bound, per rail [m]

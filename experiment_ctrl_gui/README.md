@@ -225,8 +225,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
   `PYTHONUNBUFFERED=1` keep the log clean and live.
 - **Stop now:** SIGINT to the process group, exactly like Ctrl-C. After 20 s it sends SIGTERM, and
   after 5 s more SIGKILL.
-- **Stop after trial:** pause, then Stop now once the status reports `held`. For Free Move the pause
-  itself ends the session, so the arm returns to the start first.
+- **Stop after trial:** pause, then Stop now once the status reports `held`. For the pre-training tasks
+  (labelled **End session & stop**) it is Stop now itself: the session ends at once and the arm parks.
 - **Restart:** Stop now; when the launch has exited, start again after 1 s.
 - **Shutting down the server** stops a launch it started, the same way.
 - **The data folder** is the newest `analysis/expt_<run_name>_*` modified since the launch started.

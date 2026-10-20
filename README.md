@@ -140,11 +140,11 @@ It works in `--demo` too, against a simulated board. Details: `experiment_ctrl_g
    monkey's reach, and **holds there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
    changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
    **Free Move** has no trial end, so there the button (labelled **End session & pause**) ends the
-   session at once: the arm holds, waits to be let go, parks and holds.
+   session at once, the way Stop now does: the arm parks straight away and holds.
 7. **Stop:**
    - **■ Stop after trial:** finishes this trial, parks, then stops cleanly, so every trial on disk is
-     complete. **Use this one.** In **Free Move** (labelled **End session & stop**) it ends the session
-     at once, waits for the hand to let go, parks, then stops.
+     complete. **Use this one.** In the **pre-training** tasks it is labelled **End session & stop** and
+     works exactly like Stop now: the trial or session ends at once, the arm parks, then the launch stops.
    - **■ Stop now:** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
      and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
      trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
@@ -929,9 +929,9 @@ reasons, both measured:
 2. **Vertical conditioning degrades with height** — the cost of vertical motion with orientation held
    is 3.4 low down but **8.6** near the top, 2.5× the sideways cost there.
 
-So the maze's rows are at **b = 0, −0.11 and −0.22**: every vertical leg is in the well-conditioned
-lower region and gravity is on the operator's side. The depth stops at −0.22 so the goal row stays at
-a comfortable height (z ≈ 0.64 m in the base frame).
+So the maze's rows are at **b = 0, −0.055 and −0.11**: every vertical leg is in the well-conditioned
+lower region and gravity is on the operator's side. The whole maze is **22.5 × 11 cm**, small enough
+for the subject to reach the goal easily.
 
 **The maze is defined RELATIVE to the start EE** (`corridor_frame: relative`, `relative_to_start: true`),
 so its origin is wherever the arm starts: change `move_to_start` and the whole maze — rails, checkpoints,
@@ -942,18 +942,18 @@ far overhead and the checkpoints would be missed.
 
 #### What you should expect to see
 
-A **2-D maze** of linear rails on a 0.15 m grid — shaded cells are solid, you can only travel the
+A **2-D maze** of linear rails on a 0.075 m grid — shaded cells are solid, you can only travel the
 rails, and only one route reaches the goal. Coordinates are **offsets from the anchored start**
 (▶ = 0,0): **a = Y sideways, b = Z up/down**; X (in/out) is locked by the cabinet.
 
 ```
-   a:      -0.30     -0.15      0.00     +0.15
+   a:     -0.150    -0.075     0.000    +0.075
          ┌────────────────────────────┐
- b  0.00 │░░░░░░░░░░░░░░░░░░▶════════┐│  ▶ START
+ b  0.000│░░░░░░░░░░░░░░░░░░▶════════┐│  ▶ START
          │░░░░░░░░░░░░░░░░░░░░░░░░░░░║│
- b -0.11 │┌════════◆═════════════════┘│  ◆ fork (reward cue)
+ b -0.055│┌════════◆═════════════════┘│  ◆ fork (reward cue)
          │║░░░░░░░░║░░░░░░░░░░░░░░░░░░│
- b -0.22 │└════════◆═════════════════★│  ★ GOAL — below the start
+ b -0.110│└════════◆═════════════════★│  ★ GOAL — below the start
          └────────────────────────────┘
             the two ◆ are the only choices; every vertical leg is DESCENDED
             ░ = solid (no rail)     ═ ║ ┌ ┐ └ ┘ = rail you can travel
@@ -966,14 +966,14 @@ the subject nothing to act on, so it gets no cue. A reward tone therefore means 
 
 | fork | the choice |
 |---|---|
-| (−0.15, −0.11) | drop here for the **short** route, or carry on left and drop at a = −0.30 (**long**) |
-| (−0.15, −0.22) | turn right for the goal, or left along the bottom (the long way round) |
+| (−0.075, −0.055) | drop here for the **short** route, or carry on left and drop at a = −0.15 (**long**) |
+| (−0.075, −0.110) | turn right for the goal, or left along the bottom (the long way round) |
 
-The descent at a = −0.15 is a **single rail** from the first fork straight down to the second — nothing
+The descent at a = −0.075 is a **single rail** from the first fork straight down to the second — nothing
 branches off it in between, so its midpoint is not a junction and deliberately gets no cue.
 
-**The choice is which column to descend.** Drop at a = −0.15 for the **short route (0.97 m)**, or carry
-on to a = −0.30 and drop there for the **long route (1.27 m)**. Both reach the goal row, so there are
+**The choice is which column to descend.** Drop at a = −0.075 for the **short route (0.49 m)**, or carry
+on to a = −0.15 and drop there for the **long route (0.64 m)**. Both reach the goal row, so there are
 **no dead ends** — a wrong choice costs travel rather than trapping the arm. Every vertical leg is
 descended, never climbed.
 
@@ -982,12 +982,12 @@ over to a rail that *physically touches* it — a real junction. Push sideways m
 equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it. A hard push can
 never make an unrelated rail "nearest" and drag the arm through a wall.
 
-**The gap matters.** On the b=0 row there is deliberately **no rail between a=−0.15 and a=0.00**
+**The gap matters.** On the b=0 row there is deliberately **no rail between a=−0.075 and a=0.00**
 (the shaded cells left of ▶). Without it the arm could run straight from START to the goal up-link and
 the maze would be trivial — that gap is what forces the long way round.
 
-Every rail is verified reachable by IK while holding the tool orientation (40 samples along the rails,
-all reachable, sideways cost median 2.9 / max 3.5).
+Every rail is verified reachable by IK while holding the tool orientation (`check_maze.py`: all sampled
+rail points reachable, sideways cost median 2.7 / max 2.8).
 
 #### Changing or extending the maze
 
@@ -1127,7 +1127,7 @@ Work up the ladder and stop at the first rung that feels wrong.
 > first — a wrong `loadData` makes the sink larger and biases every vertical leg.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.55 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
+> the EE leaves the start pose by > 0.30 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
@@ -1214,10 +1214,10 @@ orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free 
 
 #### Free Move — admittance, no goal, no boundary
 The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
-no wall. It runs as one free-movement **session** until you end it with **Pause** or **■ Stop after
-trial** on the dashboard: an end tone plays, the arm holds where it is, waits to be let go, and parks.
-There it holds (Pause; **▶ Resume** starts a new session) or the launch stops (Stop after trial).
-**■ Stop now** skips the wait for the hand to let go: it parks at once, then stops. For timed sessions instead, set
+no wall. It runs as one free-movement **session** until you end it with **End session & pause**,
+**End session & stop** or **■ Stop now** on the dashboard. All three end it at once, like Stop now:
+no end tone, no wait for the hand to let go -- the arm parks straight away. There it holds (pause;
+**▶ Resume** starts a new session) or the launch stops. For timed sessions instead, set
 `session_sec` (live; 0, the default, means no limit).
 
 ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportional to the hand's force
@@ -1541,7 +1541,7 @@ flowchart LR
   *The first move.* The SmartPad app always leaves the arm at its ready pose (elbow −). For the maze
   family the run's first move, ready → park, therefore **passes the straight elbow once** — as every
   maze-family run did before parking existed (ready → maze start). It runs slowly for that,
-  `move_to_park.first_move_speed_scale` (0.25 in the maze family; 1.0 for apple pluck and Restricted
+  `move_to_park.first_move_speed_scale` (0.5 in the maze family; 1.0 for apple pluck and Restricted
   Plane, whose first move stays on one side of the elbow), and a live speed change during it applies
   only after it. Every later move stays on one side. The move from park to the start runs at
   `move_to_start.speed_scale` 0.7 (live) — a little slower than the other moves.
@@ -1820,7 +1820,8 @@ stateDiagram-v2
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
-    Free --> ReleaseWait : Pause / Stop after trial (or session_sec), end tone, the arm holds [session_end]
+    Free --> ReleaseWait : session_sec runs out, end tone, the arm holds [session_end]
+    Free --> SwitchToJoint : End session (pause or stop) / Stop now -- no release wait [session_end / stop_requested]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip]
     SwitchToJoint --> Park
@@ -2102,7 +2103,7 @@ past the threshold, base frame, N).
 | `on_threshold(d)` | `threshold` | **travel [m]**, signed along the rail (rails only) |
 | `on_success()` | `goal` | — (rails only) |
 | `on_timeout()` | `timeout` | — (rails only) |
-| `on_end_requested()` / `on_session_over()` | `session_end` | — (Free Move only: Pause / Stop after trial, or `session_sec`) |
+| `on_end_requested()` / `on_session_over()` | `session_end` | — (Free Move only: End session -- parks at once -- or `session_sec`, which waits for release) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |
