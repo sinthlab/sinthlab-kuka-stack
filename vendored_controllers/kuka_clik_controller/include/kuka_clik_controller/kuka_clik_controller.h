@@ -79,6 +79,7 @@ private:
   int m_click_it_max_ = 50;
   double m_click_eps_ = 2e-4;
   double m_clik_filter_alpha_ = 0.1;
+  double m_clik_ns_step_ = 0.005;  // null-space (elbow) step per control cycle
 
 };
 

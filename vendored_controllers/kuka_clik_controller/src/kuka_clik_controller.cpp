@@ -20,6 +20,7 @@ KukaClikController::on_init() {
   auto_declare<int>("clik_it_max", 100);
   auto_declare<double>("clik_eps", 1e-4);
   auto_declare<double>("clik_filter_alpha", 0.99);
+  auto_declare<double>("clik_nullspace_step", 0.005);
 
   m_max_linear_velocity =
       get_node()->get_parameter("max_linear_velocity").as_double();
@@ -30,6 +31,7 @@ KukaClikController::on_init() {
   m_click_eps_ = get_node()->get_parameter("clik_eps").as_double();
   m_clik_filter_alpha_ =
       get_node()->get_parameter("clik_filter_alpha").as_double();
+  m_clik_ns_step_ = get_node()->get_parameter("clik_nullspace_step").as_double();
 
   // Clamp the parameters to reasonable values
   m_max_linear_velocity = std::max(0.0, m_max_linear_velocity);
@@ -38,13 +40,14 @@ KukaClikController::on_init() {
   m_click_dt = std::max(0.0, m_click_dt);
   m_click_eps_ = std::max(0.0, m_click_eps_);
   m_click_it_max_ = std::max(1, m_click_it_max_);
+  m_clik_ns_step_ = std::max(0.0, m_clik_ns_step_);
 
   RCLCPP_WARN(get_node()->get_logger(), "Max linear velocity: %f",
               m_max_linear_velocity);
   RCLCPP_WARN(get_node()->get_logger(), "Max angular velocity: %f",
               m_max_angular_velocity);
-  RCLCPP_WARN(get_node()->get_logger(), "CLIK parameters: dt: %f, it_max: %d, eps: %f, filter_alpha: %f",
-              m_click_dt, m_click_it_max_, m_click_eps_, m_clik_filter_alpha_);
+  RCLCPP_WARN(get_node()->get_logger(), "CLIK parameters: dt: %f, it_max: %d, eps: %f, filter_alpha: %f, nullspace_step: %g",
+              m_click_dt, m_click_it_max_, m_click_eps_, m_clik_filter_alpha_, m_clik_ns_step_);
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::
       CallbackReturn::SUCCESS;
@@ -276,7 +279,6 @@ void KukaClikController::computeTargetConfiguration() {
   // CLIK (closed loop inverse kinematics) algorithm
   ctrl::VectorND ns_task;
 
-  const double ns_gain = 0.05;
   typedef Eigen::Matrix<double, 6, 1> Vector6d;
   Vector6d err, dq_vec;
   ctrl::VectorND ns_err(Base::m_joint_number), ns_err_old(Base::m_joint_number);
@@ -290,7 +292,6 @@ void KukaClikController::computeTargetConfiguration() {
   do {
     // Compute forward kinematics
     Base::m_fk_solver->JntToCart(q_clik, simulated_frame);
-    ns_err = Base::m_q_ns.data - q_clik.data;
 
     // Compute error
     delta_twist = KDL::diff(simulated_frame, m_filtered_frame);
@@ -301,16 +302,24 @@ void KukaClikController::computeTargetConfiguration() {
     Base::m_jnt_to_jac_solver->JntToJac(q_clik, J);
     // Compute the damped pseudo-inverse of the Jacobian
     pseudoInverse(J.data, &J_pinv);
-    // 6. Compute dq = J⁺ * err + (I - J⁺J)(q0 - q) / dt
-    ns_task = ns_gain * (m_identity - J_pinv * J.data) * ns_err;
-    dq.data = J_pinv * err + ns_task; // / DT;
+    // Pose only here: q += J⁺ * err * dt. The null-space (elbow) step is applied once per cycle
+    // below, so it neither depends on clik_dt nor on how many iterations the early exit allows.
+    dq.data = J_pinv * err;
 
-    // Integrate joint velocities (Euler integration)
     for (j = 0; j < Base::m_joint_number; j++) {
       q_clik(j) += dq.data(j) * m_click_dt;
     }
     i++;
   } while ((int)i < m_click_it_max_ && err.norm() > m_click_eps_);
+
+  // Elbow toward nullspace_desired_configuration, once per cycle and inside the null space of the EE
+  // pose: q += step * (I - J⁺J)(q0 - q). Local change -- upstream added 0.05 * clik_dt per IK
+  // iteration, which tied the elbow pull to clik_dt; 0.005 per cycle equals the old 100 x 0.05 x 0.001.
+  Base::m_jnt_to_jac_solver->JntToJac(q_clik, J);
+  pseudoInverse(J.data, &J_pinv);
+  ns_err = Base::m_q_ns.data - q_clik.data;
+  ns_task = m_clik_ns_step_ * (m_identity - J_pinv * J.data) * ns_err;
+  q_clik.data += ns_task;
 
   auto filtered_q = m_clik_filter_alpha_ * q_clik.data +
                     (1 - m_clik_filter_alpha_) * m_target_joint_position;

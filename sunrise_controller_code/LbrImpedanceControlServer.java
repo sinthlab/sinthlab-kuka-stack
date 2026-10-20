@@ -123,7 +123,7 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         "Uniform 100",
         "Uniform 400",
         "Uniform 1000",
-        "X lock 2500, Y/Z 1000, rot 120"
+        "Z lock 2500, X/Y 1000, rot 120"
     };
     private double[][] stiffness_vals_ = {
         // Apple pluck. The resistance slider softens it further from ROS (50 N/m up to this base).
@@ -134,14 +134,17 @@ public class LbrImpedanceControlServer extends RoboticsAPIApplication {
         // moving equilibrium closely; the fixture or the admittance decides where that is.
         { 1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0 },
         // Maze and the rail pre-training tasks (vertical Y-Z plane, restricted_axis "x"):
-        //   X 2500 locks the radial axis, so the plane is enforced by the CABINET, hard.
-        //   Y/Z 1000 = firm rail walls (~10 N per cm off the rail). Along a rail the fixture's
+        //   The axes are the FLANGE's (Sunrise impedance refers to the frame of the motion command,
+        //   lbr_.getFlange()), not the base's. At the maze start the flange Z (the tool axis) points
+        //   along base +X, into the plane; flange X points ~down, flange Y sideways.
+        //   Z 2500 locks the radial axis, so the plane is enforced by the CABINET, hard.
+        //   X/Y 1000 = firm rail walls (~10 N per cm off the rail), equal for vertical and sideways. Along a rail the fixture's
         //   projection returns the measured pose, so the spring is slack there whatever these are.
         //   rot 120: orientation stiffness defines nothing about the maze (its constraints are all
         //   translational), but holding orientation while translating is the expensive motion, so a
         //   lower rot makes guiding lighter without softening the plane or the rails. The price is a
         //   little more tool twist -- watch the apple angle.
-        { 2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0 }
+        { 1000.0, 1000.0, 2500.0, 120.0, 120.0, 120.0 }
     };
 
     // Start-up sequence, every run: MECHANICAL ZERO (a known, repeatable posture whatever the arm was

@@ -4,16 +4,19 @@
     # streams the rail-constrained equilibrium to kuka_clik_controller. The CABINET
     # (LbrImpedanceControlServer) provides the compliance and holds the arm to the rails.
     #
-    # >>> USE THE "X lock 2500, Y/Z 1000, rot 120" SmartPad profile.
-    # It is anisotropic {2500, 1000, 1000, 120, 120, 120}. X 2500 locks the radial axis so the plane is
-    # enforced in hardware; Y/Z 1000 hold the arm firmly on the rails; rot 120 is the knob that makes
+    # >>> USE THE "Z lock 2500, X/Y 1000, rot 120" SmartPad profile.
+    # It is anisotropic {1000, 1000, 2500, 120, 120, 120}, in the FLANGE frame (Sunrise impedance refers
+    # to the commanded frame, the flange). At this start the flange Z (tool axis) points along base +X,
+    # so Z 2500 locks the radial axis and the plane is enforced in hardware; flange X/Y (~vertical and
+    # sideways) at 1000 hold the arm firmly and equally on the rails; rot 120 is the knob that makes
     # guiding light. No uniform profile works: 400 gives walls too weak to feel (4 N/cm), and at 3000
     # tracking lag dominates. Rotational stiffness defines NOTHING about the maze (its constraints are
     # all translational), but holding orientation while translating is the expensive motion, so it is
     # the one lever that reduces effort without softening the plane or the rails.
     #
-    # Tracking lag is a separate lever: the raised clamps (kuka_clik_controller.max_linear_velocity +
-    # max_target_step_m below) are what stop the rails feeling heavy when you move fast.
+    # Tracking lag is a separate lever: kuka_clik_controller.clik_dt (iiwa7_hardware_controllers.yaml)
+    # sets how fast the equilibrium follows the hand, and the raised clamps (max_linear_velocity +
+    # max_target_step_m below) stop it falling behind when you move fast.
     #
     # GEOMETRY IS SOLVED, NOT GUESSED. Every position below is in metres, base frame (lbr_link_0), and
     # was checked by IK against the real iiwa7 URDF: the start posture points the tool axis (the EE

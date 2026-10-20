@@ -344,6 +344,10 @@ None of these are committed to git.
 - Install `Sunrise Workbench` on the laptop. For our arm version we use
   `SunriseWorkbench-1.17.0.4-setup.exe`, provided by KUKA Support.
 - Install the FRI plugin in the Sunrise Workbench project (steps to be elaborated).
+- For the neural-sync outputs only ([§8](#8-neural-synchronisation)): install **KUKA WorkVisual 5.0.5
+  Build 600**, the build the Sunrise.OS 1.17 release notes name (Workbench: *Help → Sunrise.OS
+  Release Notes*), with the `Sunrise.kop` option package from this Workbench's installation. Sunrise Workbench opens it to edit
+  the cabinet's I/O configuration.
 
 ### Connection Verification
 - Connect your computer to the robot controller at **X66** (default IP `172.31.1.147`) via an
@@ -608,7 +612,7 @@ pose in `config/apple_pluck_impedance.yaml`.
 
    *This app is hard‑wired to Cartesian Impedance control in `POSITION` command mode. Its four
    stiffness profiles are named by their values: `Uniform 100`, `Uniform 400` (a stiffer base for the
-   resistance slider), `Uniform 1000` and `X lock 2500, Y/Z 1000, rot 120`. Other damping ratios (`0.1`, `0.2`,
+   resistance slider), `Uniform 1000` and `Z lock 2500, X/Y 1000, rot 120`. Other damping ratios (`0.1`, `0.2`,
    `0.3`, `1.0`) and elbow stiffnesses (`15`, `5`) are available if you want to change the feel.*
    The app then waits (~60 s) for the ROS client to connect.
 2. **Launch the experiment** — this connects ROS to the waiting FRI app and starts the trial loop
@@ -1084,12 +1088,14 @@ Work up the ladder and stop at the first rung that feels wrong.
    |--------|--------|
    | FRI send period [ms] | `10` |
    | Remote IP address | `172.31.1.148` (your ROS / WSL2 laptop IP) |
-   | Cartesian stiffness (K diagonal) | **`X lock 2500, Y/Z 1000, rot 120`** — `{2500, 1000, 1000, 120, 120, 120}` |
+   | Cartesian stiffness (K diagonal) | **`Z lock 2500, X/Y 1000, rot 120`** — `{1000, 1000, 2500, 120, 120, 120}` |
    | Damping ratio (D0) | `0.7 (Standard)` |
    | Null-space (elbow) stiffness | `30 (Standard)` |
 
-   > **Use an anisotropic profile, not a uniform one.** X 2500 locks the radial axis so the cabinet
-   > enforces the plane in hardware; Y/Z 1000 holds the arm firmly on the rails. Uniform profiles could
+   > **Use an anisotropic profile, not a uniform one.** The axes are the **flange's**, not the base's
+   > (Sunrise impedance refers to the commanded frame, the flange). At the maze start the flange Z — the
+   > tool axis — points along base +X, so Z 2500 locks the radial axis and the cabinet enforces the plane
+   > in hardware; flange X/Y (≈ vertical and sideways) at 1000 hold the arm firmly and equally on the rails. Uniform profiles could
    > never win: 400 made the walls mushy, 3000 made everything heavy.
    >
    > **Rotation 120, not 300.** The maze's constraints are all *translational* (X = the plane, Y/Z =
@@ -1199,8 +1205,8 @@ they are under the **Pre-training** tab. All three:
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
 | **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **X lock 2500, Y/Z 1000, rot 120** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **X lock 2500, Y/Z 1000, rot 120** | slides it left or right along one horizontal rail, then back | back at the start |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
+| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | slides it left or right along one horizontal rail, then back | back at the start |
 
 Use **damping 0.7** and **elbow 30** for all three. Move Vertical and Move Horizontal share one
 orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free Move has its own
@@ -2432,7 +2438,7 @@ each line on an analog input, and the rising edge is the time reference for alig
 
 ```
  Sunrise cabinet                          DIN rail, modules snapped together left → right
- EtherCAT extension port ══ Cat5e ══╗    ┌────────┬────────┬────────┬────────┐
+ X65 (EtherCAT extension) ═ Cat5e ══╗    ┌────────┬────────┬────────┬────────┐
                                     ╚══► │ EK1100 │ EL9505 │ EL2124 │ EL9011 │
                               upper RJ45 │coupler │24 → 5 V│4 × 5 V │end cap │
  24 V adapter ─► barrel/screw adapter ─► │power in│24 V in*│outputs │        │
@@ -2450,12 +2456,11 @@ each line on an analog input, and the rising edge is the time reference for alig
 | Beckhoff **EL9505** | turns 24 V, fed to its own front points, into 5 V on the power contacts for the terminals to its right |
 | Beckhoff **EL2124** | 4 digital outputs, 5 V push-pull (±20 mA each, short-circuit proof): the TTL lines |
 | Beckhoff **EL9011** | end cap: covers the last terminal's exposed contacts |
-| 35 mm DIN rail | holds the stack |
-| 24 V DC adapter, ≥1 A, center positive, **2-prong** (no earth pin) | power. A floating supply keeps the stack from making a ground loop with the NSP. Our 24 V 3.75 A, 2.1 mm adapter is plenty (the stack draws < 0.5 A) |
+| 24 V DC adapter, ≥1 A, center positive| power. A floating supply keeps the stack from making a ground loop with the NSP. Our 24 V 3.75 A, 2.1 mm adapter is plenty (the stack draws < 0.5 A) |
 | 2.1 mm female barrel → 2-pin screw-terminal adapter | brings the adapter's + and − out to wires |
-| Cat5e patch cable | cabinet EtherCAT port → EK1100. If the cabinet port is M12 rather than RJ45, an M12 (D-coded) → RJ45 cable instead |
-| 2 × BNC male → 2-pole terminal block, 2 × BNC female–female couplers, 2 × BNC cables | the two TTL lines to the NSP |
-| Hook-up wire 18–20 AWG (power), 22–24 AWG (signals), ferrules | |
+| Cat5e patch cable | cabinet EtherCAT port → EK1100.|
+| BNC male → 2-pole terminal block with BNC female–female couplers (or a BNC female -> 2-pole terminal block)), BNC cables - 1 set er output | the TTL lines to the NSP |
+| Hook-up wire 18–20 AWG (power), 22–24 AWG (signals) | |
 
 ### Assembly
 
@@ -2488,10 +2493,9 @@ each line on an analog input, and the rising edge is the time reference for alig
 
    The EL9505's other points: 2/6 are + and 3/7 are − of its 5 V output, 4/8 PE (leave empty).
    Check: 5 V between the EL9505's points 2 and 3.
-4. **EtherCAT.** Cat5e from the cabinet's EtherCAT extension port to the EK1100's **upper** RJ45
-   (X1 IN). The lower one (X2 OUT) stays empty; it is only for chaining more EtherCAT devices. Which
-   port on the cabinet is the extension port (X65 in our notes) must be confirmed on its connector
-   panel and in the cabinet specification, as must its connector type.
+4. **EtherCAT.** Cat5e from the cabinet's **X65** ("KUKA Extension Bus", an RJ45 socket meant for
+   EtherCAT devices outside the controller; cabinet specification §6.7) to the EK1100's **upper**
+   RJ45 (X1 IN). The lower one (X2 OUT) stays empty; it is only for chaining more EtherCAT devices.
 5. **The TTL lines, at the EL2124.** Each line is one output point plus 0 V. There are two 0 V
    points, shared by all four outputs:
 
@@ -2520,22 +2524,56 @@ each line on an analog input, and the rising edge is the time reference for alig
 
 ### Configuring the cabinet (once)
 
-The cabinet has to know the stack is there before it can drive it. This is done in Sunrise Workbench
-(the I/O configuration opens in **WorkVisual**); menu names below are from Sunrise 1.17 and may
-differ slightly in other versions. **The names in bold must be exactly as written**: the code finds
-the outputs by them.
+The cabinet has to know the stack is there before it can drive it. Its I/O configuration is edited in
+**KUKA WorkVisual**, which Sunrise Workbench starts for you; Workbench alone cannot do it. These steps
+follow the *KUKA Sunrise.OS 1.17* manual, chapter 11 "Bus configuration" (§11.1–11.7). **The names in
+bold must be exactly as written**: the code finds the outputs by them.
 
-1. Get the Beckhoff device description files (ESI, XML) for the EK1100, EL9505, EL2124 and EL9011
-   from beckhoff.com ("EtherCAT XML Device Description"), and import them in WorkVisual
-   (*File → Import / Export → Import device description file*).
-2. In the project's I/O configuration, add the **EK1100** under the cabinet's EtherCAT extension bus,
-   then the **EL9505**, **EL2124** and **EL9011** below it, in the physical order.
-3. Create an I/O group named **`NspSync`** with four outputs of type BOOLEAN named **`Output1`**,
-   **`Output2`**, **`Output3`**, **`Output4`**, and map them to the EL2124 channels 1 to 4.
-4. Save the I/O configuration back to Sunrise Workbench. It **generates** the Java class
-   `com.kuka.generated.ioAccess.NspSyncIOGroup` with `setOutput1` … `setOutput4`.
-5. **Synchronize** the project to the cabinet. The cabinet restarts its bus; the EK1100's RUN LED
-   goes steady once the stack is in operation.
+1. **WorkVisual and its Sunrise option package**, once per laptop. Install **WorkVisual 5.0.5 Build 600**
+   (the build the Sunrise.OS 1.17 release notes name), then in
+   WorkVisual *Extras → Option package management* install **`Sunrise.kop`**, from the *WorkVisual
+   AddOn* directory of the Sunrise Workbench installation. It must be the one supplied with *your*
+   Workbench (1.17); after a Workbench update, replace it too. Restart WorkVisual.
+2. **Create the I/O configuration from Workbench**, not in WorkVisual: select the project in the
+   Package Explorer, then *File → New → I/O configuration*. WorkVisual starts with the project's
+   WorkVisual project, and `IOConfiguration.wvs` appears in the Sunrise project; later, double-click
+   that file to reopen it. (Started on its own, WorkVisual shows an empty project.)
+3. **Import the Beckhoff device descriptions.** WorkVisual imports them only with no project open:
+   close the project (*File → Close*), then *File → Import / Export → Import device description file*,
+   and pick the EtherCAT ESI files for the EK1100, EL9505, EL2124 and EL9011. A copy of the Beckhoff
+   ESI archive is in this repo at
+   [`sunrise_controller_code/ethercat_device_description/`](sunrise_controller_code/ethercat_device_description/)
+   (unzip it first). Then reopen the project by double-clicking `IOConfiguration.wvs` in Workbench.
+4. **Set the controller active.** On the *Hardware* tab of the *Project structure* window, right-click
+   the controller (shown as *Steuerung 1 (KRC4 - …)*, the Sunrise cabinet) → *Set as active
+   controller*. The *I/O Mapping* window opens.
+5. **Configure the bus.** Under the controller's *Bus structure*, add the **EK1100** to the EtherCAT
+   bus that leaves the cabinet at X65, then the **EL9505**, **EL2124** and **EL9011** below it, in their
+   physical order. Pick the catalogue entries whose revision matches the modules' labels.
+6. **Create the Sunrise I/Os** (§11.5). In the *I/O Mapping* window: select the **EL2124** on the
+   *Field buses* tab (top right), the *Sunrise I/Os* tab (top left), then the *Creates signals at the
+   provider* button (bottom left). In *Create I/O signals*:
+   - *Edit I/O group* → *Create*, name **`NspSync`** (description, e.g. "TTL sync to the NSP") → *Create*.
+   - For each of **`Output1`**, **`Output2`**, **`Output3`**, **`Output4`**: enter the name, *Direction*
+     **Output**, *Type* **Digital**, *Data type* **BOOL** (bit width 1), and click *Create*.
+   - *OK*.
+7. **Map them** (§11.6.3): with `NspSync` selected on *Sunrise I/Os* and the EL2124 on *Field buses*,
+   drag `Output1` onto the EL2124's channel 1 output, `Output2` onto channel 2, and so on. Mapped
+   signals show green arrows.
+8. **Export to the Sunrise project** (§11.7): *File → Import / Export → Export the I/O configuration to
+   the Sunrise Workbench project* → *Next* → *Finish*, then *File → Exit*. Workbench's automatic change
+   recognition must be on (manual §5.9: *Window → User definitions → General → Workspace* → tick
+   *Update via native hooks or polling*). In Workbench, refresh the project (**F5**): it then has the
+   generated class `com.kuka.generated.ioAccess.NspSyncIOGroup` with `setOutput1` … `setOutput4`. A
+   "file is out of sync" warning on `IOConfiguration.wvs` means only that WorkVisual changed it on
+   disk; F5 clears it.
+9. **Synchronize** the project to the cabinet and **reboot the robot controller** (a changed I/O
+   configuration only takes effect after the reboot). The EK1100's RUN LED goes steady once the
+   stack is in operation.
+
+When WorkVisual opens the project it may report *"No robot was found in controller Steuerung 1. Tools
+and bases can not be imported."* That concerns importing tool and base data, which the I/O
+configuration does not use; continue with the steps above.
 
 The apps compile and run before this is done: until the generated class exists, the outputs report
 themselves unavailable and nothing else changes.
@@ -2780,8 +2818,8 @@ track the hand*. Position mode gets both from two settings:
   `max_target_step_m` (0.05 m) let the commanded equilibrium keep up with hand-guiding speed, so it never
   falls behind cumulatively.
 - **An anisotropic cabinet stiffness:** `LbrImpedanceControlServer` takes a full per-axis
-  `{X,Y,Z,A,B,C}` diagonal, e.g. `X lock 2500, Y/Z 1000, rot 120` =
-  `{2500, 1000, 1000, 120, 120, 120}` — lock the constrained axis hard, keep the free axes firm enough
+  `{X,Y,Z,A,B,C}` diagonal, e.g. `Z lock 2500, X/Y 1000, rot 120` =
+  `{1000, 1000, 2500, 120, 120, 120}` (flange frame) — lock the constrained axis hard, keep the free axes firm enough
   for walls.
 
 ### When torque mode would be worth reconsidering

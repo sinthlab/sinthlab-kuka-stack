@@ -39,7 +39,7 @@ SMARTPAD_PROFILES: Dict[str, List[float]] = {
     "Uniform 100": [100.0, 100.0, 100.0, 300.0, 300.0, 300.0],
     "Uniform 400": [400.0, 400.0, 400.0, 300.0, 300.0, 300.0],
     "Uniform 1000": [1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0],
-    "X lock 2500, Y/Z 1000, rot 120": [2500.0, 1000.0, 1000.0, 120.0, 120.0, 120.0],
+    "Z lock 2500, X/Y 1000, rot 120": [1000.0, 1000.0, 2500.0, 120.0, 120.0, 120.0],
 }
 
 
@@ -109,7 +109,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="Drive the arm along vertical-plane rails; reward at the forks, goal or timeout ends it.",
         launch_file="iiwa7_maze.launch.py",
         params_yaml="maze_params.yaml", node="maze_orchestrator",
-        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_maze",
         launch_args={"ctrl": "lbr_joint_position_command_controller",
@@ -140,7 +140,7 @@ EXPERIMENTS += [
         summary="One vertical rail: up or down to the threshold (ring green → red), then back to start.",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="rail_training_orchestrator",
-        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",
@@ -150,7 +150,7 @@ EXPERIMENTS += [
         summary="One horizontal rail: left or right to the threshold (ring green → red), then back to start.",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="rail_training_orchestrator",
-        stiffness_profile="X lock 2500, Y/Z 1000, rot 120",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_maze.yaml",

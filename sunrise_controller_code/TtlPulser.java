@@ -74,7 +74,7 @@ public class TtlPulser {
             }
             Method[] setters = new Method[CHANNELS + 1];
             for (int ch = 1; ch <= CHANNELS; ch++) {
-                setters[ch] = cls.getMethod(OUTPUT_SETTER + ch, Boolean.class);
+                setters[ch] = booleanSetter(cls, OUTPUT_SETTER + ch);
             }
             return new TtlPulser(group, setters, null);
         } catch (ClassNotFoundException e) {
@@ -86,6 +86,17 @@ public class TtlPulser {
         } catch (Exception e) {
             return new TtlPulser(null, null, "could not open " + GROUP_CLASS + ": " + e);
         }
+    }
+
+    /** The generated setter `name`, taking a boolean or a Boolean (the generator's choice). */
+    private static Method booleanSetter(Class<?> cls, String name) throws NoSuchMethodException {
+        for (Method m : cls.getMethods()) {
+            Class<?>[] p = m.getParameterTypes();
+            if (m.getName().equals(name) && p.length == 1 && (p[0] == boolean.class || p[0] == Boolean.class)) {
+                return m;
+            }
+        }
+        throw new NoSuchMethodException(name + "(boolean)");
     }
 
     private TtlPulser(Object group, Method[] setters, String reason) {

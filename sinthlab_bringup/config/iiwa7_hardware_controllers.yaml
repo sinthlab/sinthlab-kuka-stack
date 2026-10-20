@@ -83,7 +83,17 @@
     # (force = K * v * latency, a few N) instead of an unbounded one.
     max_linear_velocity: 1.0  # cap on how fast the equilibrium may move [m/s]
     max_angular_velocity: 0.5  # cap on how fast the equilibrium may rotate [rad/s]
-    clik_dt: 0.001  # IK integration step per iteration [s]
+    # >>> TRACKING LAG. Each 10 ms cycle the IK takes up to clik_it_max steps of clik_dt toward the
+    # target, leaving (1 - clik_dt)^it_max of the gap. At 0.001 x 100 it closed only ~10 % per cycle, so the equilibrium trailed the hand by ~0.2 s and the cabinet spring
+    # pulled back with K * speed * 0.2 s -- the maze drag (measured by analysis/maze_drag.py).
+    # 0.05 x 100 closes >99 % per cycle: the lag is down to the message/FRI latency.
+    # (IDRA Lab's own config: clik_dt 0.1, it_max 50.)
+    clik_dt: 0.05  # IK integration step per iteration
     clik_it_max: 100  # max IK iterations per control cycle
     clik_eps: 1e-4  # stop iterating once the pose error is below this
     clik_filter_alpha: 0.99  # new = alpha * IK + (1 - alpha) * previous; 1 = no smoothing
+    # Pull of the elbow toward nullspace_desired_configuration, applied once per cycle in the null
+    # space of the EE pose. Independent of clik_dt (local change to the vendored controller), so the
+    # faster tracking above keeps the elbow pull it always had (0.005 = the old 100 x 0.05 x 0.001).
+    # Raise to make the elbow return to its posture faster.
+    clik_nullspace_step: 0.005  # elbow step per cycle [fraction of the posture error]

@@ -33,5 +33,11 @@ copied verbatim from upstream and covering all packages in this directory.
   declared → `ParameterNotDeclaredException`). Also dedupes the `HW_IF_POSITION` append in
   `on_configure` so a config that already lists `position` doesn't claim that interface twice.
 
+- `kuka_clik_controller/src/kuka_clik_controller.cpp` (+ header) — the null-space (elbow-to-posture)
+  pull is now applied **once per cycle** with its own parameter `clik_nullspace_step` (default 0.005),
+  instead of `0.05 * clik_dt` added on every IK iteration. Upstream tied the elbow pull to `clik_dt`, so
+  raising `clik_dt` for faster tracking (our 0.001 left a ~0.2 s equilibrium lag in the maze) would have
+  made the elbow pull ~50x stronger. 0.005 per cycle equals the old 100 iterations x 0.05 x 0.001.
+
 ## Credits
 Original authors: Luca Beber, Davide Nardi, et al. (IDRA Lab, University of Trento).
