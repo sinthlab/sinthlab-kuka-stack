@@ -17,6 +17,7 @@ import json
 import random
 import threading
 import time
+import math
 from collections import deque
 from typing import Callable, Dict, Optional, Tuple
 
@@ -30,7 +31,6 @@ CALL_TIMEOUT_SEC = 3.0
 class RosBridge:
     def __init__(self, robot_name: str, on_status: Callable[[dict], None]) -> None:
         import rclpy
-        import math
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from std_msgs.msg import String
