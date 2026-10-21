@@ -19,7 +19,7 @@ const STEPS = {
 STEPS.move_vertical = STEPS.move_horizontal =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "threshold", "goal",
    "release_wait", "released", "trial_end"];
-STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+STEPS.reach_calib = STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
@@ -47,11 +47,12 @@ const PHASE_TEXT = {
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
   free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release" },
+  reach_calib: { armed: "free move in the box", session_end: "session over — waiting for release" },
   move_vertical: { armed: "travelling out" },
   move_horizontal: { armed: "travelling out" },
 };
 // Free Move has no trial end: the pause / stop-after-trial buttons end the session instead.
-const NO_TRIAL_END = new Set(["free_move"]);
+const NO_TRIAL_END = new Set(["free_move", "reach_calib"]);
 const TAB_HELP = {
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
@@ -234,6 +235,7 @@ function renderControls() {
   if (rb.lbr_state_hz) { pp.className = rb.session_state === "COMMANDING_ACTIVE" ? "pill ok" : "pill warn";
     pp.textContent = `${rb.session_state ?? "FRI ?"} · ${rb.lbr_state_hz} Hz`; }
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
+  renderJoints(rb.joints_deg);
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
   else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
@@ -263,6 +265,18 @@ function renderControls() {
 
   renderStatus();
 }
+
+// iiwa7 joint limits [deg], A1..A7 -- for the "near the limit" highlight.
+const IIWA7_LIMITS = [170, 120, 170, 120, 170, 120, 175];
+function renderJoints(q) {
+  const el = $("#joints");
+  if (!q) { el.innerHTML = `<dt>—</dt><dd>no lbr_state</dd>`; return; }
+  el.innerHTML = q.map((v, i) => {
+    const near = v != null && Math.abs(v) > IIWA7_LIMITS[i] - 10;
+    return `<dt>A${i + 1}</dt><dd${near ? ' style="color:var(--err)"' : ""}>${v == null ? "—" : v.toFixed(1) + "°"}</dd>`;
+  }).join("");
+}
+
 function fmtDur(sec) {
   sec = Math.max(0, Math.floor(sec));
   const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;

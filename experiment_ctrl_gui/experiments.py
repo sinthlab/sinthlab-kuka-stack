@@ -157,6 +157,18 @@ EXPERIMENTS += [
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]
+EXPERIMENTS += [
+    Experiment(
+        key="reach_calib", label="Reach Calib",
+        summary="Admittance free move inside a box around the start: goes where pushed, stops at the walls.",
+        launch_file="iiwa7_reach_calib.launch.py",
+        params_yaml="reach_calib.yaml", node="reach_calib_orchestrator",
+        stiffness_profile="Uniform 1000",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_reach_calib",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
 for _e in EXPERIMENTS:
     assert _e.stiffness_profile in SMARTPAD_PROFILES, f"{_e.key}: unknown SmartPad profile {_e.stiffness_profile!r}"

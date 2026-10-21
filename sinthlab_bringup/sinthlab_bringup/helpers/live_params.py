@@ -102,6 +102,11 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "free_move.force_filter_tau_sec",
         "free_move.tare_sec",
     ],
+    "reach_calib": _COMMON + _SPEED + _RING + [
+        "session_sec",
+        "free_move.damping_ns_per_m", "free_move.deadband_n", "free_move.max_speed_mps",
+        "free_move.accel_limit_mps2", "free_move.force_filter_tau_sec", "free_move.tare_sec",
+    ],
     "move_vertical": _RAIL,
     "move_horizontal": _RAIL,
 }

@@ -1,0 +1,146 @@
+/**:
+  ros__parameters:
+    # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
+    # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
+    # runs as one free-movement SESSION until you end it: Pause or "Stop after trial" on the dashboard.
+    # Then the arm holds, waits to be let go, and returns to the start (and holds there, or stops).
+    #
+    # HOW: ROS moves the cabinet spring's equilibrium at a speed proportional to the hand's force
+    # (speed = force / free_move.damping_ns_per_m) and the cabinet spring pulls the arm after it. See
+    # actions/admittance_move.py. The feel is set HERE (damping, threshold, max speed), not on the
+    # SmartPad.
+    #
+    # >>> SmartPad: "Uniform 1000", damping 0.7, elbow 30 (Standard).
+    #   * The cabinet spring is what makes the arm follow the moving equilibrium and hold where it
+    #     stops, so it must be reasonably stiff: at 1000 N/m the arm trails the equilibrium by only a few
+    #     mm. A soft profile (the apple-pluck ones, Uniform 100 / 400) makes it sag and
+    #     lag -- not admittance any more.
+    #   * Rotation 300 holds the tool orientation (rotation is not part of the free move).
+    #   * Too heavy? Lower free_move.damping_ns_per_m (live). Creeps when nobody touches it? Raise
+    #     free_move.deadband_n (live).
+    #
+    # NO BOUNDARY means the arm can be pushed to the edge of its reach, a joint limit or a singular
+    # pose -- where the CLIK stops and the arm simply stops moving -- and into anything near it (the
+    # table, the chair, its own base). Keep the area around it clear.
+    #
+    # START: the pre-training start (tool along +X toward the subject), shared with the rail tasks; the
+    # maze starts 11 cm higher and 5 cm back, with its lowest row at this height.
+    state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
+    base_link: "lbr_link_0"  # URDF base link the motion is computed in
+    end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
+
+    session_sec: 0.0  # session length [s]; 0 = until Pause / Stop after trial. > 0: ends by itself, then the next starts
+
+    move_to_start:  # joint-space move to the trial start pose (the maze start)
+      update_rate: 200  # loop rate of this action [Hz]
+      # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
+      # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
+      # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
+      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+    # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
+    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
+    # every trial is park -> start -> trial -> park. Pausing holds here.
+    # This is the elbow-POSITIVE posture (A4 > 0), like this experiment's start. The apple / plane family
+    # parks at the same place with the elbow the other way. Start and park must bend the elbow the same way, or
+    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
+    # The SmartPad app leaves the arm at its ready pose, elbow NEGATIVE: so the run's first move (ready ->
+    # park) passes the straight elbow once. It runs slowly for that (first_move_speed_scale).
+    move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
+      update_rate: 200  # loop rate of this action [Hz]
+      target_joint_position: [-3.6, 45.0, -3.6, 95.0, 0.7, 90.0, -15.7]  # park pose A1..A7 [deg] (per-run)
+      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      cartesian_move_tolerance: 0.05  # apple within this of the park pose counts as arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      first_move_speed_scale: 0.5  # speed scale of the run's FIRST move here (per-run); slower than normal: ready -> park crosses the straight elbow
+      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
+
+    # ---- THE FEEL (live: change between trials from the dashboard) ----
+    free_move:  # admittance: the equilibrium moves at force / damping
+      damping_ns_per_m: 10.0  # force per speed [N s/m]: LOWER = LIGHTER (10: a 4 N push moves ~0.25 m/s)
+      # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
+      # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
+      # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
+      deadband_n: 2.5  # force below this is ignored, so a resting arm never creeps or oscillates [N]; 0 = none
+      max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
+      # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
+      # target speed follows every jolt. Lower = smoother but slower to start and stop; 0 = off.
+      accel_limit_mps2: 1.5  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.2 s)
+      force_filter_tau_sec: 0.05  # low-pass on the force reading [s]; larger = smoother, laggier
+      # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
+      # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
+      # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
+      # amplifies most: 1 Nm there reads as 4.3 N at damping 0.02 (that oscillated, ~1 Hz in Z), 3.4 N at
+      # 0.1, 2.0 N at 0.2. Damping 0.1 reads a push at 78-96 % of its strength, bent by at most 6 deg --
+      # a constant small bend for a pose, never a snap. Keep the tool's load data current: stale load
+      # data is the largest model error. With debug_log_enabled the log shows the per-joint torques.
+      jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
+      tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
+      tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
+      leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
+      
+      # THE BOX, relative to the start (the anchor), base-frame axes: +X toward the subject, +Z up.
+      box_min_m: [-0.10, -0.10, -0.10]  # lower corner, offset from the start along X, Y, Z [m]
+      box_max_m: [0.10, 0.10, 0.10]  # upper corner, offset from the start along X, Y, Z [m]
+      
+      debug_log_enabled: false  # print force, speed and position twice a second while moving
+      debug_log_rate_hz: 2.0  # how often that line prints [Hz]
+
+    # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
+    free_move_safety:  # runaway stop
+      update_rate: 100  # loop rate of this action [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
+      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s] (the free move is capped at max_speed_mps)
+      speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      max_displacement_m: 0.25  # abort if the EE gets this far from the start [m]; > box half-diagonal (0.173) + spring give
+
+    force_release:  # waits for the hand to let go before parking
+      update_rate: 100  # loop rate of this action [Hz]
+      release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
+      release_duration_sec: 1.0  # ... continuously for this long [s]
+      debug_log_enabled: false  # print this action's periodic debug line
+      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+
+    # ---- cues (live) ----
+    quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
+    audio_cue:  # switch for every beep
+      enabled: true  # false = no beeps at all; the trial sequence is unchanged
+    audio_cue_play:  # go cue: free movement starts
+      frequency_hz: 1500  # go tone: pitch [Hz]
+      duration_ms: 800  # go tone: length [ms]
+    audio_cue_end:  # the session is over
+      frequency_hz: 800  # end tone: pitch [Hz]
+      duration_ms: 600  # end tone: length [ms]
+    nsp_sync:  # event codes to the Blackrock NSP
+      enabled: false  # send sync pulses to the Blackrock NSP -- the ROS side is not wired yet (README §8)
+
+    visual_cue:  # NeoPixel ring
+      enabled: true  # master switch for the ring; false = dark throughout
+      remote_test_trigger: true  # the ring state needs the Wi-Fi trigger (the X76 wire is one bit)
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
+    # The ring is GREEN while the arm is free to move, dark otherwise.
+    ring_cue:  # which quarters light, and in what colour
+      quarters: [0, 1, 2, 3]  # all four quarters (ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59)
+      colours:  # RGBW, each 0-255
+        go: [0, 255, 0, 0]  # free to move -- green

@@ -30,6 +30,7 @@ CALL_TIMEOUT_SEC = 3.0
 class RosBridge:
     def __init__(self, robot_name: str, on_status: Callable[[dict], None]) -> None:
         import rclpy
+        import math
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from std_msgs.msg import String
@@ -40,6 +41,7 @@ class RosBridge:
         self._status: Optional[dict] = None
         self._state_times: deque = deque(maxlen=200)
         self._session_state: Optional[int] = None
+        self._q_meas = None
 
         rclpy.init()
         self._rclpy = rclpy
@@ -71,6 +73,9 @@ class RosBridge:
     def _on_state(self, msg) -> None:
         self._state_times.append(time.monotonic())
         self._session_state = int(msg.session_state)
+        # NaN outside COMMANDING_ACTIVE; NaN is not valid JSON for the browser, so send null instead.
+        self._q_meas = [round(math.degrees(q), 2) if math.isfinite(q) else None
+                        for q in msg.measured_joint_position]
 
     def status(self) -> Optional[dict]:
         return self._status
@@ -82,6 +87,7 @@ class RosBridge:
             "lbr_state_hz": len(recent),
             "session_state": SESSION_STATES.get(self._session_state, None)
             if recent else None,
+            "joints_deg": self._q_meas if recent else None,
         }
 
     # ------------------------------------------------------------------ calls
@@ -914,7 +920,7 @@ class DemoBridge:
                 if not self._sleep(run_id, 1.0):
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
-            elif self._exp.key == "free_move":
+            elif self._exp.key in ("free_move", "reach_calib"):
                 # No natural end: runs until a pause (Pause / Stop after trial), or session_sec if > 0.
                 limit = float(self._effective.get("session_sec", 0.0) or 0.0)
                 t0 = time.time()

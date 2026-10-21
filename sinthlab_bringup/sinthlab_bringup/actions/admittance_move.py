@@ -89,6 +89,15 @@ class AdmittanceMoveAction:
         self._hand = HandForce(robot_description, self.ee_link, self._jac_damping)
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
+        # OPTIONAL BOX, relative to the anchor (start pose) [m]. Absent = no boundary (Free Move).
+        self._box_lo = self._box_hi = None
+        if node.has_parameter(self._p + "box_min_m") and node.has_parameter(self._p + "box_max_m"):
+            self._box_lo = np.array(node.get_parameter(self._p + "box_min_m").value, dtype=float)
+            self._box_hi = np.array(node.get_parameter(self._p + "box_max_m").value, dtype=float)
+            if self._box_lo.shape != (3,) or self._box_hi.shape != (3,) or np.any(self._box_lo >= 0.0) \
+                    or np.any(self._box_hi <= 0.0):
+                raise ValueError(f"{self._p}box_min_m must be 3 negatives and box_max_m 3 positives "
+                                 f"(the start must be inside the box), got {self._box_lo} / {self._box_hi}")
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
         self.reload()
@@ -235,6 +244,11 @@ class AdmittanceMoveAction:
         dist = float(np.linalg.norm(lead))
         if dist > self._leash:
             eq = self._p_meas + lead * (self._leash / dist)
+
+        if self._box_lo is not None:                      # the box: the equilibrium never leaves it
+            a = self._anchor[0:3, 3]
+            eq = np.clip(eq, a + self._box_lo, a + self._box_hi)
+        
         # Remember the speed actually applied (after the leash), so a held-back equilibrium does not
         # build up speed it would release as a lurch.
         self._v = (eq - self._eq) / dt if dt > 0.0 else v
