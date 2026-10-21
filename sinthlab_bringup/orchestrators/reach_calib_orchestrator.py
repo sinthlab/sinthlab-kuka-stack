@@ -231,7 +231,7 @@ class ReachCalibOrchestratorNode(rclpyNode):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = FreeMoveOrchestratorNode()
+    node = ReachCalibOrchestratorNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
