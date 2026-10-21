@@ -235,7 +235,7 @@ function renderControls() {
   if (rb.lbr_state_hz) { pp.className = rb.session_state === "COMMANDING_ACTIVE" ? "pill ok" : "pill warn";
     pp.textContent = `${rb.session_state ?? "FRI ?"} · ${rb.lbr_state_hz} Hz`; }
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
-  renderJoints(rb.joints_deg);
+  renderJoints(rb.joints_deg, rb.ee_xyz_m);
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
   else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
@@ -268,13 +268,14 @@ function renderControls() {
 
 // iiwa7 joint limits [deg], A1..A7 -- for the "near the limit" highlight.
 const IIWA7_LIMITS = [170, 120, 170, 120, 170, 120, 175];
-function renderJoints(q) {
+function renderJoints(q, xyz) {
   const el = $("#joints");
   if (!q) { el.innerHTML = `<dt>—</dt><dd>no lbr_state</dd>`; return; }
   el.innerHTML = q.map((v, i) => {
     const near = v != null && Math.abs(v) > IIWA7_LIMITS[i] - 10;
     return `<dt>A${i + 1}</dt><dd${near ? ' style="color:var(--err)"' : ""}>${v == null ? "—" : v.toFixed(1) + "°"}</dd>`;
-  }).join("");
+  }).join("") + ["X", "Y", "Z"].map((n, i) =>
+    `<dt>EE ${n}</dt><dd>${xyz ? xyz[i].toFixed(3) + " m" : "—"}</dd>`).join("");
 }
 
 function fmtDur(sec) {

@@ -55,6 +55,15 @@ class RosBridge:
                                            qos_profile_sensor_data)
         except ImportError:
             pass     # robot panel shows "unknown"; everything else works
+        # End-effector position from TF (robot_state_publisher), the same frames the safety monitor uses.
+        try:
+            import tf2_ros
+            from rclpy.time import Time
+            self._tf = tf2_ros.Buffer()
+            self._tf_listener = tf2_ros.TransformListener(self._tf, self._node)
+            self._tf_latest = Time()        # Time() = the latest transform available
+        except ImportError:
+            self._tf = None
         self._clients: Dict[Tuple[str, str], object] = {}
         self._executor = MultiThreadedExecutor(num_threads=2)
         self._executor.add_node(self._node)
@@ -88,7 +97,18 @@ class RosBridge:
             "session_state": SESSION_STATES.get(self._session_state, None)
             if recent else None,
             "joints_deg": self._q_meas if recent else None,
+            "ee_xyz_m": self._ee_xyz() if recent else None,
         }
+
+    def _ee_xyz(self) -> Optional[list]:
+        """lbr_link_ee in lbr_link_0 [m] -- the frame the box and the start are measured in."""
+        if self._tf is None:
+            return None
+        try:
+            t = self._tf.lookup_transform("lbr_link_0", "lbr_link_ee", self._tf_latest).transform.translation
+            return [round(t.x, 4), round(t.y, 4), round(t.z, 4)]
+        except Exception:      # no TF yet
+            return None
 
     # ------------------------------------------------------------------ calls
 

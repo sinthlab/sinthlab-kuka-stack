@@ -1,0 +1,12 @@
+/**/kuka_clik_controller:
+  ros__parameters:
+    # CLIK redundancy posture for REACH CALIB, in DEGREES (controller_base converts to rad).
+    #
+    # The CLIK matches only the EE *pose* and resolves the arm's redundant 7th DOF toward this posture.
+    # It MUST equal move_to_start.target_joint_position in config/reach_calib.yaml -- otherwise the arm
+    # holds the right EE pose in a different arm shape and drifts toward this one while you guide it.
+    # Reach Calib has its own file so that changing its start leaves Free Move and the rail tasks
+    # (config/clik_nullspace_pretrain.yaml) untouched.
+    #
+    #   >>> SYNC with move_to_start.target_joint_position in config/reach_calib.yaml.
+    nullspace_desired_configuration: [0.2, 52.1, -6.5, 47.0, -0.8, 72.9, -13.5]  # preferred arm posture A1..A7 [deg]

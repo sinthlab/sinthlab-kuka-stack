@@ -166,7 +166,8 @@ EXPERIMENTS += [
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_reach_calib",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_reach_calib.yaml"},
+        clik_nullspace="clik_nullspace_reach_calib.yaml",
     ),
 ]
 BY_KEY = {e.key: e for e in EXPERIMENTS}

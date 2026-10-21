@@ -23,8 +23,8 @@
     # pose -- where the CLIK stops and the arm simply stops moving -- and into anything near it (the
     # table, the chair, its own base). Keep the area around it clear.
     #
-    # START: the pre-training start (tool along +X toward the subject), shared with the rail tasks; the
-    # maze starts 11 cm higher and 5 cm back, with its lowest row at this height.
+    # START: Reach Calib's own start, set by hand-guiding the arm in Free Move (tool along +X toward the
+    # subject). The box (free_move.box_*_m) is measured from it, so it moves with the start.
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
@@ -33,10 +33,9 @@
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
-      # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
-      # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
-      # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      # Reach Calib's start, read off the dashboard's Robot joints card. Elbow (A4) positive, like park.
+      # Keep equal to nullspace_desired_configuration in config/clik_nullspace_reach_calib.yaml.
+      target_joint_position: [0.2, 52.1, -6.5, 47.0, -0.8, 72.9, -13.5]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
@@ -103,12 +102,11 @@
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
-    # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
+    # Runaway stop: speed, and distance from the start as a backstop behind the box.
     free_move_safety:  # runaway stop
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
       max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s] (the free move is capped at max_speed_mps)
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       debug_log_enabled: false  # print this action's periodic debug line

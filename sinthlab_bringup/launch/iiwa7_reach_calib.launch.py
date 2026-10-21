@@ -1,4 +1,4 @@
-"""Pre-training: free move (admittance inside a safety box). Thin wrapper over experiment_base.launch.py."""
+"""Reach Calib: free move (admittance) inside a box around the start. Thin wrapper over experiment_base.launch.py."""
 import os
 
 from launch import LaunchDescription
@@ -28,7 +28,7 @@ def generate_launch_description():
             # start pose. Relative paths are under the package share; an absolute path is used as is.
             DeclareLaunchArgument(
                 "clik_nullspace_cfg",
-                default_value="config/clik_nullspace_pretrain.yaml",
+                default_value="config/clik_nullspace_reach_calib.yaml",
                 description="CLIK redundancy posture YAML (must equal move_to_start).",
             ),
             IncludeLaunchDescription(
@@ -45,8 +45,7 @@ def generate_launch_description():
                     # inactive and switched in by the orchestrator for the trial.
                     "ctrl": "lbr_joint_position_command_controller",
                     "extra_inactive_ctrl": "kuka_clik_controller",
-                    # Starts at the maze start (tool along +X), so the CLIK resolves the arm's
-                    # redundancy toward that posture, as in the maze.
+                    # Reach Calib's own posture file: it must equal this experiment's start pose.
                     "clik_nullspace_cfg": LaunchConfiguration("clik_nullspace_cfg"),
                 }.items(),
             ),
