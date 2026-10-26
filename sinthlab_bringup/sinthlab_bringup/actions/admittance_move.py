@@ -39,10 +39,16 @@ fast. The equilibrium, which runs 1-2 cm ahead of the arm, then brakes at accel_
 few cm on; the arm coasts past it and the cabinet spring pulls it back -- slowly, against the joints'
 friction, so it creeps back over up to a second: the "spring pulling back" instead of a stable hold
 (free-move recording: 5-11 mm past the equilibrium after let-gos at 0.2-0.3 m/s). So on release (the
-force falls back under the threshold) the equilibrium's speed is zeroed and, for up to SETTLE_SEC, it is
-set every tick to where the arm IS plus its resting offset (equilibrium - arm at rest, measured at the
-tare: the sag under the gravity residual). The spring then neither pulls back nor drags forward, the
-arm glides to a stop, and the equilibrium freezes where it stopped (arm still, or SETTLE_SEC up).
+force under the threshold for RELEASE_SEC) the equilibrium's speed is zeroed and, for up to SETTLE_SEC,
+it glides onto where the arm IS plus its resting offset (equilibrium - arm at rest, measured at the
+tare: the sag under the gravity residual) with time constant GLIDE_TAU_SEC. The spring then neither
+pulls back nor drags forward, the arm glides to a stop, and the equilibrium freezes where it stopped
+(arm still and the equilibrium on it, or SETTLE_SEC up).
+  Not a snap, and not on a flicker: while pushed the equilibrium leads the arm by 1-2 cm, and setting it
+onto the arm in one tick moved the spring's pull by that much at once -- a jerk, every time a lifting
+force dipped under the threshold for a moment (free-move recording 26 Oct: 5 of 12 pushes under
+0.15 s, equilibrium jumps of 7-13 mm). A dip shorter than RELEASE_SEC only slows the equilibrium, under
+the acceleration limit, as before.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
 THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
@@ -78,8 +84,10 @@ from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param,
 from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.hand_force import HandForce
 
+RELEASE_SEC = 0.1       # the force must stay under the threshold this long to count as letting go
+GLIDE_TAU_SEC = 0.08    # the equilibrium glides onto the arm with this time constant, never in one step
 SETTLE_SEC = 0.3        # after letting go: the longest the equilibrium follows the arm while it glides to a stop
-SETTLED_MPS = 0.01      # ...or until the arm is slower than this
+SETTLED_MPS = 0.01      # ...or until the arm is slower than this, with the equilibrium on it
 
 
 class AdmittanceMoveAction:
@@ -120,6 +128,7 @@ class AdmittanceMoveAction:
         self._tare_samples = []
         self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
         self._pushing = False
+        self._quiet = 0.0                               # how long the force has been under the threshold
         self._settle_until = 0.0                        # gliding to a stop after a let-go until this time
         self._p_prev: Optional[np.ndarray] = None
         self._t_prev: Optional[float] = None
@@ -157,6 +166,7 @@ class AdmittanceMoveAction:
         self._t_prev = None
         self._p_prev = None
         self._pushing = False
+        self._quiet = 0.0
         self._settle_until = 0.0
         self._t_start = time.monotonic()
 
@@ -253,17 +263,19 @@ class AdmittanceMoveAction:
         arm_speed = (float(np.linalg.norm(self._p_meas - self._p_prev)) / dt
                      if self._p_prev is not None and dt > 0.0 else 0.0)
         self._p_prev = self._p_meas.copy()
-        # Released = the force is back under the threshold. (Half the threshold was tried: after a let-go
-        # the reading hovers at 1-2.5 N, so it fired late on half the let-gos, after the run-on.)
-        if self._pushing and not np.any(self._f_used):
+        # Released = the force under the threshold for RELEASE_SEC. (Half the threshold was tried: after a
+        # let-go the reading hovers at 1-2.5 N, so it fired late on half the let-gos, after the run-on.)
+        self._quiet = self._quiet + dt if self._pushing and not np.any(self._f_used) else 0.0
+        if self._pushing and self._quiet >= RELEASE_SEC:
             self._pushing = False
             self._v[:] = 0.0
             self._settle_until = now + SETTLE_SEC
         if not self._pushing:
             if not np.any(self._f_used):
                 if now < self._settle_until:
-                    self._eq = self._floor.clamp_xyz(self._p_meas + self._rest_offset, self._anchor[0:3, 0:3])
-                    if arm_speed < SETTLED_MPS:
+                    target = self._floor.clamp_xyz(self._p_meas + self._rest_offset, self._anchor[0:3, 0:3])
+                    self._eq = self._eq + min(1.0, dt / GLIDE_TAU_SEC) * (target - self._eq)
+                    if arm_speed < SETTLED_MPS and float(np.linalg.norm(target - self._eq)) < 1e-3:
                         self._settle_until = 0.0
                 self._publish(self._eq)
                 return

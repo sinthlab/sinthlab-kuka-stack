@@ -18,7 +18,7 @@ from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.resistance_softener import ResistanceSoftener
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
+from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param, build_node
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 from sinthlab_bringup.helpers.start_grid import StartGrid
 
@@ -444,7 +444,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = ApplePluckOrchestratorNode()
+    node = build_node(ApplePluckOrchestratorNode)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

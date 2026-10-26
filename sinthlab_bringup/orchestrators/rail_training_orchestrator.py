@@ -15,7 +15,7 @@ from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
-from sinthlab_bringup.helpers.node_utils import get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
@@ -262,7 +262,7 @@ class RailTrainingOrchestratorNode(rclpyNode):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = RailTrainingOrchestratorNode()
+    node = build_node(RailTrainingOrchestratorNode)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

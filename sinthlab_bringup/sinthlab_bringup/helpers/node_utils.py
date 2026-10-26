@@ -51,3 +51,17 @@ def get_launch_param(node: rclpyNode, name: str, default):
         if value is not None:
             return value
     return default
+
+
+def build_node(factory):
+    """Construct an orchestrator node. A configuration it refuses at start-up -- raised as ValueError
+    (a pose below the floor, a park on the other elbow side, an unreachable random-start position) --
+    is logged as one line and the process exits, instead of a traceback."""
+    import sys
+    import rclpy
+    try:
+        return factory()
+    except ValueError as exc:
+        rclpy.logging.get_logger("orchestrator").fatal(f"Not starting: {exc}")
+        rclpy.shutdown()
+        sys.exit(1)

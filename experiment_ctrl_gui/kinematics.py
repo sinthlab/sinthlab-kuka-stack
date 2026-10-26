@@ -20,7 +20,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 import experiments as ex  # noqa: F401  (puts sinthlab_bringup on sys.path)
-from sinthlab_bringup.helpers.floor import Floor, reference_z
+from sinthlab_bringup.helpers.floor import Floor, reference_z, setup_problem
 
 _MODEL = None
 _ERROR: Optional[str] = None
@@ -58,6 +58,21 @@ def height_of(start_deg, reference: str) -> Optional[float]:
     return reference_z(_MODEL[0](np.radians(np.asarray(start_deg, dtype=float))), reference)
 
 
+# Edits that can move something relative to the floor: the dashboard re-checks the setup after them.
+FLOOR_RELEVANT = ("floor.", "move_to_start.target_joint_position", "move_to_park.target_joint_position",
+                  "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", "paradigm",
+                  "random_start.", "perturb_start.polar_", "virtual_fixture")
+
+
+def floor_problem(current: dict) -> Optional[str]:
+    """None if the configuration leaves the floor clear of the task (helpers/floor.setup_problem), else
+    the reason. None also when there is no robot model (no ROS): the run still checks at start-up."""
+    _load()
+    if _MODEL is None or "floor.height_m" not in current:
+        return None
+    return setup_problem(current, _MODEL[0], _MODEL[1])
+
+
 def start_for_height(height_m: float, current: dict) -> Tuple[list, str]:
     """(start pose A1..A7 [deg], a one-line report) that puts the floor's reference point at height_m.
     `current` is the experiment's parameter set in effect (dashboard edits included). Raises ValueError
@@ -75,8 +90,7 @@ def start_for_height(height_m: float, current: dict) -> Tuple[list, str]:
     q, why = grid.solve(start, "frontal", {"start": [0.0, float(height_m - now)]})["start"]
     if why:
         raise ValueError(f"no usable start pose at {height_m:.3f} m: {why}")
-    problem = floor.check_joint_path(fk, np.radians(current["move_to_park.target_joint_position"]),
-                                     np.radians(q), "the move from park to that start")
+    problem = setup_problem({**current, ex.START_POSE: q}, fk, grid)
     if problem:
         raise ValueError(problem)
     T = fk(np.radians(q))

@@ -88,3 +88,70 @@ class Floor:
             return (f"{name} takes the {self.reference.replace('_', ' ')} {-worst * 100:.1f} cm below the "
                     f"floor ({self.height:.3f} m)")
         return None
+
+
+ROOM_M = 0.01           # the task's lowest point must clear the floor by at least this [m]
+_START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_joint_position"
+_THRESHOLD = "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m"
+
+
+def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
+    """None if an experiment's configuration -- flat parameter names, as in the YAML -- leaves the floor
+    clear of everything the arm is meant to do, else the reason. The dashboard runs it on every edit that
+    could change the answer and at Start, so a floor in the way is refused before anything moves:
+      * the start and park poses and the joint-space move between them;
+      * apple pluck: a pull straight DOWN to the threshold, from the start, every random-start position
+        (needs `grid`, a StartGrid) and the perturbed start, must stay ROOM_M above the floor -- the
+        floor must never be what ends a pull;
+      * maze and rails: the lowest rail point must be ROOM_M above the floor."""
+    floor = Floor(params["floor.height_m"], params["floor.reference"], params.get("floor.trip_margin_m", 0.03))
+    what = floor.reference.replace("_", " ")
+    start, park = params.get(_START), params.get(_PARK)
+    if start is None:
+        return None
+    q0 = np.radians(np.asarray(start, dtype=float))
+    T0 = fk(q0)
+    z0 = reference_z(T0, floor.reference)
+    if park is not None:
+        problem = floor.check_joint_path(fk, np.radians(np.asarray(park, dtype=float)), q0,
+                                         "the move between park and start")
+        if problem:
+            return problem
+
+    def room(lowest: float, task: str) -> Optional[str]:
+        if lowest - ROOM_M >= floor.height:
+            return None
+        return (f"the floor ({floor.height:.3f} m) is in the way of {task}: the {what} goes down to "
+                f"{lowest:.3f} m there, so the floor must be at or below {lowest - ROOM_M:.3f} m")
+
+    threshold = params.get(_THRESHOLD)
+    if threshold is not None and "paradigm" in params:          # apple pluck (restricted plane has no paradigm)
+        paradigm = str(params.get("paradigm", "pluck"))
+        starts = {"the start": z0}
+        if paradigm == "random_start" and grid is not None:
+            plane = str(params.get("random_start.plane", "frontal"))
+            prefix = "random_start.positions."
+            offsets = {k[len(prefix):]: v for k, v in params.items() if k.startswith(prefix)}
+            for name, (q, why) in grid.solve(start, plane, offsets).items():
+                if why is None:
+                    starts[f"random-start position {name}"] = reference_z(fk(np.radians(q)), floor.reference)
+                    problem = park is not None and floor.check_joint_path(
+                        fk, np.radians(np.asarray(park, dtype=float)), np.radians(q), f"the move from park to {name}")
+                    if problem:
+                        return problem
+        if paradigm in ("perturb", "perturb_bump"):
+            r = float(params.get("perturb_start.polar_r_m", 0.0))
+            th = np.radians(float(params.get("perturb_start.polar_theta_deg", 0.0)))
+            if str(params.get("perturb_start.polar_plane", "frontal")) in ("frontal", "sagittal"):
+                starts["the perturbed start"] = z0 + r * float(np.sin(th))
+        name, z = min(starts.items(), key=lambda kv: kv[1])
+        return room(z - float(threshold), f"a {float(threshold) * 100:.0f} cm pull straight down from {name}")
+
+    profile = params.get("virtual_fixture_profile")                # maze and rails
+    if profile is not None:
+        pre = f"virtual_fixtures.{profile}."
+        b_min = params.get(pre + "corridor_b_min")
+        if (b_min and params.get(pre + "corridor_frame") == "relative"
+                and params.get(pre + "restricted_axis") in ("x", "y")):     # b is base Z
+            return room(z0 + min(float(v) for v in b_min), "the lowest rail")
+    return None

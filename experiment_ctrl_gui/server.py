@@ -178,6 +178,9 @@ class App:
                                    + "; ".join(f"{pid}: {cmd}" for pid, cmd in left[:4]))
         p = self.params[key]
         p.reload()                               # pick up YAML edits made since the page loaded
+        problem = kinematics.floor_problem(p.current())
+        if problem:                              # refuse here, with the reason, before anything launches
+            raise ValueError(f"Not starting: {problem}. Change the floor or the pose on the Per-run tab.")
         overrides = p.launch_overrides()          # edited YAML (+ CLIK posture) or nothing
         params_file = overrides.get("params_file")
         if self.demo:
@@ -391,6 +394,11 @@ def make_handler(app: App):
                     problem = ex.live_params.check_value(n, v, context)
                     if problem:
                         raise ValueError(problem)
+                if name.startswith(kinematics.FLOOR_RELEVANT):   # the floor, with this change applied
+                    problem = kinematics.floor_problem({**p.current(), **(st.get("live") or {}),
+                                                        **(st.get("pending") or {}), **values})
+                    if problem:
+                        raise ValueError(problem)
                 ok, msg = app.bridge.set_params(exp, values)
                 app.runner.emit(f"Live {', '.join(values)} = {value}: {msg}", "gui" if ok else "warn")
                 if not ok:
@@ -416,7 +424,13 @@ def make_handler(app: App):
                 if len(parts) > 4 and parts[4] == "reset":
                     p.reset()
                     return {"ok": True}
+                before = dict(p.edits)
                 value = p.set_edit(body["name"], body["value"])
+                if body["name"].startswith(kinematics.FLOOR_RELEVANT):
+                    problem = kinematics.floor_problem(p.current())
+                    if problem:
+                        p.edits = before         # refused: the edit is not kept
+                        raise ValueError(problem)
                 app.broadcast("state", app.state())
                 return {"ok": True, "value": value}
             if path == "/api/validate":

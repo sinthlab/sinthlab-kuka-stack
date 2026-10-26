@@ -468,14 +468,35 @@ them against your version):
    to brake before the software limit; if a hard pull still reaches it, narrow the range, and if
    normal runs trip it, widen it. Keep every pose you configure inside these ranges, or its move
    trips the stop.
-3. **Synchronize** the project to the controller, then **activate** the new safety configuration on
-   the smartPAD (it asks for the safety maintenance password). KUKA requires a **safety acceptance**
-   (their checklist) after any change to the safety configuration.
-4. **Test in T1** before an experiment: jog each axis slowly toward a monitored limit and check it
-   stops there. Note how the smartPAD lets you move it back out; that replaces re-mastering.
+3. **Synchronize** the project to the controller. The smartPAD then reports **"safety configuration
+   is not activated"** and the robot will not move: a changed safety configuration stays inactive
+   until it is signed off on the smartPAD.
+4. **Activate it** (menu names as in KUKA's Sunrise documentation; your version may word them
+   slightly differently):
+   1. On the smartPAD, open the **Station** (or **Robot**) level → **Safety** → **Activation**.
+   2. Press **Activate** and enter the **safety maintenance password** (the "Safety maintenance" user
+      group's password: KUKA's default is in the operating manual, or ask whoever administers the
+      cabinet if it was changed). If Activate is greyed out, first switch to that user group: main
+      menu → **User group**.
+   3. Check that the safety view now shows the configuration as **active**, with a new checksum, and
+      that the error has cleared.
+5. **Do KUKA's safety acceptance** (the checklist in the operating manual) and record the new
+   checksum. KUKA requires it after any change to the safety configuration.
+6. **Test in T1** before an experiment: jog A2, A4 and A6 slowly toward ±112° and check each stops
+   there (smartPAD error *axis range monitoring, instance N*), then recover it as below. Then run a
+   normal maze trial and check it does not trip.
 
-When it trips during an experiment, the arm stops and the FRI session ends, as for an E-stop. Move
-the arm back inside the range on the smartPAD, then restart the run.
+**When it trips** — in a test or an experiment, where the FRI session ends as for an E-stop:
+
+1. Switch the smartPAD's operating mode to **KRF** (controlled robot retraction). It allows slow
+   jogging while a safety monitor is violated.
+2. Acknowledge the message, enable, and jog the tripped axis slowly back inside its range.
+3. Switch back to the previous mode (T1 or AUT) and restart the run.
+
+**Do not unmaster the axis.** With an axis unmastered the safety controller cannot trust its
+position, so the monitor stays violated and the axis cannot be moved even to remaster it. If that
+happens, KRF is again the way out: enable the joints there, remaster, and move the axis back
+inside the range.
 
 ---
 
@@ -649,10 +670,24 @@ layers ([`helpers/floor.py`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)
 2. **A trip:** the safety monitor of every experiment (apple pluck's is `pluck_safety`, floor only)
    aborts the trial and parks if the measured point gets `trip_margin_m` below the floor — event
    `safety_trip`. The next trial follows as usual.
-3. **Pose checks before the arm moves:** the start and park poses and the joint-space move between
-   them must stay above the floor — at start-up (the run refuses to start, with the reason) and on
-   every live edit (refused, with the reason). So must every random-start position and the move to
-   it. A perturbation that would go below the floor is raised to it, with a warning.
+3. **Checks before the arm moves.** The floor must stay clear of everything the experiment asks the
+   arm to do:
+   - the start and park poses and the joint-space move between them (and every random-start
+     position and the move to it);
+   - **apple pluck:** a pull straight **down** to the threshold, from the start, every random-start
+     position and the perturbed start, must stay 1 cm above the floor, so the floor is never what
+     ends a pull. With the default start (apple bottom 1.057 m) and the 10 cm threshold, the floor
+     can be at most 0.947 m;
+   - **maze and rails:** the lowest rail point must be 1 cm above the floor (Move Vertical: at most
+     0.786 m; maze: 0.906 m). Free Move has no task to protect: only the start and park.
+
+   **The dashboard refuses a setup that breaks these, with the reason and the highest floor that
+   would work** — when you edit the floor, a pose, the threshold, the paradigm, the random-start
+   positions, the perturbation or the rails (Per-run or live), and again at Start, before anything
+   launches ([`floor.setup_problem`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)). The run
+   itself re-checks the start and park at start-up and refuses live pose edits; launched outside
+   the dashboard, a refused setup ends with one "Not starting: …" line instead of a traceback. A
+   perturbation that would still go below the floor is raised to it, with a warning.
 
 The floor guards the **end effector**. In the poses these experiments use, the rest of the arm is
 higher, but nothing checks the elbow or wrist against it. `check_park.py` also reports the floor
