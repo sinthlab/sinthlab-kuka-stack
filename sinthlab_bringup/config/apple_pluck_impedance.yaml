@@ -26,19 +26,18 @@
     # less -- felt stiffness = base x (1 - fraction followed). It can only SOFTEN, never stiffen, and at
     # least 50 N/m of spring always remains. See actions/resistance_softener.py.
     #
-    # >>> SmartPad: "Uniform 100" (100 N/m, rotation 300) -- the usual feel, and the default here. Enter
-    #     the profile's translational stiffness below as the base: the slider then runs from 50 N/m up to
-    #     the base, in steps of 10. For a stiffer range pick "Uniform 400" and enter 400 (50-400 N/m).
-    #     The further below the base you go, the more a quick pull feels like the base (see below):
-    #     choose a base near the stiffest you will actually use.
-    #     base_stiffness_n_per_m MUST equal the profile's translational stiffness: if it says 400 while
-    #     the SmartPad runs Uniform 100, every pull feels 4x softer than the slider says.
-    #     Equal values (stiffness = base) switch the softening off: the arm feels the bare profile.
+    # >>> THE BASE is the profile picked on the SmartPad: the app reports it to ROS, and the run uses the
+    #     reported stiffness (Uniform 100 -> 100 N/m, Uniform 400 -> 400 N/m). The felt-stiffness slider
+    #     then runs from 50 N/m up to it, in steps of 10, once the run has started. For a stiffer range,
+    #     or a firmer elbow wall and floor, pick "Uniform 400". The further below the base you go, the
+    #     more a quick pull feels like the base (see below): choose a base near the stiffest you will
+    #     actually use. base_stiffness_n_per_m below is used only until the SmartPad report arrives.
+    #     A felt stiffness equal to the base switches the softening off: the arm feels the bare profile.
     # Quick pulls feel somewhat stiffer than the setting (the equilibrium follows from ROS at 100 Hz,
     # slightly behind the arm), and at a fixed damping ratio a stiffer base is more damped -- pick a
     # lower damping ratio on the SmartPad if pulls feel viscous.
     resistance:  # felt stiffness of the pull
-      base_stiffness_n_per_m: 100.0  # the SmartPad profile's translational stiffness [N/m] (per-run; must match the SmartPad)
+      base_stiffness_n_per_m: 100.0  # fallback base until the SmartPad app reports its profile [N/m] (per-run)
       stiffness_n_per_m: 100.0  # felt stiffness of the pull [N/m] (live, from the next trial): 50 up to the base
       # THE ELBOW WALL. A pull toward the monkey straightens the elbow (A4 -> 0); a straight elbow can
       # fold back the wrong way and stay there. The equilibrium never follows the arm closer to straight

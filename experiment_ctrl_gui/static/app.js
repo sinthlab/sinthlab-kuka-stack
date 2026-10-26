@@ -109,6 +109,11 @@ function statusLive() {
   const s = S.app && S.app.status;
   return s && !s.stale ? s : null;
 }
+function reportedStiffness() {     // X stiffness the SmartPad app reports [N/m], or null
+  const r = (statusLive() || {}).smartpad;
+  const k = r && r.received && r.settings && Array.isArray(r.settings.stiffness) ? Number(r.settings.stiffness[0]) : NaN;
+  return Number.isFinite(k) && k > 0 ? k : null;
+}
 function runningKey() {
   const a = S.app; if (!a) return null;
   if (a.runner.state !== "idle" && a.runner.experiment) return a.runner.experiment;
@@ -409,7 +414,7 @@ function renderParams(force = false) {
   const data = S.params[S.selected]; if (!data) return;
   const mode = paramMode(), s = statusLive();
   const liveVals = mode === "running" && s ? s.live : null, pending = mode === "running" && s ? s.pending : null;
-  const sig = JSON.stringify([S.selected, S.tab, mode, liveVals, pending, S.paramFilter, data.params.map((p) => [p.value, p.edited])]);
+  const sig = JSON.stringify([S.selected, S.tab, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
   if (!force && sig === S.renderSig) return;
   if (!force && $("#params").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON") {
     S.renderDeferred = true; return;           // do not yank an input out from under the cursor
@@ -479,6 +484,9 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
                      (p.linked && p.linked.length ? ` (and ${p.linked.length} linked)` : ""), "ok");
       }
     };
+    // The felt stiffness can go up to the stiffness the SmartPad app reports running, not the YAML base.
+    const rep = isLiveRunning && p.name === "resistance.stiffness_n_per_m" && p.limits ? reportedStiffness() : null;
+    if (rep) p = { ...p, limits: [p.limits[0], Math.min(rep, 5000)] };
     buildControl(ctl, p, value, commit, locked);
     if (!locked && !isLiveRunning && p.edited) {
       const rv = document.createElement("button"); rv.className = "revert"; rv.title = `Back to the YAML value (${fmtVal(p.default)})`;

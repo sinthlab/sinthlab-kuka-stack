@@ -235,6 +235,10 @@ class ExperimentControl:
         context = {n: _plain(self._node.get_parameter(n).value) for n in PAIRED
                    if self._node.has_parameter(n)}
         context.update({p.name: _plain(p.value) for p in params})
+        # The resistance base is what the SmartPad app reports (resistance_softener.py), not the YAML.
+        reported = self._smartpad.translational_stiffness()
+        if reported is not None and "resistance.base_stiffness_n_per_m" in context:
+            context["resistance.base_stiffness_n_per_m"] = reported
         for p in params:
             if not self._node.has_parameter(p.name):
                 continue            # a first declaration, not a change

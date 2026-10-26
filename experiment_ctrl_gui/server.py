@@ -383,6 +383,10 @@ def make_handler(app: App):
                 values = {name: value}
                 st = app.status() or {}
                 context = {**(st.get("live") or {}), **(st.get("pending") or {}), **values}
+                try:        # the resistance base is what the SmartPad app reports, not the YAML
+                    context["resistance.base_stiffness_n_per_m"] = float(st["smartpad"]["settings"]["stiffness"][0])
+                except (KeyError, IndexError, TypeError, ValueError):
+                    pass
                 for n, v in values.items():
                     problem = ex.live_params.check_value(n, v, context)
                     if problem:

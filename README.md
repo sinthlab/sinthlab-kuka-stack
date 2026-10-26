@@ -220,7 +220,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Experiment | Extra live parameters |
 |---|---|
-| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
+| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad's profile; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
 | Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (perturb only; applies at once) |
 | Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random); **how fast** the bump moves: `grasp.bump_speed_scale` (slider, 0.25–3, default 3; applies at once) |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The start positions `random_start.positions.*` (`[a, b]` m from the start pose) and `random_start.plane` are **per-run**. The start pose above is their origin: changing it moves them all |
@@ -453,22 +453,21 @@ Set it up once, in Sunrise Workbench (names as in the Sunrise.OS safety-configur
 them against your version):
 
 1. Open the project's **`SafetyConfiguration.sconf`** → **Customer PSM**.
-2. Add **one row per axis**, A1–A7, each with the AMF **Axis range monitoring** (that axis, the
-   minimum and maximum below) and the reaction **Stop 1 (on-path)**:
+2. Add **three rows**, one each for **A2, A4 and A6**: category **Workspace monitoring**, AMF 1 **Axis
+   range monitoring** (that axis, the minimum and maximum below), AMF 2 and 3 empty, reaction
+   **Stop 1 (on-path)**. The safety configuration allows only three instances of axis range
+   monitoring, so they go on the joints that actually run close to their limits:
 
-   | Axis | Software limit | Monitored range | Largest pose any experiment uses |
+   | Axis | Software limit | Monitored range | Closest seen in recordings |
    |---|---|---|---|
-   | A1 | ±170° | **−160° … 160°** | 3.6° |
-   | A2 | ±120° | **−110° … 110°** | 69.9° |
-   | A3 | ±170° | **−160° … 160°** | 3.6° |
-   | A4 | ±120° | **−110° … 110°** | 95° (maze-family park) |
-   | A5 | ±170° | **−160° … 160°** | 1.2° |
-   | A6 | ±120° | **−110° … 110°** | 90° (maze-family park) |
-   | A7 | ±175° | **−165° … 165°** | 16.5° |
+   | A2 | ±120° | **−112° … 112°** | 102° (maze) |
+   | A4 | ±120° | **−112° … 112°** | 106° (maze) |
+   | A6 | ±120° | **−112° … 112°** | 102° (apple pluck, elbow folded the wrong way) |
 
-   The 10° margin leaves room to brake before the software limit. If a hard pull still reaches the
-   limit, widen it. Keep every pose you configure (start, park, and the poses the dashboard accepts)
-   inside these ranges, or its move trips the stop.
+   A1, A3, A5 and A7 (±170–175°) never came within 140° of their limits. The 8° margin leaves room
+   to brake before the software limit; if a hard pull still reaches it, narrow the range, and if
+   normal runs trip it, widen it. Keep every pose you configure inside these ranges, or its move
+   trips the stop.
 3. **Synchronize** the project to the controller, then **activate** the new safety configuration on
    the smartPAD (it asks for the safety maintenance password). KUKA requires a **safety acceptance**
    (their checklist) after any change to the safety configuration.
@@ -714,14 +713,11 @@ pose in `config/apple_pluck_impedance.yaml`.
 How hard the apple pulls back is selectable per trial from the dashboard: **`resistance.stiffness_n_per_m`**
 on the Live tab, a **slider (steps of 10) plus a text box** for any value in its range.
 
-**The range runs from 50 N/m up to the SmartPad base.** Choose a stiffness profile on the SmartPad
-and enter its translational stiffness as `resistance.base_stiffness_n_per_m` (Per-run): the slider then
-covers **50 N/m to that value**. The default is `Uniform 100` (base 100: 50–100 N/m); `Uniform 400`
-gives 50–400.
-
-ROS cannot read the SmartPad's stiffness (FRI carries positions and torques only), so the base is the
-value you set to match it. Change it on the Per-run tab and the slider's range follows; a value the
-two can't both satisfy is refused with the reason.
+**The range runs from 50 N/m up to the SmartPad base.** The base is the stiffness profile picked on
+the SmartPad: the app reports it to ROS ([settings report](#smartpad-app-close-and-settings-report)), and once
+the run has started the slider covers **50 N/m to that value** — `Uniform 100` gives 50–100,
+`Uniform 400` gives 50–400. `resistance.base_stiffness_n_per_m` (Per-run) only stands in until the
+report arrives (or if it never does). A felt stiffness above the base is refused with the reason.
 Like every live setting it applies **from the next trial**, and each trial's sidecar records the
 resistance it ran with (`resistance`: base, felt stiffness, fraction followed).
 
@@ -757,10 +753,8 @@ re-homes the arm.
 
 - **It can only soften:** at most the base, and never below **50 N/m** during the pull — that much
   spring always remains until the snap releases it.
-- **`resistance.base_stiffness_n_per_m` must equal the SmartPad profile** (100 by default). If the
-  SmartPad runs Uniform 100 while this says 400, every pull feels 4× softer than the slider says.
-  Setting the slider to the base switches softening off: the arm feels the bare profile — which is
-  the default (100 on 100).
+- **The base follows the SmartPad.** Setting the slider to the base switches softening off: the arm
+  feels the bare profile — which is the default (100 on Uniform 100).
 - **Quick pulls feel somewhat stiffer** than the setting: the equilibrium follows from ROS at
   100 Hz, slightly behind the arm. Slow, steady pulls get the setting. The further below the base you
   go, the stronger this is (at 50 on a 1000 base, ROS follows 95 % of the pull): **choose a base near
@@ -1717,8 +1711,8 @@ flowchart LR
     what the cabinet actually ran. It is written when the run starts (`received: false` until a report
     arrives) and rewritten when the report comes in, so it holds the report however late it arrived;
   - the dashboard shows it under *Before you start* and flags any difference from the checklist;
-  - apple pluck warns at every trial start if `resistance.base_stiffness_n_per_m` differs from the
-    reported stiffness (every pull would feel base-to-actual times the slider's stiffness).
+  - apple pluck takes the resistance base from it, re-read at every trial
+    (`resistance.base_stiffness_n_per_m` only until a report arrives).
 
   It is best effort: if no report arrives (an older app on the cabinet, the network, a firewall), the
   experiment runs exactly as before and the sidecar says `received: false` with the reason. The port

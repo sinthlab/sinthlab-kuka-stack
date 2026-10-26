@@ -8,7 +8,10 @@ pull the equilibrium follows a fraction f of the arm's movement, and the spring 
 (1 - f) of it:
 
     q_cmd = q_hold + f * (q_measured - q_rest)        felt stiffness = base * (1 - f)
-    f     = 1 - stiffness_n_per_m / base_stiffness_n_per_m
+    f     = 1 - stiffness_n_per_m / base
+
+  base    the stiffness the SmartPad app REPORTS it is running (helpers/smartpad_link.py), re-read at
+          every arm; resistance.base_stiffness_n_per_m only stands in until a report has arrived
 
   q_rest  the arm where it rests when the monitor arms (its settled pose, sag included), so the
           resting sag is unchanged and only the PULL is softened
@@ -48,6 +51,7 @@ from rclpy.node import Node as rclpyNode
 from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.node_utils import get_launch_param, get_required_param
 from sinthlab_bringup.helpers.live_params import MIN_FELT_STIFFNESS
+from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 RELEASE_RAMP_SEC = 0.3     # the pull-back fades to nothing over this, so the release is felt, not a jolt
 STILL_SEC = 0.3            # released arm this long below STILL_RAD_S -> settled: the equilibrium holds there
@@ -84,13 +88,23 @@ class ResistanceSoftener:
 
     def reload(self) -> None:
         """Re-read the felt stiffness. Called at a trial boundary (live parameter)."""
-        n, p = self._node, self._p
-        self._base = float(get_required_param(n, p + "base_stiffness_n_per_m"))
-        k = float(get_required_param(n, p + "stiffness_n_per_m"))
-        k = min(max(k, MIN_FELT_STIFFNESS), self._base)     # 50 N/m .. the base (both checked live)
-        self._follow = 1.0 - k / self._base
+        self._k = float(get_required_param(self._node, self._p + "stiffness_n_per_m"))
+        self._base = None
+        self._refresh_base()
+
+    def _refresh_base(self) -> None:
+        """The base is what the SmartPad app reports it runs; the YAML value only until it reports."""
+        n = self._node
+        reported = SmartPadLink.get(n.get_logger()).translational_stiffness()
+        base = reported if reported is not None else float(get_required_param(n, self._p + "base_stiffness_n_per_m"))
+        if base == self._base:
+            return
+        self._base = base
+        k = min(max(self._k, MIN_FELT_STIFFNESS), base)     # 50 N/m .. the base
+        self._follow = 1.0 - k / base
         n.get_logger().info(
-            f"Resistance: {self.felt_stiffness():g} N/m felt (base {self._base:g} N/m from the SmartPad, "
+            f"Resistance: {self.felt_stiffness():g} N/m felt (base {base:g} N/m "
+            f"{'reported by the SmartPad app' if reported is not None else 'from the YAML: no SmartPad report yet'}, "
             f"equilibrium follows {100 * self._follow:.0f} % of the pull); elbow wall "
             f"{np.degrees(self._elbow_min):g} deg from straight")
 
@@ -107,6 +121,7 @@ class ResistanceSoftener:
 
     def start(self) -> None:
         """The monitor has armed: from here the pull is softened."""
+        self._refresh_base()
         self._released = self._settled = False
         if self._measured is None:
             return

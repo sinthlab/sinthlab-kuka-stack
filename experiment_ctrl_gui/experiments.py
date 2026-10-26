@@ -188,9 +188,9 @@ CAUTION: Dict[str, str] = {
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
     "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
     "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y).",
-    "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Uniform 100 = "
-                                          "100, Uniform 400 = 400). If they differ, every pull feels softer or "
-                                          "stiffer than the resistance slider says."),
+    "resistance.base_stiffness_n_per_m": ("Used only until the SmartPad app reports its profile; from then on the base "
+                                          "is the reported stiffness (Uniform 100 = 100, Uniform 400 = 400), and the "
+                                          "felt-stiffness slider runs up to it once the run has started."),
     "floor.height_m": ("The lowest the end effector may go, height above the ground. The run refuses to start if the "
                        "start or park pose, or the move between them, goes below it."),
     "random_start.positions.*": ("[a, b] metres from the start pose in random_start.plane (frontal: a = +Y, b = up). "
