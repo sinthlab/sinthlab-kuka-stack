@@ -1,5 +1,15 @@
 /**:
   ros__parameters:
+    # ---- THE FLOOR: the end effector never goes below this height above the ground (per-run) ----
+    # The robot stands on the ground, so heights are base-frame z. Enforced as a soft wall wherever ROS
+    # moves the spring's equilibrium, a trip (abort + park) if the measured point still gets
+    # trip_margin_m below it, and a check of the start / park poses and the moves between them before
+    # the arm goes there. See helpers/floor.py and README "The floor".
+    floor:  # lowest height the end effector may reach
+      height_m: 0.30  # the floor, height above the ground [m]
+      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
+      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
     # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
     # runs as one free-movement SESSION until you end it: Pause or "Stop after trial" on the dashboard.
@@ -74,7 +84,9 @@
 
     # ---- THE FEEL (live: change between trials from the dashboard) ----
     free_move:  # admittance: the equilibrium moves at force / damping
-      damping_ns_per_m: 10.0  # force per speed [N s/m]: LOWER = LIGHTER (10: a 4 N push moves ~0.25 m/s)
+      # 30 keeps speed proportional over a normal 3-12 N push (6 N -> 0.2 m/s, 10 N -> 0.33 m/s); at 10 any
+      # push over ~4 N hit the speed cap, so the arm moved on/off -- the jerky starts.
+      damping_ns_per_m: 30.0  # force per speed [N s/m]: LOWER = LIGHTER
       # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
       # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
       # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.

@@ -23,6 +23,9 @@ from typing import Dict, List, Optional, Tuple
 _COMMON = [
     "quiet_window_sec",            # pause at the start pose before the go cue
     "move_to_park.hold_sec",       # wait at park before each trial's move to the start
+    # The park pose: only the joint controller drives the arm there, so it can change between trials
+    # anywhere. Checked like any pose, and its elbow (A4) must bend the same way as the start's.
+    "move_to_park.target_joint_position",
     "audio_cue.enabled",           # master switch for every beep
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
@@ -49,7 +52,7 @@ _SPEED = ["*.speed_scale"]
 # The start pose. Live ONLY where the joint controller alone drives the arm (apple pluck). Restricted
 # plane and maze also hand the arm to the CLIK, whose redundancy posture must equal the start pose and
 # is read once when the controller is configured -- and the maze's whole geometry hangs off the start.
-# There the pose stays per-run. The park pose (move_to_park) is per-run everywhere.
+# There the pose stays per-run. (The park pose is live everywhere: see _COMMON.)
 _POSE = ["move_to_start.target_joint_position"]
 
 # Pre-training: the out-and-back task and the quarter-ring state colours.
@@ -116,6 +119,14 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "*.cartesian_displacement_threshold_m": (0.005, 0.5),
     "*.force_release_shutdown_delay_sec": (0.0, 10.0),
     "*.baseline_settle_sec": (0.0, 10.0),
+    # Apple pluck (per-run): the elbow wall and the wait for the released arm (resistance_softener.py).
+    "resistance.elbow_min_deg": (10.0, 60.0),
+    "resistance.park_wait_timeout_sec": (0.5, 30.0),
+    # The floor (per-run): height above the ground [m]; the arm cannot reach far above 1.3 m.
+    "floor.height_m": (0.0, 1.3),
+    "floor.trip_margin_m": (0.0, 0.2),
+    # random_start offsets [m] from the start, each of a and b; the run refuses any it cannot reach.
+    "random_start.positions.*": (-0.20, 0.20),
     "perturb_start.polar_r_m": (0.0, 0.175),      # overall; the real cap depends on the plane, below
     "perturb_start.polar_theta_deg": (-360.0, 360.0),
     "perturb_start.start_delay_sec": (0.0, 10.0),
@@ -218,6 +229,8 @@ CHOICES: Dict[str, List[str]] = {
     "*.restricted_axis": ["x", "y", "z"],
     "*.corridor_frame": ["relative", "absolute"],
     "*.polar_plane": ["frontal", "horizontal", "sagittal"],
+    "random_start.plane": ["frontal", "horizontal", "sagittal"],
+    "floor.reference": ["apple_bottom", "base_edge"],      # helpers/floor.REFERENCES
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
@@ -350,7 +363,10 @@ def check_same_elbow(start, park) -> Optional[str]:
 
 def _check_pair(name, value, context) -> Optional[str]:
     if name.startswith("random_start.positions."):
-        return check_pose(name, value)
+        # [a, b] metres in random_start.plane; reach and joint margins are checked when the run solves them
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return f"{name} needs [a, b] in metres from the start pose"
+        return None
     if name.endswith("target_joint_position"):
         problem = check_pose(name, value)
         if problem or context is None or name not in (_START, _PARK):

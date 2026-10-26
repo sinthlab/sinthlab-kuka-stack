@@ -44,7 +44,7 @@ CONTROL = {0: "POSITION_CONTROL_MODE", 1: "CART_IMP_CONTROL_MODE", 2: "JOINT_IMP
 LOG_WARN, LOG_ERROR = 30, 40
 ORCHESTRATOR_HINTS = ("orchestrator",)
 MILESTONES = ("STARTING TRIAL", "TRIAL", "reached target joints", "physically arrive", "Threshold reached",
-              "Displacement monitor activated", "Captured baseline", "FreezeAtPose", "GOAL", "Checkpoint",
+              "Displacement monitor activated", "Captured baseline", "pull-back is released", "GOAL", "Checkpoint",
               "Quiet window complete", "Perturbation")
 OVERRUN_LOOP = re.compile(r"loop took ([0-9.]+) ms(?: \(missed cycles : (\d+)\))?")
 

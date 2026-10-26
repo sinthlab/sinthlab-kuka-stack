@@ -62,6 +62,8 @@ class RailTrainingOrchestratorNode(rclpyNode):
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)))
 
         self.control = ExperimentControl(self, self.experiment)
+        # A live start / park pose whose move would take the end effector below the floor is refused.
+        self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
         self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
         self._stopping = False

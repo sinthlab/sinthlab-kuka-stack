@@ -10,6 +10,7 @@ from lbr_fri_idl.msg import LBRState
 from rclpy.node import Node as rclpyNode
 from scipy.spatial.transform import Rotation
 
+from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.node_utils import get_launch_param, get_required_param
 
 _AXES = {"x": 0, "y": 1, "z": 2}
@@ -58,6 +59,7 @@ class MoveRestrictedOnAPlaneAction:
         self.robot = optas.RobotModel(urdf_string=str(get_launch_param(node, "robot_description", "")))
         self._fk_func = self.robot.get_link_transform_function(
             link=self.ee_link, base_link=self.base_link, numpy_output=True)
+        self._floor = Floor.from_node(node)     # every published equilibrium stays above it
 
         fx = p + "virtual_fixtures."
         # Cap on how far the commanded equilibrium may move per state tick [m] -- a jerk guard so a
@@ -229,7 +231,10 @@ class MoveRestrictedOnAPlaneAction:
         cmd = PoseStamped()
         cmd.header.frame_id = self.base_link
         cmd.header.stamp = self._node.get_clock().now().to_msg()
-        cmd.pose.position.x, cmd.pose.position.y, cmd.pose.position.z = (float(v) for v in target_pose[0:3, 3])
+        # The floor, as a soft wall: the equilibrium never goes below it, so pushing further down
+        # stretches the cabinet spring (helpers/floor.py).
+        xyz = self._floor.clamp_xyz(target_pose[0:3, 3], target_pose[0:3, 0:3])
+        cmd.pose.position.x, cmd.pose.position.y, cmd.pose.position.z = (float(v) for v in xyz)
         qx, qy, qz, qw = Rotation.from_matrix(target_pose[0:3, 0:3]).as_quat()
         cmd.pose.orientation.x, cmd.pose.orientation.y = float(qx), float(qy)
         cmd.pose.orientation.z, cmd.pose.orientation.w = float(qz), float(qw)

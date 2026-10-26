@@ -204,12 +204,22 @@ while True:
     cue_service()           # advance the flash animation   -> non-blocking
     led_test_service()      # step /led_test, if running    -> non-blocking
     if server is not None:
-        server.poll()       # handle at most one HTTP request -> non-blocking
+        try:
+            server.poll()   # handle at most one HTTP request -> non-blocking
+        finally:
+            close_accepted()  # close that request's connection if the server left it open
 ```
 
 **Nothing in this loop sleeps and no route handler sleeps.** That is the property that makes the
 whole design work: a cue animates while HTTP requests are being served, and HTTP traffic cannot
 delay a cue beyond one short loop pass. Trigger latency is therefore ≈ the `debounce_ms` setting.
+
+**No socket leaks.** The ESP32 has only a few sockets. `adafruit_httpserver` leaves a connection open
+when a request ends in a reset or "try again" error, for example when the client gave up and hung up
+first. Each such request would hold a socket for good, and after a few trials the board stops
+answering HTTP while still answering `ping`. So the firmware tracks every connection the server
+accepts and closes it after that `poll()` if the server has not. `/status` reports how many it had
+to close (`connections_reclaimed`).
 
 ### The cue engine
 
@@ -432,7 +442,7 @@ copies to prune.
 |---|---|---|
 | **`/config`** | any setting, plus `save=1` / `reset=1` | **The whole configurable surface.** No parameters = read-only. |
 | **`/cue`** | — | Run the configured cue **now**, without the wire. |
-| **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire count and uptime. First stop when debugging. |
+| **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire count, uptime and `connections_reclaimed` (leaked HTTP connections it closed). First stop when debugging. |
 | `/off` | — | Clear the ring and cancel a running cue. |
 | `/set_color` | `r` `g` `b` `w` | Hold a solid colour (not a cue — it does not time out). |
 | `/segments` | `factor`, `colors` | Static arcs. For a *timed* segmented cue use `pattern=segment`. |
@@ -600,6 +610,7 @@ handler callable directly.
 | Settings | fields compose, bad input keeps the old value, brightness clamps to 0–1, colour is unrounded |
 | Persistence | full round trip through NVM, and a **corrupt record is rejected wholesale** rather than half-loaded |
 | Degradation | **Wi-Fi down → the wire still fires the cue** |
+| Sockets | a request the server leaves open (reset, error) is closed after its poll; none stays open, and `/status` counts them |
 | Patterns | each renders distinctly, and **every one is lit at phase 0** so a cue has a crisp onset |
 | Cue hygiene | a cue restores what the ring was showing; a manual command cancels it and wins |
 | LED test | exactly one LED lit per step, every LED through all four colours in order, `from`/`to`/`loop`, and a cue or manual command stops it without leaving a test pixel behind |

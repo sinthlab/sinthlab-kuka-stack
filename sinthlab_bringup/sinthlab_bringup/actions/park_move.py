@@ -9,17 +9,25 @@ straight elbow, see below); every later move uses `speed_scale` as usual.
 Start and park must bend the elbow (A4) the same way. Between poses whose A4 have opposite signs,
 every joint-space move passes A4 = 0 -- a straight, singular elbow, where the cabinet's Cartesian
 impedance cannot follow. A park pose on the other side from the start is refused at start-up.
+
+The joint-space move between them must also keep the end effector above the floor all the way
+(helpers/floor.py) -- checked at start-up and on every live edit of either pose (check_live).
 """
 from __future__ import annotations
 
 from typing import Callable, Optional
 
+import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.live_params import check_same_elbow
 from sinthlab_bringup.helpers.node_utils import get_required_param
+
+
+_START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_joint_position"
 
 
 class ParkMove(MoveToPositionJointSpace):
@@ -33,10 +41,32 @@ class ParkMove(MoveToPositionJointSpace):
         self._then: Optional[Callable[[], None]] = None
         self._hold = WaitAction(node, duration_sec=float(get_required_param(node, "move_to_park.hold_sec")),
                                 on_complete=self._held_done, name="park_hold")
-        problem = check_same_elbow(get_required_param(node, "move_to_start.target_joint_position"),
-                                   get_required_param(node, "move_to_park.target_joint_position"))
+        start = get_required_param(node, "move_to_start.target_joint_position")
+        park = get_required_param(node, "move_to_park.target_joint_position")
+        problem = check_same_elbow(start, park)
         if problem:
             raise ValueError(f"move_to_park: {problem}")
+        self.floor = Floor.from_node(node)
+        problem = self.floor_problem(start, park)
+        if problem:
+            raise ValueError(f"move_to_park: {problem}")
+
+    def floor_problem(self, start_deg, park_deg=None, name: str = "the move between park and start"):
+        """None if the joint-space move park <-> start_deg keeps the end effector above the floor."""
+        park = np.radians(np.asarray(park_deg if park_deg is not None else
+                                     get_required_param(self._node, "move_to_park.target_joint_position"),
+                                     dtype=float))
+        return self.floor.check_joint_path(self._fk_func, park, np.radians(np.asarray(start_deg, dtype=float)), name)
+
+    def check_live(self, name: str, value, context: dict):
+        """ExperimentControl validator: refuse a live start / park pose whose move goes below the floor."""
+        if name not in (_START, _PARK):
+            return None
+        start = value if name == _START else context.get(_START)
+        park = value if name == _PARK else context.get(_PARK)
+        if start is None or park is None:
+            return None
+        return self.floor_problem(start, park)
 
     def reload(self) -> None:
         super().reload()

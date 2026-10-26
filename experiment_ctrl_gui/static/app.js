@@ -493,7 +493,26 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
     const h = document.createElement("div"); h.className = "help linked";
     h.textContent = `🔗 Editing this also sets: ${p.linked.join(", ")}`; row.appendChild(h);
   }
+  if (p.name === "move_to_start.target_joint_position" && !locked && !isLiveRunning) row.appendChild(startHeightRow());
   return row;
+}
+
+// The start pose from a height above the ground: the floor's reference point (apple bottom or base edge)
+// is put there by moving the end effector straight up or down from the current start (kinematics.py).
+function startHeightRow() {
+  const sh = (S.params[S.selected] || {}).start_height || {};
+  const box = document.createElement("div"); box.className = "help start-height";
+  if (!sh.available) { box.textContent = `Start height: ${sh.reason || "unavailable"}`; return box; }
+  const ref = sh.reference.replace("_", " ");
+  box.innerHTML = `Set by height: the ${esc(ref)} at <input type="number" step="0.005" min="${sh.floor_m}" ` +
+    `value="${sh.height_m}"> m above the ground <button>Solve</button> ` +
+    `<span class="default">now ${sh.height_m.toFixed(3)} m · floor ${Number(sh.floor_m).toFixed(3)} m</span>`;
+  const inp = box.querySelector("input");
+  box.querySelector("button").onclick = async () => {
+    const r = await act(() => api(`/api/start_height/${S.selected}`, { height_m: Number(inp.value) }), "Start pose solved");
+    if (r) await loadParams(S.selected, true);
+  };
+  return box;
 }
 
 function buildControl(ctl, p, value, commit, disabled) {

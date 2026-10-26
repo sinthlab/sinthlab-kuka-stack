@@ -129,7 +129,11 @@ def load_rails(profile=None, sidecar=None):
     if sidecar and isinstance(sidecar.get("maze_geometry"), dict):
         rails = [tuple(map(float, c)) for c in sidecar["maze_geometry"].get("corridors", [])]
         if rails:
-            return rails, sidecar.get("params")
+            # the sidecar flattens nested params to "checkpoint_monitor.<key>"; nest them back
+            flat = sidecar.get("params") or {}
+            cm = {k.split(".", 1)[1]: v for k, v in flat.items()
+                  if k.startswith("checkpoint_monitor.")}
+            return rails, ({"checkpoint_monitor": cm} if "goal_y" in cm else None)
     try:
         import yaml
     except Exception:

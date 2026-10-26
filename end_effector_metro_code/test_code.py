@@ -98,6 +98,7 @@ def install_stubs():
     esp_pkg.__path__ = []
     esp_mod = types.ModuleType("adafruit_esp32spi.adafruit_esp32spi")
     esp_mod.WL_IDLE_STATUS = 0
+    esp_mod.SOCKET_CLOSED = 0
 
     class ESP_SPIcontrol:
         def __init__(self, *a):
@@ -106,6 +107,10 @@ def install_stubs():
             self.MAC_address = b"\x01\x02\x03\x04\x05\x06"
             self.ip_address = b"\xc0\xa8\x04\x01"       # 192.168.4.1
             self.joined = None                          # set only by connect_AP
+            self.sockets = {}                           # socket number -> state (0 = closed)
+
+        def socket_status(self, n):
+            return self.sockets.get(n, 0)
 
         def create_AP(self, ssid, password, channel=1):
             if not ssid or not password:
@@ -122,7 +127,7 @@ def install_stubs():
 
     class SocketPool:
         def __init__(self, esp):
-            pass
+            self.esp = esp
 
     sock_mod.SocketPool = SocketPool
 
@@ -143,9 +148,31 @@ def install_stubs():
         def __init__(self, request, text):
             self.text = text
 
+    class _Conn:
+        def __init__(self, esp, n):
+            self._socknum, self._esp = n, esp
+            esp.sockets[n] = 4                          # established
+
+        def close(self):
+            self._esp.sockets[self._socknum] = 0
+
+    class _Listen:
+        def __init__(self, esp):
+            self.esp, self.next = esp, 1
+
+        def accept(self):
+            conn = _Conn(self.esp, self.next)
+            self.next += 1
+            return conn, ("192.168.4.2", 50000)
+
     class Server:
+        """Each poll() serves one request from `incoming`, ending it as the real server would:
+        "ok" closes the connection, "reset" returns WITHOUT closing it (adafruit_httpserver on
+        ECONNRESET / EAGAIN), "error" raises without closing it."""
         def __init__(self, pool, debug=False):
             self.routes = {}
+            self.esp = pool.esp
+            self.incoming = []
 
         def route(self, path, methods=None):
             def deco(fn):
@@ -154,10 +181,17 @@ def install_stubs():
             return deco
 
         def start(self, ip, port=80):
-            pass
+            self._sock = _Listen(self.esp)
 
         def poll(self):
-            pass
+            if not self.incoming:
+                return
+            how = self.incoming.pop(0)
+            conn, _ = self._sock.accept()
+            if how == "ok":
+                conn.close()
+            elif how == "error":
+                raise OSError("handler failed")
 
     http.Request, http.Response, http.Server = Request, Response, Server
 
@@ -428,6 +462,25 @@ def test_wire_survives_wifi_failure():
     check("and still times out", not fw.cue_active())
 
 
+def test_no_socket_leak():
+    section("HTTP connections are always closed — no socket leak")
+    fw = load()
+    loop = SOURCE[SOURCE.index("while True:"):]
+    check("the main loop closes leftovers after every poll", "close_accepted()" in loop)
+    fw.server.incoming = ["ok", "reset", "error", "reset", "ok"]
+    for _ in range(5):
+        try:
+            fw.server.poll()
+        except OSError:
+            pass
+        finally:
+            fw.close_accepted()
+    open_now = [n for n, st in fw.esp.sockets.items() if st]
+    check("no connection left open", not open_now, f"open: {open_now}")
+    check("the leaked ones are counted", fw._reclaimed == 3, f"reclaimed {fw._reclaimed}")
+    check("/status reports it", "connections_reclaimed=3" in call(fw, "/status"))
+
+
 def test_trigger_details():
     section("Trigger polarity, debounce, retrigger, follow mode")
     fw = load()
@@ -664,6 +717,7 @@ def main():
         test_flash_wear,
         test_survives_missing_nvm,
         test_wire_survives_wifi_failure,
+        test_no_socket_leak,
         test_trigger_details,
         test_patterns,
         test_cue_is_non_destructive,

@@ -87,6 +87,8 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "restricted_plane")
+        # A live start / park pose whose move would take the end effector below the floor is refused.
+        self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
         self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
         self._stopping = False

@@ -31,6 +31,7 @@ import experiments as ex  # noqa: E402
 from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
+import kinematics  # noqa: E402
 from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
@@ -295,7 +296,8 @@ def make_handler(app: App):
                 p = app.params[key]
                 p.reload()
                 return self._json({"params": p.describe(), "groups": p.groups(),
-                                   "fixed": read_fixed_config(ex.BY_KEY[key], p)})
+                                   "fixed": read_fixed_config(ex.BY_KEY[key], p),
+                                   "start_height": _start_height(p)})
             if path == "/api/logs":
                 return self._json(list(app.runner.lines))
             return self._static(path)
@@ -390,6 +392,17 @@ def make_handler(app: App):
                 if not ok:
                     raise RuntimeError(msg)
                 return {"ok": True, "message": msg, "value": value}
+            if path.startswith("/api/start_height/"):
+                key = path.rsplit("/", 1)[1]     # solve the start pose for a height, as a per-run edit
+                p = app.params[key]
+                if app.runner.running() and app.runner.experiment == key:
+                    raise RuntimeError("the start pose is locked while this experiment runs -- stop it first")
+                q, report = kinematics.start_for_height(float(body["height_m"]), p.current())
+                value = p.set_edit(ex.START_POSE, q)
+                app.runner.emit(f"Start height {float(body['height_m']):.3f} m -> {ex.START_POSE} = {value}: "
+                                f"{report}", "gui")
+                app.broadcast("state", app.state())
+                return {"ok": True, "value": value, "message": report}
             if path.startswith("/api/params/"):
                 parts = path.split("/")          # /api/params/<key>[/reset]
                 key = parts[3]
@@ -411,6 +424,17 @@ def make_handler(app: App):
             raise KeyError(f"unknown endpoint {path}")
 
     return Handler
+
+
+def _start_height(p) -> dict:
+    """What the dashboard's start-height field shows: the floor's reference point's height at the
+    start pose in effect, or why the field is unavailable."""
+    ok, why = kinematics.available()
+    cur = p.current()
+    if not ok or ex.START_POSE not in cur or "floor.reference" not in cur:
+        return {"available": False, "reason": why or "this experiment has no start pose / floor"}
+    return {"available": True, "reference": cur["floor.reference"], "floor_m": cur["floor.height_m"],
+            "height_m": round(kinematics.height_of(cur[ex.START_POSE], cur["floor.reference"]), 4)}
 
 
 def _validate(app: App, folder: str) -> None:

@@ -678,13 +678,13 @@ def status(request: Request):
         "cue_active={}\nwire_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
         "led_test_pixel={}\nled_test_colour={}\n"
-        "nvm_restored_at_boot={}\nuptime_s={:.1f}\n"
+        "nvm_restored_at_boot={}\nuptime_s={:.1f}\nconnections_reclaimed={}\n"
     ).format(
         PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
         cue_active(), fired, nvm_writes,
         cue_in.value, trigger_asserted(), _trig_state,
         _lt_pixel, LED_TEST_COLOURS[_lt_colour][0] if led_test_active() else "-",
-        _nvm_loaded, time.monotonic_ns() / 1e9,
+        _nvm_loaded, time.monotonic_ns() / 1e9, _reclaimed,
     ))
 
 
@@ -776,6 +776,39 @@ ROUTES = (
 # restored from NVM (or the defaults in this file).
 wifi_ip = "-"
 server = None
+esp = None
+# The ESP32 has only a few sockets, and adafruit_httpserver leaves a connection OPEN when a request
+# ends in ECONNRESET / EAGAIN (e.g. the client gave up and hung up first). Each such request leaks a
+# socket; after a few trials none are left, and the board stops answering HTTP while still answering
+# ping. So every connection the server accepts is tracked, and closed after its poll() unless the
+# server already closed it. connections_reclaimed in /status counts the ones that would have leaked.
+_accepted = []
+_reclaimed = 0
+
+
+def _track_accepts(sock):
+    accept = sock.accept
+
+    def tracked():
+        conn, addr = accept()
+        _accepted.append(conn)
+        return conn, addr
+
+    sock.accept = tracked
+
+
+def close_accepted():
+    global _reclaimed
+    while _accepted:
+        conn = _accepted.pop()
+        try:
+            if esp.socket_status(conn._socknum) != adafruit_esp32spi.SOCKET_CLOSED:
+                conn.close()
+                _reclaimed += 1
+        except Exception as e:
+            print("Closing a leftover connection failed: {}".format(e))
+
+
 try:
     esp32_cs = DigitalInOut(board.ESP_CS)
     esp32_ready = DigitalInOut(board.ESP_BUSY)
@@ -802,6 +835,10 @@ try:
     for path, handler in ROUTES:
         server.route(path, methods=["GET"])(handler)
     server.start(wifi_ip, port=80)
+    try:
+        _track_accepts(server._sock)
+    except Exception as e:          # a library change must not take the Wi-Fi down with it
+        print("Connection tracking unavailable ({}); sockets may leak.".format(e))
     print("Access point '{}' up, settings at http://{}".format(ssid, wifi_ip))
 except Exception as e:
     server = None
@@ -820,7 +857,10 @@ while True:
         cue_service()
         led_test_service()      # idle unless /led_test is running
         if server is not None:
-            server.poll()
+            try:
+                server.poll()
+            finally:
+                close_accepted()        # never leak a socket, however the request ended
     except Exception as e:
         print("Error: {}".format(e))
         time.sleep(0.05)        # a persistent fault must not spin the console at full speed

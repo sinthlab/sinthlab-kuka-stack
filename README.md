@@ -180,12 +180,20 @@ from the page; stop it with Ctrl-C in its own terminal.
   nearly straight (singular) arm is refused — by the dashboard and again by the orchestrator.
   - **Start and park must bend the elbow the same way** (A4 on the same side); an edit that flips one
     is refused — see [Park pose](#park-pose--out-of-reach-between-trials).
-  - **Apple Pluck:** the start pose is live. The next trial moves to it from park. The park pose is
-    Per-run everywhere.
+  - **Apple Pluck:** the start pose is live. The next trial moves to it from park.
+  - **The park pose is live everywhere.** Like every live change it applies as the next trial
+    begins, when the arm is already at park, so the arm first goes to the new park when that trial
+    ends.
   - **Restricted Plane and Maze:** the CLIK redundancy posture follows an edited start pose
     automatically.
   - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
     before trusting it.
+  - **Start height:** under the start pose (Per-run), *Set by height* takes a height above the
+    ground for [the floor's](#the-floor--a-height-the-end-effector-never-goes-below) reference point
+    (apple bottom or base edge) and solves the start pose that puts it there: straight up or down
+    from the current start, same orientation. It refuses heights below the floor, out of reach, near
+    a joint limit or singular, or whose move from park dips below the floor. Needs ROS sourced
+    (`run_gui.sh`); without it the field says so.
 - **Amber ⚠ notes** flag parameters other things depend on; **blue 🔗 notes** name what else an
   edit changes. Rails and checkpoints must keep their number of entries; adding a rail is a YAML
   edit.
@@ -199,6 +207,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 |---|---|
 | `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
+| `move_to_park.target_joint_position` | the park pose, A1..A7 [deg]; first used when the next trial ends. Checked against the limits, and A4 must keep the start's sign |
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
 | `audio_cue_*.frequency_hz`, `audio_cue_*.duration_ms` | each tone (37–32767 Hz, 10–10000 ms) |
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
@@ -214,7 +223,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad base you enter; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
 | Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (perturb only; applies at once) |
 | Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random); **how fast** the bump moves: `grasp.bump_speed_scale` (slider, 0.25–3, default 3; applies at once) |
-| Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The 9 start positions `random_start.positions.*` are **per-run**; each trial picks its own start, so the start pose above does not apply in this paradigm |
+| Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The start positions `random_start.positions.*` (`[a, b]` m from the start pose) and `random_start.plane` are **per-run**. The start pose above is their origin: changing it moves them all |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
@@ -431,6 +440,44 @@ mass with the smartPAD's **Load data** view (Sunrise.OS 1.16 SI manual §7.5; ou
 > sustained ~1 Hz oscillation, mostly in Z. The `gravitation` vector in `RoboticsAPI.data.xml` assumes a standard floor mount;
 > set it to match if the arm is mounted otherwise.
 
+### Joint-limit safe stop (cabinet safety configuration)
+A hard or fast pull on a compliant arm can drag a joint past its **software limit switch**. The
+cabinet then locks the arm with a joint-limit error on the smartPAD, and getting out of that has
+needed re-mastering. ROS cannot prevent it: it only moves the spring's equilibrium (the CLIK and the
+joint moves already keep their commands inside the limits), and the hand moves the arm itself. On a
+soft profile the spring's pull is small (Uniform 100: 10 N for 10 cm), so no ROS-side "wall" stops a
+determined pull. The cabinet's own safety monitoring can: it stops the arm a few degrees **before**
+the software limit, as an ordinary safety stop.
+
+Set it up once, in Sunrise Workbench (names as in the Sunrise.OS safety-configuration manual; check
+them against your version):
+
+1. Open the project's **`SafetyConfiguration.sconf`** → **Customer PSM**.
+2. Add **one row per axis**, A1–A7, each with the AMF **Axis range monitoring** (that axis, the
+   minimum and maximum below) and the reaction **Stop 1 (on-path)**:
+
+   | Axis | Software limit | Monitored range | Largest pose any experiment uses |
+   |---|---|---|---|
+   | A1 | ±170° | **−160° … 160°** | 3.6° |
+   | A2 | ±120° | **−110° … 110°** | 69.9° |
+   | A3 | ±170° | **−160° … 160°** | 3.6° |
+   | A4 | ±120° | **−110° … 110°** | 95° (maze-family park) |
+   | A5 | ±170° | **−160° … 160°** | 1.2° |
+   | A6 | ±120° | **−110° … 110°** | 90° (maze-family park) |
+   | A7 | ±175° | **−165° … 165°** | 16.5° |
+
+   The 10° margin leaves room to brake before the software limit. If a hard pull still reaches the
+   limit, widen it. Keep every pose you configure (start, park, and the poses the dashboard accepts)
+   inside these ranges, or its move trips the stop.
+3. **Synchronize** the project to the controller, then **activate** the new safety configuration on
+   the smartPAD (it asks for the safety maintenance password). KUKA requires a **safety acceptance**
+   (their checklist) after any change to the safety configuration.
+4. **Test in T1** before an experiment: jog each axis slowly toward a monitored limit and check it
+   stops there. Note how the smartPAD lets you move it back out; that replaces re-mastering.
+
+When it trips during an experiment, the arm stops and the FRI session ends, as for an E-stop. Move
+the arm back inside the range on the smartPAD, then restart the run.
+
 ---
 
 ## 3. Building the Stack
@@ -580,20 +627,59 @@ what ROS streams into it:
 >    everywhere). Lock the constrained axis hard and keep the free axes firm enough for
 >    walls; the interior stays free by (1).
 
+### The floor — a height the end effector never goes below
+Every experiment has a **floor**: a height above the ground (the robot stands on the ground, so
+it is the base frame's z) that one point of the end effector must stay above. It is in each
+experiment's YAML as `floor` (Per-run on the dashboard):
+
+| Parameter | Meaning |
+|---|---|
+| `floor.height_m` | the floor, height above the ground [m]. Default **0.30**, below every pose in use: **set your own** |
+| `floor.reference` | which point must stay above it: `apple_bottom` (lowest point of the ball) or `base_edge` (lowest point of the Ø188 base: its bottom face when the base is horizontal, the rim's edge when tilted) |
+| `floor.trip_margin_m` | how far below the floor the measured point may get before the trial is aborted (default 0.03 m) |
+
+Both reference points follow the tool's orientation, from the end-effector geometry (apple centre
+212 mm from the flange, Ø45 ball; base Ø188, 16–90 mm from the flange). It is enforced in three
+layers ([`helpers/floor.py`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)):
+
+1. **A soft wall** wherever ROS moves the spring's equilibrium: the maze, restricted plane and rail
+   fixtures and Free Move never put it below the floor, so pushing further down stretches the
+   cabinet spring. At their profiles (1000–2500 N/m) that is 10–25 N per cm. In apple pluck the
+   resistance softener stops following a pull downward at the floor, so the full profile holds from
+   there (Uniform 100: 1 N per cm, not a wall).
+2. **A trip:** the safety monitor of every experiment (apple pluck's is `pluck_safety`, floor only)
+   aborts the trial and parks if the measured point gets `trip_margin_m` below the floor — event
+   `safety_trip`. The next trial follows as usual.
+3. **Pose checks before the arm moves:** the start and park poses and the joint-space move between
+   them must stay above the floor — at start-up (the run refuses to start, with the reason) and on
+   every live edit (refused, with the reason). So must every random-start position and the move to
+   it. A perturbation that would go below the floor is raised to it, with a warning.
+
+The floor guards the **end effector**. In the poses these experiments use, the rest of the arm is
+higher, but nothing checks the elbow or wrist against it. `check_park.py` also reports the floor
+on the park ↔ start path.
+
 ### Scenario 1 — Apple Pluck
 This scenario streams **joint** setpoints to the `LBRJointPositionCommandController` (joint positions
 go straight to the FRI position command — no IK), while the KUKA cabinet runs Cartesian impedance
 natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
 recoils when pushed off its commanded anchor.
 
-**Start pose — the apple points at the monkey.** The posture `[0, −13, 0, −60, 0, 30, 0]` holds the
-apple at about the park height, pointing toward the monkey (+X) and tilted **13° up**: flange
-≈ (0.33, 0, 1.03) m, apple ≈ (0.53, 0, 1.08) m in `lbr_link_0` (park: ~1.09 m). Every joint is ≥ 59°
-from its limit and the pose is well conditioned (smallest Jacobian singular value 0.125), but the arm
-is **close to full stretch**: a pull toward the monkey gets ~0.16 m before nearing a limit or
-singularity (the pluck threshold is 0.10 m), and a 10 cm perturbation in some directions brings the
-singular value down to ~0.07 — a little less crisp, not singular. The same pose is used by every
-apple paradigm (in random start it is the grid's origin, C). A **pluck** is any
+**Start pose — the apple points at the monkey.** The posture `[0, −24.3, 0, −66.1, 0, 35.1, 0]` holds
+the apple at about the park height, pointing toward the monkey (+X) and tilted **13° up**: flange
+≈ (0.23, 0, 1.03) m, apple ≈ (0.43, 0, 1.08) m in `lbr_link_0` (park: ~1.09 m). Every joint is ≥ 53°
+from its limit and the pose is well conditioned (smallest Jacobian singular value 0.175). A
+perturbation at its cap brings that down to ~0.07 in the worst direction — a little less crisp, not
+singular.
+
+*Room for the pull.* A pull toward the monkey **straightens the elbow** (A4 → 0). A straight elbow can
+fold back either way; once it folds the wrong way (A4 > 0) it stays there, because the cabinet's spring
+holds only the apple's pose and the elbow only through the weak null-space stiffness. Every later move
+then swings and jerks, and park ends ~5 cm off (so each park waits out its arrival timeout). From
+here a pull gets **~32 cm** toward the monkey before the elbow is within 15° of straight. Hard pulls
+run on well past the 10 cm snap (25–27 cm measured), so the start sits back from the monkey: 10 cm
+further out leaves only ~22 cm, and 5 cm lower gives more (~39 cm). The same pose is used by every
+apple paradigm (in random start it is the origin the positions are laid out around, C). A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
 pose in `config/apple_pluck_impedance.yaml`.
@@ -649,10 +735,28 @@ threshold, the equilibrium follows a fraction *f* of the pull, so the spring is 
 
 It works in joint space on the same joint controller, measured from the settled pose at `armed`,
 so the resting sag is unchanged ([`resistance_softener.py`](sinthlab_bringup/sinthlab_bringup/actions/resistance_softener.py)).
-At the threshold the freeze takes over from wherever the softening left the equilibrium.
 
-- **It can only soften:** at most the base, and never below **50 N/m** — that much spring always
-  remains; following the arm completely would leave nothing holding it up.
+**At the threshold the apple is plucked.** Over 0.3 s the pull-back fades to nothing: the equilibrium
+follows the arm completely (keeping the resting sag, so the arm still carries its own weight), and the
+hand feels no force. Once the arm has been still for 0.3 s the equilibrium holds there, so it cannot
+creep; if the hand moves it again, it follows again. After
+`force_release_shutdown_delay_sec` (0.8 s) the arm parks as soon as it is at rest with the elbow bent,
+or after `resistance.park_wait_timeout_sec` (5 s) anyway, with a warning (event `release_wait`
+marks the start of that wait).
+
+**The elbow wall.** A pull toward the monkey straightens the elbow (A4 → 0), and a straight elbow can
+fold back the wrong way and stay there (see *Room for the pull* above). So the equilibrium never
+follows the arm closer to straight than `resistance.elbow_min_deg` (35°) — during the pull or after
+the snap — and never below [the floor](#the-floor--a-height-the-end-effector-never-goes-below). From
+there the full base spring resists. **That is a real wall only on a stiff base**: on Uniform 400
+it holds 4 N per cm; on Uniform 100 only 1 N per cm, which a determined pull goes through. So for
+apple pluck, prefer **Uniform 400 with `resistance.stiffness_n_per_m` 100**: the pull feels as on
+Uniform 100, and the walls are 4× firmer. If the elbow does end up folded the wrong way, the trial
+records `elbow_flipped` and the log says so; the run carries on, and restarting the SmartPad app
+re-homes the arm.
+
+- **It can only soften:** at most the base, and never below **50 N/m** during the pull — that much
+  spring always remains until the snap releases it.
 - **`resistance.base_stiffness_n_per_m` must equal the SmartPad profile** (100 by default). If the
   SmartPad runs Uniform 100 while this says 400, every pull feels 4× softer than the slider says.
   Setting the slider to the base switches softening off: the arm feels the bare profile — which is
@@ -847,8 +951,9 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py parad
 
 ### Scenario 3b — Apple Pluck, random start paradigm
 The **same experiment as Scenario 1** — same SmartPad setup, resistance, threshold and trial — in its
-**random start paradigm** (`paradigm: random_start`): each trial **starts at one of 9 positions**, the
-origin and the 8 compass directions around it, chosen at random.
+**random start paradigm** (`paradigm: random_start`): each trial **starts at one of a set of
+positions** laid out in a plane around the normal start, chosen at random. By default there are 9: the
+origin and the 8 compass directions around it.
 
 ```
       NW   N   NE         N  = up (+Z)                 the grid lies in the plane FACING the
@@ -862,29 +967,36 @@ origin and the 8 compass directions around it, chosen at random.
   paradigms). Every other position is **5 cm from C** — the diagonals too, so the 8 lie on a circle,
   not a square. The grid spans 10 cm side to side and 10 cm top to bottom.
 - **The apple only translates.** Every position keeps the start orientation, so the apple points at the
-  monkey with the same 13° upward tilt wherever it starts. Each pose is solved by 6-D IK (position and
-  orientation) from C.
-- **All 9 are safe to pull from.** Every joint stays ≥ 46° from its limit (S, the lowest, is
-  the tightest), ≥ 56° after a further 10 cm pull toward the monkey, and the arm is well conditioned
-  (smallest Jacobian singular value ≥ 0.118).
-- **Order: shuffled blocks of 9.** Each block visits every position once, in a random order, before any
+  monkey with the same 13° upward tilt wherever it starts. The run solves each position to joint
+  angles itself, by 6-D IK (position and orientation) from the start pose.
+- **All 9 default positions are safe to pull from.** Every joint stays ≥ 40° from its limit (S, the lowest, is
+  the tightest), ≥ 46° after a further 10 cm pull toward the monkey, and the arm is well conditioned
+  (smallest Jacobian singular value ≥ 0.140).
+- **Order: shuffled blocks.** Each block visits every position once, in a random order, before any
   repeats, so the positions stay balanced however many trials you run. Every trial ends at the park
   pose, and the next trial's move-to-start goes from there to its position.
-- **Recorded:** the sidecar's `start_position` (`C`, `N`, `NE`, …) and `start_joint_deg`, besides
-  `paradigm: random_start`. The trial's events are the same as the normal pluck.
+- **Recorded:** the sidecar's `start_position` (`C`, `N`, `NE`, …), its `plane` and `offset_m`, and the
+  `start_joint_deg` it was solved to, besides `paradigm: random_start`. The trial's events are the same as the normal pluck.
 
-**Changing the grid.** The 9 joint poses are `random_start.positions` in
-`config/apple_pluck_impedance.yaml` (per-run, shown only under *Pluck random start*; each is checked
-like any pose). To change the spacing, or after changing the normal start pose, re-solve them and paste
-the printed block in:
+**Changing the positions.** In `config/apple_pluck_impedance.yaml` (per-run, shown only under *Pluck
+random start*):
+
+- `random_start.plane` — the plane they lie in, with the start as origin: `frontal` (base Y-Z, facing
+  the monkey: a = +Y, the monkey's right; b = up), `horizontal` (X-Y: a = toward the monkey, b = +Y) or
+  `sagittal` (X-Z: a = toward the monkey, b = up). The same planes as the perturbation.
+- `random_start.positions` — each `NAME: [a, b]` in metres from the start. Names are free; add or remove
+  positions in the YAML (the dashboard edits existing ones).
+
+No joint angles to paste: at Start the run solves every position, and **stops with the reason** if one
+is out of reach, within 10° of a joint limit, nearly singular (smallest singular value < 0.10), or
+bends the elbow the other way. If the start pose is changed live, it re-solves them around the new
+start, and keeps the old ones (with an error in the log) if the new start leaves one unusable. To check a
+layout before a session — margins included after a further 10 cm pull:
 
 ```bash
 xacro $(ros2 pkg prefix lbr_description)/share/lbr_description/urdf/iiwa7/iiwa7.xacro > /tmp/iiwa7.urdf
-IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup solve_start_grid.py --spacing 0.075
+IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup solve_start_grid.py --params <the YAML>
 ```
-
-It prints each position's joint-limit margin and conditioning, and fails if one gets too close. At
-startup the orchestrator warns if `C` no longer equals `move_to_start`.
 
 **Steps to run:** as Scenario 1 (same SmartPad selections), with the **Pluck random start** tab selected,
 or from a terminal:
@@ -1235,8 +1347,10 @@ ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportion
 does the IK; ROS only moves the target point.
 
 - **The feel is set in the YAML, not on the SmartPad, and all of it is live.**
-  - `damping_ns_per_m`: the only resistance — lower is lighter. At 10, a 4 N push moves the arm
-    about 0.25 m/s. Very low values may buzz or oscillate; come down gradually.
+  - `damping_ns_per_m`: the only resistance — lower is lighter. At the default 30, a 6 N push moves
+    the arm about 0.2 m/s and 10 N about 0.33 m/s, so speed follows force over a normal push. Much
+    lower and most pushes hit the speed cap, so the arm moves on/off (jerky starts); very low values
+    may also buzz or oscillate. Come down gradually.
   - `deadband_n` (default **2.5 N**): a **round threshold**, the same in every direction. A force
     below it moves nothing; above it the force counts, in full from twice the threshold. It also keeps
     the arm's own small model errors from driving the motion (below). Raise it if the arm creeps or
@@ -1281,6 +1395,10 @@ does the IK; ROS only moves the target point.
   the collapse the threshold give-in once caused. Upstream `lbr_ros2_control/AdmittanceController`
   integrates from the measured joints and assumes a stiff, position-controlled arm, so it is not
   used here.
+- **Letting go: the arm glides to a stop and holds.** A hand usually lets go while the arm is still
+  moving. If the equilibrium simply braked to a stop, the arm would coast past it and the spring would
+  slowly pull it back, by up to a centimetre. So for up to 0.3 s after a let-go the equilibrium follows
+  the arm (plus its resting sag, measured at the tare), then freezes where the arm stopped.
 - **What keeps it safe — none of these limits where the arm may go:**
   - **A leash** (`leash_m`, 3 cm): the equilibrium is never more than this ahead of the arm, so a
     bad force reading can never pull harder than 30 N.
@@ -1470,8 +1588,7 @@ flowchart LR
   | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start move |
   | `ParkMove` | the move to the park pose, out of reach: the run's first move (slow) and the end of every trial. Refuses a park pose whose elbow bends the other way from the start |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
-  | `FreezeAtPoseAction` | at the snap, move the equilibrium onto the arm and hold it there (apple / perturb) |
-  | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's (apple / perturb) |
+  | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's; at the snap, follow the arm completely (the apple is plucked) until it rests; never toward a straight elbow or below the floor (apple / perturb) |
   | `SwitchControllerAction` | switch between the joint controller and `kuka_clik_controller` (restricted-plane / maze) |
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
@@ -1530,7 +1647,7 @@ flowchart LR
 
   so between trials — and while paused — the apple is **out of the monkey's reach**: pulled back over
   the robot's base and raised, at about **(0.2, 0, 1.1) m** in every experiment. The pose is
-  `move_to_park.target_joint_position` in each experiment's YAML (Per-run); the move is `ParkMove`.
+  `move_to_park.target_joint_position` in each experiment's YAML, also live on the dashboard; the move is `ParkMove`.
 
   *Two postures, one place.* The experiments hold the arm in two elbow postures: apple pluck and
   Restricted Plane bend the elbow one way (A4 < 0), the maze, rails and Free Move the other (A4 > 0).
@@ -1575,10 +1692,11 @@ flowchart LR
   the start): still far from singular, but the least conditioned move in the stack. Park takes two
   extra moves per trial, ~2–3 s each at speed scale 1.
 
-  *Is it out of reach?* For apple pluck, park holds the apple ~34 cm behind its start at the same
+  *Is it out of reach?* For apple pluck, park holds the apple ~24 cm behind its start at the same
   height; for the maze family, ~50 cm back and 20 cm up. That is a judgement from the robot's side — check
-  it against the chair. To move it, edit `move_to_park.target_joint_position` (Per-run) keeping A4's
-  sign, and check the path to the start before running:
+  it against the chair. To move it, edit `move_to_park.target_joint_position` (live) keeping A4's
+  sign. The dashboard checks the limits and the elbow, not the path, so check the path to the start
+  first:
   `IIWA7_URDF=/tmp/iiwa7.urdf ros2 run sinthlab_bringup check_park.py --params <the edited YAML>`.
 
   <a id="smartpad-app-close-and-settings-report"></a>**Cancelling the app.** Every set-up question has a
@@ -1663,7 +1781,7 @@ sequenceDiagram
 **Layer 3 — State‑machine orchestration (Python)**
 The experimental flows are orchestrated by high‑level `rclpy` nodes (one per experiment), each
 composed entirely of the modular actions catalogued in §6.2 — `MoveToPositionJointSpace`,
-`PerturbInitialPosition`, `FreezeAtPoseAction`, `SwitchControllerAction`,
+`PerturbInitialPosition`, `ResistanceSoftener`, `SwitchControllerAction`,
 `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction`, the monitors, `AudioCue`, `VisualCue`, `WaitAction` —
 plus `TrialRecorder` and `ExperimentControl`. The per‑scenario flows are below.
 
@@ -1714,8 +1832,10 @@ stateDiagram-v2
     QuietWindow --> GoCue : quiet_window_sec (1 s) [quiet_end]
     GoCue --> Monitor : audio + visual cue [cue_go]
     Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
-    Snap --> Hold : snap cue [cue_snap], freeze the equilibrium on the arm [freeze]
-    Hold --> Park : force_release_shutdown_delay_sec (0.8 s) [recover_start]
+    Snap --> Plucked : snap cue [cue_snap], the pull-back fades to nothing [freeze]
+    Plucked --> Settle : force_release_shutdown_delay_sec (0.8 s) [release_wait]
+    Settle --> Park : the arm at rest, elbow bent (or 5 s) [recover_start]
+    Monitor --> Park : the apple below the floor [safety_trip]
     Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial
     NextTrial --> Paused : pause requested
@@ -1757,8 +1877,8 @@ stateDiagram-v2
     PerturbDelay --> Perturb : start_delay_sec (1.5 s) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap]
-    Snap --> Hold : snap cue, freeze [freeze]
-    Hold --> Park : dwell [recover_start]
+    Snap --> Plucked : snap cue, pull-back released [freeze]
+    Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
     Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
@@ -1777,8 +1897,8 @@ stateDiagram-v2
     Delay --> Perturb : grasp.delay_* (default 0, at once) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap]
-    Snap --> Hold : snap cue, freeze [freeze]
-    Hold --> Park : dwell [recover_start]
+    Snap --> Plucked : snap cue, pull-back released [freeze]
+    Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
     Park --> NextTrial : at park, out of reach [trial_end]
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
@@ -2016,8 +2136,11 @@ return to start, not just the pull.
 | `on_monitor_armed()` | `armed` | — | the baseline is locked; the animal may pull |
 | `on_monitor_snap()` | `snap` | **displacement, m** | the pull crosses the threshold |
 | `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
-| `on_monitor_snap()` | `freeze` | — | the equilibrium is frozen on the arm (`freeze_hold.start()`) |
+| `on_monitor_snap()` | `freeze` | — | the pull-back is released: the equilibrium follows the arm (`resistance.release()`) |
+| `on_monitor_complete()` | `release_wait` | — | the dwell is over; waiting for the arm to rest with the elbow bent |
 | `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
+| `_check_elbow()` | `elbow_flipped` | A4, deg | at `at_start` or before the park: the elbow bends the wrong way (the run carries on) |
+| `on_safety_trip()` | `safety_trip` | — | the apple went more than `floor.trip_margin_m` below [the floor](#the-floor--a-height-the-end-effector-never-goes-below); followed by `recover_start` and the park |
 | `on_park_complete()` | `trial_end` | trial index | the arm is at the park pose |
 
 **Cue delivery events** (all three experiments, fired from the cue classes rather than the state
@@ -2305,8 +2428,9 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
 | `perturbation` | Apple pluck, perturb / perturb bump: the perturbation (`r_m`, `theta_deg`, `plane`), its `trigger` (`go_cue` or `grasp`) and `delay_mode` (`fixed` / `random`; the delay itself is the `perturb_delay_start` event's arg). Constant per trial, hence metadata not a column. |
-| `start_position` | Apple pluck, random start paradigm: which of the 9 start positions this trial used — `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
-| `start_joint_deg` | Apple pluck, random start paradigm: that position's joint pose A1..A7 [deg]. |
+| `start_position` | Apple pluck, random start paradigm: which start position this trial used — by default `C` (origin), `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, as the monkey sees them ([Scenario 3b](#scenario-3b--apple-pluck-random-start-paradigm)). |
+| `plane`, `offset_m` | Apple pluck, random start paradigm: that position's plane and `[a, b]` offset from the start [m]. |
+| `start_joint_deg` | Apple pluck, random start paradigm: the joint pose A1..A7 [deg] it was solved to. |
 | `maze_geometry` | Maze: corridors, checkpoints and goal **as they were at record time**. Without this an old run silently plots against whatever `maze_params.yaml` says today. |
 | `moves` | Every joint-space move of the trial (start, perturbation, park), as it ran: `move`, its `speed_scale`, the **effective** limits after scaling (`v_max_deg_s` — after the 90 deg/s cap — `a_max_rad_s2`, `j_max_rad_s3`), the planned `duration_s`, `from_deg` / `to_deg`, and the `t` / CSV `row` it started at. So each move's speed is on record directly, not reconstructed from the parameters. |
 | `live_changes` | Live parameters applied **mid-trial** (only the move `speed_scale`s do that): each with `name`, `value`, `t`, `t_wall` and the CSV `row` it took effect at. The move it applies to is the next one that starts. Absent when nothing changed. |

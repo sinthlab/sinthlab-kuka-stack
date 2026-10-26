@@ -85,6 +85,7 @@ class ExperimentControl:
         self._reloaders: List[Callable[[], None]] = []
         self._pause_hooks: List[Callable[[], None]] = []
         self._stop_hooks: List[Callable[[], None]] = []
+        self._validators: List[Callable[[str, object, dict], Optional[str]]] = []
         self._immediate: Dict[str, Callable[[object], None]] = {}   # name -> apply(value), right away
         self._change_log: Optional[Callable[[str, object], None]] = None
         # The values the CURRENT trial runs with. rclpy stores an accepted set immediately, but the
@@ -119,6 +120,11 @@ class ExperimentControl:
         change (TrialRecorder.note_change: the trial's sidecar)."""
         self._immediate.update(handlers)
         self._change_log = log
+
+    def add_validator(self, fn: Callable[[str, object, dict], Optional[str]]) -> None:
+        """A check of a live change that needs the orchestrator's own state (the robot model): fn(name,
+        value, context) returns the reason to refuse it, or None. Runs after live_params.check_value."""
+        self._validators.append(fn)
 
     def on_stop_request(self, fn: Callable[[], None]) -> None:
         """Register the orchestrator's Stop now: end the trial in progress at once and park."""
@@ -239,6 +245,13 @@ class ExperimentControl:
                             f"so changing it now would do nothing. Stop, edit it, and start again. "
                             f"Live parameters: {', '.join(LIVE_PARAMS[self._experiment])}"))
             problem = check_value(p.name, _plain(p.value), context)
+            for check in self._validators:
+                if problem:
+                    break
+                try:
+                    problem = check(p.name, _plain(p.value), context)
+                except Exception as exc:
+                    problem = f"could not check {p.name}: {exc}"
             if problem:
                 return SetParametersResult(successful=False, reason=problem)
         for p in params:

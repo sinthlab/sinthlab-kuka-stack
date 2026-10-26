@@ -1,5 +1,15 @@
 /**:
   ros__parameters:
+    # ---- THE FLOOR: the end effector never goes below this height above the ground (per-run) ----
+    # The robot stands on the ground, so heights are base-frame z. Enforced as a soft wall wherever ROS
+    # moves the spring's equilibrium, a trip (abort + park) if the measured point still gets
+    # trip_margin_m below it, and a check of the start / park poses and the moves between them before
+    # the arm goes there. See helpers/floor.py and README "The floor".
+    floor:  # lowest height the end effector may reach
+      height_m: 0.30  # the floor, height above the ground [m]
+      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
+      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+
     # PRE-TRAINING: MOVE VERTICAL. One straight vertical rail through the start -- one leg of the maze.
     # The arm can only slide up and down it. Moving it travel_task.threshold_m away from the start turns
     # the travel quarters of the ring from GREEN to RED; bringing it back to the start ends the trial

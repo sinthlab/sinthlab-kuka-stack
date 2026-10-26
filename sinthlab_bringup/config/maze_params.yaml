@@ -1,5 +1,15 @@
 /**:
   ros__parameters:
+    # ---- THE FLOOR: the end effector never goes below this height above the ground (per-run) ----
+    # The robot stands on the ground, so heights are base-frame z. Enforced as a soft wall wherever ROS
+    # moves the spring's equilibrium, a trip (abort + park) if the measured point still gets
+    # trip_margin_m below it, and a check of the start / park poses and the moves between them before
+    # the arm goes there. See helpers/floor.py and README "The floor".
+    floor:  # lowest height the end effector may reach
+      height_m: 0.30  # the floor, height above the ground [m]
+      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
+      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+
     # Maze runs in POSITION mode: move_to_start/move_to_park use MoveToPositionJointSpace, and MoveInMazeAction
     # streams the rail-constrained equilibrium to kuka_clik_controller. The CABINET
     # (LbrImpedanceControlServer) provides the compliance and holds the arm to the rails.

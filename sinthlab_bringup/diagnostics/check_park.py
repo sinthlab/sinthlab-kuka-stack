@@ -8,6 +8,8 @@ The arm moves park <-> start in joint space every trial. This checks, for the YA
   * along the whole joint path park <-> start (and park <-> each random_start position, for apple
     pluck), the arm stays well conditioned (smallest Jacobian singular value >= 0.10) and >= 10 deg
     from every joint limit;
+  * along that path the end effector stays above the floor (`floor`, helpers/floor.py), as the run
+    itself checks at start-up;
   * where the apple ends up at park, against where it starts.
 
     export IIWA7_URDF=/tmp/iiwa7.urdf     # xacro .../lbr_description/urdf/iiwa7/iiwa7.xacro > it
@@ -58,7 +60,18 @@ def main() -> int:
     p = yaml.safe_load(open(a.params))["/**"]["ros__parameters"]
     park = np.radians(np.array(p["move_to_park"]["target_joint_position"], dtype=float))
     starts = {"start": p["move_to_start"]["target_joint_position"]}
-    starts.update({f"random_start {k}": v for k, v in p.get("random_start", {}).get("positions", {}).items()})
+    rs = p.get("random_start", {})
+    if rs.get("positions"):        # [a, b] offsets in a plane: solved to joints as the run does
+        from sinthlab_bringup.helpers.start_grid import StartGrid
+        solved = StartGrid(robot).solve(starts["start"], rs.get("plane", "frontal"), rs["positions"])
+        for k, (q, why) in solved.items():
+            if why:
+                print(f"random_start {k}: {why}")
+            starts[f"random_start {k}"] = q
+
+    from sinthlab_bringup.helpers.floor import Floor
+    fl = p.get("floor")
+    floor = Floor(fl["height_m"], fl["reference"], fl.get("trip_margin_m", 0.03)) if fl else None
 
     ok = True
     print(f"park  {np.degrees(park).round(1).tolist()}: apple at {apple(park).round(3).tolist()} m, "
@@ -68,9 +81,11 @@ def main() -> int:
         same = (q[3] > 0) == (park[3] > 0)
         path = [park + t * (q - park) for t in np.linspace(0, 1, 101)]
         s, m = min(sigma(x) for x in path), min(margin(x) for x in path)
-        good = same and s >= MIN_SIGMA and m >= MIN_MARGIN_DEG
+        low = floor.check_joint_path(fk, park, q, "the path") if floor else None
+        good = same and s >= MIN_SIGMA and m >= MIN_MARGIN_DEG and low is None
         ok &= good
-        why = "" if good else ("  <- elbow bends the other way" if not same else "  <- too close to singular / a limit")
+        why = "" if good else ("  <- elbow bends the other way" if not same else f"  <- {low}" if low
+                               else "  <- too close to singular / a limit")
         print(f"  <-> {name:16s} apple at {apple(q).round(3).tolist()} m; path sigma_min {s:.3f}, "
               f"margin {m:5.1f} deg  {'ok' if good else 'BAD'}{why}")
     if not ok:

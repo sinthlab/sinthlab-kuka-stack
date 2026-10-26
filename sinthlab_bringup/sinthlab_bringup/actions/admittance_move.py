@@ -14,7 +14,7 @@ The cabinet spring then pulls the arm after the equilibrium. Push harder -> it m
 
 WHY NOT FOLLOW THE MEASURED POSE. Setting the equilibrium to where the arm IS gives zero spring
 force, so nothing holds the arm against the gravity-compensation residual and it sinks -- that is
-the collapse the threshold "give-in" once caused (see freeze_at_pose.py). Here the equilibrium is
+the collapse a threshold "give-in" causes. Here the equilibrium is
 integrated from FORCE, never copied from the arm, so an untouched arm stays put. Upstream
 lbr_ros2_control/AdmittanceController integrates from the measured joints and assumes a stiff
 position-controlled arm, which is why it is not used here.
@@ -33,6 +33,16 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
   * deadband_n     a THRESHOLD: a (tared) force below it moves nothing, so force-reading noise cannot
                    creep the arm. Above it the WHOLE force counts -- it is not subtracted from every
                    push -- with a short ramp (one dead band wide) so the start is not a jolt.
+
+LETTING GO: THE ARM GLIDES TO A STOP AND HOLDS. A hand usually lets go while the arm is still moving
+fast. The equilibrium, which runs 1-2 cm ahead of the arm, then brakes at accel_limit_mps2 and stops a
+few cm on; the arm coasts past it and the cabinet spring pulls it back -- slowly, against the joints'
+friction, so it creeps back over up to a second: the "spring pulling back" instead of a stable hold
+(free-move recording: 5-11 mm past the equilibrium after let-gos at 0.2-0.3 m/s). So on release (the
+force falls back under the threshold) the equilibrium's speed is zeroed and, for up to SETTLE_SEC, it is
+set every tick to where the arm IS plus its resting offset (equilibrium - arm at rest, measured at the
+tare: the sag under the gravity residual). The spring then neither pulls back nor drags forward, the
+arm glides to a stop, and the equilibrium freezes where it stopped (arm still, or SETTLE_SEC up).
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
 THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
@@ -65,7 +75,11 @@ from rclpy.node import Node as rclpyNode
 import optas
 
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
+from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.hand_force import HandForce
+
+SETTLE_SEC = 0.3        # after letting go: the longest the equilibrium follows the arm while it glides to a stop
+SETTLED_MPS = 0.01      # ...or until the arm is slower than this
 
 
 class AdmittanceMoveAction:
@@ -89,6 +103,7 @@ class AdmittanceMoveAction:
         self._hand = HandForce(robot_description, self.ee_link, self._jac_damping)
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
+        self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
         self.reload()
@@ -103,6 +118,10 @@ class AdmittanceMoveAction:
         self._v = np.zeros(3)                           # equilibrium velocity (accel-limited)
         self._tare = np.zeros(3)
         self._tare_samples = []
+        self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
+        self._pushing = False
+        self._settle_until = 0.0                        # gliding to a stop after a let-go until this time
+        self._p_prev: Optional[np.ndarray] = None
         self._t_prev: Optional[float] = None
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
@@ -136,6 +155,9 @@ class AdmittanceMoveAction:
         self._f_filt[:] = 0.0
         self._v[:] = 0.0
         self._t_prev = None
+        self._p_prev = None
+        self._pushing = False
+        self._settle_until = 0.0
         self._t_start = time.monotonic()
 
     def enable_motion(self) -> None:
@@ -149,7 +171,13 @@ class AdmittanceMoveAction:
                     f"Free move: resting force {np.round(tare, 1)} N exceeds tare_max_n "
                     f"({self._tare_max:g} N) -- was the arm being touched? Keeping the previous tare "
                     f"{np.round(self._tare, 1)} N.")
-        self._node.get_logger().info(f"Free move: tare {np.round(self._tare, 2)} N (base frame); moving.")
+        if self._eq is not None and self._p_meas is not None:
+            off = self._eq - self._p_meas                 # the resting sag under the gravity residual
+            n = float(np.linalg.norm(off))
+            self._rest_offset = off if n <= self._leash else off * (self._leash / n)
+        self._node.get_logger().info(f"Free move: tare {np.round(self._tare, 2)} N (base frame), resting offset "
+                                     f"{np.round(self._rest_offset * 1000, 1)} mm; moving.")
+        self._pushing = False
         self._moving = True
 
     def stop(self) -> None:
@@ -220,6 +248,28 @@ class AdmittanceMoveAction:
         k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
         self._f_filt += k * (f - self._f_filt)
         self._f_used = self._threshold(self._f_filt)
+
+        # Let go: glide to a stop, then hold (class doc, "letting go").
+        arm_speed = (float(np.linalg.norm(self._p_meas - self._p_prev)) / dt
+                     if self._p_prev is not None and dt > 0.0 else 0.0)
+        self._p_prev = self._p_meas.copy()
+        # Released = the force is back under the threshold. (Half the threshold was tried: after a let-go
+        # the reading hovers at 1-2.5 N, so it fired late on half the let-gos, after the run-on.)
+        if self._pushing and not np.any(self._f_used):
+            self._pushing = False
+            self._v[:] = 0.0
+            self._settle_until = now + SETTLE_SEC
+        if not self._pushing:
+            if not np.any(self._f_used):
+                if now < self._settle_until:
+                    self._eq = self._floor.clamp_xyz(self._p_meas + self._rest_offset, self._anchor[0:3, 0:3])
+                    if arm_speed < SETTLED_MPS:
+                        self._settle_until = 0.0
+                self._publish(self._eq)
+                return
+            self._pushing = True
+            self._settle_until = 0.0
+
         v = self._f_used / self._damping
         speed = float(np.linalg.norm(v))
         if speed > self._max_speed > 0.0:
@@ -235,6 +285,9 @@ class AdmittanceMoveAction:
         dist = float(np.linalg.norm(lead))
         if dist > self._leash:
             eq = self._p_meas + lead * (self._leash / dist)
+        # The floor: clamp the integrated equilibrium itself, so a push down at the floor winds nothing
+        # up and the arm lifts off it at once.
+        eq = self._floor.clamp_xyz(eq, self._anchor[0:3, 0:3])
         # Remember the speed actually applied (after the leash), so a held-back equilibrium does not
         # build up speed it would release as a lurch.
         self._v = (eq - self._eq) / dt if dt > 0.0 else v

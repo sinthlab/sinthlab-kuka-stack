@@ -21,6 +21,7 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_to_position_joint_space import MoveToPositionJointSpace
+from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.node_utils import get_required_param
 
 
@@ -35,6 +36,7 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         # Placeholder until resolved from the live start pose.
         self._joint_pos_target = np.zeros(7)
         self._joint_limits = self._urdf_joint_limits(node)
+        self._floor = Floor.from_node(node)
 
     def _read_polar(self, node: rclpyNode) -> None:
         self._polar_r_m = float(get_required_param(node, self._param_prefix + "polar_r_m"))
@@ -58,6 +60,14 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
         else:                                     # "horizontal" (default): X-Y
             offset = np.array([r * np.cos(th), r * np.sin(th), 0.0])
         target_pos = start_pos + offset
+        # The floor: a perturbation never takes the apple below it -- the target is raised to it instead.
+        T_start = np.asarray(self._fk_func(self._q_init), dtype=float)
+        raised = self._floor.clamp_xyz(target_pos, T_start[0:3, 0:3])
+        if raised[2] > target_pos[2] + 1e-6:
+            self._node.get_logger().warn(
+                f"Polar perturbation would take the {self._floor.reference.replace('_', ' ')} below the floor "
+                f"({self._floor.height:.3f} m): raised by {(raised[2] - target_pos[2]) * 100:.1f} cm.")
+            target_pos = raised
 
         q_target = self._ik_position_dls(target_pos, self._q_init)
         self._joint_pos_target = q_target
@@ -76,6 +86,9 @@ class PerturbInitialPosition(MoveToPositionJointSpace):
                 f"Polar perturbation lands {margin:.1f} deg from a joint limit -- the cabinet may stop "
                 f"the arm. The per-plane caps assume the default start pose; reduce polar_r_m or change "
                 f"polar_theta_deg / polar_plane.")
+        problem = self._floor.check_joint_path(self._fk_func, self._q_init, q_target, "the perturbation")
+        if problem:     # position IK lets the flange tilt, so the apple can still dip on the way
+            self._node.get_logger().warn(f"Polar perturbation: {problem}; the floor trip will catch it.")
         if residual_mm > 5.0:
             self._node.get_logger().warn(
                 f"Polar IK residual {residual_mm:.1f} mm > 5 mm — target may be near a joint limit or "

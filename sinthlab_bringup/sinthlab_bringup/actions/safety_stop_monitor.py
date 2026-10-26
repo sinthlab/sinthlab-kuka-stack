@@ -2,7 +2,8 @@
 """Runaway safety-stop for the compliant experiments.
 
 Watches the EE (tf ``base_frame`` -> ``ee_frame``) and fires ``on_trip`` ONCE if the arm moves too far
-from where the trial started, or moves too fast. It is a backstop for faults the rest of the stack does
+from where the trial started, moves too fast, or takes the end effector below the floor (helpers/floor.py:
+more than ``floor.trip_margin_m`` under ``floor.height_m``). It is a backstop for faults the rest of the stack does
 NOT halt on — most importantly a gravity-driven fall when a *free* axis (e.g. Z in the vertical maze)
 is left holding the tool weight with too little stiffness or wrong load data. (The FRI CommandGuard only
 neutralises the outgoing command on a velocity fault; it does not stop the trial.)
@@ -20,6 +21,9 @@ from rclpy.node import Node as rclpyNode
 from rclpy.time import Time
 import tf2_ros
 
+from scipy.spatial.transform import Rotation
+
+from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
@@ -39,7 +43,8 @@ class SafetyStopMonitor:
         # 0 turns the distance check off (free move: it has no boundary; only the speed check runs).
         self._max_disp = float(get_required_param(node, self._param_prefix + "max_displacement_m"))
         # Trip if the EE speed exceeds this (m/s). Normal hand guiding stays well below this; a fall or
-        # lurch blows past it. Catches a runaway before it travels max_displacement.
+        # lurch blows past it. Catches a runaway before it travels max_displacement. 0 = off (apple
+        # pluck: a monkey's pull may be fast, and its only check is the floor).
         self._max_speed = float(get_required_param(node, self._param_prefix + "max_speed_mps"))
         # Speed is a single-sample finite difference of a TF lookup, so it is NOISY: at 100 Hz a 1.3 cm
         # jitter (or one stale/dropped transform) reads as 1.3 m/s. Require the threshold to be exceeded
@@ -47,6 +52,7 @@ class SafetyStopMonitor:
         self._speed_trip_samples = int(get_required_param(node, self._param_prefix + "speed_trip_samples"))
         self._speed_over = 0
 
+        self._floor = Floor.from_node(node)
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
 
@@ -61,7 +67,9 @@ class SafetyStopMonitor:
 
         node.get_logger().info(
             f"SafetyStopMonitor: max displacement "
-            f"{f'{self._max_disp:.2f} m' if self._max_disp > 0 else 'off'}, max speed {self._max_speed:.2f} m/s"
+            f"{f'{self._max_disp:.2f} m' if self._max_disp > 0 else 'off'}, max speed "
+            f"{f'{self._max_speed:.2f} m/s' if self._max_speed > 0 else 'off'}, floor {self._floor.describe()} "
+            f"(trips {self._floor.trip_margin * 100:.0f} cm below)"
         )
 
     def start(self) -> None:
@@ -73,22 +81,26 @@ class SafetyStopMonitor:
     def stop(self) -> None:
         self._ready = False
 
-    def _ee_pos(self) -> Optional[np.ndarray]:
+    def _ee_pose(self) -> Optional[np.ndarray]:
         try:
             ts = self._tf_buffer.lookup_transform(
                 self._base_frame, self._ee_frame, Time(), timeout=Duration(seconds=0.05)
             )
-            t = ts.transform.translation
-            return np.array([t.x, t.y, t.z])
+            t, r = ts.transform.translation, ts.transform.rotation
+            T = np.eye(4)
+            T[:3, :3] = Rotation.from_quat([r.x, r.y, r.z, r.w]).as_matrix()
+            T[:3, 3] = [t.x, t.y, t.z]
+            return T
         except Exception:
             return None
 
     def _step(self) -> None:
         if not self._ready:
             return
-        p = self._ee_pos()
-        if p is None:
+        T = self._ee_pose()
+        if T is None:
             return
+        p = T[:3, 3]
         if self._baseline is None:
             self._baseline = p.copy()
             self._prev = p.copy()
@@ -104,10 +116,14 @@ class SafetyStopMonitor:
 
         # Debounce the speed check (see _speed_trip_samples); displacement is a position, not a
         # derivative, so it needs no debouncing.
-        self._speed_over = self._speed_over + 1 if speed >= self._max_speed else 0
+        self._speed_over = self._speed_over + 1 if 0.0 < self._max_speed <= speed else 0
+        clearance = self._floor.clearance(T)
 
         reason = None
-        if self._max_disp > 0.0 and disp >= self._max_disp:   # 0 = speed check only (free move)
+        if clearance < -self._floor.trip_margin:
+            reason = (f"the {self._floor.reference.replace('_', ' ')} is {-clearance * 100:.1f} cm below the "
+                      f"floor ({self._floor.height:.3f} m)")
+        elif self._max_disp > 0.0 and disp >= self._max_disp:   # 0 = no distance check (free move)
             reason = f"displacement {disp:.3f} m >= {self._max_disp:.2f} m"
         elif self._speed_over >= self._speed_trip_samples:
             reason = (f"speed {speed:.3f} m/s >= {self._max_speed:.2f} m/s for "

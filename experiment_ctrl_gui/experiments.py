@@ -82,7 +82,7 @@ EXPERIMENTS: List[Experiment] = [
         summary="Pull the apple 0.1 m in any direction; snap cue, hold, recover. Normal: from a fixed start. "
                 "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue. "
                 "Perturb bump: the same perturbation, triggered when the monkey grasps the apple. "
-                "Random start: each trial starts at one of 9 positions (origin + 8 compass directions).",
+                "Random start: each trial starts at one of a set of positions in a plane around the start (default: origin + 8 compass directions, 5 cm).",
         paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb"),
                    ("perturb_bump", "Pluck perturb bump"), ("random_start", "Pluck random start")],
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
@@ -191,6 +191,11 @@ CAUTION: Dict[str, str] = {
     "resistance.base_stiffness_n_per_m": ("Must equal the SmartPad profile's translational stiffness (Uniform 100 = "
                                           "100, Uniform 400 = 400). If they differ, every pull feels softer or "
                                           "stiffer than the resistance slider says."),
+    "floor.height_m": ("The lowest the end effector may go, height above the ground. The run refuses to start if the "
+                       "start or park pose, or the move between them, goes below it."),
+    "random_start.positions.*": ("[a, b] metres from the start pose in random_start.plane (frontal: a = +Y, b = up). "
+                                 "The run solves them to joints at Start and stops with the reason if one is out of "
+                                 "reach or near a limit; check first with solve_start_grid.py."),
     "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
