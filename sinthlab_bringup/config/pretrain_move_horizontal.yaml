@@ -10,34 +10,36 @@
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
-    # PRE-TRAINING: MOVE HORIZONTAL. One straight horizontal rail through the start -- one leg of the
-    # maze. The arm can only slide sideways along it. Moving it travel_task.threshold_m away from the
-    # start turns the travel quarters of the ring from GREEN to RED; bringing it back to the start ends
-    # the trial with the reward. Same plane orientation and SmartPad setup as the maze; it starts at the height of the maze's lowest row.
+    # PRE-TRAINING: MOVE HORIZONTAL. Free Move on one HORIZONTAL rail through the start -- one leg of
+    # the maze. The arm goes left or right wherever it is pushed and stays where it is let go; across
+    # the rail the cabinet spring holds it on the rail. No threshold, no goal, no reward: it runs as one
+    # SESSION until you end it (End session / Pause / Stop after trial, or session_sec), then parks.
     #
-    # >>> SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30
-    # -- exactly the maze's setup. Z 2500 (flange Z = tool axis, along base +X) holds the plane;
-    # flange X/Y 1000 hold the arm on the rail.
+    # HOW: as Free Move (actions/admittance_move.py) with free_move.rail_axis y: only the hand's force
+    # along the rail moves the equilibrium, only along the rail, and never past its ends.
+    #
+    # >>> SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30 -- the maze's setup. Z 2500
+    #     (flange Z = tool axis, along base +X) holds the plane; along the rail the spring is 1000 N/m,
+    #     as in Free Move, so the same feel settings apply (damping 50 -- see the free_move block).
     #
     # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): sideways is easy
     # -- at +/-0.25 m every joint is still >= 39 deg from its limit, well away from singular poses. The
-    # rail is +/-0.15 m with a 0.10 m threshold. Gravity acts across this rail, so the rail itself holds
-    # the arm up (a few mm of sag at Z 1000 N/m) and an untouched arm stays put.
-    experiment: "move_horizontal"  # experiment name in the status topic, the trial data and the dashboard
+    # rail is +/-0.15 m.
+    experiment: "move_horizontal"  # free_move | move_vertical | move_horizontal: the same node, set by this YAML
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
-    base_link: "lbr_link_0"  # URDF base link the rail is defined in
-    end_effector_link: "lbr_link_ee"  # URDF end-effector link the rail constrains
+    base_link: "lbr_link_0"  # URDF base link the motion is computed in
+    end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
-    timeout_sec: 30.0  # trial time limit [s]; on expiry: timeout cue, wait for release, reset
+    session_sec: 0.0  # session length [s]; 0 = until Pause / Stop after trial. > 0: ends by itself, then the next starts
 
-    move_to_start:  # joint-space move to the trial start pose (the pre-training start)
+    move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
       # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
       # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
       # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
       target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive: the rail anchors on it
+      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
@@ -71,42 +73,50 @@
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
       physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
 
-    # ---- THE TASK (live: change between trials from the dashboard) ----
-    travel_task:  # out to the threshold, then back to the start
-      update_rate: 50  # loop rate of this monitor [Hz]
-      axis: "y"  # which base axis counts as travel: y = sideways (per-run; the rail decides it)
-      threshold_m: 0.10  # travel from the start that turns the ring red [m]; must be short of the rail end
-      direction: "both"  # which way counts: both | positive (+Y) | negative (-Y)
-      require_return: true  # true: the trial succeeds back at the start; false: at the threshold
-      return_tolerance_m: 0.02  # "back at the start" = within this of it [m]
-      debug_log_enabled: false  # print the travel periodically
+    # ---- THE FEEL (live: change between trials from the dashboard) ----
+    free_move:  # admittance: the equilibrium moves at force / damping
+      # STABILITY FIRST. Free Move is a loop through the hand: force -> equilibrium -> (~80 ms) cabinet
+      # -> (~45 ms) arm -> hand, ~170 ms round trip with the force filter. A loop through a hand with
+      # that much delay is stable only if the damping is high enough for how firmly the hand holds:
+      # at 30 it rang (stop-go bursts), at 20 it trembled; 50 is smooth (recordings 26 Oct). At 50,
+      # 5 N moves the arm 0.1 m/s, 10 N 0.2 m/s. Go below ~40 only with care.
+      damping_ns_per_m: 50.0  # force per speed [N s/m]: LOWER = LIGHTER, but below ~40 the arm rings or trembles
+      # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
+      # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
+      # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
+      deadband_n: 2.5  # force below this is ignored, so a resting arm never creeps or oscillates [N]; 0 = none
+      max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
+      # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
+      # target speed follows every jolt. But it also delays the arm behind the hand, and too low a cap
+      # makes the hand and arm rock against each other: at 1.5 the equilibrium sat on the cap for 45% of
+      # every push and the arm oscillated at ~1.5 Hz, moving in stop-go bursts (recording 26 Oct). A
+      # hand asks for more than 4 only ~4% of the time. Lower = smoother starts but laggier; 0 = off.
+      accel_limit_mps2: 4.0  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.08 s)
+      force_filter_tau_sec: 0.03  # low-pass on the force reading [s]; larger = smoother, but its lag destabilises the loop
+      # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
+      # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
+      # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
+      # amplifies most: 1 Nm there reads as 4.3 N at damping 0.02 (that oscillated, ~1 Hz in Z), 3.4 N at
+      # 0.1, 2.0 N at 0.2. Damping 0.1 reads a push at 78-96 % of its strength, bent by at most 6 deg --
+      # a constant small bend for a pose, never a snap. Keep the tool's load data current: stale load
+      # data is the largest model error. With debug_log_enabled the log shows the per-joint torques.
+      jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
+      tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
+      tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
+      leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
+      rail_axis: y  # the rail: the base Y axis through the start (none = free in every direction, as Free Move)
+      rail_min_m: -0.15  # the rail's -Y end, from the start [m]: the equilibrium stops there
+      rail_max_m: 0.15  # the rail's +Y end, from the start [m]
+      debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
-    # ---- the rail: the maze machinery with a single straight rail ----
-    virtual_fixture_profile: "horizontal_rail"  # which block under virtual_fixtures is active
-    virtual_fixtures:  # fixture geometry; virtual_fixture_profile picks the active one
-      max_target_step_m: 0.05  # max move of the commanded equilibrium per tick [m] -- a jerk guard
-      anchor_settle_sec: 3.0  # wait this long after the rail starts before anchoring it [s]
-      anchor_on_measured: true  # anchor on where the arm rests (true) rather than where it was commanded
-      debug_log_enabled: false  # print where the arm is on the rails (a, b, which rail) periodically
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      rail_lead_sec: 0.03  # along-rail lead [s]: + easier (assist), - harder (drag), 0 off. 0.03 cancels most of the ~70 ms CLIK + FRI latency
-      horizontal_rail:  # one horizontal rail through the start
-        type: "maze"  # geometry class: the maze's rail fixture with one rail
-        restricted_axis: "x"  # locked base axis; the rail lives in the Y-Z plane like the maze
-        corridor_frame: "relative"  # offsets from the anchored start (a = Y, b = Z)
-        corridor_a_min: [-0.15]  # -Y end of the rail [m] -- the end stop on that side
-        corridor_a_max: [0.15]  # +Y end of the rail [m] -- the end stop on that side
-        corridor_b_min: [0.0]  # rail height [m] (0 = level with the start)
-        corridor_b_max: [0.0]  # rail height [m], equal to corridor_b_min for a straight rail
-
-    # Runaway stop: abort to park if the arm goes too far or too fast.
-    rail_safety:  # runaway stop
+    # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
+    free_move_safety:  # runaway stop
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.25  # abort if the EE gets farther than this from the trial start [m]
-      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s]
+      max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
+      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s] (the free move is capped at max_speed_mps)
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
@@ -119,38 +129,24 @@
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
     # ---- cues (live) ----
-    quiet_window_sec: 4.0  # at the start, before the go cue [s]; keep >= anchor_settle_sec
+    quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
     audio_cue:  # switch for every beep
       enabled: true  # false = no beeps at all; the trial sequence is unchanged
-    audio_cue_play:  # go cue
+    audio_cue_play:  # go cue: free movement starts
       frequency_hz: 1500  # go tone: pitch [Hz]
       duration_ms: 800  # go tone: length [ms]
-    audio_cue_threshold:  # the threshold is reached (ring turns red)
-      frequency_hz: 1000  # threshold tone: pitch [Hz]
-      duration_ms: 200  # threshold tone: length [ms]
-    audio_cue_reward:  # out and back done
-      frequency_hz: 2200  # reward tone: pitch [Hz]
-      duration_ms: 400  # reward tone: length [ms]
-    audio_cue_timeout:  # timed out
-      frequency_hz: 800  # timeout tone: pitch [Hz]
-      duration_ms: 800  # timeout tone: length [ms]
+    audio_cue_end:  # the session is over
+      frequency_hz: 800  # end tone: pitch [Hz]
+      duration_ms: 600  # end tone: length [ms]
     nsp_sync:  # event codes to the Blackrock NSP
       enabled: false  # send sync pulses to the Blackrock NSP -- the ROS side is not wired yet (README §8)
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
-      remote_test_trigger: true  # the quarter cues need the Wi-Fi trigger (the X76 wire is one bit)
+      remote_test_trigger: true  # the ring state needs the Wi-Fi trigger (the X76 wire is one bit)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
-    # The ring holds a state per trial phase: travel quarters GREEN from the go cue, RED once the
-    # threshold is reached, the success colour at the end, dark between trials.
-    ring_cue:  # which quarters light, and in what colour per phase
-      # Ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59. Which is "up" depends on how the ring
-      # sits on the flange: light quarter 0 alone with
-      #   curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"
-      # and set this to the two quarters that face left and right.
+    # The ring is GREEN while the arm is free to move, dark otherwise.
+    ring_cue:  # which quarters light, and in what colour
       quarters: [1, 3]  # the left and right quarters, 0-3
-      colours:  # RGBW per phase, each 0-255; [0, 0, 0, 0] = dark
-        go: [0, 255, 0, 0]  # travelling out -- green
-        reached: [255, 0, 0, 0]  # threshold reached, come back -- red
-        success: [0, 0, 255, 0]  # out and back done -- blue
-        timeout: [0, 0, 0, 0]  # timed out -- dark
+      colours:  # RGBW, each 0-255
+        go: [0, 255, 0, 0]  # free to move -- green

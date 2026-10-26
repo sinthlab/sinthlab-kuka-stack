@@ -138,9 +138,9 @@ EXPERIMENTS += [
     ),
     Experiment(
         key="move_vertical", label="Move Vertical", group="pretraining",
-        summary="One vertical rail: up or down to the threshold (ring green → red), then back to start.",
+        summary="Free Move on one vertical rail: the arm goes up or down wherever it is pushed and holds where it is let go. No threshold.",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
-        params_yaml="pretrain_move_vertical.yaml", node="rail_training_orchestrator",
+        params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
@@ -148,9 +148,9 @@ EXPERIMENTS += [
     ),
     Experiment(
         key="move_horizontal", label="Move Horizontal", group="pretraining",
-        summary="One horizontal rail: left or right to the threshold (ring green → red), then back to start.",
+        summary="Free Move on one horizontal rail: the arm goes left or right wherever it is pushed and holds where it is let go. No threshold.",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
-        params_yaml="pretrain_move_horizontal.yaml", node="rail_training_orchestrator",
+        params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
@@ -186,11 +186,12 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
-    "virtual_fixtures.*_rail.*": "The rail. Keep travel_task.threshold_m short of its ends; up is limited to ~+0.12 m by reach.",
-    "travel_task.axis": "Must be one of the rail's own axes (vertical: z, horizontal: y).",
+    "free_move.rail_*": "The rail through the start (Move Vertical: z, up to ~+0.12 m by reach; Move Horizontal: y). none = Free Move.",
     "resistance.base_stiffness_n_per_m": ("Used only until the SmartPad app reports its profile; from then on the base "
                                           "is the reported stiffness (Uniform 100 = 100, Uniform 400 = 400), and the "
                                           "felt-stiffness slider runs up to it once the run has started."),
+    "free_move.damping_ns_per_m": ("Below about 40 the arm rings (stop-go bursts) or trembles: the hand-arm loop has "
+                                   "~170 ms of delay. 50 is smooth."),
     "floor.height_m": ("The lowest the end effector may go, height above the ground. The run refuses to start if the "
                        "start or park pose, or the move between them, goes below it."),
     "random_start.positions.*": ("[a, b] metres from the start pose in random_start.plane (frontal: a = +Y, b = up). "

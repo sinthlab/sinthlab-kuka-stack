@@ -227,7 +227,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
-| Move Vertical / Move Horizontal | `timeout_sec`, `virtual_fixtures.rail_lead_sec`, the task `travel_task.threshold_m` / `direction` / `require_return` / `return_tolerance_m`, the ring `ring_cue.quarters`, `ring_cue.colours.*` |
+| Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`); the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
 
 These are deliberately **not** live:
 - `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
@@ -283,8 +283,8 @@ document a new parameter, see [§10](#10-development--contributing).
 ### Without the dashboard
 The same controls from a terminal (namespace `lbr`, apple pluck shown). The orchestrator nodes are
 `apple_pluck_orchestrator` (all paradigms), `restricted_plane_orchestrator` and
-`maze_orchestrator`; for pre-training, `free_move_orchestrator` and `rail_training_orchestrator`
-(Move Vertical and Move Horizontal).
+`maze_orchestrator`; for pre-training, `free_move_orchestrator` (Free Move, Move Vertical and Move
+Horizontal).
 
 ```bash
 ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py                 # start; Ctrl-C stops
@@ -678,7 +678,7 @@ layers ([`helpers/floor.py`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)
      position and the perturbed start, must stay 1 cm above the floor, so the floor is never what
      ends a pull. With the default start (apple bottom 1.057 m) and the 10 cm threshold, the floor
      can be at most 0.947 m;
-   - **maze and rails:** the lowest rail point must be 1 cm above the floor (Move Vertical: at most
+   - **maze and Move Vertical:** the lowest rail point must be 1 cm above the floor (Move Vertical: at most
      0.786 m; maze: 0.906 m). Free Move has no task to protect: only the start and park.
 
    **The dashboard refuses a setup that breaks these, with the reason and the highest floor that
@@ -778,8 +778,9 @@ marks the start of that wait).
 **The elbow wall.** A pull toward the monkey straightens the elbow (A4 → 0), and a straight elbow can
 fold back the wrong way and stay there (see *Room for the pull* above). So the equilibrium never
 follows the arm closer to straight than `resistance.elbow_min_deg` (35°) — during the pull or after
-the snap — and never below [the floor](#the-floor--a-height-the-end-effector-never-goes-below). From
-there the full base spring resists. **That is a real wall only on a stiff base**: on Uniform 400
+the snap — nor closer than 14° to any joint's limit (A2/A4/A6 stop at ±105°, inside the cabinet's
+±112° axis-range monitors), and never below [the floor](#the-floor--a-height-the-end-effector-never-goes-below).
+From there the full base spring resists. **That is a real wall only on a stiff base**: on Uniform 400
 it holds 4 N per cm; on Uniform 100 only 1 N per cm, which a determined pull goes through. So for
 apple pluck, prefer **Uniform 400 with `resistance.stiffness_n_per_m` 100**: the pull feels as on
 Uniform 100, and the walls are 4× firmer. If the elbow does end up folded the wrong way, the trial
@@ -1348,19 +1349,18 @@ they are under the **Pre-training** tab. All three:
   the height of the maze's lowest row (the maze start is 11 cm higher and 5 cm back). Their CLIK posture
   is `config/clik_nullspace_pretrain.yaml`;
 - run on the CLIK, like the maze;
-- end like the maze: a cue, then the arm holds and waits for the hand to let go, then it returns to
-  the start.
+- run as one **session** with no threshold and no goal, until you end it (End session, Pause, Stop
+  after trial or Stop now), then the arm parks.
 - record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
 | **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | slides it up or down one vertical rail to the threshold (0.10 m), then back | back at the start |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | slides it left or right along one horizontal rail, then back | back at the start |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.12 m); it stays where it is let go | no goal — one session, as Free Move |
+| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | no goal — one session, as Free Move |
 
-Use **damping 0.7** and **elbow 30** for all three. Move Vertical and Move Horizontal share one
-orchestrator (`rail_training_orchestrator.py`); their YAML picks the rail. Free Move has its own
-(`free_move_orchestrator.py`).
+Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
+(`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.
 
 #### Free Move — admittance, no goal, no boundary
 The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
@@ -1376,10 +1376,11 @@ ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportion
 does the IK; ROS only moves the target point.
 
 - **The feel is set in the YAML, not on the SmartPad, and all of it is live.**
-  - `damping_ns_per_m`: the only resistance — lower is lighter. At the default 30, a 6 N push moves
-    the arm about 0.2 m/s and 10 N about 0.33 m/s, so speed follows force over a normal push. Much
-    lower and most pushes hit the speed cap, so the arm moves on/off (jerky starts); very low values
-    may also buzz or oscillate. Come down gradually.
+  - `damping_ns_per_m`: the only resistance — lower is lighter, **but below about 40 the arm rings
+    or trembles.** Free Move is a loop through the hand (force → equilibrium → cabinet → arm → hand)
+    with about 170 ms of delay, and such a loop is stable only if the damping is high enough for how
+    firmly the hand holds: at 30 the arm moves in stop-go bursts, at 20 it trembles. At the default
+    **50**, 5 N moves the arm about 0.1 m/s and 10 N about 0.2 m/s.
   - `deadband_n` (default **2.5 N**): a **round threshold**, the same in every direction. A force
     below it moves nothing; above it the force counts, in full from twice the threshold. It also keeps
     the arm's own small model errors from driving the motion (below). Raise it if the arm creeps or
@@ -1390,8 +1391,8 @@ does the IK; ROS only moves the target point.
     every jolt and the motion feels bumpy. But it also makes the arm lag the hand: too low (around
     1.5 m/s²) and the arm moves in stop-go bursts and rocks against the hand at ~1.5 Hz. Lower is
     smoother, but laggier.
-  - `force_filter_tau_sec`: low-pass on the force reading (larger = smoother, but laggier, and lag
-    can make low damping oscillate).
+  - `force_filter_tau_sec`: low-pass on the force reading (default 0.03 s; larger = smoother, but its
+    lag adds to the loop's delay and makes it ring sooner).
 - **Where the force comes from.** Free Move computes the hand's force itself from the arm's
   **external joint torques** (`F = pinv(J)ᵀ τ_ext`), with a damped Jacobian inverse
   (`jacobian_damping`, Per-run, default **0.1**) and the round threshold above. It does not use lbr's
@@ -1444,27 +1445,28 @@ does the IK; ROS only moves the target point.
   and the threshold before it starts. The estimate of the hand's force also drifts a little with
   posture, so far from the start some directions can feel slightly assisted or held back.
 
-#### Move Vertical / Move Horizontal — one leg of the maze
-Each is the maze's rail fixture with **one straight rail** through the start (`virtual_fixtures.vertical_rail`
-or `horizontal_rail`, per-run). The task is in `travel_task`, and all of it is live:
+#### Move Vertical / Move Horizontal — Free Move on one rail
+Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The
+arm goes along the rail wherever it is pushed and stays where it is let go; across the rail the
+cabinet spring holds it on the rail. There is **no threshold, no goal and no reward**: it runs as one
+session, ended the same ways as Free Move, and it has the same feel settings (`free_move.*`, all live).
 
-- `threshold_m`: how far out turns the ring red.
-- `direction`: `both`, `positive` (up / +Y) or `negative`.
-- `require_return`: `false` makes the threshold itself the success.
-- `return_tolerance_m`: how close to the start counts as back.
+The rail is per-run, in the `free_move` block:
 
-**The ring shows the task.** It holds a state per phase (`ring_cue`, live):
+| Parameter | Move Vertical | Move Horizontal |
+|---|---|---|
+| `rail_axis` | `z` | `y` |
+| `rail_min_m` / `rail_max_m` | −0.12 / +0.12 m | −0.15 / +0.15 m |
 
-| Phase | Ring |
-|---|---|
-| from the go cue, travelling out | travel quarters **green** |
-| threshold reached, come back | travel quarters **red** (plus `audio_cue_threshold`) |
-| success | **blue** (plus `audio_cue_reward`) |
-| timeout, and between trials | dark |
+Only the hand's force **along** the rail counts, the equilibrium moves only along it, and it stops at
+the rail's ends ([`admittance_move.py`](sinthlab_bringup/sinthlab_bringup/actions/admittance_move.py)).
+Because the equilibrium is moved by force and never copied from the arm, an untouched arm holds its
+height on the vertical rail. `rail_axis: none` is Free Move itself.
 
-`ring_cue.quarters` names the quarters that light: Move Vertical uses `[0, 2]` (up and down),
-Move Horizontal `[1, 3]` (left and right), and Free Move all four (green while free to move). Which quarter faces up depends on
-how the ring sits on the flange. Light quarter 0 alone once and set the lists to match:
+**The ring.** `ring_cue.quarters` names the quarters that light green while the arm is free to move:
+Move Vertical `[0, 2]` (up and down), Move Horizontal `[1, 3]` (left and right), Free Move all four.
+Which quarter faces up depends on how the ring sits on the flange. Light quarter 0 alone once and set
+the lists to match:
 ```bash
 curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"     # quarter 0 green; /off to clear
 ```
@@ -1472,17 +1474,9 @@ The quarter cues use the board's existing `/segments` endpoint, so **the firmwar
 They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
 one bit, not a pattern.
 
-**Reach and gravity** (IK from the pre-training start, holding the tool orientation):
-- **Sideways is easy:** at ±0.25 m every joint is still ≥ 39° from its limit.
-- **Down is easy.**
-- **Up is the limit.** The arm nears a singular pose above +0.12 m, and +0.20 m is unreachable.
-  Hence the vertical rail is ±0.12 m and the horizontal ±0.15 m, both with a 0.10 m threshold.
-- **On the vertical rail nothing holds the arm up** except the load data. An untouched arm sinks a
-  few cm and stops; the rail anchors after that settle (`anchor_settle_sec`, during the 4 s quiet
-  window). **Check that an untouched arm never reaches the threshold** before a session with a
-  subject.
-
-The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end.
+**Reach** (IK from the pre-training start, holding the tool orientation): sideways is easy (at ±0.25 m
+every joint is still ≥ 39° from its limit) and so is down; **up is the limit** — the arm nears a
+singular pose above +0.12 m, and +0.20 m is unreachable. Hence the vertical rail's +0.12 m end.
 
 #### Before the first session with a subject
 1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`
@@ -1491,13 +1485,13 @@ The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end
    at once; the force frame is wrong.
 2. **Free Move, creep and feel.** Leave the arm untouched for 10 s; it must not move. Then move it
    around the space the subject will use, and tune `damping_ns_per_m` and `deadband_n` live.
-3. **Move Vertical, gravity.** Let go at the start. The arm must stop well short of the threshold.
-4. **Ring.** Confirm the travel quarters really are up/down (or left/right) as seen by the subject.
+3. **Move Vertical, hold.** Let go at a few heights on the rail; the arm must stay where it is let go.
+4. **Ring.** Confirm the rail quarters really are up/down (or left/right) as seen by the subject.
 
 #### A suggested progression
 1. **Free Move:** sessions of free handling, damping lowered as the subject gets confident.
-2. **Move Horizontal:** first `require_return: false` (reward at the threshold), then `true`.
-3. **Move Vertical:** first `direction: negative` (down only, gravity helps), then `both`.
+2. **Move Horizontal:** free sessions along the horizontal rail.
+3. **Move Vertical:** free sessions along the vertical rail.
 4. **Maze**, along its own diagnostic ladder: `free_plane` → `single_line` → `maze`.
 
 #### Further pre-training tasks worth adding (not implemented yet)
@@ -1508,8 +1502,6 @@ The orchestrator warns at start-up if `threshold_m` is at or beyond the rail end
 - **One corner.** An L-shaped, two-rail maze profile (one turn), between the single rails and the
   maze. This needs YAML only.
 - **Short pull.** Apple Pluck with a 2–3 cm threshold, raised live as the subject learns. No new code.
-- **Automatic staircase.** Raise `threshold_m` by itself after N successes in a row. This is a small
-  orchestrator addition.
 
 ---
 
@@ -1606,8 +1598,8 @@ flowchart LR
   orchestrator to switch to.
 
 - **The orchestrator owns the ROS side.** Each experiment has exactly one orchestrator node (1:1 with
-  its launch) that builds the experiment's **trial state machine** (Move Vertical and Move Horizontal
-  share `rail_training_orchestrator`, configured by their YAML). The orchestrators are kept
+  its launch) that builds the experiment's **trial state machine** (Free Move, Move Vertical and Move
+  Horizontal share `free_move_orchestrator`, configured by their YAML). The orchestrators are kept
   **independent** (no shared base) so each reads top‑to‑bottom as one self‑contained experiment.
 
 - **Orchestrators are composed only of actions.** An orchestrator holds no inline robot logic; it is a
@@ -1624,8 +1616,7 @@ flowchart LR
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
-  | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary |
-  | `TravelMonitor` | Move Vertical / Horizontal: travel ≥ threshold, then (optionally) back at the start |
+  | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary, or one rail (Move Vertical / Horizontal) |
   | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`) |
   | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task parks |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
@@ -1850,7 +1841,7 @@ spring law to that ~100 Hz link — far coarser and riskier for torque control.
 Each flow is one trial. The event token each step logs is in brackets (see [§7](#events-per-experiment)).
 Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
 next trial, or holds at the start if a pause was requested. Free Move's session only ends when a pause
-is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 6).
+is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 5).
 
 **Flow 1 — Apple Pluck** (joint controller throughout). The **random start** paradigm runs this same flow;
 only `MoveToStart` targets that trial's start position, picked at `trial_start`. Every flow begins
@@ -1952,27 +1943,7 @@ stateDiagram-v2
     NextTrial --> MoveToStart : next trial (or hold if paused)
 ```
 
-**Flow 5 — Move Vertical / Move Horizontal** (joint moves, CLIK with one rail)
-```mermaid
-stateDiagram-v2
-    [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
-    MoveToStart --> SwitchToCLIK : at start [at_start]
-    SwitchToCLIK --> QuietWindow : rail anchors [fixture_active]
-    QuietWindow --> Out : quiet_window_sec, ring green [cue_go]<br/>monitor + timeout + safety on [armed]
-    Out --> Back : travel ≥ threshold_m, ring red [threshold]
-    Back --> ReleaseWait : back at the start, reward [goal]
-    Out --> ReleaseWait : timeout_sec [timeout]
-    ReleaseWait --> SwitchToJoint : hand lets go [released]
-    Out --> SwitchToJoint : SAFETY trip [safety_trip]
-    Back --> SwitchToJoint : SAFETY trip [safety_trip]
-    SwitchToJoint --> Park
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial (or hold if paused)
-```
-With `require_return: false`, `threshold` and `goal` fire together.
-
-**Flow 6 — Free Move** (joint moves, CLIK with admittance; no goal)
+**Flow 5 — Free Move, Move Vertical, Move Horizontal** (joint moves, CLIK with admittance — on a rail for the last two; no goal)
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
@@ -2249,8 +2220,7 @@ just the maze phase.
 
 **Records from** `start_trial()` **to** park complete, like the maze.
 
-**Extra columns:** Move Vertical / Move Horizontal have the maze's six (`rel_a` … `rail_nearest`).
-Free Move has six of its own: `eq_dx`, `eq_dy`, `eq_dz` (the commanded equilibrium minus the start,
+**Extra columns:** all three have six of their own: `eq_dx`, `eq_dy`, `eq_dz` (the commanded equilibrium minus the start,
 base frame, m) and `f_adm_x`, `f_adm_y`, `f_adm_z` (the force that moved it: tared, filtered and
 past the threshold, base frame, N).
 
@@ -2263,10 +2233,7 @@ past the threshold, base frame, N).
 | `on_switched_to_fixture()` | `fixture_active` | — |
 | `on_quiet_window_complete()` | `cue_go` | — |
 | `on_go_complete()` | `armed` | — |
-| `on_threshold(d)` | `threshold` | **travel [m]**, signed along the rail (rails only) |
-| `on_success()` | `goal` | — (rails only) |
-| `on_timeout()` | `timeout` | — (rails only) |
-| `on_end_requested()` / `on_session_over()` | `session_end` | — (Free Move only: End session -- parks at once -- or `session_sec`, which waits for release) |
+| `on_end_requested()` / `on_session_over()` | `session_end` | — (End session -- parks at once -- or `session_sec`, which waits for release) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |

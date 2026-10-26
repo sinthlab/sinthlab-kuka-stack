@@ -103,7 +103,7 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
       * apple pluck: a pull straight DOWN to the threshold, from the start, every random-start position
         (needs `grid`, a StartGrid) and the perturbed start, must stay ROOM_M above the floor -- the
         floor must never be what ends a pull;
-      * maze and rails: the lowest rail point must be ROOM_M above the floor."""
+      * maze and Move Vertical: the lowest rail point must be ROOM_M above the floor."""
     floor = Floor(params["floor.height_m"], params["floor.reference"], params.get("floor.trip_margin_m", 0.03))
     what = floor.reference.replace("_", " ")
     start, park = params.get(_START), params.get(_PARK)
@@ -147,7 +147,9 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         name, z = min(starts.items(), key=lambda kv: kv[1])
         return room(z - float(threshold), f"a {float(threshold) * 100:.0f} cm pull straight down from {name}")
 
-    profile = params.get("virtual_fixture_profile")                # maze and rails
+    if str(params.get("free_move.rail_axis", "none")) == "z":      # Move Vertical: the rail's bottom end
+        return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
+    profile = params.get("virtual_fixture_profile")                # maze
     if profile is not None:
         pre = f"virtual_fixtures.{profile}."
         b_min = params.get(pre + "corridor_b_min")

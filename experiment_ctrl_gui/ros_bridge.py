@@ -914,7 +914,7 @@ class DemoBridge:
                 if not self._sleep(run_id, 1.0):
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
-            elif self._exp.key == "free_move":
+            elif self._exp.group == "pretraining":
                 # No natural end: runs until a pause (Pause / Stop after trial), or session_sec if > 0.
                 limit = float(self._effective.get("session_sec", 0.0) or 0.0)
                 t0 = time.time()
@@ -922,12 +922,6 @@ class DemoBridge:
                     if not self._sleep(run_id, 0.2):
                         return False
                 self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
-            elif self._exp.group == "pretraining":
-                thr = self._effective.get("travel_task.threshold_m", 0.1)
-                self._phase_to("threshold", thr, f"Threshold reached: {thr:+.3f} m.")
-                if not self._sleep(run_id, 1.5):
-                    return False
-                self._phase_to("goal", None, "Trial succeeded. Reward; waiting for release before reset.")
             else:
                 thr = self._effective.get(
                     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", 0.1)

@@ -1,4 +1,4 @@
-"""Pre-training: move vertical (one vertical rail, out to a threshold and back). Thin wrapper over experiment_base.launch.py."""
+"""Pre-training: move vertical (Free Move on one vertical rail, no threshold). Thin wrapper over experiment_base.launch.py."""
 import os
 
 from launch import LaunchDescription
@@ -40,7 +40,7 @@ def generate_launch_description():
                 launch_arguments={
                     "params_file": LaunchConfiguration("params_file"),
                     "run_name": RUN_NAME,
-                    "orchestrator": "rail_training_orchestrator.py",
+                    "orchestrator": "free_move_orchestrator.py",
                     # Joint controller active for the exact-posture start/recover moves; CLIK loaded
                     # inactive and switched in by the orchestrator for the trial.
                     "ctrl": "lbr_joint_position_command_controller",

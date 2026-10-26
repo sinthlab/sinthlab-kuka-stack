@@ -28,9 +28,12 @@ equilibrium follows the arm completely, plus the resting offset (q_hold - q_rest
 no pull-back at all and the arm still carries its own weight. Once the arm has been still for
 STILL_SEC the equilibrium holds there (settled()), so it cannot creep under the gravity residual.
 
-TWO WALLS. The equilibrium never follows the arm
+THREE WALLS. The equilibrium never follows the arm
   * below the floor (helpers/floor.py), nor
-  * toward a straight elbow: |A4| under `elbow_min_deg`, or past 0 to the other side.
+  * toward a straight elbow: |A4| under `elbow_min_deg`, or past 0 to the other side, nor
+  * within JOINT_MARGIN_DEG of any joint's limit. A hard pull after the snap dragged the elbow (A4)
+    to -109 deg at ~45 deg/s with the equilibrium following, into the cabinet's axis-range monitor
+    (+-112 deg on A2/A4/A6, README section 2), which stopped the arm (recording 26 Oct, 16:52).
 A command that would is replaced by the last one that did not, so from there the full base spring
 holds. Why the elbow: a pull toward the monkey STRAIGHTENS it, and a straight elbow can fold back
 either way. Folded the wrong way (A4 > 0) it stays there -- the cabinet holds only the apple's pose --
@@ -50,13 +53,15 @@ from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.node_utils import get_launch_param, get_required_param
-from sinthlab_bringup.helpers.live_params import MIN_FELT_STIFFNESS
+from sinthlab_bringup.helpers.live_params import IIWA7_LIMITS_DEG, MIN_FELT_STIFFNESS
 from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 RELEASE_RAMP_SEC = 0.3     # the pull-back fades to nothing over this, so the release is felt, not a jolt
 STILL_SEC = 0.3            # released arm this long below STILL_RAD_S -> settled: the equilibrium holds there
 STILL_RAD_S = 0.05         # [rad/s] fastest joint (~3 deg/s)
 A4 = 3                     # the elbow
+JOINT_MARGIN_DEG = 14.0    # never follow a joint closer than this to its limit: A2/A4/A6 stop at +-105 deg
+_JOINT_WALL = np.radians(np.asarray(IIWA7_LIMITS_DEG) - JOINT_MARGIN_DEG)
 
 
 class ResistanceSoftener:
@@ -180,6 +185,8 @@ class ResistanceSoftener:
     def _inside_walls(self, q: np.ndarray) -> bool:
         a4, ref = q[A4], self._q_hold[A4]
         if np.sign(a4) != np.sign(ref) or abs(a4) < self._elbow_min:
+            return False
+        if np.any(np.abs(q) > _JOINT_WALL):
             return False
         return self._floor.clearance(self._fk(q)) >= 0.0
 

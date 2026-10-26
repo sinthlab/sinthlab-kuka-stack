@@ -121,7 +121,7 @@ class MoveRestrictedOnAPlaneAction:
 
     def offset_from_anchor(self):
         """Base-frame offset of the MEASURED EE from the anchor [m], or None until anchored. The
-        pre-training TravelMonitor reads this, so travel is measured from the same origin as the rail."""
+        offset is measured from the same origin as the fixture."""
         if not self._active or self._initial_transform is None:
             return None
         return self._fk_func(self.last_measured_joints)[0:3, 3] - self._initial_transform[0:3, 3]

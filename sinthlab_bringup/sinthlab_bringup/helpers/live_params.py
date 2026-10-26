@@ -55,15 +55,24 @@ _SPEED = ["*.speed_scale"]
 # There the pose stays per-run. (The park pose is live everywhere: see _COMMON.)
 _POSE = ["move_to_start.target_joint_position"]
 
-# Pre-training: the out-and-back task and the quarter-ring state colours.
-_TASK = ["travel_task.threshold_m", "travel_task.direction", "travel_task.require_return",
-         "travel_task.return_tolerance_m"]
+# Pre-training: the quarter-ring colours.
 _RING = ["ring_cue.quarters", "ring_cue.colours.*"]
-_RAIL = _COMMON + _SPEED + _TASK + _RING + ["timeout_sec", "virtual_fixtures.rail_lead_sec"]
 
 # The felt stiffness of the pull (apple pluck, perturb). ROS cannot change the cabinet's stiffness; it
 # softens it by letting the equilibrium follow part of the pull -- see actions/resistance_softener.py.
 _RESIST = ["resistance.stiffness_n_per_m"]
+
+# Pre-training: Free Move, and Free Move on a rail (Move Vertical / Horizontal).
+_FREE = _COMMON + _SPEED + _RING + [
+    "session_sec",
+    # The feel of the admittance -- see pretrain_free_move.yaml.
+    "free_move.damping_ns_per_m",
+    "free_move.deadband_n",
+    "free_move.max_speed_mps",
+    "free_move.accel_limit_mps2",
+    "free_move.force_filter_tau_sec",
+    "free_move.tare_sec",
+]
 
 LIVE_PARAMS: Dict[str, List[str]] = {
     # Every paradigm. perturb_start.* act only in perturb / perturb_bump, grasp.* only in perturb_bump.
@@ -95,18 +104,10 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "virtual_fixtures.rail_lead_sec",
     ],
     # Pre-training. The rail geometry stays per-run, like the maze's rails.
-    "free_move": _COMMON + _SPEED + _RING + [
-        "session_sec",
-        # The feel of the admittance -- see pretrain_free_move.yaml.
-        "free_move.damping_ns_per_m",
-        "free_move.deadband_n",
-        "free_move.max_speed_mps",
-        "free_move.accel_limit_mps2",
-        "free_move.force_filter_tau_sec",
-        "free_move.tare_sec",
-    ],
-    "move_vertical": _RAIL,
-    "move_horizontal": _RAIL,
+    "free_move": _FREE,
+    # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
+    "move_vertical": _FREE,
+    "move_horizontal": _FREE,
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -157,9 +158,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "resistance.stiffness_n_per_m": (50.0, 5000.0),
     # The SmartPad profile's translational stiffness (per-run): Sunrise caps it at 5000 N/m.
     "resistance.base_stiffness_n_per_m": (50.0, 5000.0),
-    # Pre-training. The threshold must also stay short of the rail end; the orchestrator warns if not.
-    "travel_task.threshold_m": (0.01, 0.30),
-    "travel_task.return_tolerance_m": (0.005, 0.10),
+    # Pre-training. A rail's ends, from the start (the vertical one is limited upward by reach).
+    "free_move.rail_min_m": (-0.30, 0.0),
+    "free_move.rail_max_m": (0.0, 0.30),
     "ring_cue.colours.*": (0, 255),
     "ring_cue.quarters": (0, 3),
     # Admittance feel. The speed cap stays under the free-move safety monitor's 0.7 m/s.
@@ -234,8 +235,7 @@ CHOICES: Dict[str, List[str]] = {
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
-    "travel_task.direction": ["both", "positive", "negative"],
-    "travel_task.axis": ["x", "y", "z", "norm"],
+    "free_move.rail_axis": ["none", "x", "y", "z"],
 }
 
 

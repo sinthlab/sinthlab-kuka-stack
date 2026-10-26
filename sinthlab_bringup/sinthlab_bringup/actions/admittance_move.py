@@ -57,6 +57,11 @@ force dipped under the threshold for a moment (free-move recording 26 Oct: 5 of 
 the acceleration limit, as before.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
+ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal): the same, along one base axis through
+the start. Only the hand's force ALONG the rail counts, the equilibrium only moves along it, between
+rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
+holds the arm on the rail. rail_axis none = free in every direction (Free Move).
+
 THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
 base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext, with a damped pseudo-inverse
 (jacobian_damping) and this action's own ROUND threshold (deadband_n) -- the same in every direction, so
@@ -119,6 +124,13 @@ class AdmittanceMoveAction:
         self._hand = HandForce(robot_description, self.ee_link, self._jac_damping)
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
+        axis = str(get_required_param(node, self._p + "rail_axis")).strip().lower()
+        if axis not in ("none", "x", "y", "z"):
+            raise ValueError(f"{self._p}rail_axis must be none, x, y or z, got {axis!r}")
+        self._rail = None if axis == "none" else (
+            np.eye(3)["xyz".index(axis)],
+            float(get_required_param(node, self._p + "rail_min_m")),
+            float(get_required_param(node, self._p + "rail_max_m")))
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
@@ -144,7 +156,7 @@ class AdmittanceMoveAction:
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
-        log.info(f"Admittance free move: no boundary, leash {self._leash} m, force from the joint torques "
+        log.info(f"Admittance free move: {'no boundary' if self._rail is None else f'on a {axis} rail, {self._rail[1]:+.2f} to {self._rail[2]:+.2f} m'}, leash {self._leash} m, force from the joint torques "
                  f"(Jacobian damping {self._jac_damping:g})")
 
     # ------------------------------------------------------------------ parameters
@@ -270,6 +282,8 @@ class AdmittanceMoveAction:
 
         # Force -> velocity.
         f = f_base - self._tare
+        if self._rail is not None:                        # on a rail only the force along it counts
+            f = self._rail[0] * float(f @ self._rail[0])
         k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
         self._f_filt += k * (f - self._f_filt)
         low = self._pushing and float(np.linalg.norm(self._f_filt)) < self._deadband
@@ -290,7 +304,8 @@ class AdmittanceMoveAction:
         if not self._pushing:
             if not np.any(self._f_used):
                 if now < self._settle_until:
-                    target = self._floor.clamp_xyz(self._p_meas + self._rest_offset, self._anchor[0:3, 0:3])
+                    target = self._floor.clamp_xyz(self._on_rail(self._p_meas + self._rest_offset),
+                                                   self._anchor[0:3, 0:3])
                     self._eq = self._eq + min(1.0, dt / GLIDE_TAU_SEC) * (target - self._eq)
                     if arm_speed < SETTLED_MPS and float(np.linalg.norm(target - self._eq)) < 1e-3:
                         self._settle_until = 0.0
@@ -314,9 +329,9 @@ class AdmittanceMoveAction:
         dist = float(np.linalg.norm(lead))
         if dist > self._leash:
             eq = self._p_meas + lead * (self._leash / dist)
-        # The floor: clamp the integrated equilibrium itself, so a push down at the floor winds nothing
-        # up and the arm lifts off it at once.
-        eq = self._floor.clamp_xyz(eq, self._anchor[0:3, 0:3])
+        # The rail, then the floor: clamp the integrated equilibrium itself, so a push past a rail end or
+        # down at the floor winds nothing up and the arm comes away from it at once.
+        eq = self._floor.clamp_xyz(self._on_rail(eq), self._anchor[0:3, 0:3])
         # Remember the speed actually applied (after the leash), so a held-back equilibrium does not
         # build up speed it would release as a lurch.
         self._v = (eq - self._eq) / dt if dt > 0.0 else v
@@ -329,6 +344,14 @@ class AdmittanceMoveAction:
                 + f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
                 + f"q4={np.degrees(self._q_last[3]):.1f} deg  "
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
+
+    def _on_rail(self, xyz: np.ndarray) -> np.ndarray:
+        """xyz moved onto the rail -- the nearest point of the line through the start, within its ends."""
+        if self._rail is None:
+            return xyz
+        u, lo, hi = self._rail
+        a = self._anchor[0:3, 3]
+        return a + u * float(np.clip((np.asarray(xyz, dtype=float) - a) @ u, lo, hi))
 
     def _publish(self, xyz: np.ndarray) -> None:
         from scipy.spatial.transform import Rotation as R

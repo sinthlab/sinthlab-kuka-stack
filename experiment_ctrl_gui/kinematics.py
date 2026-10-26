@@ -61,7 +61,7 @@ def height_of(start_deg, reference: str) -> Optional[float]:
 # Edits that can move something relative to the floor: the dashboard re-checks the setup after them.
 FLOOR_RELEVANT = ("floor.", "move_to_start.target_joint_position", "move_to_park.target_joint_position",
                   "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", "paradigm",
-                  "random_start.", "perturb_start.polar_", "virtual_fixture")
+                  "random_start.", "perturb_start.polar_", "virtual_fixture", "free_move.rail_")
 
 
 def floor_problem(current: dict) -> Optional[str]:

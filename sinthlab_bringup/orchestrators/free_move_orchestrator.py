@@ -23,8 +23,11 @@ CLIK_CTRL = "kuka_clik_controller"
 
 class FreeMoveOrchestratorNode(rclpyNode):
     """Pre-training: the arm in admittance -- it goes wherever it is pushed and stays where it is let go.
-    No goal, no reward, no boundary. A trial is one free-movement SESSION that runs until it is ended:
+    No goal, no reward, no threshold. A trial is one free-movement SESSION that runs until it is ended:
     by Pause or "Stop after trial" on the dashboard (the pause service), or after session_sec if > 0.
+
+    One node, three tasks, set by the YAML's `experiment`: free_move (no boundary), move_vertical and
+    move_horizontal (the same admittance on one rail through the start: free_move.rail_axis).
 
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
@@ -37,6 +40,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         super().__init__("free_move_orchestrator", automatically_declare_parameters_from_overrides=True)
         AudioCue.warmup(self)
         VisualCue.warmup(self)
+        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal
 
         self.trial_count = 0
         self._trial_ending = False
@@ -55,7 +59,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)))
 
-        self.control = ExperimentControl(self, "free_move")
+        self.control = ExperimentControl(self, self.experiment)
         # A live start / park pose whose move would take the end effector below the floor is refused.
         self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
@@ -66,7 +70,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.control.on_pause_request(self.on_end_requested)
         self._session_live = False
         self.recorder = TrialRecorder(
-            self, experiment="free_move",
+            self, experiment=self.experiment,
             extra_header=self.admittance.record_extra_header(), extra_fn=self.admittance.record_extra,
             on_event=self.control.on_event)
         VisualCue.set_result_sink(
@@ -93,7 +97,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # Every move's actual speed (scaled limits, duration) goes into the trial sidecar's `moves`.
         for move in (self.move_to_start, self.move_park):
             move.report_moves_to(self.recorder.note_move)
-        self.get_logger().info("=== PRE-TRAINING: FREE MOVE INITIALIZED ===")
+        self.get_logger().info(f"=== PRE-TRAINING: {self.experiment.replace('_', ' ').upper()} INITIALIZED ===")
         # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
         self.control.on_event("parking")
         self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))

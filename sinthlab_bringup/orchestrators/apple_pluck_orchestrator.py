@@ -259,7 +259,6 @@ class ApplePluckOrchestratorNode(rclpyNode):
                                        "trigger": "grasp" if self.bump else "go_cue",
                                        "delay_mode": self._delay_mode}
         self.recorder.start(trial_index=self.trial_count, **sidecar)
-        self.recorder.annotate(resistance=self.resistance.describe())
         self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()
 
@@ -324,6 +323,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # No cue here -- in the perturb paradigm the monkey is already reaching (cued at trial start).
         self.recorder.mark("armed")
         self.resistance.start()   # from here the pull is softened to the selected stiffness
+        self.recorder.annotate(resistance=self.resistance.describe())   # after start(): the base it re-read
         self.recorder.annotate(baseline=self.monitor.baseline_xyz())
 
     def on_monitor_snap(self):

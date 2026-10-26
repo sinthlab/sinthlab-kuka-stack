@@ -26,7 +26,7 @@
     #     mm. A soft profile (the apple-pluck ones, Uniform 100 / 400) makes it sag and
     #     lag -- not admittance any more.
     #   * Rotation 300 holds the tool orientation (rotation is not part of the free move).
-    #   * Too heavy? Lower free_move.damping_ns_per_m (live). Creeps when nobody touches it? Raise
+    #   * Too heavy? Lower free_move.damping_ns_per_m (live), but not below ~40. Creeps when nobody touches it? Raise
     #     free_move.deadband_n (live).
     #
     # NO BOUNDARY means the arm can be pushed to the edge of its reach, a joint limit or a singular
@@ -35,6 +35,7 @@
     #
     # START: the pre-training start (tool along +X toward the subject), shared with the rail tasks; the
     # maze starts 11 cm higher and 5 cm back, with its lowest row at this height.
+    experiment: "free_move"  # free_move | move_vertical | move_horizontal: the same node, set by this YAML
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
@@ -84,9 +85,12 @@
 
     # ---- THE FEEL (live: change between trials from the dashboard) ----
     free_move:  # admittance: the equilibrium moves at force / damping
-      # 30 keeps speed proportional over a normal 3-12 N push (6 N -> 0.2 m/s, 10 N -> 0.33 m/s); at 10 any
-      # push over ~4 N hit the speed cap, so the arm moved on/off -- the jerky starts.
-      damping_ns_per_m: 30.0  # force per speed [N s/m]: LOWER = LIGHTER
+      # STABILITY FIRST. Free Move is a loop through the hand: force -> equilibrium -> (~80 ms) cabinet
+      # -> (~45 ms) arm -> hand, ~170 ms round trip with the force filter. A loop through a hand with
+      # that much delay is stable only if the damping is high enough for how firmly the hand holds:
+      # at 30 it rang (stop-go bursts), at 20 it trembled; 50 is smooth (recordings 26 Oct). At 50,
+      # 5 N moves the arm 0.1 m/s, 10 N 0.2 m/s. Go below ~40 only with care.
+      damping_ns_per_m: 50.0  # force per speed [N s/m]: LOWER = LIGHTER, but below ~40 the arm rings or trembles
       # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
       # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
       # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
@@ -98,7 +102,7 @@
       # every push and the arm oscillated at ~1.5 Hz, moving in stop-go bursts (recording 26 Oct). A
       # hand asks for more than 4 only ~4% of the time. Lower = smoother starts but laggier; 0 = off.
       accel_limit_mps2: 4.0  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.08 s)
-      force_filter_tau_sec: 0.05  # low-pass on the force reading [s]; larger = smoother, laggier
+      force_filter_tau_sec: 0.03  # low-pass on the force reading [s]; larger = smoother, but its lag destabilises the loop
       # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
       # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
       # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
@@ -110,6 +114,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
+      rail_axis: none  # none = free in every direction; x | y | z = only along that base axis through the start (Move Vertical / Horizontal)
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
