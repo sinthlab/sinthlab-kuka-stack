@@ -93,8 +93,11 @@
       deadband_n: 2.5  # force below this is ignored, so a resting arm never creeps or oscillates [N]; 0 = none
       max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
       # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
-      # target speed follows every jolt. Lower = smoother but slower to start and stop; 0 = off.
-      accel_limit_mps2: 1.5  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.2 s)
+      # target speed follows every jolt. But it also delays the arm behind the hand, and too low a cap
+      # makes the hand and arm rock against each other: at 1.5 the equilibrium sat on the cap for 45% of
+      # every push and the arm oscillated at ~1.5 Hz, moving in stop-go bursts (recording 26 Oct). A
+      # hand asks for more than 4 only ~4% of the time. Lower = smoother starts but laggier; 0 = off.
+      accel_limit_mps2: 4.0  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.08 s)
       force_filter_tau_sec: 0.05  # low-pass on the force reading [s]; larger = smoother, laggier
       # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
       # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal

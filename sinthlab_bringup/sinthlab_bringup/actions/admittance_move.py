@@ -30,9 +30,15 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    speed changes. 0 = off.
   * tare           the force at rest (the gravity-model residual, ~5 N here) is measured during
                    tare_sec at the start of each trial and subtracted, so a resting arm does not creep.
-  * deadband_n     a THRESHOLD: a (tared) force below it moves nothing, so force-reading noise cannot
-                   creep the arm. Above it the WHOLE force counts -- it is not subtracted from every
-                   push -- with a short ramp (one dead band wide) so the start is not a jolt.
+  * deadband_n     a THRESHOLD to START: a (tared) force below it moves a resting arm nothing, so
+                   force-reading noise cannot creep it. Above it the WHOLE force counts -- it is not
+                   subtracted from every push -- with a short ramp (one dead band wide) so the start is
+                   not a jolt. Once MOVING, a force between HOLD_FRACTION of it and it still counts, for
+                   up to HOLD_SEC at a time: a hand moving the arm at a comfortable speed pushes only
+                   ~4-5 N (damping 30), and its own wobble of +-2 N kept dipping under the threshold for
+                   a moment and stopping the arm -- stop-go in ~0.3 s bursts (recording 26 Oct, 15:56;
+                   most dips under 0.15 s). The time limit keeps a hand left resting on the apple, or
+                   reading noise after a let-go, from creeping the arm.
 
 LETTING GO: THE ARM GLIDES TO A STOP AND HOLDS. A hand usually lets go while the arm is still moving
 fast. The equilibrium, which runs 1-2 cm ahead of the arm, then brakes at accel_limit_mps2 and stops a
@@ -84,7 +90,9 @@ from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param,
 from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers.hand_force import HandForce
 
-RELEASE_SEC = 0.1       # the force must stay under the threshold this long to count as letting go
+HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
+HOLD_SEC = 0.3          # ...for at most this long at a time below deadband_n
+RELEASE_SEC = 0.1       # the force must stay under that this long to count as letting go
 GLIDE_TAU_SEC = 0.08    # the equilibrium glides onto the arm with this time constant, never in one step
 SETTLE_SEC = 0.3        # after letting go: the longest the equilibrium follows the arm while it glides to a stop
 SETTLED_MPS = 0.01      # ...or until the arm is slower than this, with the equilibrium on it
@@ -129,6 +137,7 @@ class AdmittanceMoveAction:
         self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
         self._pushing = False
         self._quiet = 0.0                               # how long the force has been under the threshold
+        self._low_t = 0.0                               # how long a moving hand has pushed under deadband_n
         self._settle_until = 0.0                        # gliding to a stop after a let-go until this time
         self._p_prev: Optional[np.ndarray] = None
         self._t_prev: Optional[float] = None
@@ -167,6 +176,7 @@ class AdmittanceMoveAction:
         self._p_prev = None
         self._pushing = False
         self._quiet = 0.0
+        self._low_t = 0.0
         self._settle_until = 0.0
         self._t_start = time.monotonic()
 
@@ -216,9 +226,14 @@ class AdmittanceMoveAction:
         return self._hand.force(self._tau_ext, q)
 
     def _threshold(self, f: np.ndarray) -> np.ndarray:
-        """Zero below the dead band; the FULL force from twice the dead band; a linear ramp between."""
+        """At rest: zero below the dead band, the FULL force from twice the dead band, a linear ramp
+        between. Moving: the full force, and down to HOLD_FRACTION of the dead band for up to HOLD_SEC
+        at a time (class doc)."""
         mag = float(np.linalg.norm(f))
         if self._deadband <= 0.0:
+            return f
+        if self._pushing and (mag >= self._deadband or
+                              (mag >= HOLD_FRACTION * self._deadband and self._low_t < HOLD_SEC)):
             return f
         if mag <= self._deadband:
             return np.zeros(3)
@@ -257,6 +272,8 @@ class AdmittanceMoveAction:
         f = f_base - self._tare
         k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
         self._f_filt += k * (f - self._f_filt)
+        low = self._pushing and float(np.linalg.norm(self._f_filt)) < self._deadband
+        self._low_t = self._low_t + dt if low else 0.0      # how long a moving hand has been under it
         self._f_used = self._threshold(self._f_filt)
 
         # Let go: glide to a stop, then hold (class doc, "letting go").

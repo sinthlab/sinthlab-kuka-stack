@@ -1385,9 +1385,11 @@ does the IK; ROS only moves the target point.
     the arm's own small model errors from driving the motion (below). Raise it if the arm creeps or
     oscillates when nobody touches it; lower it for a lighter start.
   - `max_speed_mps`: speed cap, 0.35 m/s by default.
-  - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 1.5 m/s²; 0 = off).
+  - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 4 m/s²; 0 = off).
     The force reading is noisy and flickers across the threshold; without this the speed follows
-    every jolt and the motion feels bumpy. Lower is smoother, but slower to start and stop.
+    every jolt and the motion feels bumpy. But it also makes the arm lag the hand: too low (around
+    1.5 m/s²) and the arm moves in stop-go bursts and rocks against the hand at ~1.5 Hz. Lower is
+    smoother, but laggier.
   - `force_filter_tau_sec`: low-pass on the force reading (larger = smoother, but laggier, and lag
     can make low damping oscillate).
 - **Where the force comes from.** Free Move computes the hand's force itself from the arm's
