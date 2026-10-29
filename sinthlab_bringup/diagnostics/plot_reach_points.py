@@ -219,6 +219,12 @@ def plot(kin, poses, tip, shoulder, arms, elev, azim, save, labels=True):
     if save:
         fig.savefig(save, dpi=160, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.3)
         print(f"saved {save}")
+    elif "agg" in matplotlib.get_backend().lower():
+        # No GUI backend (no Tk/Qt for this Python): plt.show() would silently show nothing.
+        out = "reach_points.png"
+        fig.savefig(out, dpi=160, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.3)
+        print(f"no interactive plot window available (matplotlib backend: {matplotlib.get_backend()}); "
+              f"saved {os.path.abspath(out)} instead. For a window: sudo apt install python3-tk")
     else:
         plt.show()
 
@@ -245,6 +251,52 @@ def report(kin, poses, tip, shoulder):
               f"mean {np.mean(dists):.3f} m, max {max(dists):.3f} m")
 
 
+def export_html(kin, poses, tip, shoulder, arms, path):
+    """One self-contained interactive 3D page (rotate / zoom / hover). Opens in any browser, needs no ROS."""
+    import plotly.graph_objects as go
+    res = [(n, q, *kin.fk(q, tip)) for n, q in poses]
+    ap = np.array([r[4] for r in res])
+    hover = [f"{n}<br>apple {a[0]:.3f}, {a[1]:.3f}, {a[2]:.3f} m<br>A1..A7: " + ", ".join(f"{v:g}" for v in q)
+             + (f"<br>shoulder dist {np.linalg.norm(a - shoulder):.3f} m" if shoulder is not None else "")
+             for (n, q, _, _, _), a in zip(res, ap)]
+    fig = go.Figure()
+    if arms:
+        for _, _, pts, _, a in res:
+            line = np.vstack([pts, a])
+            fig.add_trace(go.Scatter3d(x=line[:, 0], y=line[:, 1], z=line[:, 2], mode="lines", showlegend=False,
+                                       line=dict(color=BLUE, width=2), opacity=0.3, hoverinfo="skip"))
+    fig.add_trace(go.Scatter3d(x=ap[:, 0], y=ap[:, 1], z=ap[:, 2], mode="markers+text", name="apple position",
+                               text=[r[0] for r in res], textposition="top center", hovertext=hover, hoverinfo="text",
+                               marker=dict(size=5, color=BLUE, line=dict(color=SURFACE, width=2))))
+    if shoulder is not None:
+        for a in ap:
+            fig.add_trace(go.Scatter3d(x=[shoulder[0], a[0]], y=[shoulder[1], a[1]], z=[shoulder[2], a[2]],
+                                       mode="lines", showlegend=False, hoverinfo="skip",
+                                       line=dict(color=INK2, width=2, dash="dash")))
+        fig.add_trace(go.Scatter3d(x=[shoulder[0]], y=[shoulder[1]], z=[shoulder[2]], mode="markers+text",
+                                   name="monkey shoulder", text=["monkey shoulder"], textposition="top center",
+                                   marker=dict(size=7, color=INK, symbol="diamond")))
+    fig.update_layout(title=f"Reach points: {len(res)} poses, apple in the robot base frame [m]",
+                      scene=dict(aspectmode="data", xaxis_title="X, toward the monkey [m]",
+                                 yaxis_title="Y, monkey's right [m]", zaxis_title="Z, up [m]"),
+                      paper_bgcolor=SURFACE, margin=dict(l=0, r=0, t=50, b=0))
+    fig.write_html(path, include_plotlyjs=True)        # plotly.js embedded: works offline
+    print(f"saved {os.path.abspath(path)} (open it in a browser)")
+
+
+def export_csv(kin, poses, tip, shoulder, path):
+    """Joint angles plus the computed positions, as plain numbers you can open anywhere."""
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["name"] + [f"A{j}" for j in range(1, 8)] + ["flange_x", "flange_y", "flange_z",
+                   "apple_x", "apple_y", "apple_z"] + (["shoulder_dist_m"] if shoulder is not None else []))
+        for n, q in poses:
+            _, fl, a = kin.fk(q, tip)
+            w.writerow([n] + list(q) + [f"{v:.4f}" for v in fl] + [f"{v:.4f}" for v in a]
+                       + ([f"{np.linalg.norm(a - shoulder):.4f}"] if shoulder is not None else []))
+    print(f"saved {os.path.abspath(path)}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", nargs="*", help="CSV file(s) of joint poses (see above)")
@@ -255,6 +307,8 @@ def main() -> int:
     ap.add_argument("--no-labels", action="store_true", help="no name / distance text beside the points (crowded plots)")
     ap.add_argument("--elev", type=float, default=22.0, help="view elevation [deg]")
     ap.add_argument("--azim", type=float, default=-55.0, help="view azimuth [deg]")
+    ap.add_argument("--html", metavar="FILE.html", help="write an interactive 3D page (rotate/zoom in any browser; needs: pip install plotly)")
+    ap.add_argument("--export", metavar="FILE.csv", help="write joint angles + flange/apple XYZ (+ shoulder distance) to a CSV")
     ap.add_argument("--save", metavar="FILE.png", help="write a PNG instead of opening a window")
     a = ap.parse_args()
 
@@ -268,6 +322,11 @@ def main() -> int:
     shoulder = np.array(a.shoulder) if a.shoulder else None
     kin = Kin()
     report(kin, poses, a.tip, shoulder)
+    if a.export:
+        export_csv(kin, poses, a.tip, shoulder, a.export)
+    if a.html:
+        export_html(kin, poses, a.tip, shoulder, a.arms, a.html)
+        return 0
     plot(kin, poses, a.tip, shoulder, a.arms, a.elev, a.azim, a.save, labels=not a.no_labels)
     return 0
 
