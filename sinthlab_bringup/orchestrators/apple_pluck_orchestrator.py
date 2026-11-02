@@ -15,6 +15,7 @@ from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import Ca
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.resistance_softener import ResistanceSoftener
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -76,10 +77,9 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.move_to_start = MoveToPositionJointSpace(
             self, param_prefix="move_to_start", on_complete=self.on_move_complete
         )
-        self.quiet_window = WaitAction(
-            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
-            on_complete=self.on_quiet_window_complete, name="quiet_window"
-        )
+        # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
+        self.quiet_window = QuietGate(
+            self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
         self.audio_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
@@ -393,6 +393,15 @@ class ApplePluckOrchestratorNode(rclpyNode):
             return                                # already on the way to park
         self._abort_trial("stop_requested")
 
+    def on_early_touch(self, why: str):
+        """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
+        without reward, park, and add the time-out before the next trial."""
+        if self._stopping or self.move_park.active():
+            return
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self._abort_trial("early_touch")
+
     def on_safety_trip(self, reason: str):
         """The floor: the apple went below it. End the trial at once and park; the next trial follows
         as usual (no pause)."""
@@ -428,6 +437,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self._apply_settle()
         self.resistance.reload()    # felt stiffness of the pull
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
+        self.quiet_window.reload()
         self.move_to_start.reload()      # speed limits and the start pose
         self.move_park.reload()
         if self.paradigm == "random_start":

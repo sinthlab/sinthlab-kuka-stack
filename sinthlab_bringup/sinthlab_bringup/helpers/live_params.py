@@ -26,6 +26,7 @@ _COMMON = [
     # The park pose: only the joint controller drives the arm there, so it can change between trials
     # anywhere. Checked like any pose, and its elbow (A4) must bend the same way as the start's.
     "move_to_park.target_joint_position",
+    "quiet_gate.*",                # the guarded quiet window: early touch -> no reward, park, time-out
     "audio_cue.enabled",           # master switch for every beep
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
@@ -114,6 +115,9 @@ LIVE_PARAMS: Dict[str, List[str]] = {
 LIMITS: Dict[str, Tuple[float, float]] = {
     "quiet_window_sec": (0.0, 60.0),
     "move_to_park.hold_sec": (0.0, 600.0),
+    "quiet_gate.move_m": (0.005, 0.2),
+    "quiet_gate.force_n": (1.0, 50.0),
+    "quiet_gate.timeout_sec": (0.0, 120.0),
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
     "visual_cue.colours.*": (0, 255),

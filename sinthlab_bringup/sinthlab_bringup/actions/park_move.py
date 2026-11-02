@@ -39,6 +39,7 @@ class ParkMove(MoveToPositionJointSpace):
         self._normal_scale = self._speed_scale
         # The wait at park before the next trial's move to the start (live: move_to_park.hold_sec).
         self._then: Optional[Callable[[], None]] = None
+        self._penalty = 0.0             # extra wait at park before the next trial (early touch)
         self._hold = WaitAction(node, duration_sec=float(get_required_param(node, "move_to_park.hold_sec")),
                                 on_complete=self._held_done, name="park_hold")
         start = get_required_param(node, "move_to_start.target_joint_position")
@@ -72,9 +73,18 @@ class ParkMove(MoveToPositionJointSpace):
         super().reload()
         self._hold.set_duration(float(get_required_param(self._node, "move_to_park.hold_sec")))
 
+    def penalize(self, sec: float) -> None:
+        """Add a time-out of `sec` to the NEXT wait at park (a trial broken off by an early touch)."""
+        self._penalty = max(0.0, float(sec))
+
     def wait_then(self, fn: Callable[[], None]) -> None:
-        """Wait hold_sec at park, then call fn (the next trial)."""
+        """Wait hold_sec at park -- plus any time-out from penalize() -- then call fn (the next trial)."""
         self._then = fn
+        hold = float(get_required_param(self._node, "move_to_park.hold_sec"))
+        self._hold.set_duration(hold + self._penalty)
+        if self._penalty > 0.0:
+            self._node.get_logger().info(f"Time-out: {self._penalty:g} s at park before the next trial.")
+        self._penalty = 0.0
         self._hold.start()
 
     def cancel_hold(self) -> bool:

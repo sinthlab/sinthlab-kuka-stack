@@ -15,12 +15,11 @@ const STEPS = {
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
          "release_wait", "released", "trial_end"],
 };
-// Pre-training. Free Move has no goal: each trial is one session that ends on a timer.
-STEPS.move_vertical = STEPS.move_horizontal =
-  ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "threshold", "goal",
+// Pre-training. No goal: each trial is one session, ended from the dashboard (or by session_sec).
+// Move Vertical / Horizontal are Free Move on a rail.
+STEPS.free_move = STEPS.move_vertical = STEPS.move_horizontal =
+  ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
    "release_wait", "released", "trial_end"];
-STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
-                   "release_wait", "released", "trial_end"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
@@ -30,13 +29,14 @@ const STEP_LABEL = {
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
-  cue_go: "go cue", armed: "waiting for the pull", snap: "threshold reached — holding", freeze: "holding",
-  cue_snap: "threshold reached — holding", recover_start: "moving to park", trial_end: "trial complete — at park",
+  cue_go: "go cue", armed: "waiting for the pull", snap: "threshold reached — plucked", freeze: "plucked — no pull-back",
+  cue_snap: "threshold reached — plucked", release_wait: "waiting for the arm to come to rest", recover_start: "moving to park", trial_end: "trial complete — at park",
   parking: "first move: to the park pose (slow)",
   perturb_delay_start: "delay before perturbation", perturb_applied: "perturbed — settling",
   fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
-  safety_trip: "SAFETY ABORT — parking", release_wait: "waiting for release", released: "moving to park",
+  safety_trip: "SAFETY ABORT — parking", released: "moving to park",
+  early_touch: "EARLY TOUCH — no reward, parking, then a time-out",
   paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
@@ -46,12 +46,17 @@ const PHASE_TEXT = {
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
-  free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release" },
-  move_vertical: { armed: "travelling out" },
-  move_horizontal: { armed: "travelling out" },
+  free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release",
+               release_wait: "waiting for release" },
+  move_vertical: { armed: "the arm follows the hand along the rail", session_end: "session over — waiting for release",
+                   release_wait: "waiting for release" },
+  move_horizontal: { armed: "the arm follows the hand along the rail", session_end: "session over — waiting for release",
+                     release_wait: "waiting for release" },
+  maze: { release_wait: "waiting for release" },
+  restricted_plane: { release_wait: "waiting for release" },
 };
 // Free Move has no trial end: the pause / stop-after-trial buttons end the session instead.
-const NO_TRIAL_END = new Set(["free_move"]);
+const NO_TRIAL_END = new Set(["free_move", "move_vertical", "move_horizontal"]);
 const TAB_HELP = {
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
@@ -253,6 +258,7 @@ function renderControls() {
   else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes, pause and robot state need ROS.`;
   if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes and pause work from here; stop it with Ctrl-C in its terminal.`;
   if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is moving to the park pose."; }
+  if (s && s.phase === "early_touch") { msg = "Early touch: the apple was moved before the go cue. No reward; the arm parks and a time-out runs before the next trial."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
 
   // run info
@@ -285,6 +291,7 @@ function renderStatus() {
   const steps = stepsFor(key);
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip") cur = "goal";
+  if (cur === "early_touch") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "snap";
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";
   let idx = steps.indexOf(cur);

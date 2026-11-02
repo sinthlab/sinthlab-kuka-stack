@@ -220,15 +220,20 @@ def validate(path) -> bool:
             r.note(f"the CSV column is missing {len(dropped)}: {', '.join(dropped)}")
             r.note("  -> written by a recorder that kept only ONE event per sample. The sidecar is")
             r.note("     complete, so the trial is fine; newer files join them with '|' in the cell.")
-    for tok in ORDER.get(exp, []):
+    order = ORDER.get(exp, [])
+    if "early_touch" in got:
+        # The quiet window was broken (actions/quiet_gate.py): the trial ends there, without reward.
+        r.note("ended by an early touch in the quiet window (no go cue, no reward)")
+        order = [t for t in ("trial_start", "at_start", "early_touch", "trial_end") if t in order + ["early_touch"]]
+    for tok in order:
         r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
-    idx = [got.index(tok) for tok in ORDER.get(exp, []) if tok in got]
+    idx = [got.index(tok) for tok in order if tok in got]
     r.check(idx == sorted(idx), "required events are in the expected order")
-    if exp == "maze":
+    if exp == "maze" and "early_touch" not in got:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
-    if exp == "perturb_bump":
+    if exp == "perturb_bump" and "early_touch" not in got:
         if "grasp_timeout" in got:
             r.check("grasp" not in got and "perturb_applied" not in got,
                     "no grasp within the timeout: no perturbation either")

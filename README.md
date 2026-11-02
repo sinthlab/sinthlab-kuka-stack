@@ -15,7 +15,10 @@ The repo also carries the physical end of the rig: the parametric
 [end‑effector design](end_effector_design/README.md) and the
 [end‑effector board firmware](end_effector_metro_code/README.md) — a NeoPixel cue ring triggered
 over a hardwired media‑flange line, whose **appearance is configured on the board over its own
-Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue).
+Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue). The
+[reward and sync box](reward_and_sync_box/README.md) — the 24 V juice-valve driver (foot pedal, hand
+switch or NSP TTL trigger) and the Beckhoff TTL stack that sends trial events to the NSP — is
+documented with its parts list, wiring and panel CAD.
 
 **To run an experiment, start with the
 [experiment control dashboard](#quick-start-the-experiment-dashboard)**, a local web page for
@@ -206,6 +209,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Parameter | Meaning |
 |---|---|
 | `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
+| `quiet_gate.enabled`, `quiet_gate.move_m`, `quiet_gate.force_n`, `quiet_gate.timeout_sec` | the [guarded quiet window](#the-quiet-window--hands-off-until-the-go-cue): touching the apple before the go cue ends the trial with no reward and a time-out (on, 3 cm, 5 N, 5 s) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `move_to_park.target_joint_position` | the park pose, A1..A7 [deg]; first used when the next trial ends. Checked against the limits, and A4 must keep the start's sign |
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
@@ -646,6 +650,34 @@ what ROS streams into it:
 >    free motion alike, and for the maze no uniform value works (400 = mushy walls, 3000 = heavy
 >    everywhere). Lock the constrained axis hard and keep the free axes firm enough for
 >    walls; the interior stays free by (1).
+
+### The quiet window — hands off until the go cue
+Every experiment waits `quiet_window_sec` at the start before its go cue, and takes its resting
+references then: the pull baseline and resting pose (apple pluck), the resting force (perturb bump,
+Free Move), where the fixture anchors (maze, restricted plane). A hand on the apple in that window
+corrupts the trial that follows, so the window is **guarded**
+([`quiet_gate.py`](sinthlab_bringup/sinthlab_bringup/actions/quiet_gate.py)): if the apple is moved
+or pushed before the go cue,
+
+1. the trial **ends without reward** — event `early_touch`, no go cue;
+2. the arm **parks**;
+3. a **time-out** (`quiet_gate.timeout_sec`, on top of `move_to_park.hold_sec`) runs before the next
+   trial — shaping "wait for the go cue".
+
+Both checks compare with the window's first 0.2 s, so each pose's resting sag and resting force do
+not count:
+
+| Setting (live) | Default | Ends the trial when |
+|---|---|---|
+| `quiet_gate.move_m` | 0.03 m | the apple moves this far |
+| `quiet_gate.force_n` | 5 N | the hand force changes this much (from the joint torques) |
+| `quiet_gate.timeout_sec` | 5 s | — the time-out after an early touch |
+| `quiet_gate.enabled` | true | — false = a plain timed wait |
+
+The defaults come from the recordings: an untouched arm still settles by up to 16 mm on Uniform 100
+(7 mm on 400) and its force reading wanders by up to 3 N, while an early pull moved it 74 mm with
+31 N. A very light touch can pass unnoticed; lower the two thresholds with care, or untouched trials
+will be broken off as the arm settles.
 
 ### The floor — a height the end effector never goes below
 Every experiment has a **floor**: a height above the ground (the robot stands on the ground, so
@@ -1527,7 +1559,7 @@ and the recorder, and the operator drives the orchestrator from the dashboard or
 flowchart TB
     OPS["Operator<br/>dashboard or terminal"]
     ORCH["<b>Layer 3</b> · Orchestrator node (one per experiment)<br/>+ ExperimentControl: status · pause · live params"]
-    ACT["<b>Layer 3</b> · Actions<br/>moves · perturbation · freeze · fixture / maze · monitors · cues"]
+    ACT["<b>Layer 3</b> · Actions<br/>moves · perturbation · resistance + release · admittance · fixture / maze · monitors · cues"]
     REC["<b>Layer 3</b> · TrialRecorder<br/>CSV + JSON sidecar per trial"]
     KIN["<b>Layer 2</b> · Kinematics<br/>optas FK · tf2 poses"]
     JPC["<b>Layer 1</b> · LBRJointPositionCommandController<br/>joint positions → FRI<br/>apple / perturb, every start / park move"]
@@ -1611,7 +1643,7 @@ flowchart LR
   | `MoveToPositionJointSpace` | drive to an absolute joint target (FRI position cmd). Used for every start move |
   | `ParkMove` | the move to the park pose, out of reach: the run's first move (slow) and the end of every trial. Refuses a park pose whose elbow bends the other way from the start |
   | `PerturbInitialPosition` | polar (r, θ) perturbation from the start pose (joint‑space DLS‑IK) |
-  | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's; at the snap, follow the arm completely (the apple is plucked) until it rests; never toward a straight elbow or below the floor (apple / perturb) |
+  | `ResistanceSoftener` | from `armed` to the snap, let the equilibrium follow part of the pull, so the felt stiffness is below the SmartPad's; at the snap, follow the arm completely (the apple is plucked) until it rests; never toward a straight elbow, within 14° of a joint limit, or below the floor (apple / perturb) |
   | `SwitchControllerAction` | switch between the joint controller and `kuka_clik_controller` (restricted-plane / maze) |
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
@@ -1842,6 +1874,9 @@ Each flow is one trial. The event token each step logs is in brackets (see [§7]
 Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
 next trial, or holds at the start if a pause was requested. Free Move's session only ends when a pause
 is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 5).
+**In every flow, the quiet window is guarded:** moving or pushing the apple before the go cue goes
+straight to park without reward [`early_touch`], and the next trial starts only after the time-out
+([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The diagrams leave that branch out.
 
 **Flow 1 — Apple Pluck** (joint controller throughout). The **random start** paradigm runs this same flow;
 only `MoveToStart` targets that trial's start position, picked at `trial_start`. Every flow begins
@@ -2119,6 +2154,11 @@ Why each earns its place:
 
 ### Events, per experiment
 
+**Every experiment** may also record **`early_touch`** — the apple was moved or pushed in the quiet
+window ([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The trial then ends there
+without reward: `trial_start`, `at_start` (and `fixture_active` on the CLIK), `early_touch`, the move to
+park, `trial_end`. `validate_recording.py` accepts such a trial as complete.
+
 #### Apple pluck
 
 **Records from** `start_trial()` **to** `on_park_complete()` — the whole trial including the
@@ -2138,7 +2178,7 @@ return to start, not just the pull.
 | `on_monitor_armed()` | `armed` | — | the baseline is locked; the animal may pull |
 | `on_monitor_snap()` | `snap` | **displacement, m** | the pull crosses the threshold |
 | `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
-| `on_monitor_snap()` | `freeze` | — | the pull-back is released: the equilibrium follows the arm (`resistance.release()`) |
+| `on_monitor_snap()` | `freeze` | — | the pull-back is released: the equilibrium follows the arm (`resistance.release()`). The token keeps its old name so older recordings and `validate_recording.py` still match |
 | `on_monitor_complete()` | `release_wait` | — | the dwell is over; waiting for the arm to rest with the elbow bent |
 | `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
 | `_check_elbow()` | `elbow_flipped` | A4, deg | at `at_start` or before the park: the elbow bends the wrong way (the run carries on) |
@@ -2293,7 +2333,7 @@ NSP_CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
 Sending is switched by **`nsp_sync.enabled`** in each experiment YAML. It is a live parameter, so the
 dashboard can toggle it between trials. Until `ExperimentControl._pulse()` is implemented it warns
 once that nothing is being sent. Implementing it means sending the cabinet a UDP `PULSE <output>
-<width ms>` ([§8](#the-code)); nothing else changes.
+<width ms>` ([the code](reward_and_sync_box/README.md#the-code)); nothing else changes.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Send a
@@ -2563,223 +2603,11 @@ delete rather than a row range you have to remember to exclude.
 
 ## 8. Neural Synchronisation
 
-Trial events reach the Blackrock NSP as **5 V TTL pulses on BNC lines**, sent by the Sunrise cabinet
-through a small Beckhoff EtherCAT stack. Each event type has its own line, so nothing has to be
-decoded: **output 1 = trial start, output 2 = trial end**, outputs 3 and 4 spare. The NSP records
-each line on an analog input, and the rising edge is the time reference for aligning the trial data.
-
-```
- Sunrise cabinet                          DIN rail, modules snapped together left → right
- X65 (EtherCAT extension) ═ Cat5e ══╗    ┌────────┬────────┬────────┬────────┐
-                                    ╚══► │ EK1100 │ EL9505 │ EL2124 │ EL9011 │
-                              upper RJ45 │coupler │24 → 5 V│4 × 5 V │end cap │
- 24 V adapter ─► barrel/screw adapter ─► │power in│24 V in*│outputs │        │
-                                         └────────┴────────┴───┬────┴────────┘
-                                                Out 1 + 0 V ───┼─► BNC ─► NSP analog in 3  (trial start)
-                                                Out 2 + 0 V ───┴─► BNC ─► NSP analog in 4  (trial end)
-```
-\* The EL9505's 24 V input is on its front, fed from the EK1100 by two jumpers (Assembly, step 3).
-
-### Components
-
-| Part | Role |
-|---|---|
-| Beckhoff **EK1100** | EtherCAT coupler: joins the stack to the cabinet's EtherCAT and takes the 24 V supply |
-| Beckhoff **EL9505** | turns 24 V, fed to its own front points, into 5 V on the power contacts for the terminals to its right |
-| Beckhoff **EL2124** | 4 digital outputs, 5 V push-pull (±20 mA each, short-circuit proof): the TTL lines |
-| Beckhoff **EL9011** | end cap: covers the last terminal's exposed contacts |
-| 24 V DC adapter, ≥1 A, center positive| power. A floating supply keeps the stack from making a ground loop with the NSP. Our 24 V 3.75 A, 2.1 mm adapter is plenty (the stack draws < 0.5 A) |
-| 2.1 mm female barrel → 2-pin screw-terminal adapter | brings the adapter's + and − out to wires |
-| Cat5e patch cable | cabinet EtherCAT port → EK1100.|
-| BNC male → 2-pole terminal block with BNC female–female couplers (or a BNC female -> 2-pole terminal block)), BNC cables - 1 set er output | the TTL lines to the NSP |
-| Hook-up wire 18–20 AWG (power), 22–24 AWG (signals) | |
-
-### Assembly
-
-1. **Snap the modules onto the DIN rail in this order: EK1100, EL9505, EL2124, EL9011.** The side
-   contacts carry the bus from module to module. The order matters: the EL9505 puts 5 V on the
-   power contacts for everything to its right, which is what the EL2124 runs on.
-2. **Power, at the EK1100.** It has two 24 V inputs and both must be fed: **Us** runs the coupler,
-   **Up** feeds its power contacts. Wire the screw-terminal adapter's + and −, and two short jumpers:
-
-   | EK1100 point | Label | Connect |
-   |---|---|---|
-   | 1 | 24V (Us) | **+24 V** from the adapter |
-   | 2 | + (Up) | jumper from point 1 |
-   | 5 | 0V (Us) | **0 V** from the adapter |
-   | 7 | − (Up) | jumper from point 5 |
-   | 4, 8 | PE | **leave empty** (floating supply, no ground loop) |
-
-   Points 2/6 are both Up +, and 3/7 both Up −, joined inside the coupler, so 6 or 3 work as well.
-   The point numbers are Beckhoff's standard coupler layout: go by the labels printed on the module.
-   Check the adapter polarity with a multimeter first (red on +, black on −: +24 V). An inline 2 A
-   fuse in the + wire protects the wiring.
-3. **Power, at the EL9505.** It does **not** take its 24 V through the side contacts: it has its own
-   24 V input on the front, and with nothing wired there it makes no 5 V. Feed it from the EK1100's
-   spare Up points with two more jumpers:
-
-   | From EK1100 | To EL9505 |
-   |---|---|
-   | point 6 (+) | point **1** (24V) |
-   | point 3 (−) | point **5** (0V) |
-
-   The EL9505's other points: 2/6 are + and 3/7 are − of its 5 V output, 4/8 PE (leave empty).
-   Check: 5 V between the EL9505's points 2 and 3.
-4. **EtherCAT.** Cat5e from the cabinet's **X65** ("KUKA Extension Bus", an RJ45 socket meant for
-   EtherCAT devices outside the controller; cabinet specification §6.7) to the EK1100's **upper**
-   RJ45 (X1 IN). The lower one (X2 OUT) stays empty; it is only for chaining more EtherCAT devices.
-5. **The TTL lines, at the EL2124.** Each line is one output point plus 0 V. There are two 0 V
-   points, shared by all four outputs:
-
-   | Line | BNC + (centre) | BNC − (shield) |
-   |---|---|---|
-   | Output 1, trial start | point **1** | point **3** (0 V) |
-   | Output 2, trial end | point **5** | point **7** (0 V) |
-   | Output 3 (spare) | point 4 | point 3 |
-   | Output 4 (spare) | point 8 | point 7 |
-
-   **Never connect a BNC to points 2 or 6: they carry +5 V**, and a shield there shorts the supply.
-   Check before connecting the NSP, with the stack powered and the multimeter's black probe on the
-   EL2124's **own point 3**: 2 and 6 read 5 V, 7 reads 0 V, and outputs 1 and 5 read 0 V while idle.
-   If your module reads differently, follow the labels and the readings, not this table.
-6. **BNC.** Into each BNC terminal block: the output wire to **+** (centre), the 0 V wire to **−**
-   (shield). A coupler and a BNC cable carry each line to the NSP.
-
-### The NSP side
-
-- **Output 1 → analog input 3, output 2 → analog input 4.** Record both at 30 kHz with filtering off.
-  Analog inputs land in the continuous data (`.ns5` / NSx), **not** the `.nev` event file; the
-  `.nev` takes events only through the NSP's digital input port.
-- **Level.** A line is 0 V idle and 5 V during a pulse.
-- **Ground.** The stack's 0 V meets the NSP only through the BNC shields. Keep the 24 V adapter
-  floating (2-prong) and PE empty, so that is the only connection.
-
-### Configuring the cabinet (once)
-
-The cabinet has to know the stack is there before it can drive it. Its I/O configuration is edited in
-**KUKA WorkVisual**, which Sunrise Workbench starts for you; Workbench alone cannot do it. These steps
-follow the *KUKA Sunrise.OS 1.17* manual, chapter 11 "Bus configuration" (§11.1–11.7). **The names in
-bold must be exactly as written**: the code finds the outputs by them.
-
-1. **WorkVisual and its Sunrise option package**, once per laptop. Install **WorkVisual 5.0.5 Build 600**
-   (the build the Sunrise.OS 1.17 release notes name), then in
-   WorkVisual *Extras → Option package management* install **`Sunrise.kop`**, from the *WorkVisual
-   AddOn* directory of the Sunrise Workbench installation. It must be the one supplied with *your*
-   Workbench (1.17); after a Workbench update, replace it too. Restart WorkVisual.
-2. **Create the I/O configuration from Workbench**, not in WorkVisual: select the project in the
-   Package Explorer, then *File → New → I/O configuration*. WorkVisual starts with the project's
-   WorkVisual project, and `IOConfiguration.wvs` appears in the Sunrise project; later, double-click
-   that file to reopen it. (Started on its own, WorkVisual shows an empty project.)
-3. **Import the Beckhoff device descriptions.** WorkVisual imports them only with no project open:
-   close the project (*File → Close*), then *File → Import / Export → Import device description file*,
-   and pick the EtherCAT ESI files for the EK1100, EL9505, EL2124 and EL9011. A copy of the Beckhoff
-   ESI archive is in this repo at
-   [`sunrise_controller_code/ethercat_device_description/`](sunrise_controller_code/ethercat_device_description/)
-   (unzip it first). Then reopen the project by double-clicking `IOConfiguration.wvs` in Workbench.
-4. **Set the controller active.** On the *Hardware* tab of the *Project structure* window, right-click
-   the controller (shown as *Steuerung 1 (KRC4 - …)*, the Sunrise cabinet) → *Set as active
-   controller*. The *I/O Mapping* window opens.
-5. **Configure the bus.** Under the controller's *Bus structure*, add the **EK1100** to the EtherCAT
-   bus that leaves the cabinet at X65, then the **EL9505**, **EL2124** and **EL9011** below it, in their
-   physical order. Pick the catalogue entries whose revision matches the modules' labels.
-6. **Create the Sunrise I/Os** (§11.5). In the *I/O Mapping* window: select the **EL2124** on the
-   *Field buses* tab (top right), the *Sunrise I/Os* tab (top left), then the *Creates signals at the
-   provider* button (bottom left). In *Create I/O signals*:
-   - *Edit I/O group* → *Create*, name **`NspSync`** (description, e.g. "TTL sync to the NSP") → *Create*.
-   - For each of **`Output1`**, **`Output2`**, **`Output3`**, **`Output4`**: enter the name, *Direction*
-     **Output**, *Type* **Digital**, *Data type* **BOOL** (bit width 1), and click *Create*.
-   - *OK*.
-7. **Map them** (§11.6.3): with `NspSync` selected on *Sunrise I/Os* and the EL2124 on *Field buses*,
-   drag `Output1` onto the EL2124's channel 1 output, `Output2` onto channel 2, and so on. Mapped
-   signals show green arrows.
-8. **Export to the Sunrise project** (§11.7): *File → Import / Export → Export the I/O configuration to
-   the Sunrise Workbench project* → *Next* → *Finish*, then *File → Exit*. Workbench's automatic change
-   recognition must be on (manual §5.9: *Window → User definitions → General → Workspace* → tick
-   *Update via native hooks or polling*). In Workbench, refresh the project (**F5**): it then has the
-   generated class `com.kuka.generated.ioAccess.NspSyncIOGroup` with `setOutput1` … `setOutput4`. A
-   "file is out of sync" warning on `IOConfiguration.wvs` means only that WorkVisual changed it on
-   disk; F5 clears it.
-9. **Synchronize** the project to the cabinet and **reboot the robot controller** (a changed I/O
-   configuration only takes effect after the reboot). The EK1100's RUN LED goes steady once the
-   stack is in operation.
-
-When WorkVisual opens the project it may report *"No robot was found in controller Steuerung 1. Tools
-and bases can not be imported."* That concerns importing tool and base data, which the I/O
-configuration does not use; continue with the steps above.
-
-The apps compile and run before this is done: until the generated class exists, the outputs report
-themselves unavailable and nothing else changes.
-
-### The code
-
-All in [`sunrise_controller_code/`](sunrise_controller_code/); deploy it like the main app
-([Install Application to Robot](#install-application-to-robot)).
-
-- **[`TtlPulser.java`](sunrise_controller_code/TtlPulser.java)**: the outputs. `pulse(output, widthMs)`
-  sets output 1–4 high for `widthMs` (1–5000) and returns at once; a second pulse on an output that is
-  still high extends it. `allLow()` sets every output low; `close()` does too, on app exit. It binds to
-  the generated `NspSyncIOGroup` by name at run time, and if the group is named differently, change
-  `GROUP_CLASS` / `OUTPUT_SETTER` there.
-- **[`LbrImpedanceControlServer.java`](sunrise_controller_code/LbrImpedanceControlServer.java)**, the
-  experiment app: opens the outputs at start-up (logging whether they are available), offers
-  `sendTtlPulse(output, widthMs)`, and serves pulse commands from the network on **UDP 30002**:
-
-  | Command (one UDP datagram, ASCII) | Reply |
-  |---|---|
-  | `PULSE <output 1-4> <width ms>` | `OK PULSE 1 10`, or `ERR <why>` |
-  | `ALLOFF` | `OK ALLOFF` (every output low) |
-  | `STATUS` | `OK available=true …`, or `ERR <why unavailable>` |
-
-  The cabinet releases UDP ports 30000–30010 to applications; 30001 is the settings report, 30200 FRI.
-- **[`PulseTestServer.java`](sunrise_controller_code/PulseTestServer.java)**: a separate SmartPad app to
-  test the lines **without moving the arm or starting FRI**. Pick an output (or *All*), a width
-  (10 / 50 / 100 / 500 ms) and *Once* or *10 times, 1 per second*, and it fires; repeat until *Cancel*.
-  *All* fires output N as N pulses, so each line identifies itself on the NSP. It serves the same UDP
-  commands, so the network path from the ROS computer can be tested at the same time.
-
-**The ROS side is not wired yet.** `ExperimentControl._pulse()` (see
-[Sync to the Blackrock NSP](#sync-to-the-blackrock-nsp)) still only warns. Finishing it means sending
-`PULSE 1 10` to the cabinet (`172.31.1.147:30002`) at trial start and `PULSE 2 10` at trial end.
-
-**Timing.** The edge leaves when the cabinet writes the output, a few ms after the command, with a few
-ms of jitter; the width comes from a Java timer and is good to a few ms. The edge marks when the pulse
-was *commanded*, so align to the edge, and keep widths at 10 ms or more: shorter ones can fall between
-I/O cycles.
-
-### Testing, step by step
-
-1. **Power only.** The EK1100's **Us** and **Up** LEDs are green, and the EL9505 makes 5 V: measure
-   between **its own** points 2 (+) and 3 (−).
-2. **Bus.** With the Cat5e in and the project synchronized, the EK1100's link LED at X1 IN flickers
-   and its **RUN** LED is steady.
-3. **SmartPad test.** Run **PulseTestServer**, pick *Output 1*, *500 ms*, *10 times*: the EL2124's
-   channel-1 LED blinks once a second, and a multimeter between point 1 and point 3 jumps to 5 V with it.
-   Repeat for output 2 (points 5 and 7).
-4. **Network path.** With PulseTestServer running, from the ROS computer:
-   ```bash
-   echo "STATUS" | nc -u -w1 172.31.1.147 30002        # OK available=true ...
-   echo "PULSE 1 10" | nc -u -w1 172.31.1.147 30002    # OK PULSE 1 10, and the channel-1 LED flickers
-   ```
-5. **NSP.** Connect the BNCs, start a Central recording, and run *All*, *100 ms*: analog input 3 shows
-   one pulse, analog input 4 two.
-
-### Troubleshooting
-
-| Symptom | Likely cause → fix |
-|---|---|
-| No LEDs on the EK1100 | No power or reversed polarity: measure +24 V between points 1 and 5 |
-| **Us** green, **Up** dark | The jumpers 1→2 and 5→7 are missing or loose |
-| 0 V between the EL9505's own points 2 and 3, Us and Up green | The EL9505's front 24 V input is not fed: jumper EK1100 6 → EL9505 1 and EK1100 3 → EL9505 5 (Assembly step 3) |
-| EK1100 link LED dark | The Cat5e is in the lower RJ45 (X2 OUT) or in the wrong cabinet port; or the cable is bad |
-| RUN LED off or blinking | The cabinet has not taken the stack into operation: the I/O configuration does not match the physical modules or their order, or the project was not synchronized after it |
-| SmartPad / log: *TTL outputs unavailable: no I/O group …NspSyncIOGroup* | The I/O configuration is not in the project, or the group is not named `NspSync`: configure the cabinet, synchronize |
-| *… lacks setOutput1* | The outputs are not named `Output1`…`Output4` |
-| `nc` gets no reply | No app serving UDP 30002 is running, or the ROS computer cannot reach `172.31.1.147` (`ping` it); `nc` needs `-u` |
-| *UDP 30002 is busy* in the log | Another app already holds the port (e.g. PulseTestServer and the experiment app at once): end one |
-| `OK PULSE …` but the channel LED stays dark | The mapping in the I/O group points at the wrong channels or module: check it in WorkVisual |
-| Channel LED blinks, but the NSP shows nothing | BNC wiring (output to centre, 0 V to shield), the wrong NSP input, or that input not enabled in Central |
-| 50/60 Hz hum or spikes on the NSP channels | A ground loop: the adapter is earthed (3-prong) or PE is connected; use a floating adapter, leave PE empty |
-| The 5 V reads lower under load, or a channel stays dead | A shield wired to point 2 or 6 (+5 V): rewire to 3 or 7 |
+Trial events reach the Blackrock NSP as **5 V TTL pulses on BNC lines** (output 1 = trial start,
+output 2 = trial end), sent by the Sunrise cabinet through a small Beckhoff EtherCAT stack (EK1100,
+EL9505, EL2124) that lives in the reward-and-sync box. The hardware, its wiring, the cabinet's
+WorkVisual configuration, the cabinet code (`TtlPulser`, `PulseTestServer`) and the step-by-step tests
+are all in [`reward_and_sync_box/README.md`](reward_and_sync_box/README.md#sync-ttl-pulses-to-the-nsp).
 
 ---
 
@@ -2800,6 +2628,22 @@ I/O cycles.
      the window.
   3. **Started too early** — before the app reached *Creating FRI connection to …* (still moving to
      zero / ready). Stop, wait for that line on the SmartPad, Start again.
+- **The arm stops with a safety error and will not move** — the smartPAD shows *axis range
+  monitoring, instance N* (or a *motion paused* message) after a hard or fast pull. A joint reached
+  its monitored range (A2/A4/A6 ±112°, see
+  [Joint-limit safe stop](#joint-limit-safe-stop-cabinet-safety-configuration)) and the cabinet
+  stopped it. The FRI session has ended, so the run cannot carry on. Recover with **KRF**:
+  1. Switch the smartPAD's operating mode to **KRF** (controlled robot retraction). It allows slow
+     jogging while a safety monitor is violated.
+  2. Acknowledge the message, enable, and jog the tripped axis slowly back inside its range (the
+     instance number follows the order the rows were added: 1 = A2, 2 = A4, 3 = A6).
+  3. Switch back to the previous mode (T1 or AUT), restart the SmartPad app if it ended, and restart
+     the run.
+
+  **Do not unmaster the axis.** With an axis unmastered the safety controller cannot trust its
+  position, so the monitor stays violated and the axis cannot be moved even to remaster it. If it
+  has been unmastered, KRF is again the way out: enable the joints there, remaster, and move the
+  axis back inside the range.
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
   ROS were doing, reproduce the problem, and read the summary:
   ```bash

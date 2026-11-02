@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
@@ -53,10 +54,9 @@ class MazeOrchestratorNode(rclpyNode):
             self, activate=[CLIK_CTRL], deactivate=[JOINT_CTRL],
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
-        self.quiet_window = WaitAction(
-            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
-            on_complete=self.on_quiet_window_complete, name="quiet_window"
-        )
+        # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
+        self.quiet_window = QuietGate(
+            self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
         # Audio and visual cues fire together at each site. The visual cue sends TIMING only --
         # what the ring shows is configured on the board itself. It is a no-op when
         # `visual_cue.enabled` is false, so the experiment runs unchanged before the ring is wired.
@@ -185,6 +185,13 @@ class MazeOrchestratorNode(rclpyNode):
     def on_timeout(self):
         self._end_trial("timeout")
 
+    def on_early_touch(self, why: str):
+        """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
+        without reward, park, and add the time-out before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self._end_trial("early_touch")
+
     def on_safety_trip(self, reason: str):
         # Runaway (e.g. a gravity-driven fall): abort immediately, do NOT wait for the operator to let go.
         self._end_trial("safety")
@@ -200,10 +207,11 @@ class MazeOrchestratorNode(rclpyNode):
         self.checkpoint_monitor.stop()
         self.safety.stop()
         self.maze_fixtures.stop()
-        if reason == "safety":
+        if reason in ("safety", "early_touch"):
             # Do not play a cue or wait for release — drive straight to park, which (in the cabinet's
             # impedance) moves the equilibrium there and pulls the arm out of the fault.
-            self.get_logger().error("SAFETY ABORT: parking immediately.")
+            if reason == "safety":
+                self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
             return
         if reason == "goal":
@@ -269,6 +277,7 @@ class MazeOrchestratorNode(rclpyNode):
                     self.timeout_cue_visual):
             cue.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
+        self.quiet_window.reload()
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
         self.move_park.reload()
         self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))

@@ -10,6 +10,18 @@
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
+    # ---- THE QUIET WINDOW IS GUARDED (live) ----
+    # Moving or pushing the apple during the quiet window (before the go cue) ends the trial with no
+    # reward: event early_touch, the arm parks, and a time-out runs before the next trial -- shaping
+    # "wait for the go cue". Compared with the window's first 0.2 s, so resting sag and force don't
+    # count. An untouched arm still settles by up to 16 mm (Uniform 100) and its force reading wanders
+    # by up to 3 N; an early pull moved it 74 mm with 31 N. See actions/quiet_gate.py.
+    quiet_gate:  # breaking off a trial when the apple is touched before the go cue
+      enabled: true  # false = the quiet window is a plain timed wait
+      move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
+      force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
+      timeout_sec: 5.0  # time-out at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
     # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
     # runs as one free-movement SESSION until you end it: Pause or "Stop after trial" on the dashboard.

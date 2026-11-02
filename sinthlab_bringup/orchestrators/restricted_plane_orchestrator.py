@@ -11,6 +11,7 @@ from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
@@ -51,10 +52,9 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             self, activate=[CLIK_CTRL], deactivate=[JOINT_CTRL],
             on_complete=self.on_switched_to_fixture, name="switch->clik",
         )
-        self.quiet_window = WaitAction(
-            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
-            on_complete=self.on_quiet_window_complete, name="quiet_window"
-        )
+        # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
+        self.quiet_window = QuietGate(
+            self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
         self.audio_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
@@ -159,6 +159,17 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
 
+    def on_early_touch(self, why: str):
+        """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
+        without reward, park, and add the time-out before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
+        self.recorder.mark("early_touch")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self.safety.stop()
+        self.monitor.stop()
+        self.restricted_plane.stop()
+        self.switch_to_joint.start()
+
     def on_safety_trip(self, reason: str):
         # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to park.
         self.get_logger().error("SAFETY ABORT: parking immediately.")
@@ -217,6 +228,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             cue.reload()
         self.monitor.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
+        self.quiet_window.reload()
         self.move_to_start.reload()      # speed limits
         self.move_park.reload()
 

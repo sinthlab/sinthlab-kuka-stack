@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.wait_action import WaitAction
+from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
@@ -52,9 +53,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
             on_complete=self.on_switched_to_fixture, name="switch->clik")
         self.admittance = AdmittanceMoveAction(self, param_prefix="free_move")
         self.ring = RingStateCue(self)
-        self.quiet_window = WaitAction(
-            self, duration_sec=float(get_required_param(self, "quiet_window_sec")),
-            on_complete=self.on_quiet_window_complete, name="quiet_window")
+        # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
+        self.quiet_window = QuietGate(
+            self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
         self.go_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)))
@@ -157,6 +158,13 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.get_logger().info("End requested: ending the session and parking.")
             self._stop_now(mark="session_end")
 
+    def on_early_touch(self, why: str):
+        """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
+        without reward, park, and add the time-out before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self._end_trial("early_touch")
+
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")
 
@@ -170,8 +178,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.safety.stop()
         self.admittance.stop()          # holds where it is
         self.ring.show("off")
-        if reason == "safety":
-            self.get_logger().error("SAFETY ABORT: parking immediately.")
+        if reason in ("safety", "early_touch"):
+            if reason == "safety":
+                self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
             return
         self.get_logger().info("Session over. The arm holds; waiting for release before reset.")
@@ -228,6 +237,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             cue.reload()
         self.ring.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
+        self.quiet_window.reload()
         self.move_to_start.reload()
         self.move_park.reload()
         self._session_sec = float(get_required_param(self, "session_sec"))
