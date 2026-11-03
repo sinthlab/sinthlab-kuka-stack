@@ -97,7 +97,8 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   current phase, the trial's steps, and a list of every event.
 - **Log:** on the right on a wide screen, below on a narrow one.
 - **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
-  run state. **Diagnostics** (top right) opens the hardware checks — see below.
+  run state. **Post-processing** (top right) archives a session as NWB, and **Diagnostics** opens the
+  hardware checks — see below.
 
 ### Diagnostics — hardware checks
 The **Diagnostics** button at the top right opens a separate page (`/diagnostics.html`) of hardware
@@ -118,6 +119,16 @@ It talks to the ring's Metro board over the board's own Wi-Fi, so **join this co
   that is not enabled. *If Wi-Fi works but the wire does not, the fault is in the trigger wiring.*
 
 It works in `--demo` too, against a simulated board. Details: `experiment_ctrl_gui/README.md`.
+
+### Post-processing — archive a session as NWB
+The **Post-processing** button at the top right opens `/postprocess.html`: it turns a session into one
+NWB file and uploads it to the server. Give it the robot run folder and the Blackrock NSP recording
+(a network-mounted path is fine; leave it empty for the robot data alone), fill in the subject and
+session, and press **Create NWB**. The robot data is put on the NSP's clock by matching the sync
+pulses (trial start on `ainp3`, trial end on `ainp4`) to the run's trial events. When the file is
+written, the page asks for the server folder and uploads it, verifying the copy. It needs `pynwb` and
+`neo` (`pip install --user --break-system-packages pynwb neo "numpy<2"`). Details:
+[`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md#post-processing-page).
 
 ### Running an experiment
 1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb** / **Pluck random start**

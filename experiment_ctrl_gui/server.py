@@ -32,6 +32,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+from postprocess import PostProcessor  # noqa: E402
 from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
@@ -57,6 +58,7 @@ class App:
             self.bridge.attach_log(self.runner.emit)
         if not self.bridge.available:
             self.runner.emit(f"ROS not available: {self.bridge.reason}", "warn")
+        self.post = PostProcessor(self.broadcast, self.runner.emit, self._busy)
         threading.Thread(target=self._ticker, daemon=True).start()
 
     # ------------------------------------------------------------------ events out
@@ -114,6 +116,13 @@ class App:
             "data_folder": self.data_folder(),
             "edited": {k: len(p.edits) for k, p in self.params.items()},
         }
+
+    def _busy(self) -> Optional[str]:
+        """The experiment running now (here or in a terminal), if any."""
+        if self.runner.running():
+            return self.runner.experiment or "an experiment"
+        st = self.status()
+        return st.get("experiment") or "an experiment" if st and not st["stale"] else None
 
     def data_folder(self) -> Optional[str]:
         r = self.runner
@@ -303,6 +312,8 @@ def make_handler(app: App):
                                    "start_height": _start_height(p)})
             if path == "/api/logs":
                 return self._json(list(app.runner.lines))
+            if path == "/api/post/state":
+                return self._json(app.post.state())
             return self._static(path)
 
         def _static(self, path: str):
@@ -433,6 +444,14 @@ def make_handler(app: App):
                         raise ValueError(problem)
                 app.broadcast("state", app.state())
                 return {"ok": True, "value": value}
+            if path == "/api/post/scan":
+                return {"ok": True, **app.post.scan(str(body.get("robot") or "").strip(), str(body.get("nsp") or "").strip())}
+            if path == "/api/post/convert":
+                return app.post.convert(body)
+            if path == "/api/post/upload":
+                return app.post.upload(body)
+            if path == "/api/post/cancel":
+                return app.post.cancel()
             if path == "/api/validate":
                 folder = app.data_folder()
                 if not folder:

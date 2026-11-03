@@ -14,6 +14,7 @@ classified, where the parameter help comes from, and how to extend it.
 - [Parameter model](#parameter-model)
 - [Parameter documentation](#parameter-documentation)
 - [Diagnostics page](#diagnostics-page)
+- [Post-processing page](#post-processing-page)
 - [HTTP API](#http-api)
 - [Process control](#process-control)
 - [Demo mode](#demo-mode)
@@ -73,13 +74,21 @@ flowchart LR
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb / perturb bump / random start) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
-| `static/` | the page: `index.html`, `style.css`, `app.js`. No external libraries or fonts |
+| `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
+| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
 | `run_gui.sh` | sources ROS 2 and the workspace, then runs `server.py` |
 
 Dependencies: the Python standard library and PyYAML (installed with ROS); `rclpy` and the message
-packages when ROS is sourced.
+packages when ROS is sourced. The Post-processing page also needs `pynwb` and `neo`, installed with
+`numpy` held below 2 (ROS's scipy needs it):
+
+```bash
+pip install --user --break-system-packages pynwb neo "numpy<2"
+```
+
+Without them the page says so and the rest of the dashboard is unaffected.
 
 ---
 
@@ -195,6 +204,53 @@ The browser cannot read the board's replies itself (another origin), so the serv
 command (`board.py`). In `--demo` a simulated board answers, so the page can be tried without
 hardware. The command-line equivalent for the wire is `sinthlab_bringup/diagnostics/check_cue_wiring.py`.
 
+## Post-processing page
+
+`/postprocess.html` — the **Post-processing** button at the top right of the dashboard. It archives a
+session as one NWB file and uploads it to the server. Nothing on it moves the arm; a job is refused
+while an experiment runs (here or in a terminal), since a conversion reads and writes gigabytes.
+
+1. **Recordings.** The robot run folder (a list of the runs in `analysis/`, or any path) and the
+   Blackrock NSP recording: any one of its files (`.nev`, `.ns1`–`.ns6`) or the folder holding it, on a
+   network mount if it lives on the server; empty for a robot-only archive. The sync channels
+   (default `ainp3` = trial start, `ainp4` = trial end) and threshold (2.5 V), and whether to include
+   the continuous NSx data and the NEV spikes. **Check recordings** shows what each holds and flags a
+   sync channel the recording does not have.
+2. **Subject and session.** Subject ID (required), species, sex, age or date of birth, weight,
+   description; experimenter, lab, institution; array location and description; session description
+   and notes. The browser remembers the last values.
+3. **Archive to NWB.** The output file (default `<run folder>/sub-<subject>_ses-<session>.nwb`).
+   **Create NWB** runs [`analysis/nwb_export.py`](../analysis/nwb_export.py) with a progress bar and
+   **Cancel**; the result shows the file, its size, the trials, the time base and the sync fit
+   (matched pulses, rms and max residual, clock drift).
+4. **Upload to the server.** Once the archive exists the page asks for it to be uploaded: the server
+   folder defaults to the NSP recording's folder. The copy is written as `<name>.partial`, read back
+   and compared by SHA-256, then renamed; an existing file is replaced only if ticked.
+
+**How the clocks are aligned.** The cabinet pulses EL2124 output 1 at every `trial_start` and output 2
+at every `trial_end`; the NSP records them on `ainp3` / `ainp4`. The rising edges are matched to the
+robot's `trial_start` / `trial_end` events (their wall-clock times), tolerating pulses missing at either
+end and extra pulses, and a straight line `t_nsp = slope · t_wall + intercept` is fitted (offset and
+drift). The whole file then runs on the NSP's clock, starting at the NSP recording's start. A recording
+whose edges do not line up with the run is refused. Without an NSP recording the file runs on the
+robot's clock from its first sample.
+
+**What the file holds.** Subject and session metadata; per NSx stream an `ElectricalSeries` (neural
+channels, raw int16 with their gains) and a `TimeSeries` of the analog inputs (volts); the NEV spikes
+as units (one per channel and unit) and NEV events as an events table; under `processing/behavior`
+the end-effector position (`Position`) and orientation, measured and commanded joint angles, external
+joint torques, the FRI state and clocks, every other recorded column, and the robot events table;
+`processing/sync` with the matched edges and the fit; the trials table (start/stop from
+`trial_start`/`trial_end`, experiment, paradigm, threshold, the sidecar as JSON); in `notes`, the
+SmartPad settings, the git state and the sync summary.
+
+The same conversion from a terminal:
+
+```bash
+python3 analysis/nwb_export.py --robot analysis/expt_<run> --nsp /mnt/server/<recording>.ns5 \
+    --subject-id <id> --sex M --age P8Y --out session.nwb
+```
+
 ## HTTP API
 
 POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": false, "error": …}`.
@@ -206,7 +262,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices, step), `groups` (block docs), `fixed` (Fixed tab sections) |
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
-| GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state", "data": …}` |
+| GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post", "data": …}` |
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal |
@@ -215,6 +271,11 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/pause` `{paused}` | the orchestrator's pause service |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |
+| GET | `/api/post/state` | Post-processing: whether `pynwb` / `neo` are installed, the local run folders, the current job |
+| POST | `/api/post/scan` `{robot, nsp}` | what the robot run and the NSP recording hold |
+| POST | `/api/post/convert` `{robot, nsp, out, meta, sync_channels, threshold_v, include_continuous, include_spikes}` | start the NWB archive job; progress as `{"type": "post"}` events |
+| POST | `/api/post/upload` `{nwb, dest, overwrite}` | start the verified copy to the server folder |
+| POST | `/api/post/cancel` | cancel the running job |
 | POST | `/api/diag/board` `{addr, cmd, params}` | Diagnostics page: relays one command to the end-effector cue board (`board.py`): only its own commands (`status`, `config`, `cue`, `set_color`, `segments`, `off`, `led_test`), only to a private address |
 
 ---
