@@ -23,12 +23,17 @@ hook stops whatever is running and parks the arm -- and pauses, so the control t
 then does the dashboard end the launch, so FRI always closes with the arm parked, out of reach.
 
 NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); with
-`nsp_sync.enabled` it sends that event's code to the Blackrock NSP. The DIO device is not wired
-yet, so today it warns once and sends nothing -- implement `_pulse()` when it arrives.
+`nsp_sync.enabled`, trial_start and trial_end each send the cabinet one UDP datagram,
+"PULSE <output> <width ms>" to <nsp_sync.cabinet_ip>:30002, and the cabinet's TtlPulser
+(sunrise_controller_code/) pulses that EL2124 output -- one BNC line per event to the Blackrock NSP.
+The send never blocks or raises; the cabinet's replies are read on a background thread, and a
+refusal or silence is logged (see reward_and_sync_box/README.md, "Sync: TTL pulses to the NSP").
 """
 from __future__ import annotations
 
 import json
+import socket
+import threading
 import time
 from typing import Callable, Dict, List, Optional
 
@@ -43,18 +48,16 @@ from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_im
 from sinthlab_bringup.helpers.live_params import PAIRED
 from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
-# Event token -> code sent to the NSP. Two per trial are enough for alignment (trial_start and
-# trial_end give offset and rate); the rest make a dropped pulse visible instead of silently
-# mispairing every later trial. See README.md section 7, Data Collected.
-NSP_CODES: Dict[str, int] = {
-    "trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
-    "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
-    "threshold": 10,    # pre-training: the travel threshold was reached
-    "session_end": 11,  # free move: the session ended (Pause / Stop after trial, or session_sec)
-    "grasp": 12,        # apple pluck, perturb bump: the grasp was detected
-    "perturb_applied": 13,   # apple pluck, perturb / perturb bump: the perturbation move finished
-    "grasp_timeout": 14,     # apple pluck, perturb bump: no grasp in time, the trial resets
+# Event token -> the parameter naming its EL2124 output. Two per trial are enough for alignment
+# (trial_start and trial_end give offset and rate); every other event is in the CSV on the robot
+# clock, and the fitted map carries it along. Each event has its own line, so a dropped pulse shows
+# as a missing edge on that line instead of mispairing every later trial.
+NSP_OUTPUTS: Dict[str, str] = {
+    "trial_start": "nsp_sync.trial_start_output",
+    "trial_end": "nsp_sync.trial_end_output",
 }
+# Must equal TtlPulser.DEFAULT_PORT in sunrise_controller_code/TtlPulser.java.
+PULSE_PORT = 30002
 
 STATUS_TOPIC = "experiment_status"
 _HEARTBEAT_SEC = 1.0
@@ -94,8 +97,8 @@ class ExperimentControl:
         self._effective: Dict[str, object] = {
             name: _plain(node.get_parameter(name).value)
             for name in node._parameters if is_live(experiment, name)}   # noqa: SLF001
-        self._nsp_enabled = bool(get_required_param(node, "nsp_sync.enabled"))
-        self._nsp_warned = False
+        self._nsp = NspPulser(self._log)
+        self._read_nsp()
         self._smartpad = SmartPadLink.get(self._log)    # what the SmartPad app reports it runs with
 
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -150,9 +153,9 @@ class ExperimentControl:
         start_fn()
 
     def on_event(self, token: str, arg=None) -> None:
-        """Every trial event: NSP code first (timing matters), then status."""
-        if self._nsp_enabled and token in NSP_CODES:
-            self._pulse(NSP_CODES[token], token)
+        """Every trial event: NSP sync pulse first (timing matters), then status."""
+        if self._nsp_enabled and token in NSP_OUTPUTS:
+            self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
@@ -186,7 +189,7 @@ class ExperimentControl:
             return
         for fn in self._reloaders:
             fn()
-        self._nsp_enabled = bool(get_required_param(self._node, "nsp_sync.enabled"))
+        self._read_nsp()
         self._effective.update(self._pending)
         changes = ", ".join(f"{k}={v}" for k, v in self._pending.items())
         self._log.info(f"Live parameters applied from trial {self._trial + 1}: {changes}")
@@ -275,12 +278,89 @@ class ExperimentControl:
         self._publish()
         return SetParametersResult(successful=True)
 
-    def _pulse(self, code: int, token: str) -> None:
-        """Send `code` to the NSP digital input.   >>> IMPLEMENT WHEN THE DIO ARRIVES <<<
+    def _read_nsp(self) -> None:
+        """(Re-)read nsp_sync.*: at start-up and at each trial boundary, like every live parameter."""
+        p = lambda name: get_required_param(self._node, name)   # noqa: E731
+        self._nsp_enabled = bool(p("nsp_sync.enabled"))
+        self._nsp_cfg = {token: int(p(name)) for token, name in NSP_OUTPUTS.items()}
+        self._nsp_cfg["width_ms"] = int(p("nsp_sync.pulse_width_ms"))
+        self._nsp.set_target(str(p("nsp_sync.cabinet_ip")).strip(), self._nsp_enabled)
 
-        Must never raise and never block: it runs inside TrialRecorder.mark()."""
-        if not self._nsp_warned:
-            self._nsp_warned = True
-            self._log.warn(
-                f"nsp_sync.enabled is true but no DIO device is wired yet: NSP code {code} "
-                f"('{token}') and every later code will NOT be sent. See README.md section 7.")
+
+class NspPulser:
+    """Pulse commands to the cabinet's TtlPulser over UDP, without ever blocking or raising: pulse()
+    runs inside TrialRecorder.mark(). The cabinet answers each command ("OK PULSE 1 10" / "ERR <why>");
+    a background thread reads the answers, logs the first OK and every refusal, and warns when a
+    pulse went unanswered -- no app serving UDP 30002, a wrong cabinet_ip, or the network."""
+
+    _ANSWER_SEC = 1.0      # a pulse not answered in this long is reported as unanswered
+
+    def __init__(self, logger) -> None:
+        self._log = logger
+        self._lock = threading.Lock()
+        self._host: Optional[str] = None
+        self._sent: List[tuple] = []        # (time sent, command) awaiting an answer
+        self._confirmed = False             # an OK came back from the current host
+        self._silent_warned = False
+        try:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._sock.bind(("", 0))
+            self._sock.settimeout(0.2)
+        except OSError as exc:
+            self._sock = None
+            self._log.error(f"NSP sync: cannot open a UDP socket ({exc}); no pulses will be sent.")
+            return
+        threading.Thread(target=self._listen, name="nsp-pulse", daemon=True).start()
+
+    def set_target(self, host: str, enabled: bool) -> None:
+        with self._lock:
+            if host == self._host:
+                return
+            self._host, self._confirmed, self._silent_warned = host, False, False
+            self._sent.clear()
+        if enabled:
+            self._log.info(f"NSP sync: pulses go to {host}:{PULSE_PORT}.")
+
+    def pulse(self, output: int, width_ms: int, token: str) -> None:
+        if self._sock is None or self._host is None:
+            return
+        command = f"PULSE {output} {width_ms}"
+        try:
+            self._sock.sendto(command.encode("ascii"), (self._host, PULSE_PORT))
+        except OSError as exc:
+            self._log.warn(f"NSP sync: '{command}' ({token}) to {self._host}:{PULSE_PORT} failed: {exc}",
+                           throttle_duration_sec=5.0)
+            return
+        with self._lock:
+            self._sent.append((time.monotonic(), command))
+
+    def _listen(self) -> None:
+        while True:
+            try:
+                data, (host, _port) = self._sock.recvfrom(256)
+                reply = data.decode("ascii", "replace").strip()
+            except socket.timeout:
+                reply, host = None, None
+            except OSError:
+                time.sleep(0.2)
+                continue
+            now = time.monotonic()
+            with self._lock:
+                if reply is not None and host == self._host and self._sent:
+                    self._sent.pop(0)
+                    if reply.startswith("OK") and not self._confirmed:
+                        self._confirmed = True
+                        self._log.info(f"NSP sync: the cabinet confirms pulses ({reply}).")
+                    elif not reply.startswith("OK"):
+                        self._log.error(f"NSP sync: the cabinet refused a pulse: {reply}")
+                late = [c for t, c in self._sent if now - t > self._ANSWER_SEC]
+                self._sent = [(t, c) for t, c in self._sent if now - t <= self._ANSWER_SEC]
+                warn = bool(late) and not self._silent_warned
+                if warn:
+                    self._silent_warned = True
+                host_now = self._host
+            if warn:
+                self._log.warn(
+                    f"NSP sync: no answer from {host_now}:{PULSE_PORT} to '{late[0]}'. Is the experiment app "
+                    f"running on the cabinet, and is nsp_sync.cabinet_ip its address on this network? "
+                    f"(Warned once per address.)")

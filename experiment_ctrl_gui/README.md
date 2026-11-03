@@ -74,8 +74,9 @@ flowchart LR
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb / perturb bump / random start) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
+| `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
 | `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
-| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
+| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
 | `run_gui.sh` | sources ROS 2 and the workspace, then runs `server.py` |
@@ -102,7 +103,7 @@ makes an orchestrator controllable from outside. Every orchestrator creates one:
 | `<ns>/experiment_status` | `std_msgs/String`, JSON, transient-local | published on every trial event and once a second: experiment, trial, phase, paused / held, live values **in effect**, and changes **pending** for the next trial |
 | `<ns>/<orchestrator>/pause` | `std_srvs/SetBool` | `true`: finish this trial, recover, hold at the start. `false`: apply pending changes and start the next trial. A trial with no natural end (Free Move) registers `on_pause_request()` and ends its session at once on `true` |
 | `set_parameters` | parameter callback | names in `live_params.py` are range-checked, accepted and **applied at the next trial boundary**; anything else is rejected with the reason |
-| `on_event(token, arg)` | `TrialRecorder` hook | every `mark()` updates the status, and with `nsp_sync.enabled` sends the event's NSP code (`_pulse()`, a stub until the DIO arrives) |
+| `on_event(token, arg)` | `TrialRecorder` hook | every `mark()` updates the status, and with `nsp_sync.enabled` sends the cabinet a TTL pulse command at `trial_start` and `trial_end` (`NspPulser`) |
 
 The orchestrators end each trial with `control.begin_trial(self.start_trial)`. That call is where a
 pause holds and where accepted changes are applied: `_reload_live()` calls `reload()` on the cue,
@@ -183,7 +184,11 @@ The Fixed tab's SmartPad and launch-argument rows are not YAML keys; their help 
 ## Diagnostics page
 
 `/diagnostics.html` — the **Diagnostics** button at the top right of the dashboard. Hardware checks
-that never move the arm, one tab per device. **Visual cue** checks the end-effector NeoPixel ring
+that never move the arm, one tab per device.
+
+### Visual cue
+
+**Visual cue** checks the end-effector NeoPixel ring
 through its Metro board, over the board's own Wi-Fi (join this computer to `KUKA_NEOPIXEL`):
 
 - **Cue board:** is the board reachable, and what it reports — enabled, brightness, colour, pattern,
@@ -203,6 +208,25 @@ through its Metro board, over the board's own Wi-Fi (join this computer to `KUKA
 The browser cannot read the board's replies itself (another origin), so the server relays each
 command (`board.py`). In `--demo` a simulated board answers, so the page can be tried without
 hardware. The command-line equivalent for the wire is `sinthlab_bringup/diagnostics/check_cue_wiring.py`.
+
+### TTL sync
+
+**TTL sync** fires the cabinet's sync outputs (the EL2124 in the reward and sync box; see
+[Sync: TTL pulses to the NSP](../reward_and_sync_box/README.md#sync-ttl-pulses-to-the-nsp)) with the
+same UDP commands the experiments send at trial start and end. Run **PulseTestServer** (or
+LbrImpedanceControlServer) on the SmartPad first. `diagnostics.html#ttl` opens on this tab.
+
+- **Cabinet:** its address (default `172.31.1.147`, remembered on this computer) and **Check outputs**
+  (`STATUS`): whether the cabinet answers, and whether its outputs are available.
+- **Fire pulses:** an output (1–4, or *All*: output 1 once, output 2 twice and so on), the width
+  (10–5000 ms), how many times and how often. **Stop** ends a series and sets every output low;
+  **All outputs low** sends `ALLOFF`. Each pulse lights the output's channel LED on the EL2124.
+- **Commands and replies:** every command, the cabinet's answer and the round trip.
+
+Pulses are refused while an experiment runs (a test pulse would be recorded by the NSP as a trial
+edge); *Check outputs* still works. The browser cannot send UDP, so the server relays each command
+(`ttl.py`): only `STATUS`, `ALLOFF` and `PULSE <output> <width ms>`, only to a private address. In
+`--demo` a simulated cabinet answers.
 
 ## Post-processing page
 
@@ -277,6 +301,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/post/upload` `{nwb, dest, overwrite}` | start the verified copy to the server folder |
 | POST | `/api/post/cancel` | cancel the running job |
 | POST | `/api/diag/board` `{addr, cmd, params}` | Diagnostics page: relays one command to the end-effector cue board (`board.py`): only its own commands (`status`, `config`, `cue`, `set_color`, `segments`, `off`, `led_test`), only to a private address |
+| POST | `/api/diag/ttl` `{addr, cmd}` | Diagnostics page: relays one command to the cabinet's TTL sync outputs (`ttl.py`): only `STATUS`, `ALLOFF`, `PULSE <output 1-4> <width 10-5000 ms>`, only to a private address; pulses refused while an experiment runs |
 
 ---
 

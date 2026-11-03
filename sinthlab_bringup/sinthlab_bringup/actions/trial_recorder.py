@@ -109,8 +109,8 @@ class TrialRecorder:
         self._extra_fn = extra_fn
         self._session_id = session_id or time.strftime("%Y%m%d_%H%M%S")
         # Called synchronously inside mark(), BEFORE anything else, so a hardware sync pulse leaves
-        # at the same instant the event is logged. When the USB DIO arrives, pass a function that
-        # pulses it: TrialRecorder(..., on_event=lambda tok, arg: dio.pulse(EVENT_CODE[tok])).
+        # at the same instant the event is logged. The orchestrators pass ExperimentControl.on_event,
+        # which sends the NSP sync pulses (helpers/experiment_control.py).
         # Emitting from here rather than from the orchestrator beside the mark() call is deliberate:
         # the pulse and the record cannot drift apart in a later edit if there is only one call site.
         self._on_event = on_event

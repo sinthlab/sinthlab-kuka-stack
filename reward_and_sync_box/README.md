@@ -505,10 +505,11 @@ bold must be exactly as written**: the code finds the outputs by them.
    that file to reopen it. (Started on its own, WorkVisual shows an empty project.)
 3. **Import the Beckhoff device descriptions.** WorkVisual imports them only with no project open:
    close the project (*File → Close*), then *File → Import / Export → Import device description file*,
-   and pick the EtherCAT ESI files for the EK1100, EL9505 and EL2124. A copy of the Beckhoff
-   ESI archive is in this repo at
-   [`sunrise_controller_code/ethercat_device_description/`](../sunrise_controller_code/ethercat_device_description/)
-   (unzip it first). Then reopen the project by double-clicking `IOConfiguration.wvs` in Workbench.
+   and pick the three ESI files in
+   [`sunrise_controller_code/ethercat_device_description/ESI_for_WorkVisual_505/`](../sunrise_controller_code/ethercat_device_description/ESI_for_WorkVisual_505/):
+   `Beckhoff EK11xx.xml`, `Beckhoff EL2xxx.xml`, `Beckhoff EL9xxx.xml` (they cover the EK1100, EL2124
+   and EL9505, prepared for WorkVisual 5.0.5). Then reopen the project by double-clicking
+   `IOConfiguration.wvs` in Workbench.
 4. **Set the controller active.** On the *Hardware* tab of the *Project structure* window, right-click
    the controller (shown as *Steuerung 1 (KRC4 - …)*, the Sunrise cabinet) → *Set as active
    controller*. The *I/O Mapping* window opens.
@@ -531,18 +532,20 @@ bold must be exactly as written**: the code finds the outputs by them.
 6. **Create the Sunrise I/Os** (§11.5). In the *I/O Mapping* window: select the **EL2124** on the
    *Field buses* tab (top right), the *Sunrise I/Os* tab (top left), then the *Creates signals at the
    provider* button (bottom left). In *Create I/O signals*:
-   - *Edit I/O group* → *Create*, name **`NspSync`** (description, e.g. "TTL sync to the NSP") → *Create*.
+   - *Edit I/O group* → *Create*, name **`TtlSyncPulse`** (description, e.g. "TTL sync to the NSP") → *Create*.
    - For each of **`Output1`**, **`Output2`**, **`Output3`**, **`Output4`**: enter the name, *Direction*
      **Output**, *Type* **Digital**, *Data type* **BOOL** (bit width 1), and click *Create*.
    - *OK*.
-7. **Map them** (§11.6.3): with `NspSync` selected on *Sunrise I/Os* and the EL2124 on *Field buses*,
+7. **Map them** (§11.6.3): with `TtlSyncPulse` selected on *Sunrise I/Os* and the EL2124 on *Field buses*,
    drag `Output1` onto the EL2124's channel 1 output, `Output2` onto channel 2, and so on. Mapped
    signals show green arrows.
 8. **Export to the Sunrise project** (§11.7): *File → Import / Export → Export the I/O configuration to
    the Sunrise Workbench project* → *Next* → *Finish*, then *File → Exit*. Workbench's automatic change
-   recognition must be on (manual §5.9: *Window → User definitions → General → Workspace* → tick
-   *Update via native hooks or polling*). In Workbench, refresh the project (**F5**): it then has the
-   generated class `com.kuka.generated.ioAccess.NspSyncIOGroup` with `setOutput1` … `setOutput4`. A
+   recognition must be on (manual §5.9 "User definitions"; in Workbench *Window → Preferences →
+   General → Workspace* → tick *Refresh using native hooks or polling*). In Workbench, refresh the
+   project (**F5**): the generated class **`TtlSyncPulseIOGroup.java`** appears in the Package
+   Explorer under the project's `src` → `com.kuka.generated.ioAccess` (next to `MediaFlangeIOGroup.java`),
+   with `setOutput1` … `setOutput4`. Do not edit it: every export regenerates it. A
    "file is out of sync" warning on `IOConfiguration.wvs` means only that WorkVisual changed it on
    disk; F5 clears it.
 9. **Synchronize** the project to the cabinet and **reboot the robot controller** (a changed I/O
@@ -564,7 +567,7 @@ All in [`sunrise_controller_code/`](../sunrise_controller_code/); deploy it like
 - **[`TtlPulser.java`](../sunrise_controller_code/TtlPulser.java)**: the outputs. `pulse(output, widthMs)`
   sets output 1–4 high for `widthMs` (1–5000) and returns at once; a second pulse on an output that is
   still high extends it. `allLow()` sets every output low; `close()` does too, on app exit. It binds to
-  the generated `NspSyncIOGroup` by name at run time, and if the group is named differently, change
+  the generated `TtlSyncPulseIOGroup` by name at run time, and if the group is named differently, change
   `GROUP_CLASS` / `OUTPUT_SETTER` there.
 - **[`LbrImpedanceControlServer.java`](../sunrise_controller_code/LbrImpedanceControlServer.java)**, the
   experiment app: opens the outputs at start-up (logging whether they are available), offers
@@ -583,9 +586,10 @@ All in [`sunrise_controller_code/`](../sunrise_controller_code/); deploy it like
   *All* fires output N as N pulses, so each line identifies itself on the NSP. It serves the same UDP
   commands, so the network path from the ROS computer can be tested at the same time.
 
-**The ROS side is not wired yet.** `ExperimentControl._pulse()` (see
-[Sync to the Blackrock NSP](../README.md#sync-to-the-blackrock-nsp)) still only warns. Finishing it means sending
-`PULSE 1 10` to the cabinet (`172.31.1.147:30002`) at trial start and `PULSE 2 10` at trial end.
+**From ROS**, each experiment sends `PULSE <output> <width ms>` at trial start and trial end, with the
+cabinet address, the two outputs and the width set in its `nsp_sync` parameters (defaults
+`172.31.1.147`, outputs 1 and 2, 10 ms): see
+[Sync to the Blackrock NSP](../README.md#sync-to-the-blackrock-nsp).
 
 **Timing.** The edge leaves when the cabinet writes the output, a few ms after the command, with a few
 ms of jitter; the width comes from a Java timer and is good to a few ms. The edge marks when the pulse
@@ -606,6 +610,8 @@ I/O cycles.
    echo "STATUS" | nc -u -w1 172.31.1.147 30002        # OK available=true ...
    echo "PULSE 1 10" | nc -u -w1 172.31.1.147 30002    # OK PULSE 1 10, and the channel-1 LED flickers
    ```
+   The dashboard's *Diagnostics → TTL sync* tab sends the same commands
+   ([its section](../experiment_ctrl_gui/README.md#ttl-sync)).
 5. **NSP.** Connect the BNCs, start a Central recording, and run *All*, *100 ms*: analog input 3 shows
    one pulse, analog input 4 two.
 
@@ -618,7 +624,7 @@ I/O cycles.
 | 0 V between the EL9505's own points 2 and 3, Us and Up green | The EL9505's front 24 V input is not fed: jumper EK1100 6 → EL9505 1 and EK1100 3 → EL9505 5 (Assembly step 3) |
 | EK1100 link LED dark | The Cat5e is in the lower RJ45 (X2 OUT) or in the wrong cabinet port; or the cable is bad |
 | RUN LED off or blinking | The cabinet has not taken the stack into operation: the I/O configuration does not match the physical modules or their order, or the project was not synchronized after it |
-| SmartPad / log: *TTL outputs unavailable: no I/O group …NspSyncIOGroup* | The I/O configuration is not in the project, or the group is not named `NspSync`: configure the cabinet, synchronize |
+| SmartPad / log: *TTL outputs unavailable: no I/O group …TtlSyncPulseIOGroup* | The I/O configuration is not in the project, or the group is not named `TtlSyncPulse`: configure the cabinet, synchronize |
 | *… lacks setOutput1* | The outputs are not named `Output1`…`Output4` |
 | `nc` gets no reply | No app serving UDP 30002 is running, or the ROS computer cannot reach `172.31.1.147` (`ping` it); `nc` needs `-u` |
 | *UDP 30002 is busy* in the log | Another app already holds the port (e.g. PulseTestServer and the experiment app at once): end one |

@@ -57,7 +57,7 @@ import com.kuka.connectivity.fastRobotInterface.FRIJointOverlay;
  *
  * NEURAL SYNC: TTL pulses on the EL2124 outputs 1-4 (TtlPulser), for the Blackrock NSP. Call
  * sendTtlPulse(output, widthMs) from this app, or send "PULSE <output> <width ms>" over UDP to
- * TtlPulser.DEFAULT_PORT (30002) from the ROS computer. Until the NspSync I/O configuration is in the
+ * TtlPulser.DEFAULT_PORT (30002) from the ROS computer. Until the TtlSyncPulse I/O configuration is in the
  * project the outputs are simply unavailable (logged once) and the app runs as before. Test the
  * outputs on their own with the PulseTestServer app. README, "Neural synchronisation".
  */

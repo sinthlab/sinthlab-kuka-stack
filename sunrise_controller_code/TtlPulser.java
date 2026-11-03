@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
  *   ttl.pulse(1, 10);          // output 1 high for 10 ms, then low; returns at once
  *
  * BINDING. The outputs are reached through the I/O group that Sunrise Workbench GENERATES from the
- * WorkVisual I/O configuration: group NspSync with BOOLEAN outputs Output1..Output4, mapped to the
- * EL2124 channels 1..4, gives the class com.kuka.generated.ioAccess.NspSyncIOGroup with setOutput1..4.
+ * WorkVisual I/O configuration: group TtlSyncPulse with BOOLEAN outputs Output1..Output4, mapped to the
+ * EL2124 channels 1..4, gives the class com.kuka.generated.ioAccess.TtlSyncPulseIOGroup with setOutput1..4.
  * It is looked up by name at run time, so this file -- and every app using it -- compiles and runs
  * before that configuration exists: until then isAvailable() is false, reason() says why, and pulse()
  * does nothing but return false. If the group or outputs are named differently, change GROUP_CLASS /
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  * e.g. from the ROS computer:  echo "PULSE 1 10" | nc -u -w1 172.31.1.147 30002
  */
 public class TtlPulser {
-    public static final String GROUP_CLASS = "com.kuka.generated.ioAccess.NspSyncIOGroup";
+    public static final String GROUP_CLASS = "com.kuka.generated.ioAccess.TtlSyncPulseIOGroup";
     public static final String OUTPUT_SETTER = "setOutput";      // + channel number: setOutput1 .. setOutput4
     public static final int CHANNELS = 4;
     public static final int MIN_WIDTH_MS = 1;
@@ -78,7 +78,7 @@ public class TtlPulser {
             }
             return new TtlPulser(group, setters, null);
         } catch (ClassNotFoundException e) {
-            return new TtlPulser(null, null, "no I/O group " + GROUP_CLASS + ": the NspSync I/O configuration"
+            return new TtlPulser(null, null, "no I/O group " + GROUP_CLASS + ": the TtlSyncPulse I/O configuration"
                                  + " is not in this project (README, Neural synchronisation)");
         } catch (NoSuchMethodException e) {
             return new TtlPulser(null, null, GROUP_CLASS + " lacks " + e.getMessage()

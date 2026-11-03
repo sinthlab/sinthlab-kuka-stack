@@ -84,7 +84,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         )
         self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
+        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "restricted_plane")
         # A live start / park pose whose move would take the end effector below the floor is refused.

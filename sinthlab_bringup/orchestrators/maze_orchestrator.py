@@ -72,7 +72,7 @@ class MazeOrchestratorNode(rclpyNode):
         # Trial data -- see README.md section 7, Data Collected. Records from trial START (approach and
         # settle included, not just the maze phase) and marks the go cue, so a run lines up with video
         # without a manual offset.
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
+        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "maze")
         # A live start / park pose whose move would take the end effector below the floor is refused.

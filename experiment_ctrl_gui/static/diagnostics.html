@@ -12,7 +12,7 @@
     <span class="logo" aria-hidden="true"></span>
     <div>
       <h1>Diagnostics</h1>
-      <p class="sub">sinthlab · end-effector hardware checks — nothing here moves the arm</p>
+      <p class="sub">sinthlab · hardware checks — nothing here moves the arm</p>
     </div>
   </div>
   <div class="pills">
@@ -23,6 +23,7 @@
 <main class="diag">
   <div class="tabs diag-tabs" role="tablist">
     <button class="tab active" role="tab" aria-selected="true" data-tab="visual">Visual cue</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="ttl">TTL sync</button>
   </div>
 
   <section id="tab-visual" class="diag-panel">
@@ -133,7 +134,57 @@
       <pre class="diag-reply" id="reply"></pre>
     </div>
   </section>
+
+  <section id="tab-ttl" class="diag-panel hidden">
+    <!-- ---------------- the cabinet ---------------- -->
+    <div class="card">
+      <h2>Cabinet</h2>
+      <p class="note">The sync lines are the EL2124 outputs, driven by the cabinet app. Run
+        <strong>PulseTestServer</strong> on the SmartPad (it never moves the arm), or
+        LbrImpedanceControlServer. This page sends the same UDP commands (port 30002) the experiments
+        send at trial start and end. Pulses are refused while an experiment runs.</p>
+      <div class="diag-row">
+        <label>Cabinet address <input id="ttl-addr" value="172.31.1.147" size="14" spellcheck="false"></label>
+        <button class="btn" id="btn-ttl-check">Check outputs</button>
+        <span id="ttl-reach" class="pill">not checked</span>
+      </div>
+      <p class="note" id="ttl-status"></p>
+    </div>
+
+    <!-- ---------------- fire ---------------- -->
+    <div class="card">
+      <h2>Fire pulses</h2>
+      <div class="diag-grid">
+        <label>Output
+          <select id="ttl-out">
+            <option value="1">1 · SYNC 1</option><option value="2">2 · SYNC 2</option>
+            <option value="3">3 · SYNC 3</option><option value="4">4 · SYNC 4</option>
+            <option value="all">All · output N as N pulses</option>
+          </select>
+        </label>
+        <label>Width [ms] <input type="number" id="ttl-width" min="10" max="5000" step="10" value="500"></label>
+        <label>Times <input type="number" id="ttl-times" min="1" max="1000" value="1"></label>
+        <label>Every [s] <input type="number" id="ttl-every" min="0.1" max="60" step="0.1" value="1"></label>
+      </div>
+      <p class="note">Each pulse lights the output's channel LED on the EL2124 for its width: 500 ms is easy to
+        see, 10 ms (the experiments' default) is a flicker. <em>All</em> fires output 1 once, output 2 twice and
+        so on, so each line identifies itself on the NSP.</p>
+      <div class="row-actions">
+        <button class="btn primary" id="btn-ttl-fire">▶ Fire</button>
+        <button class="btn" id="btn-ttl-stop">■ Stop</button>
+        <button class="btn" id="btn-ttl-alloff">All outputs low</button>
+        <span class="pill" id="ttl-progress">idle</span>
+      </div>
+    </div>
+
+    <!-- ---------------- log ---------------- -->
+    <div class="card">
+      <h2>Commands and replies</h2>
+      <ol class="diag-log" id="ttl-log"></ol>
+    </div>
+  </section>
 </main>
 <script src="diag.js"></script>
+<script src="ttl.js"></script>
 </body>
 </html>

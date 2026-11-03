@@ -133,7 +133,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # Trial data -- see README.md section 7, Data Collected.
         # disp_m is the dependent variable and is sampled here every state message, so the threshold
         # crossing can be interpolated offline to finer than the 10 ms cabinet stamp.
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP codes.
+        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "apple_pluck")
         # A live start / park pose whose move would take the end effector below the floor is refused.

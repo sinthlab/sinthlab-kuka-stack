@@ -118,7 +118,12 @@ It talks to the ring's Metro board over the board's own Wi-Fi, so **join this co
   "asserted" with nothing shorted (inverted polarity — untick *Active low*, no rewiring) and a board
   that is not enabled. *If Wi-Fi works but the wire does not, the fault is in the trigger wiring.*
 
-It works in `--demo` too, against a simulated board. Details: `experiment_ctrl_gui/README.md`.
+The second tab, **TTL sync**, fires the cabinet's sync outputs (the EL2124 TTL lines to the NSP) with
+the same commands the experiments send: run **PulseTestServer** on the SmartPad, give the cabinet's
+address, then *Check outputs* and fire an output (1–4, or *All*) with a width, a count and an interval;
+each pulse lights that output's LED on the EL2124. Pulses are refused while an experiment runs.
+
+Both tabs work in `--demo` too, against a simulated board and cabinet. Details: `experiment_ctrl_gui/README.md`.
 
 ### Post-processing — archive a session as NWB
 The **Post-processing** button at the top right opens `/postprocess.html`: it turns a session into one
@@ -228,7 +233,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
 | `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
-| `nsp_sync.enabled` | send sync pulses to the Blackrock NSP. **The ROS side is not wired yet**: when on, it warns once and sends nothing ([§8](#8-neural-synchronisation)) |
+| `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, never the same), and the pulse width (10–5000 ms, default 10) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
@@ -2327,29 +2332,39 @@ echo described in §6.7.
 ### Sync to the Blackrock NSP
 
 The hardware path — the Beckhoff stack on the cabinet's EtherCAT, BNC lines to the NSP, and the
-cabinet code that pulses them — is in [§8 Neural Synchronisation](#8-neural-synchronisation). The ROS
-end is wired and waiting. Every orchestrator passes
+cabinet code that pulses them — is in [§8 Neural Synchronisation](#8-neural-synchronisation). Every
+orchestrator passes
 `TrialRecorder(..., on_event=self.control.on_event)`, and `mark()` calls it **synchronously, before
 anything else**, so a pulse leaves at the same instant the event is logged. There is one call site,
-so the two cannot drift apart in a later edit. The codes are in
-[`helpers/experiment_control.py`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py):
+so the two cannot drift apart in a later edit. At `trial_start` and `trial_end`,
+[`helpers/experiment_control.py`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py)
+sends the cabinet one UDP datagram, `PULSE <output> <width ms>`, to `<nsp_sync.cabinet_ip>:30002`
+([the cabinet code](reward_and_sync_box/README.md#the-code)). The send takes well under a millisecond and
+never blocks the trial.
 
-```python
-NSP_CODES = {"trial_start": 1, "at_start": 2, "armed": 3, "snap": 4,
-             "checkpoint": 5, "goal": 6, "timeout": 7, "safety_trip": 8, "trial_end": 9,
-             "threshold": 10, "session_end": 11,
-             "grasp": 12, "perturb_applied": 13, "grasp_timeout": 14}
-```
+The settings are the `nsp_sync` block of each experiment YAML, all live (the dashboard's *Live* tab,
+applied at the next trial boundary):
 
-Sending is switched by **`nsp_sync.enabled`** in each experiment YAML. It is a live parameter, so the
-dashboard can toggle it between trials. Until `ExperimentControl._pulse()` is implemented it warns
-once that nothing is being sent. Implementing it means sending the cabinet a UDP `PULSE <output>
-<width ms>` ([the code](reward_and_sync_box/README.md#the-code)); nothing else changes.
+| Parameter | Default | Meaning |
+|---|---|---|
+| `nsp_sync.enabled` | `false` | send the pulses |
+| `nsp_sync.cabinet_ip` | `172.31.1.147` | the cabinet's address on the network this computer reaches it by (X66: `172.31.1.147`) |
+| `nsp_sync.trial_start_output` | `1` | EL2124 output (front jack SYNC 1–4) pulsed at trial start |
+| `nsp_sync.trial_end_output` | `2` | EL2124 output pulsed at trial end; must differ from the start's |
+| `nsp_sync.pulse_width_ms` | `10` | how long each pulse stays high, 10–5000 ms |
+
+If the outputs are changed, change the post-processing page's sync channels to the NSP analog inputs
+those jacks are cabled to.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
-is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Send a
-*code* rather than a bare pulse so each one self-identifies — a dropped pulse then shows up instead
-of silently mispairing every subsequent trial.
+is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event
+has its own line, so a dropped pulse shows up as a missing edge on that line instead of silently
+mispairing every subsequent trial.
+
+**The log says whether it works.** The cabinet answers every command. The first answer is logged
+(*NSP sync: the cabinet confirms pulses*); a refusal is logged as an error with the cabinet's reason
+(e.g. the outputs are unavailable because the I/O configuration is missing); no answer within a second
+is warned once per address (the experiment app is not running, or `cabinet_ip` is wrong).
 
 ### The sidecar
 

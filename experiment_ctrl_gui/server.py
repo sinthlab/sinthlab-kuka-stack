@@ -32,6 +32,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
 from runner import LaunchRunner  # noqa: E402
 
@@ -45,6 +46,7 @@ class App:
     def __init__(self, demo: bool, robot_name: str) -> None:
         self.demo = demo
         self.fake_board = cue_board.FakeBoard()      # the Diagnostics page's board, in --demo
+        self.fake_cabinet = ttl.FakeCabinet()        # and its TTL outputs
         self.robot_name = robot_name
         self.params: Dict[str, ExperimentParams] = {e.key: ExperimentParams(e) for e in ex.EXPERIMENTS}
         self._clients: List[queue.Queue] = []
@@ -254,6 +256,18 @@ class App:
         ok, text, ms = self.fake_board.call(cmd, params) if self.demo else cue_board.call(addr, cmd, params)
         return {"ok": ok, "text": text, "ms": round(ms, 1)}
 
+    def ttl(self, addr: str, cmd: str) -> dict:
+        """Diagnostics page: one command to the cabinet's TTL sync outputs (ttl.py). A test pulse
+        during an experiment would land in its NSP recording as a trial edge, so only STATUS then."""
+        cmd = " ".join(cmd.upper().split())
+        ttl.check(addr, cmd)
+        busy = self._busy()
+        if busy and cmd != "STATUS":
+            raise RuntimeError(f"{busy} is running: a test pulse would be recorded by the NSP as a trial "
+                               f"edge. Stop it first.")
+        ok, text, ms = self.fake_cabinet.call(cmd) if self.demo else ttl.call(addr, cmd)
+        return {"ok": ok, "text": text, "ms": round(ms, 1)}
+
     def restart(self) -> dict:
         if not self.runner.running():
             raise RuntimeError("nothing is running")
@@ -369,6 +383,8 @@ def make_handler(app: App):
                 return app.start(body["experiment"])
             if path == "/api/diag/board":
                 return app.board(str(body.get("addr", "")), str(body.get("cmd", "")), dict(body.get("params") or {}))
+            if path == "/api/diag/ttl":
+                return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":
                 return app.stop(body.get("mode", "now"))
             if path == "/api/restart":
