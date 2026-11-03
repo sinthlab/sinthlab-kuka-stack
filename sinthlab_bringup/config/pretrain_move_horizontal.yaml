@@ -105,6 +105,13 @@
       # hand asks for more than 4 only ~4% of the time. Lower = smoother starts but laggier; 0 = off.
       accel_limit_mps2: 4.0  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.08 s)
       force_filter_tau_sec: 0.03  # low-pass on the force reading [s]; larger = smoother, but its lag destabilises the loop
+      # A strong push can move the arm faster than the equilibrium may move; it then trails the arm and
+      # the cabinet spring pulls the arm back when the hand lets go (the jerk at the end of a fast move).
+      trail_m: 0.005  # while pushed harder than low_force_n, the equilibrium is never more than this behind the arm along the push (spring <= K * trail) [m]
+      # A resting hand and this admittance form a loop that bobs (~1.6 Hz in Z) when the damping is low,
+      # so light forces get more of it; pushes above low_force_n feel as set by damping_ns_per_m.
+      low_force_n: 10.0  # below this force the damping rises toward low_force_damping_ns_per_m [N]
+      low_force_damping_ns_per_m: 100.0  # the damping at the threshold (deadband_n) [N s/m]; = damping_ns_per_m turns this off
       # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
       # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
       # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
@@ -116,6 +123,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
+      smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: y  # the rail: the base Y axis through the start (none = free in every direction, as Free Move)
       rail_min_m: -0.15  # the rail's -Y end, from the start [m]: the equilibrium stops there
       rail_max_m: 0.15  # the rail's +Y end, from the start [m]
@@ -128,7 +136,7 @@
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
-      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s] (the free move is capped at max_speed_mps)
+      max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]

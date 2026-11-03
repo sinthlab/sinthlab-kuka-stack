@@ -141,6 +141,18 @@ class ExperimentControl:
     def pause_requested(self) -> bool:
         return self._paused
 
+    def hold(self, why: str) -> None:
+        """Pause from the orchestrator itself: the next trial is held at park, as if Pause had been
+        pressed, until Resume (or the launch is stopped). For a run that must not continue as set up."""
+        if not self._paused:
+            self._paused = True
+            self._log.error(f"Holding at park: {why}")
+            self._publish()
+
+    def smartpad(self) -> SmartPadLink:
+        """What the SmartPad app reports it runs with (helpers/smartpad_link.py)."""
+        return self._smartpad
+
     def begin_trial(self, start_fn: Callable[[], None]) -> None:
         """Run the next trial now, or hold it if paused. Orchestrators call this where they used
         to call start_trial() at the end of a trial."""

@@ -218,17 +218,16 @@
     # or exceeds max_speed_mps — the backstop the FRI velocity guard does NOT provide (it only neutralises
     # the command). On a trip the maze aborts immediately (no release wait) and drives back to start.
     # The maze footprint reaches ~0.19 m from start (the bottom-left corner), so 0.30 m clears it; normal hand motion is
-    # comfortably below 0.7 m/s, so that threshold catches a fall/lurch without false-tripping. This is a backstop,
+    # under 1.5 m/s (a hard hand push reached 0.79 m/s), so that threshold catches a fall/lurch without false-tripping. This is a backstop,
     # NOT a substitute for correct tool-load gravity compensation (mandatory for the vertical maze).
     maze_safety:  # runaway stop: abort to park if the arm goes too far or too fast
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       max_displacement_m: 0.30  # abort if the EE gets farther than this from the trial start [m]
-      max_speed_mps: 0.7  # abort if the EE moves faster than this [m/s]
-      # Speed is a noisy single-sample TF difference; require this many consecutive over-threshold
-      # samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort. Maze guiding is slow, so 0.7
-      # stays appropriate here even with the raised CLIK clamp -- watch for false trips.
+      max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: as Free Move, about twice the fastest hand push recorded (0.79 m/s), so a monkey pushing hard still passes
+      # Speed is measured between the arm's tf updates (their own timestamps); require this many
+      # consecutive over-threshold samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort.
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]

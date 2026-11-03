@@ -57,6 +57,26 @@ force dipped under the threshold for a moment (free-move recording 26 Oct: 5 of 
 the acceleration limit, as before.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
+A HAND FASTER THAN THE EQUILIBRIUM: TRAIL. A strong push moves the arm faster than the equilibrium
+may move (max_speed_mps, accel_limit_mps2): the hand then drags the arm AHEAD of it, against the
+cabinet spring, and on letting go the spring pulls the arm back -- the jerk at the end of a fast
+movement and the "spring action" after it. Free-move recording 2 Nov (forceful pushes, up to ~90 N,
+arm up to ~0.9 m/s): the equilibrium trailed the arm by up to 41 mm (a 41 N spring at 1000 N/m), and
+one let-go sprang back 19 mm; strokes that sprang back > 5 mm trailed a median 14 mm, the others
+under 1 mm. A hand pushing into such a rebound also meets the returning arm, which reads as a much
+larger push. So while pushed, the equilibrium is never more than trail_m behind where the arm would
+rest (arm + resting offset) along the push: the spring resists a fast drag by at most
+K * trail_m and has next to nothing to spring back with. Only while the arm moves faster than
+TRAIL_MPS along the push: that is when it outruns the equilibrium, and a resting hand's bob (under
+0.08 m/s) must not be trailed, or the hand's weight would carry the arm past the extra damping below.
+
+A RESTING HAND: MORE DAMPING FOR LIGHT FORCES. A hand resting on the apple is a few N of weight on a
+soft spring (its own arm), in a loop with this admittance and its ~0.17 s delay. That loop turns
+unstable when hand stiffness * delay / damping exceeds ~pi/2; a resting hand measured ~430 N/m (2 Nov:
++-3 N for +-7 mm), 1.46 at damping 50 -- a sustained ~1.6 Hz, +-7 mm bob in Z. So below low_force_n
+the damping rises linearly to low_force_damping_ns_per_m at the threshold (100: margin x2), and
+deliberate pushes above low_force_n feel exactly as before.
+
 ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal): the same, along one base axis through
 the start. Only the hand's force ALONG the rail counts, the equilibrium only moves along it, between
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
@@ -101,6 +121,8 @@ RELEASE_SEC = 0.1       # the force must stay under that this long to count as l
 GLIDE_TAU_SEC = 0.08    # the equilibrium glides onto the arm with this time constant, never in one step
 SETTLE_SEC = 0.3        # after letting go: the longest the equilibrium follows the arm while it glides to a stop
 SETTLED_MPS = 0.01      # ...or until the arm is slower than this, with the equilibrium on it
+TRAIL_MPS = 0.10        # the trail acts while the arm moves faster than this along the push (a resting hand's bob peaked at 0.08)
+ARM_V_TAU_SEC = 0.03    # smoothing of the arm's velocity for that test (the 10 ms differences are noisy)
 
 
 class AdmittanceMoveAction:
@@ -148,6 +170,7 @@ class AdmittanceMoveAction:
         self._tare_samples = []
         self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
         self._pushing = False
+        self._v_arm = np.zeros(3)                       # the arm's velocity, smoothed (the trail)
         self._quiet = 0.0                               # how long the force has been under the threshold
         self._low_t = 0.0                               # how long a moving hand has pushed under deadband_n
         self._settle_until = 0.0                        # gliding to a stop after a let-go until this time
@@ -169,11 +192,15 @@ class AdmittanceMoveAction:
         self._accel = max(0.0, float(get_required_param(n, p + "accel_limit_mps2")))
         self._tau = max(0.0, float(get_required_param(n, p + "force_filter_tau_sec")))
         self._tare_sec = max(0.0, float(get_required_param(n, p + "tare_sec")))
+        self._trail = max(0.0, float(get_required_param(n, p + "trail_m")))
+        self._low_force = max(0.0, float(get_required_param(n, p + "low_force_n")))
+        self._low_damping = max(self._damping, float(get_required_param(n, p + "low_force_damping_ns_per_m")))
         self._debug = bool(get_required_param(n, p + "debug_log_enabled"))
         n.get_logger().info(
             f"Free move feel: damping {self._damping:g} N s/m, threshold {self._deadband:g} N, "
             f"max speed {self._max_speed:g} m/s, accel limit "
-            f"{f'{self._accel:g} m/s^2' if self._accel > 0 else 'off'}, "
+            f"{f'{self._accel:g} m/s^2' if self._accel > 0 else 'off'}, trail {self._trail * 1000:g} mm, "
+            f"light forces damped up to {self._low_damping:g} N s/m (below {self._low_force:g} N), "
             f"debug log {'ON' if self._debug else 'off'}")
 
     # ------------------------------------------------------------------ lifecycle
@@ -186,6 +213,7 @@ class AdmittanceMoveAction:
         self._v[:] = 0.0
         self._t_prev = None
         self._p_prev = None
+        self._v_arm[:] = 0.0
         self._pushing = False
         self._quiet = 0.0
         self._low_t = 0.0
@@ -251,6 +279,14 @@ class AdmittanceMoveAction:
             return np.zeros(3)
         return f * min(1.0, (mag - self._deadband) / self._deadband)
 
+    def _damping_for(self, mag: float) -> float:
+        """damping_ns_per_m from low_force_n up; below, rising linearly to low_force_damping_ns_per_m at the
+        threshold (class doc, "a resting hand")."""
+        span = self._low_force - self._deadband
+        if span <= 0.0 or mag >= self._low_force:
+            return self._damping
+        return self._damping + (self._low_damping - self._damping) * min(1.0, (self._low_force - mag) / span)
+
     def _on_state(self, msg: LBRState) -> None:
         q = np.array(msg.measured_joint_position, dtype=float)
         if not np.all(np.isfinite(q)):
@@ -293,6 +329,8 @@ class AdmittanceMoveAction:
         # Let go: glide to a stop, then hold (class doc, "letting go").
         arm_speed = (float(np.linalg.norm(self._p_meas - self._p_prev)) / dt
                      if self._p_prev is not None and dt > 0.0 else 0.0)
+        if self._p_prev is not None and dt > 0.0:
+            self._v_arm += min(1.0, dt / ARM_V_TAU_SEC) * ((self._p_meas - self._p_prev) / dt - self._v_arm)
         self._p_prev = self._p_meas.copy()
         # Released = the force under the threshold for RELEASE_SEC. (Half the threshold was tried: after a
         # let-go the reading hovers at 1-2.5 N, so it fired late on half the let-gos, after the run-on.)
@@ -314,7 +352,7 @@ class AdmittanceMoveAction:
             self._pushing = True
             self._settle_until = 0.0
 
-        v = self._f_used / self._damping
+        v = self._f_used / self._damping_for(float(np.linalg.norm(self._f_used)))
         speed = float(np.linalg.norm(v))
         if speed > self._max_speed > 0.0:
             v *= self._max_speed / speed
@@ -329,12 +367,28 @@ class AdmittanceMoveAction:
         dist = float(np.linalg.norm(lead))
         if dist > self._leash:
             eq = self._p_meas + lead * (self._leash / dist)
+        # Trail: never more than trail_m behind where the arm would rest, along the push, while the hand
+        # moves the arm faster than TRAIL_MPS along it (class doc). Not slower: a resting hand's bob
+        # stays under it, and trailing that would let the hand's weight carry the arm.
+        f_mag = float(np.linalg.norm(self._f_used))
+        u = self._f_used / f_mag if f_mag > 0.0 else None
+        if u is not None and float(self._v_arm @ u) > TRAIL_MPS:
+            behind = float((self._p_meas + self._rest_offset - eq) @ u) - self._trail
+            if behind > 0.0:
+                eq = eq + u * behind
         # The rail, then the floor: clamp the integrated equilibrium itself, so a push past a rail end or
         # down at the floor winds nothing up and the arm comes away from it at once.
         eq = self._floor.clamp_xyz(self._on_rail(eq), self._anchor[0:3, 0:3])
-        # Remember the speed actually applied (after the leash), so a held-back equilibrium does not
-        # build up speed it would release as a lurch.
-        self._v = (eq - self._eq) / dt if dt > 0.0 else v
+        # Remember the speed actually applied (after the leash and the trail), so a held-back equilibrium
+        # does not build up speed it would release as a lurch -- capped at max_speed_mps, so the speed of a
+        # hand dragging it is not carried on, ahead of the arm, once the hand eases off.
+        if dt > 0.0:
+            self._v = (eq - self._eq) / dt
+            applied = float(np.linalg.norm(self._v))
+            if applied > self._max_speed > 0.0:
+                self._v *= self._max_speed / applied
+        else:
+            self._v = v
         self._eq = eq
         self._publish(eq)
 

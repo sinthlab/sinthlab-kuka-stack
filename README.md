@@ -246,7 +246,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The start positions `random_start.positions.*` (`[a, b]` m from the start pose) and `random_start.plane` are **per-run**. The start pose above is their origin: changing it moves them all |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
-| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec` |
+| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
 | Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`); the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
 
 These are deliberately **not** live:
@@ -1325,7 +1325,7 @@ Work up the ladder and stop at the first rung that feels wrong.
 > first — a wrong `loadData` makes the sink larger and biases every vertical leg.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.30 m or exceeds 0.7 m/s (for 5 consecutive samples), and **aborts immediately** —
+> the EE leaves the start pose by > 0.30 m or exceeds 1.5 m/s (for 5 consecutive samples), and **aborts immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
@@ -1441,6 +1441,17 @@ does the IK; ROS only moves the target point.
     smoother, but laggier.
   - `force_filter_tau_sec`: low-pass on the force reading (default 0.03 s; larger = smoother, but its
     lag adds to the loop's delay and makes it ring sooner).
+  - `trail_m` (default **5 mm**): a strong push moves the arm faster than the equilibrium may move,
+    so the hand drags the arm ahead of it against the spring, and on letting go the spring pulls the
+    arm back: a jerk at the end of a fast move, then a spring-back. While the hand moves the arm
+    faster than 0.1 m/s, the equilibrium stays at most this far behind it along the push, so the
+    spring resists a fast drag by at most 1000 N/m × 5 mm = 5 N and has almost nothing to spring
+    back with.
+  - `low_force_n` (default **10 N**) and `low_force_damping_ns_per_m` (default **100**): a hand
+    resting on the apple makes the same hand loop bob up and down (~1.6 Hz in Z). Below
+    `low_force_n` the damping rises toward `low_force_damping_ns_per_m` at the threshold, which halves
+    the loop's gain there. Pushes above `low_force_n` feel as set by `damping_ns_per_m`. Set it equal
+    to `damping_ns_per_m` to turn this off.
 - **Where the force comes from.** Free Move computes the hand's force itself from the arm's
   **external joint torques** (`F = pinv(J)ᵀ τ_ext`), with a damped Jacobian inverse
   (`jacobian_damping`, Per-run, default **0.1**) and the round threshold above. It does not use lbr's
@@ -1469,7 +1480,12 @@ does the IK; ROS only moves the target point.
 - **Why "Uniform 1000".** The spring is what makes the arm follow the moving
   equilibrium and hold where it stops, so it must be firm. At 1000 N/m the arm trails by a few mm. A
   soft profile makes it sag and lag, so it is no longer admittance. Rotation 300 holds the tool
-  orientation.
+  orientation. On Uniform 100 the arm runs on by 2–7 cm after every let-go, and a push during that
+  run-on moves it much further. So **free move checks the profile the SmartPad app reports**
+  (`free_move.smartpad_stiffness_n_per_m`, 1000) before the go cue: with any other stiffness there is
+  no go cue, the log says why, and the arm parks and holds there (paused). Stop, restart
+  LbrImpedanceControlServer with Uniform 1000, and start again. If no report has arrived, it warns
+  and runs.
 - **The equilibrium is integrated from force, never copied from the arm.** An equilibrium set to
   the measured pose gives zero spring force, and the arm sinks under the gravity residual. That is
   the collapse the threshold give-in once caused. Upstream `lbr_ros2_control/AdmittanceController`
@@ -1485,7 +1501,10 @@ does the IK; ROS only moves the target point.
   - **A tare:** the force at rest, about 5 N from the gravity residual, is measured each session
     before the go cue and subtracted.
   - **The runaway monitor** (`free_move_safety`), **speed only** (`max_displacement_m: 0` = no distance
-    limit): it aborts to the start if the arm moves faster than 0.7 m/s.
+    limit): it aborts to the start if the arm moves faster than **1.5 m/s** for 5 new position samples
+    in a row. That is about twice the fastest hand push recorded (0.79 m/s sustained), so a strong push
+    passes and a runaway does not. The speed is measured between the arm's tf updates, using their own
+    timestamps.
 - **No boundary means** the arm can be pushed to the edge of its reach, a joint limit or a singular
   pose — where the CLIK stops and the arm simply stops moving — and into anything near it: the table,
   the chair, its own base. Keep the area clear.

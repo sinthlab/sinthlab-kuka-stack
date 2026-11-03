@@ -74,6 +74,9 @@ _FREE = _COMMON + _SPEED + _RING + [
     "free_move.accel_limit_mps2",
     "free_move.force_filter_tau_sec",
     "free_move.tare_sec",
+    "free_move.trail_m",
+    "free_move.low_force_n",
+    "free_move.low_force_damping_ns_per_m",
 ]
 
 LIVE_PARAMS: Dict[str, List[str]] = {
@@ -178,6 +181,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "free_move.accel_limit_mps2": (0.0, 10.0),
     "free_move.force_filter_tau_sec": (0.0, 0.5),
     "free_move.tare_sec": (0.2, 5.0),
+    "free_move.trail_m": (0.0, 0.03),               # at most the leash
+    "free_move.low_force_n": (0.0, 30.0),
+    "free_move.low_force_damping_ns_per_m": (40.0, 300.0),
 }
 
 # Joint poses: 7 angles in degrees, inside the iiwa7 limits (lbr joint_limits.yaml, which is 1 deg
