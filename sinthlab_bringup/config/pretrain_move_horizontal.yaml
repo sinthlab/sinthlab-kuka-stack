@@ -124,7 +124,7 @@
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
-      rail_axis: y  # the rail: the base Y axis through the start (none = free in every direction, as Free Move)
+      rail_axis: "y"  # quoted: a bare y is read as true. The rail: the base Y axis through the start (none = free in every direction, as Free Move)
       rail_min_m: -0.15  # the rail's -Y end, from the start [m]: the equilibrium stops there
       rail_max_m: 0.15  # the rail's +Y end, from the start [m]
       debug_log_enabled: false  # print force, speed and position twice a second while moving
