@@ -6,7 +6,7 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.30  # the floor, height above the ground [m]
+      height_m: 0.88  # the floor, height above the ground [m]
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
@@ -35,7 +35,7 @@
       update_rate: 200  # loop rate of this action [Hz]
       # Tool points down -Z. (Apple pluck and perturb start with the apple pointing at the monkey
       # instead -- see apple_pluck_impedance.yaml.)
-      target_joint_position: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # start pose, joint angles A1..A7 [deg]
+      target_joint_position: [0.0, -4.16, 0.15, -49.23, 3.88, 41.27, 0.0]  # start pose, joint angles A1..A7 [deg]: EE (0.38, 0.01, 1.03) m, tool along +X; the maze's end-effector pose, elbow A4 < 0
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
       joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
@@ -55,7 +55,7 @@
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       cartesian_axis: z  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
-      cartesian_displacement_threshold_m: 0.5  # pull from the baseline that counts as success (snap) [m]
+      cartesian_displacement_threshold_m: 0.12  # pull from the baseline that counts as success (snap) [m]; the floor is 14 cm below the start
       force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then park [s]
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
@@ -123,7 +123,7 @@
     # Runaway safety-stop (backstop for a gravity-driven fall on the free pull axis, which the FRI
     # velocity guard does not halt). On a trip the trial aborts straight to park.
     #   max_displacement_m: the sine pull legitimately travels up to the displacement-monitor threshold
-    #     (0.5 m in z), so this only trips well beyond that.
+    #     (0.12 m in z), so this only trips well beyond that.
     #   max_speed_mps: must clear a brisk legitimate pull. The CLIK lets the commanded equilibrium chase
     #     the hand at up to max_linear_velocity (1.0 m/s), so the arm can legitimately move near that and
     #     a limit near 1.2 false-trips. 1.8 still catches a fall (free fall passes 1.8 m/s in ~0.18 s /
@@ -134,7 +134,7 @@
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.7  # abort if the EE gets farther than this from the trial start [m]
+      max_displacement_m: 0.3  # abort if the EE gets farther than this from the trial start [m]
       max_speed_mps: 1.8  # abort if the EE moves faster than this [m/s]
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       debug_log_enabled: false  # print this action's periodic debug line

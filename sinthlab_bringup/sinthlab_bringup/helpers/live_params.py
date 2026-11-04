@@ -256,12 +256,11 @@ CHOICES: Dict[str, List[str]] = {
 
 
 # Largest perturbation per plane [m]. From the apple-pluck start pose, position-only IK (the same DLS
-# PerturbInitialPosition uses) keeps EVERY direction in the plane at least 10 deg from every joint
-# limit, with >= 19 deg left after a further 15 cm pull toward the monkey and the smallest singular
-# value of the 6D Jacobian >= 0.10. The next step out breaks the 10 deg margin in each plane
-# (frontal 0.175 -> 9.0, horizontal 0.20 -> 9.7, sagittal 0.125 -> 7.7; sagittal reaches the limit
-# at 0.20). Position-only IK lets the flange tilt: up to ~22 / 19 / 14 deg at these caps.
-PERTURB_R_MAX: Dict[str, float] = {"frontal": 0.15, "horizontal": 0.175, "sagittal": 0.10}
+# PerturbInitialPosition uses) keeps EVERY direction in the plane at least 36 deg from every joint
+# limit, and a further 15 cm pull toward the monkey still solves with >= 49 deg left; the smallest
+# singular value of the 6D Jacobian stays >= 0.064 / 0.079 / 0.069 (frontal / horizontal /
+# sagittal). One step further out (frontal 0.15, sagittal 0.125), that 15 cm pull runs out of reach.
+PERTURB_R_MAX: Dict[str, float] = {"frontal": 0.125, "horizontal": 0.175, "sagittal": 0.10}
 _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
 # Delay ranges (min, max): perturb's after the go cue, perturb_bump's after the grasp.
 _DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"),
@@ -277,7 +276,7 @@ def check_perturbation(r, plane) -> Optional[str]:
         return None
     return (f"polar_r_m {float(r):g} m is beyond the {plane}-plane limit of {cap} m (caps: "
             + ", ".join(f"{k} {v}" for k, v in PERTURB_R_MAX.items())
-            + " m -- beyond them some directions come within 10 deg of a joint limit)")
+            + " m -- beyond them a further pull toward the monkey runs out of reach)")
 
 
 def _lookup(table: dict, name: str):

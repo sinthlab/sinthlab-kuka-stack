@@ -8,8 +8,8 @@
     #
     # This overlay is loaded AFTER iiwa7_hardware_controllers.yaml and overrides it, so each experiment
     # can carry its own posture instead of sharing one. This is the DEFAULT, used by the restricted
-    # plane, which starts with the tool pointing DOWN (-Z). (Apple pluck runs on the joint-position
+    # plane, which starts with the tool along +X at the maze's end-effector pose. (Apple pluck runs on the joint-position
     # controller and never uses the CLIK.)
     #   >>> SYNC with move_to_start.target_joint_position in config/virtual_fixtures_params.yaml
     # The maze starts with the tool pointing along +X and uses clik_nullspace_maze.yaml instead.
-    nullspace_desired_configuration: [0.0, 10.0, 0.0, -80.0, 0.0, 90.0, 0.0]  # preferred arm posture A1..A7 [deg]
+    nullspace_desired_configuration: [0.0, -4.16, 0.15, -49.23, 3.88, 41.27, 0.0]  # preferred arm posture A1..A7 [deg]

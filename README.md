@@ -691,7 +691,7 @@ experiment's YAML as `floor` (Per-run on the dashboard):
 
 | Parameter | Meaning |
 |---|---|
-| `floor.height_m` | the floor, height above the ground [m]. Default **0.30**, below every pose in use: **set your own** |
+| `floor.height_m` | the floor, height above the ground [m]. **0.88** in every experiment |
 | `floor.reference` | which point must stay above it: `apple_bottom` (lowest point of the ball) or `base_edge` (lowest point of the Ø188 base: its bottom face when the base is horizontal, the rim's edge when tilted) |
 | `floor.trip_margin_m` | how far below the floor the measured point may get before the trial is aborted (default 0.03 m) |
 
@@ -736,20 +736,22 @@ go straight to the FRI position command — no IK), while the KUKA cabinet runs 
 natively via the `LbrImpedanceControlServer` FRI app. The arm acts as a virtual physical spring and
 recoils when pushed off its commanded anchor.
 
-**Start pose — the apple points at the monkey.** The posture `[0, −24.3, 0, −66.1, 0, 35.1, 0]` holds
-the apple at about the park height, pointing toward the monkey (+X) and tilted **13° up**: flange
-≈ (0.23, 0, 1.03) m, apple ≈ (0.43, 0, 1.08) m in `lbr_link_0` (park: ~1.09 m). Every joint is ≥ 53°
-from its limit and the pose is well conditioned (smallest Jacobian singular value 0.175). A
-perturbation at its cap brings that down to ~0.07 in the worst direction — a little less crisp, not
-singular.
+**Start pose — the apple points at the monkey.** The posture `[0, −17.1, 0, −65.5, 0, 28.5, 0]` holds
+the apple pointing toward the monkey (+X) and tilted **13° up**: flange ≈ (0.30, 0, 1.02) m, apple
+centre ≈ (0.51, 0, 1.06) m in `lbr_link_0`, apple bottom 1.04 m (park: ~32 cm back, ~1.09 m up). That
+is halfway in distance between the other experiments' start (apple centre 0.59 m out) and a start with
+more room for the pull. Every joint is ≥ 53° from its limit and the pose is well conditioned (smallest
+Jacobian singular value 0.137). A perturbation at its cap brings that down to ~0.064 in the worst
+direction — a little less crisp, not singular.
 
 *Room for the pull.* A pull toward the monkey **straightens the elbow** (A4 → 0). A straight elbow can
 fold back either way; once it folds the wrong way (A4 > 0) it stays there, because the cabinet's spring
 holds only the apple's pose and the elbow only through the weak null-space stiffness. Every later move
 then swings and jerks, and park ends ~5 cm off (so each park waits out its arrival timeout). From
-here a pull gets **~32 cm** toward the monkey before the elbow is within 15° of straight. Hard pulls
-run on well past the 10 cm snap (25–27 cm measured), so the start sits back from the monkey: 10 cm
-further out leaves only ~22 cm, and 5 cm lower gives more (~39 cm). The same pose is used by every
+here a pull gets **~31 cm** toward the monkey before the elbow is within 15° of straight; the elbow
+wall (`resistance.elbow_min_deg`, 35°) engages at ~25 cm. Hard pulls run on well past the 10 cm snap
+(25–27 cm measured), so the start sits back from the other experiments' start: at their distance the
+elbow is within 15° of straight after ~20 cm. The same pose is used by every
 apple paradigm (in random start it is the origin the positions are laid out around, C). A **pluck** is any
 **0.1 m** pull from the start, in any direction (`cartesian_axis: norm`), because the pull is toward
 the monkey rather than along one base axis. Tilt, roll and height knobs are documented next to the
@@ -861,8 +863,10 @@ the manifold it stays put, so the spring pulls the arm back.
    ```bash
    ros2 launch sinthlab_bringup iiwa7_move_restricted_plane.launch.py
    ```
-3. The arm rises to the workspace; pull it and feel it held onto the sine rail — free along the pull
-   axis, walled in the other two.
+3. The arm moves to its start — the maze's end-effector pose, EE ≈ (0.38, 0.01, 1.03) m, tool along +X,
+   elbow A4 < 0 (apple bottom at 1.02 m); pull it down and feel it held onto the sine rail — free along
+   the pull axis, walled in the other two. The pull succeeds (snap) at 0.12 m, with the 0.88 m floor
+   14 cm below the start.
 
 > **Tune the feel with the SmartPad stiffness profile.** `Uniform 1000` pins X and holds
 > the arm to the rail in Y, while Z (the pull axis) stays free because the equilibrium tracks it. If
@@ -910,7 +914,7 @@ perturb run**, set `polar_r_m` to 0.
 
 | Knob | Effect |
 |---|---|
-| `polar_r_m` | How far the apple is displaced [m]. Default `0.10` (on a held apple at Uniform 100, ~10 N). **Capped per plane:** frontal 0.15, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 36° from every joint limit. From the near-stretched start the arm's conditioning drops toward the caps (smallest singular value ~0.07 at r 0.10, ~0.055 at the frontal cap): a smaller r is crisper. Larger r also tilts the flange more. |
+| `polar_r_m` | How far the apple is displaced [m]. Default `0.10` (on a held apple at Uniform 100, ~10 N). **Capped per plane:** frontal 0.125, horizontal 0.175, sagittal 0.10 m, so every direction stays ≥ 36° from every joint limit, and a further 15 cm pull toward the monkey still has room. The arm's conditioning drops toward the caps (smallest singular value ~0.08 at r 0.10, ~0.064 at the frontal cap): a smaller r is crisper. Larger r also tilts the flange more. |
 | `polar_plane` | `frontal` (default) — the plane **facing the monkey**, so the apple never moves toward or away from it. `horizontal` / `sagittal` — θ = 0 points **at** the monkey. |
 | `polar_theta_deg` | Direction in that plane. For `frontal`: `0` = +Y (sideways), `90` = up, `180` = −Y, `270` = down. |
 | `speed_scale` | **How fast** (live slider, applies at once): 0.5 = twice as slow, 2 = twice as fast. See [Move speed](#move-speed). |
@@ -1091,12 +1095,12 @@ its EE pose with the **elbow flipped** relative to the obvious solution, which p
 motion at ‖q̇‖ ≈ 2.5 instead of ≈ 19.8 (6D condition number 10 instead of 45). In the other posture the
 maze is heavy in exactly the directions it is supposed to be free.
 
-**Where the start is.** The maze start is EE ≈ **(0.45, 0.00, 1.01) m**. The maze hangs below it, so
-its lowest row (b = −0.11) is at **z ≈ 0.90 m** — the pre-training start height, the lowest the subject
-should have to reach. It is **5 cm closer to the robot** than the pre-training start: at this height the
-arm is more stretched, and pulling back keeps vertical guiding lighter (cost 7.1 at the top row instead
-of 8.7, σ_min 0.12 instead of 0.10). For comparison the old start, 11 cm lower, cost 4.7: expect the
-vertical legs near the top to feel somewhat heavier than in the pre-training tasks.
+**Where the start is.** The maze start is EE ≈ **(0.38, 0.01, 1.03) m**, tool level along +X toward the
+subject — also the start of the pre-training tasks, and the end-effector pose Restricted Plane starts at
+(with the elbow bent the other way). The maze hangs below it, so its lowest row (b = −0.11) puts the
+apple bottom at **≈ 0.91 m**, just above the 0.88 m [floor](#the-floor--a-height-the-end-effector-never-goes-below).
+Across the maze every joint stays ≥ 18° from its limit (A6 nearest) and σ_min ≥ 0.12; guiding costs
+up to 3.4 sideways and 7.7 vertically.
 
 **Workspace limits (measured by IK, holding tool orientation).** From the pre-training start the arm can
 reach **a ∈ [−0.40, +0.40] m** sideways and **b ∈ [−0.35, +0.20] m** up/down — but that envelope is a
@@ -1382,9 +1386,8 @@ Work up the ladder and stop at the first rung that feels wrong.
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
 they are under the **Pre-training** tab. All three:
 
-- start at the **pre-training start**, EE ≈ (0.50, 0.00, 0.90) m, tool along +X toward the subject —
-  the height of the maze's lowest row (the maze start is 11 cm higher and 5 cm back). Their CLIK posture
-  is `config/clik_nullspace_pretrain.yaml`;
+- start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject. Their CLIK
+  posture is `config/clik_nullspace_pretrain.yaml` (the same as the maze's);
 - run on the CLIK, like the maze;
 - run as one **session** with no threshold and no goal, for `session_sec` or until **■ Stop**, then
   the arm parks.
@@ -1393,7 +1396,7 @@ they are under the **Pre-training** tab. All three:
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
 | **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, for `session_sec` or until Stop |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.12 m); it stays where it is let go | no goal — one session, as Free Move |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (−0.12 / +0.02 m); it stays where it is let go | no goal — one session, as Free Move |
 | **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | no goal — one session, as Free Move |
 
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
@@ -1511,7 +1514,7 @@ The rail is per-run, in the `free_move` block:
 | Parameter | Move Vertical | Move Horizontal |
 |---|---|---|
 | `rail_axis` | `z` | `y` |
-| `rail_min_m` / `rail_max_m` | −0.12 / +0.12 m | −0.15 / +0.15 m |
+| `rail_min_m` / `rail_max_m` | −0.12 / +0.02 m | −0.15 / +0.15 m |
 
 Only the hand's force **along** the rail counts, the equilibrium moves only along it, and it stops at
 the rail's ends ([`admittance_move.py`](sinthlab_bringup/sinthlab_bringup/actions/admittance_move.py)).
@@ -1529,9 +1532,10 @@ The quarter cues use the board's existing `/segments` endpoint, so **the firmwar
 They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
 one bit, not a pattern.
 
-**Reach** (IK from the pre-training start, holding the tool orientation): sideways is easy (at ±0.25 m
-every joint is still ≥ 39° from its limit) and so is down; **up is the limit** — the arm nears a
-singular pose above +0.12 m, and +0.20 m is unreachable. Hence the vertical rail's +0.12 m end.
+**Reach** (IK from the maze start, holding the tool orientation): sideways to ±0.15 m and down to
+−0.12 m are fine (every joint ≥ 17° from its limit; at −0.12 m the apple bottom is at 0.90 m, above the
+0.88 m floor); **up is the limit** — the arm nears a singular pose above +0.02 m, and +0.08 m is out of
+reach. Hence the vertical rail's −0.12 / +0.02 m ends.
 
 #### Before the first session with a subject
 1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`
@@ -1762,13 +1766,11 @@ flowchart LR
   *Checked offline* (σ_min = smallest singular value of the Jacobian, 0 = singular): park ↔ every start
   in its family, including the 9 random-start positions, σ_min ≥ 0.16 and ≥ 24° from every joint
   limit. From the end of a trial straight to park: as good as from there back to the start was, for a
-  12 cm pull in any direction, the whole maze / rail region and Free Move within 0.30 m — except the far
-  end of Restricted Plane's 0.5 m sine pull, where the path to park dips to σ_min 0.076 (0.169 back to
-  the start): still far from singular, but the least conditioned move in the stack. Park takes two
+  12 cm pull in any direction, the whole maze / rail region and Free Move within 0.30 m. Park takes two
   extra moves per trial, ~2–3 s each at speed scale 1.
 
-  *Is it out of reach?* For apple pluck, park holds the apple ~24 cm behind its start at the same
-  height; for the maze family, ~50 cm back and 20 cm up. That is a judgement from the robot's side — check
+  *Is it out of reach?* For apple pluck, park holds the apple ~32 cm behind its start and 3 cm higher;
+  for the maze family, ~40 cm back and 10 cm up. That is a judgement from the robot's side — check
   it against the chair. To move it, edit `move_to_park.target_joint_position` (live) keeping A4's
   sign. The dashboard checks the limits and the elbow, not the path, so check the path to the start
   first:
@@ -1938,7 +1940,7 @@ stateDiagram-v2
       fixture (sine rail by default) and streams it
       as the cabinet-impedance equilibrium.
     end note
-    Fixture --> Snap : pull ≥ threshold (0.5 m, z) [snap, trial_end]<br/>fixture off, snap cue
+    Fixture --> Snap : pull ≥ threshold (0.12 m, z) [snap, trial_end]<br/>fixture off, snap cue
     Snap --> SwitchToJoint : dwell (force_release_shutdown_delay_sec)
     Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip, trial_end]
     SwitchToJoint --> Park : [recover_start]

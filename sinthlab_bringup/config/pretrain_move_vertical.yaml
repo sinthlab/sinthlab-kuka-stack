@@ -6,7 +6,7 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.30  # the floor, height above the ground [m]
+      height_m: 0.88  # the floor, height above the ground [m]
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
@@ -34,10 +34,10 @@
     #     (flange Z = tool axis, along base +X) holds the plane; along the rail the spring is 1000 N/m,
     #     as in Free Move, so the same feel settings apply (damping 50 -- see the free_move block).
     #
-    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): down is easy (at
-    # -0.25 m every joint is still >= 11 deg from its limit); UP is the limit -- the arm nears a singular
-    # pose above +0.12 m (smallest singular value 0.11 at +0.12, 0.07 at +0.15) and +0.20 m is unreachable.
-    # Hence a rail of +/-0.12 m.
+    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): UP is the limit --
+    # the arm nears a singular pose above +0.02 m (smallest singular value 0.12 at +0.02, 0.095 at +0.04)
+    # and +0.08 m is out of reach; down to -0.12 m every joint stays >= 17 deg from its limit, with the
+    # apple bottom at 0.90 m, above the 0.88 m floor. Hence a rail of -0.12 / +0.02 m.
     #
     # GRAVITY: the equilibrium is moved by force, never copied from the arm, so an untouched arm holds
     # its height on the rail (as in Free Move); the floor still applies below.
@@ -50,10 +50,9 @@
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
-      # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
-      # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
-      # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      # The pre-training start is the MAZE START: EE ~ (0.38, 0.01, 1.03) m, tool along +X toward the
+      # subject. Keep equal to nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
+      target_joint_position: [1.4, 45.1, 1.1, 49.2, 0.6, 90.5, 2.0]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
@@ -130,7 +129,7 @@
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: z  # the rail: the base Z axis through the start (none = free in every direction, as Free Move)
       rail_min_m: -0.12  # the rail's lower end, from the start [m]: the equilibrium stops there
-      rail_max_m: 0.12  # the rail's upper end, from the start [m]
+      rail_max_m: 0.02  # the rail's upper end, from the start [m]: the arm's reach ends just above
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 

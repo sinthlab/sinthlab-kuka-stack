@@ -6,7 +6,7 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.30  # the floor, height above the ground [m]
+      height_m: 0.88  # the floor, height above the ground [m]
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
@@ -68,27 +68,27 @@
       update_rate: 200  # loop rate of this action [Hz]
       # MAZE ENTRANCE / origin. The maze (corridors + checkpoints) is defined RELATIVE to this pose, so
       # this joint array is the one knob that positions the whole maze — change it and the maze follows.
-      # EE ≈ (0.450, 0.000, 1.010) m, tool ≈ +X. The maze hangs BELOW the start, so this height puts its
-      # lowest row (b = -0.11) at z ≈ 0.90 -- the pre-training start height, the lowest the subject should
-      # have to reach. It sits 5 cm closer to the robot than the pre-training start: at this height the
-      # arm is more stretched, and pulling back keeps vertical guiding lighter (cost 7.1 at the top row
-      # vs 8.7 without; sigma_min 0.12 vs 0.10). This anchors the fixture: its X (0.45) becomes the locked
-      # radial plane and this orientation is held for the whole trial; the maze lives in the vertical Y-Z
-      # plane through the start (tool points +X, perpendicular into it).
+      # EE ≈ (0.380, 0.007, 1.030) m, tool along +X (level, toward the subject): the shared start of every
+      # experiment but apple pluck -- Restricted Plane holds the same end-effector pose with the elbow
+      # bent the other way (A4 < 0). The maze hangs BELOW the start, so its lowest row (b = -0.11) is at
+      # apple bottom ≈ 0.91 m, above the 0.88 m floor. This anchors the fixture: its X (0.38) becomes the
+      # locked radial plane and this orientation is held for the whole trial; the maze lives in the
+      # vertical Y-Z plane through the start (tool points +X, perpendicular into it). Across the maze every
+      # joint stays >= 18 deg from its limit (A6 is the nearest), smallest singular value >= 0.12.
       # >>> WHY THIS POSTURE: the same EE pose (position and tool orientation) is also reached by
       #     [0,0,0,-70,-20,10,0], but this solution has the elbow flipped. That matters because both
       #     fixtures LOCK ORIENTATION, and translating the EE while holding orientation is far harder in
       #     some postures than others. Measured cost of 1 m/s of pure sideways (Y) translation with
       #     orientation held, ||qdot||:
       #         [0,0,0,-70,-20,10,0]: 19.8 at start, up to 33.6 across the maze   -> treacle
-      #         this posture       :  2.5 at start, up to  8.2 across the maze   -> like the sine rail
+      #         this posture       :  2.9 at start, up to  7.7 across the maze   -> like the sine rail
       #     (6D condition number 10.1 vs 45.0.) Judge postures with the FULL 6D Jacobian: the linear
       #     Jacobian alone ignores the orientation lock and makes Y look cheap (1.4) in the bad one.
       # >>> SYNC: keep this array identical to nullspace_desired_configuration in
       #     config/clik_nullspace_maze.yaml, or the CLIK holds the right EE pose in the wrong arm
       #     posture and fights you. (This start was verified: the whole maze footprint is reachable
-      #     while holding this orientation at z=1.01.)
-      target_joint_position: [-3.1, 51.8, -3.3, 50.3, 1.2, 77.9, -16.5]  # start pose, joint angles A1..A7 [deg]
+      #     while holding this orientation.)
+      target_joint_position: [1.4, 45.1, 1.1, 49.2, 0.6, 90.5, 2.0]  # start pose, joint angles A1..A7 [deg]
       # >>> The maze anchors its ENTIRE geometry (corridors, checkpoints, goal) on the pose captured at
       #     the first fixture tick, so the arm must PHYSICALLY be at the start -- not merely commanded
       #     there. Without wait_for_physical_arrival the move completes on the COMMANDED trajectory

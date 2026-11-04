@@ -186,7 +186,7 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
-    "free_move.rail_*": "The rail through the start (Move Vertical: z, up to ~+0.12 m by reach; Move Horizontal: y). none = Free Move.",
+    "free_move.rail_*": "The rail through the start (Move Vertical: z, -0.12 to +0.02 m, the arm's reach above; Move Horizontal: y). none = Free Move.",
     "resistance.base_stiffness_n_per_m": ("Used only until the SmartPad app reports its profile; from then on the base "
                                           "is the reported stiffness (Uniform 100 = 100, Uniform 400 = 400), and the "
                                           "felt-stiffness slider runs up to it once the run has started."),
@@ -197,7 +197,7 @@ CAUTION: Dict[str, str] = {
     "random_start.positions.*": ("[a, b] metres from the start pose in random_start.plane (frontal: a = +Y, b = up). "
                                  "The run solves them to joints at Start and stops with the reason if one is out of "
                                  "reach or near a limit; check first with solve_start_grid.py."),
-    "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.15, horizontal 0.175, sagittal 0.10 m "
+    "perturb_start.polar_r_m": ("The cap depends on the plane: frontal 0.125, horizontal 0.175, sagittal 0.10 m "
                                 "(every direction >= 10 deg from a joint limit, from the default start pose). "
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
 }

@@ -6,7 +6,7 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.30  # the floor, height above the ground [m]
+      height_m: 0.88  # the floor, height above the ground [m]
       reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
       trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
 
@@ -45,8 +45,7 @@
     # pose -- where the CLIK stops and the arm simply stops moving -- and into anything near it (the
     # table, the chair, its own base). Keep the area around it clear.
     #
-    # START: the pre-training start (tool along +X toward the subject), shared with the rail tasks; the
-    # maze starts 11 cm higher and 5 cm back, with its lowest row at this height.
+    # START: the maze start (tool along +X toward the subject), shared with the rail tasks.
     experiment: "free_move"  # free_move | move_vertical | move_horizontal: the same node, set by this YAML
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
@@ -56,10 +55,9 @@
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
-      # The pre-training start: EE ~ (0.50, 0.00, 0.90) m, tool along +X toward the subject -- the height
-      # of the maze's lowest row (the maze start is 11 cm higher, 5 cm back). Keep equal to
-      # nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
-      target_joint_position: [-3.6, 69.9, -3.6, 70.0, 0.7, 79.5, -15.7]  # start pose, joint angles A1..A7 [deg]
+      # The pre-training start is the MAZE START: EE ~ (0.38, 0.01, 1.03) m, tool along +X toward the
+      # subject. Keep equal to nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
+      target_joint_position: [1.4, 45.1, 1.1, 49.2, 0.6, 90.5, 2.0]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
