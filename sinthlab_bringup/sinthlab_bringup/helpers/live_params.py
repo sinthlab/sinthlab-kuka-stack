@@ -34,7 +34,9 @@ _COMMON = [
     "visual_cue.enabled",          # master switch for the NeoPixel ring
     "visual_cue.remote_test_trigger",
     "visual_cue.colours.*",
-    "nsp_sync.*",                  # TTL sync pulses to the Blackrock NSP: switch, cabinet address, outputs, width
+    # TTL sync pulses to the Blackrock NSP: switch, cabinet address, the trial outputs, width. Not
+    # nsp_sync.experiment_start_output: that pulse is sent once, by the dashboard at Start (per-run).
+    "nsp_sync.enabled", "nsp_sync.cabinet_ip", "nsp_sync.trial_*_output", "nsp_sync.pulse_width_ms",
 ]
 
 # The pull threshold and its dwell. Deliberately NOT cartesian_axis: that changes what the
@@ -249,7 +251,7 @@ CHOICES: Dict[str, List[str]] = {
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
     "free_move.rail_axis": ["none", "x", "y", "z"],
-    "nsp_sync.trial_*_output": ["1", "2", "3", "4"],          # the EL2124's outputs, front jacks SYNC 1-4
+    "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
 }
 
 
@@ -264,7 +266,7 @@ _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
 # Delay ranges (min, max): perturb's after the go cue, perturb_bump's after the grasp.
 _DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"),
                  ("grasp.delay_min_sec", "grasp.delay_max_sec"))
-_SYNC_OUTPUTS = ("nsp_sync.trial_start_output", "nsp_sync.trial_end_output")
+_SYNC_OUTPUTS = ("nsp_sync.trial_start_output", "nsp_sync.trial_end_output", "nsp_sync.experiment_start_output")
 PAIRED = (_R, _PLANE, _START, _PARK, _K, _K_BASE) + sum(_DELAY_RANGES, ()) + _SYNC_OUTPUTS   # checked together: see check_value(context=...)
 
 
@@ -384,9 +386,10 @@ def _check_pair(name, value, context) -> Optional[str]:
             return f"{name} must be an IPv4 address such as 172.31.1.147, got {value!r}"
         return None
     if name in _SYNC_OUTPUTS:
-        other = _SYNC_OUTPUTS[1 - _SYNC_OUTPUTS.index(name)]
-        if context is not None and context.get(other) is not None and int(context[other]) == int(value):
-            return f"{name} and {other} must be different outputs (both {value}): each event has its own line"
+        for other in _SYNC_OUTPUTS:
+            if other != name and context is not None and context.get(other) is not None \
+                    and int(context[other]) == int(value):
+                return f"{name} and {other} must be different outputs (both {value}): each event has its own line"
         return None
     if name.startswith("random_start.positions."):
         # [a, b] metres in random_start.plane; reach and joint margins are checked when the run solves them

@@ -130,7 +130,8 @@ The **Post-processing** button at the top right opens `/postprocess.html`: it tu
 NWB file and uploads it to the server. Give it the robot run folder and the Blackrock NSP recording
 (a network-mounted path is fine; leave it empty for the robot data alone), fill in the subject and
 session, and press **Create NWB**. The robot data is put on the NSP's clock by matching the sync
-pulses (trial start on `ainp3`, trial end on `ainp4`) to the run's trial events. When the file is
+pulses (by default trial start on `ainp6`, trial end on `ainp7`; the experiment start pulse on `ainp8`
+is stored, not matched; all three channels are set on the page) to the run's trial events. When the file is
 written, the page asks for the server folder and uploads it, verifying the copy. It needs `pynwb` and
 `neo` (`pip install --user --break-system-packages pynwb neo "numpy<2"`). Details:
 [`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md#post-processing-page).
@@ -223,7 +224,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
 | `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
-| `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, never the same), and the pulse width (10–5000 ms, default 10) |
+| `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 10) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
@@ -2350,15 +2351,24 @@ sends the cabinet one UDP datagram, `PULSE <output> <width ms>`, to `<nsp_sync.c
 ([the cabinet code](reward_and_sync_box/README.md#the-code)). The send takes well under a millisecond and
 never blocks the trial.
 
-The settings are the `nsp_sync` block of each experiment YAML, all live (the dashboard's *Live* tab,
-applied at the next trial boundary):
+**Experiment start.** The moment **▶ Start** is pressed, before the launch begins, the dashboard
+([`server.py`](experiment_ctrl_gui/server.py)) sends one `PULSE` on `nsp_sync.experiment_start_output`:
+the NSP's marker of when the experiment was started. The cabinet app opens its pulse port as it starts,
+before it waits for ROS, so start the SmartPad app first, as usual. The log records the time the
+pulse was sent and the cabinet's answer (*NSP sync: experiment start pulse sent at …*); with no
+answer it warns. An experiment launched from a terminal sends no experiment start pulse.
+
+The settings are the `nsp_sync` block of each experiment YAML. All but the experiment start output
+are live (the dashboard's *Live* tab, applied at the next trial boundary); that one is per-run, read at
+Start:
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `nsp_sync.enabled` | `false` | send the pulses |
 | `nsp_sync.cabinet_ip` | `172.31.1.147` | the cabinet's address on the network this computer reaches it by (X66: `172.31.1.147`) |
 | `nsp_sync.trial_start_output` | `1` | EL2124 output (front jack SYNC 1–4) pulsed at trial start |
-| `nsp_sync.trial_end_output` | `2` | EL2124 output pulsed at trial end; must differ from the start's |
+| `nsp_sync.trial_end_output` | `2` | EL2124 output pulsed at trial end |
+| `nsp_sync.experiment_start_output` | `3` | EL2124 output pulsed once when Start is pressed (per-run). The three outputs must all differ |
 | `nsp_sync.pulse_width_ms` | `10` | how long each pulse stays high, 10–5000 ms |
 
 If the outputs are changed, change the post-processing page's sync channels to the NSP analog inputs

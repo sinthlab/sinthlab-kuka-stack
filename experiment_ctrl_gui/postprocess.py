@@ -85,8 +85,10 @@ class PostProcessor:
             raise ValueError("the output file must end in .nwb")
         meta = nx.Metadata.from_dict(dict(body.get("meta") or {}))
         nsp = str(body.get("nsp") or "").strip() or None
-        sync = [str(c).strip() for c in (body.get("sync_channels") or ["ainp3", "ainp4"])]
+        sync = [str(c).strip() for c in (body.get("sync_channels") or ["ainp6", "ainp7"])]
+        exp_start = str(body.get("experiment_start_channel", "ainp8") or "").strip() or None
         args = dict(robot_folder=robot, out_path=out, meta=meta, nsp_path=nsp, sync_channels=sync,
+                    experiment_start_channel=exp_start,
                     threshold_v=float(body.get("threshold_v", 2.5)),
                     include_continuous=bool(body.get("include_continuous", True)),
                     include_spikes=bool(body.get("include_spikes", True)))

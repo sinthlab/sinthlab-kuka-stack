@@ -18,10 +18,13 @@ INPUTS
 
 SYNC  (reward_and_sync_box/README.md, "Sync: TTL pulses to the NSP")
   The cabinet pulses EL2124 output 1 at every trial_start and output 2 at every trial_end; the NSP
-  records them on analog inputs 3 and 4 (ainp3, ainp4). Rising edges on those channels are matched to
+  records them on two analog inputs (default ainp6, ainp7; set per recording). Rising edges on those channels are matched to
   the robot's trial_start / trial_end events (their wall-clock times), and a straight line
   t_nsp = slope * t_wall + intercept is fitted to the matched pairs (offset and clock drift). Every
   robot time in the file is converted with it, so the whole file runs on the NSP's clock.
+  Output 3 pulses once when Start is pressed on the dashboard (experiment start); its edges (default
+  ainp8) are stored as they are, not used for the fit. A missing experiment start channel is noted, not
+  an error.
 
 NWB CONTENTS
   session start   the NSP recording's start (robot only: the first robot sample)
@@ -32,7 +35,7 @@ NWB CONTENTS
   processing/behavior   end-effector position and orientation, joint positions (measured and
                   commanded), external joint torques, the FRI state, every other numeric column, and
                   the robot events
-  processing/sync the matched sync edges and the fit
+  processing/sync the matched sync edges and the fit, and the experiment start edges
   trials          one row per trial: start/stop from trial_start/trial_end, experiment, paradigm,
                   threshold, the sidecar as JSON
   notes           the SmartPad settings and the git state of the run, as JSON
@@ -478,9 +481,9 @@ def _nsx_iterator(raw, stream: dict, seg: int, chans: List[int], scaled: bool, p
 
 
 def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[str] = None,
-           sync_channels: Sequence[str] = ("ainp3", "ainp4"), threshold_v: float = 2.5,
+           sync_channels: Sequence[str] = ("ainp6", "ainp7"), threshold_v: float = 2.5,
            include_continuous: bool = True, include_spikes: bool = True,
-           progress: Optional[Progress] = None) -> dict:
+           progress: Optional[Progress] = None, experiment_start_channel: Optional[str] = "ainp8") -> dict:
     """Write the NWB file; returns a summary (sizes, trials, sync fit)."""
     from dateutil.tz import tzutc  # noqa: F401  (pynwb needs tz-aware times; dateutil ships with it)
     from hdmf.backends.hdf5.h5_utils import H5DataIO
@@ -496,6 +499,7 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     raw, sync, streams = None, None, []
+    exp_start, exp_start_note = None, None        # experiment start edges [s, NSP clock], or why not
     if nsp_path:
         say("Opening the NSP recording", -1)
         raw = open_nsp(nsp_path)
@@ -504,6 +508,13 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
         for line, ch in zip(SYNC_LINES, sync_channels):
             s, k = find_channel(streams, ch)
             edges[line] = rising_edges(raw, s, k, threshold_v, say)
+        if experiment_start_channel:
+            try:
+                s, k = find_channel(streams, experiment_start_channel)
+                exp_start = rising_edges(raw, s, k, threshold_v, say)
+            except ExportError as exc:
+                exp_start_note = f"experiment start: {exc}"
+                say(exp_start_note, -1)
         say("Aligning the robot to the NSP clock", -1)
         sync = align({line: robot.events(line) for line in SYNC_LINES}, edges)
         start = nsp_start_time(raw)
@@ -523,7 +534,8 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
     first = robot.trials[0].meta
     notes = {"robot_run_folder": robot.folder, "nsp_recording": find_nsp_base(nsp_path) if nsp_path else None,
              "smartpad": robot.smartpad, "git": first.get("git"), "experiment": robot.experiment,
-             "sync": sync.summary() if sync else None, "notes": meta.notes or None}
+             "sync": sync.summary() if sync else None, "notes": meta.notes or None,
+             "experiment_start_edges_s": exp_start.tolist() if exp_start is not None else exp_start_note}
     nwb = NWBFile(session_description=meta.session_description or f"{robot.experiment} session {robot.session_id}",
                   identifier=str(uuid.uuid4()), session_start_time=start, session_id=robot.session_id,
                   experimenter=[e.strip() for e in meta.experimenter.split(";") if e.strip()] or None,
@@ -613,6 +625,10 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
                                    description=(f"Matched {line} pulses: data = robot wall-clock time (Unix s), "
                                                 f"timestamps = NSP rising edge. Fit: t_nsp = {sync.slope!r} * t_wall "
                                                 f"+ {sync.intercept!r}; rms {sync.rms_ms:.3f} ms.")))
+        if exp_start is not None and len(exp_start):
+            mod.add(TimeSeries(name="experiment_start_edges", data=exp_start, unit="seconds", timestamps=exp_start,
+                               description=f"Rising edges on {experiment_start_channel}: the experiment start pulse "
+                                           f"(Start pressed on the dashboard), NSP clock. Not used for the fit."))
 
     # ---- NSP
     if raw is not None:
@@ -655,7 +671,9 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
                             data=H5DataIO(_nsx_iterator(raw, s, seg, s["analog"], True, say, label),
                                           compression="gzip", compression_opts=4),
                             description=f"NSP analog inputs of {s['name']}: {', '.join(s['channels'][k] for k in s['analog'])}"
-                                        f" (sync: {sync_channels[0]} = trial_start, {sync_channels[1]} = trial_end)."))
+                                        f" (sync: {sync_channels[0]} = trial_start, {sync_channels[1]} = trial_end"
+                                        + (f", {experiment_start_channel} = experiment start" if experiment_start_channel else "")
+                                        + ")."))
         if include_spikes and len(raw.header["spike_channels"]):
             say("Writing spikes", -1)
             nwb.add_unit_column("nsp_unit", "NEV spike channel (channel#unit)")
@@ -693,7 +711,9 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
     say("Done", 1.0)
     return {"out": out_path, "bytes": os.path.getsize(out_path), "trials": len(robot.trials),
             "session_start": start.isoformat(), "time_base": "NSP clock" if sync else "robot wall clock",
-            "sync": sync.summary() if sync else None, "robot": describe_robot(robot),
+            "sync": sync.summary() if sync else None,
+            "experiment_start_edges_s": exp_start.tolist() if exp_start is not None else exp_start_note,
+            "robot": describe_robot(robot),
             "nsp": describe_nsp(raw) if raw is not None else None}
 
 
@@ -704,7 +724,10 @@ def main() -> int:
     ap.add_argument("--robot", required=True, help="robot run folder (analysis/expt_...)")
     ap.add_argument("--nsp", help="Blackrock recording: one of its files, or its folder")
     ap.add_argument("--out", required=True, help="NWB file to write")
-    ap.add_argument("--sync-channels", nargs=2, default=["ainp3", "ainp4"], metavar=("START", "END"))
+    ap.add_argument("--sync-channels", nargs=2, default=["ainp6", "ainp7"], metavar=("START", "END"),
+                    help="NSP analog inputs of the trial start and trial end lines")
+    ap.add_argument("--experiment-start-channel", default="ainp8",
+                    help="NSP analog input of the experiment start line ('' = none)")
     ap.add_argument("--threshold-v", type=float, default=2.5)
     ap.add_argument("--no-continuous", action="store_true", help="leave the NSx continuous data out")
     ap.add_argument("--no-spikes", action="store_true", help="leave the NEV spikes out")
@@ -719,7 +742,8 @@ def main() -> int:
         meta = Metadata.from_dict({f: getattr(a, f) for f in Metadata.__dataclass_fields__})
         result = export(a.robot, a.out, meta, a.nsp, a.sync_channels, a.threshold_v, not a.no_continuous,
                         not a.no_spikes, progress=lambda m, f: print(f"  {m}" + (f" {f * 100:.0f}%" if f >= 0 else ""),
-                                                                     file=sys.stderr))
+                                                                     file=sys.stderr),
+                        experiment_start_channel=a.experiment_start_channel or None)
     except ExportError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

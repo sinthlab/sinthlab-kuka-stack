@@ -182,7 +182,7 @@ shell touching something earthed outside the box; BREAKER VALVE trips on that.
 | S1 | Beckhoff **EK1100**, **EL9505**, **EL2124**, **EL9011** on DIN rail | see [Components](#components) | in hand | 1 set |
 | S2 | EtherCAT feedthrough, panel, D-size (etherCON Cat5e): ETHERCAT X65 | [Neutrik NE8FDP](https://www.digikey.ca/en/products/detail/neutrik-americas-inc/NE8FDP/29371355) | Digi-Key | 1 |
 | S3 | BNC jack, panel, **isolated**: SYNC 1–4 | [TE 5227726-1](https://www.digikey.ca/en/products/detail/te-connectivity-amp-connectors/5227726-1/813448) | Digi-Key A32339-ND | 4 |
-| S4 | BNC cable, RG58, 6 ft: SYNC 1 and SYNC 2 → NSP analog in 3 and 4 | [BNC-120](https://abra-electronics.com/wire-cable-accessories/wirecable/bnc-cables/bnc-120-bnc-male-to-bnc-male-cable-rg58-6-ft-bnc-120.html) | Abra | 2 |
+| S4 | BNC cable, RG58, 6 ft: SYNC 1–3 → NSP analog inputs | [BNC-120](https://abra-electronics.com/wire-cable-accessories/wirecable/bnc-cables/bnc-120-bnc-male-to-bnc-male-cable-rg58-6-ft-bnc-120.html) | Abra | 3 |
 | S5 | 35 mm DIN rail, ~120 mm, + 2 end stops | | | 1 |
 | S6 | Cat5e patch cable, 0.3 m: ETHERCAT X65 feedthrough → EK1100 X1 IN | | | 1 |
 | S7 | Cat5e cable: cabinet X65 → the box's ETHERCAT X65 | | | 1 |
@@ -392,8 +392,9 @@ If FLUSH clicks the valve but no trigger does, the fault is on the SSR side.
 
 Trial events reach the Blackrock NSP as **5 V TTL pulses on BNC lines**, sent by the Sunrise cabinet
 through a small Beckhoff EtherCAT stack. Each event type has its own line, so nothing has to be
-decoded: **output 1 = trial start, output 2 = trial end**, outputs 3 and 4 spare. The NSP records
-each line on an analog input, and the rising edge is the time reference for aligning the trial data.
+decoded: **output 1 = trial start, output 2 = trial end, output 3 = experiment start** (one pulse
+when Start is pressed on the dashboard), output 4 spare. The NSP records each line on an analog input,
+and the rising edge is the time reference for aligning the trial data.
 
 ```
  Sunrise cabinet            BOX PANELS              INSIDE: DIN rail on the box floor, modules left → right
@@ -401,9 +402,10 @@ each line on an analog input, and the rising edge is the time reference for alig
                                                    ╚═►│ EK1100 │ EL9505 │ EL2124 │ EL9011 │
  24 V IN ═► [BREAKER SYNC] ───────────────────────────►│power in│24 V in*│4 × 5 V │end cap │
                                                       └────────┴────────┴───┬────┴────────┘
-                           [SYNC 1] ◄── Out 1 + 0 V ────────────────────────┤ ═► NSP analog in 3 (trial start)
-                           [SYNC 2] ◄── Out 2 + 0 V ────────────────────────┤ ═► NSP analog in 4 (trial end)
-                           [SYNC 3] [SYNC 4] ◄── Out 3, Out 4 (spare) ──────┘
+                           [SYNC 1] ◄── Out 1 + 0 V ────────────────────────┤ ═► NSP analog in (trial start)
+                           [SYNC 2] ◄── Out 2 + 0 V ────────────────────────┤ ═► NSP analog in (trial end)
+                           [SYNC 3] ◄── Out 3 + 0 V ────────────────────────┤ ═► NSP analog in (experiment start)
+                           [SYNC 4] ◄── Out 4 (spare) ──────────────────────┘
 ```
 \* The EL9505's 24 V input is on its front, fed from the EK1100 by two jumpers (Assembly, step 3).
 
@@ -467,7 +469,7 @@ Part numbers and links: [Sync side](#sync-side-nsp-sync-beckhoff) in the parts l
    |---|---|---|---|
    | Output 1, trial start | **SYNC 1** | point **1** | point **3** (0 V) |
    | Output 2, trial end | **SYNC 2** | point **5** | point **7** (0 V) |
-   | Output 3 (spare) | SYNC 3 | point 4 | point 3 |
+   | Output 3, experiment start | **SYNC 3** | point **4** | point **3** (0 V) |
    | Output 4 (spare) | SYNC 4 | point 8 | point 7 |
 
    **Never connect a BNC to points 2 or 6: they carry +5 V**, and a shield there shorts the supply.
@@ -586,9 +588,10 @@ All in [`sunrise_controller_code/`](../sunrise_controller_code/); deploy it like
   *All* fires output N as N pulses, so each line identifies itself on the NSP. It serves the same UDP
   commands, so the network path from the ROS computer can be tested at the same time.
 
-**From ROS**, each experiment sends `PULSE <output> <width ms>` at trial start and trial end, with the
-cabinet address, the two outputs and the width set in its `nsp_sync` parameters (defaults
-`172.31.1.147`, outputs 1 and 2, 10 ms): see
+**From ROS**, each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and the
+dashboard sends one the moment **Start** is pressed (experiment start), with the cabinet address, the
+three outputs and the width set in its `nsp_sync` parameters (defaults `172.31.1.147`, outputs 1, 2
+and 3, 10 ms): see
 [Sync to the Blackrock NSP](../README.md#sync-to-the-blackrock-nsp).
 
 **Timing.** The edge leaves when the cabinet writes the output, a few ms after the command, with a few

@@ -189,7 +189,10 @@ class App:
             cmd = ["ros2", "launch", "sinthlab_bringup", exp.launch_file]
             cmd += [f"{k}:={v}" for k, v in overrides.items()]
         self.stopping = False
+        logged = threading.Event()               # the start pulse's result goes into this run's log
+        self._experiment_start_pulse(p.current(), logged)
         self.runner.start(key, cmd, params_file)
+        logged.set()
         if p.edits:
             self.runner.emit(f"Per-run edits: {json.dumps(p.edits)} -> {params_file}", "gui")
         if "clik_nullspace_cfg" in overrides:
@@ -198,6 +201,34 @@ class App:
         if isinstance(self.bridge, DemoBridge):
             self.bridge.launch_started(exp, p.current())
         return {"ok": True}
+
+    def _experiment_start_pulse(self, cfg: dict, logged: threading.Event) -> None:
+        """With nsp_sync.enabled: pulse nsp_sync.experiment_start_output once, now -- the NSP's marker of
+        when Start was pressed. Sent before the launch begins: the cabinet app opens its pulse port
+        (UDP 30002) at start-up, before it waits for ROS. The trial pulses come from the orchestrator."""
+        if not cfg.get("nsp_sync.enabled"):
+            return
+        try:
+            addr = str(cfg["nsp_sync.cabinet_ip"]).strip()
+            cmd = f"PULSE {int(cfg['nsp_sync.experiment_start_output'])} {int(cfg['nsp_sync.pulse_width_ms'])}"
+            ttl.check(addr, cmd)
+        except (KeyError, TypeError, ValueError) as exc:
+            self.runner.emit(f"NSP sync: no experiment start pulse: {exc}", "warn")
+            return
+
+        def send():
+            t_sent = time.time()
+            ok, text, ms = self.fake_cabinet.call(cmd) if self.demo else ttl.call(addr, cmd)
+            logged.wait(10.0)
+            t_sent = int(t_sent * 1000) / 1000.0
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t_sent)) + f".{round(t_sent % 1 * 1000) % 1000:03d}"
+            if ok and text.startswith("OK"):
+                self.runner.emit(f"NSP sync: experiment start pulse sent at {stamp} (t_wall {t_sent:.3f}): "
+                                 f"{cmd} -> {text} ({ms:.0f} ms)", "gui")
+            else:
+                self.runner.emit(f"NSP sync: experiment start pulse NOT confirmed ({cmd} at {stamp}): {text}",
+                                 "warn")
+        threading.Thread(target=send, daemon=True).start()
 
     def stop(self) -> dict:
         exp = self.running_experiment()

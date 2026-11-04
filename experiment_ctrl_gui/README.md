@@ -237,7 +237,8 @@ while an experiment runs (here or in a terminal), since a conversion reads and w
 1. **Recordings.** The robot run folder (a list of the runs in `analysis/`, or any path) and the
    Blackrock NSP recording: any one of its files (`.nev`, `.ns1`–`.ns6`) or the folder holding it, on a
    network mount if it lives on the server; empty for a robot-only archive. The sync channels
-   (default `ainp3` = trial start, `ainp4` = trial end) and threshold (2.5 V), and whether to include
+   (default `ainp6` = trial start, `ainp7` = trial end, `ainp8` = experiment start; empty = none) and
+   threshold (2.5 V), and whether to include
    the continuous NSx data and the NEV spikes. **Check recordings** shows what each holds and flags a
    sync channel the recording does not have.
 2. **Subject and session.** Subject ID (required), species, sex, age or date of birth, weight,
@@ -252,12 +253,14 @@ while an experiment runs (here or in a terminal), since a conversion reads and w
    and compared by SHA-256, then renamed; an existing file is replaced only if ticked.
 
 **How the clocks are aligned.** The cabinet pulses EL2124 output 1 at every `trial_start` and output 2
-at every `trial_end`; the NSP records them on `ainp3` / `ainp4`. The rising edges are matched to the
+at every `trial_end`; the NSP records them on the two channels set on the page. The rising edges are matched to the
 robot's `trial_start` / `trial_end` events (their wall-clock times), tolerating pulses missing at either
 end and extra pulses, and a straight line `t_nsp = slope · t_wall + intercept` is fitted (offset and
 drift). The whole file then runs on the NSP's clock, starting at the NSP recording's start. A recording
 whose edges do not line up with the run is refused. Without an NSP recording the file runs on the
-robot's clock from its first sample.
+robot's clock from its first sample. The experiment start pulse (output 3) is on its own line and is not
+used for the fit: its edges go into the file as `processing/sync/experiment_start_edges` (NSP clock)
+and are shown in the result; a recording without that channel is noted, not refused.
 
 **What the file holds.** Subject and session metadata; per NSx stream an `ElectricalSeries` (neural
 channels, raw int16 with their gains) and a `TimeSeries` of the analog inputs (volts); the NEV spikes
@@ -289,7 +292,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post", "data": …}` |
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
-| POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal |
+| POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal. With `nsp_sync.enabled`, first sends the cabinet the experiment start pulse (`PULSE <nsp_sync.experiment_start_output> <width>`) and logs when it was sent and the answer |
 | POST | `/api/stop` | the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking) |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |

@@ -91,9 +91,9 @@ async function scan() {
                    (s.analog_inputs.length ? ` · ${s.analog_inputs.join(", ")}` : "")]);
       rows.push(["Spike units (NEV)", n.spike_units], ["Event channels (NEV)", n.event_channels]);
       const ain = n.streams.flatMap((s) => s.analog_inputs.map((a) => a.toLowerCase()));
-      for (const id of ["#sync-start", "#sync-end"]) {
+      for (const id of ["#sync-start", "#sync-end", "#sync-exp"]) {
         const c = $(id).value.trim().toLowerCase();
-        if (!ain.includes(c)) rows.push(["Sync", `${c} is not in this recording`]);
+        if (c && !ain.includes(c)) rows.push(["Sync", `${c} is not in this recording`]);
       }
       kv($("#nsp-info"), rows);
       if (!$("#up-dest").dataset.edited) $("#up-dest").value = dirname(n.base);
@@ -117,6 +117,7 @@ async function convert() {
     await api("/api/post/convert", {
       robot: $("#robot").value.trim(), nsp: $("#nsp").value.trim(), out: $("#out").value.trim(), meta: m,
       sync_channels: [$("#sync-start").value.trim(), $("#sync-end").value.trim()],
+      experiment_start_channel: $("#sync-exp").value.trim(),
       threshold_v: parseFloat($("#threshold").value),
       include_continuous: $("#inc-cont").checked, include_spikes: $("#inc-spikes").checked,
     });
@@ -162,7 +163,10 @@ function showJob(job) {
       kv($("#result"), [["File", r.out], ["Size", mb(r.bytes)], ["Trials", r.trials], ["Time base", r.time_base],
         ["Session start (UTC)", r.session_start],
         ...(s ? [["Sync matched", Object.entries(s.matched).map(([k, v]) => `${k} ${v}`).join(" · ")],
-                 ["Sync fit", `rms ${s.rms_ms} ms · max ${s.max_ms} ms · drift ${s.drift_ppm} ppm`]] : [])]);
+                 ["Sync fit", `rms ${s.rms_ms} ms · max ${s.max_ms} ms · drift ${s.drift_ppm} ppm`]] : []),
+        ...(r.experiment_start_edges_s == null ? [] : [["Experiment start", Array.isArray(r.experiment_start_edges_s)
+          ? (r.experiment_start_edges_s.length ? r.experiment_start_edges_s.map((t) => `${t.toFixed(3)} s`).join(", ")
+                                                : "no pulse found") : r.experiment_start_edges_s]])]);
       $("#up-src").value = r.out;
       $("#upload-prompt").innerHTML = "<strong>The archive is ready. Upload it to the server folder below.</strong>";
       $("#upload-card").classList.add("pp-attention");
