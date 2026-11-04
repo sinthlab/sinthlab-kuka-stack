@@ -29,7 +29,7 @@ EAR_W = 482.61;           // with the rack ears
 
 // ---- cut-outs: ["round", dia] | ["d", dia, across_flat] | ["keyed", dia, to_notch_bottom, notch_w]
 //                | ["neutrik_d", dia] ------------------------------------------------------------------
-TOGGLE   = ["round", 6.5];              // C&K 7101SYZQE: 1/4-40 bushing
+TOGGLE   = ["round", 6.5];              // Carling 2M1-SP1-T1-B1-M1QE: 1/4-40 bushing
 LED      = ["round", 12.7];             // VCC 1091M5-24V: 0.50" cut-out
 BNC      = ["d", 9.90, 8.84];           // TE 5227726-1 isolated BNC: single-D (Protocase cut-out library)
 M16      = ["keyed", 18.0, 19.1, 2.8];  // Amphenol T3263000U: C091 catalog p.11, notch down
@@ -40,9 +40,9 @@ ETHERCON = ["neutrik_d", 24.0];         // Neutrik NE8FDP (D-size): Ã˜24 + 2 x Ã
 // [label, x, y, cut-out, part]
 // front: the reward controls and inputs, then the sync stack's EtherCAT in and TTL outputs
 FRONT = [
-    ["POWER",        40,  38, TOGGLE,   "C&K 7101SYZQE"],
+    ["POWER",        40,  38, TOGGLE,   "Carling 2M1-SP1-T1-B1-M1QE"],
     ["",             40,  64, LED,      "VCC 1091M5-24V"],
-    ["FLUSH",        80,  38, TOGGLE,   "C&K 7101SYZQE"],
+    ["FLUSH",        80,  38, TOGGLE,   "Carling 2M1-SP1-T1-B1-M1QE"],
     ["",             80,  64, LED,      "VCC 1091M5-24V"],
     ["NSP",          125, 42, BNC,      "TE 5227726-1"],
     ["PEDAL",        155, 42, BNC,      "TE 5227726-1"],

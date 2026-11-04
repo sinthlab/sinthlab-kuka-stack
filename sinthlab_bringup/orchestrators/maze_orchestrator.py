@@ -45,6 +45,7 @@ class MazeOrchestratorNode(rclpyNode):
 
         self.trial_count = 0
         self._trial_ending = False
+        self._ended = False
 
         # Actions that make up the trial.
         self.move_to_start = MoveToPositionJointSpace(
@@ -72,13 +73,13 @@ class MazeOrchestratorNode(rclpyNode):
         # Trial data -- see README.md section 7, Data Collected. Records from trial START (approach and
         # settle included, not just the maze phase) and marks the go cue, so a run lines up with video
         # without a manual offset.
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
+        # Dashboard / CLI control: status topic, Stop, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "maze")
         # A live start / park pose whose move would take the end effector below the floor is refused.
         self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
-        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self.control.on_stop_request(self._stop_now)   # Stop: end the trial, park, hold
         self._stopping = False
         self.recorder = TrialRecorder(
             self, experiment="maze",
@@ -135,13 +136,6 @@ class MazeOrchestratorNode(rclpyNode):
         self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
 
     def start_trial(self):
-        self._stopping = False
-        self.recorder.start(trial_index=self.trial_count + 1,
-                            maze_geometry=self.maze_fixtures.maze_geometry())
-        self.recorder.mark("trial_start", self.trial_count + 1)
-        self.trial_count += 1
-        self._trial_ending = False
-        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
         self.move_to_start.start()
 
     def on_move_complete(self):
@@ -150,7 +144,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
-        if self._stopping:                 # Stop now came during the switch: straight back
+        if self._stopping:                 # Stop came during the switch: straight back
             self.switch_to_joint.start()
             return
         self.recorder.mark("fixture_active")
@@ -202,7 +196,7 @@ class MazeOrchestratorNode(rclpyNode):
             return
         self._trial_ending = True
         # goal | timeout | safety -- whichever won the race
-        self.recorder.mark(reason if reason != "safety" else "safety_trip")
+        self._trial_over(reason if reason != "safety" else "safety_trip")
         self.timeout.stop()
         self.checkpoint_monitor.stop()
         self.safety.stop()
@@ -236,25 +230,47 @@ class MazeOrchestratorNode(rclpyNode):
 
     def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
-        self.recorder.mark("trial_end", self.trial_count)
+        self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
-        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+        self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
 
     def _next_trial(self):
-        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+        """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        self._stopping = False
+        self._trial_ending = False
+        self._ended = False
+        self.trial_count += 1
+        self.recorder.start(trial_index=self.trial_count, maze_geometry=self.maze_fixtures.maze_geometry())
+        self.recorder.mark("trial_start", self.trial_count)
+        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
+
+    def _trial_over(self, why: str, arg=None):
+        """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
+        The park move that follows is still in the trial's file."""
+        self.recorder.mark(why, arg)
+        self._mark_end()
+
+    def _mark_end(self):
+        if not self._ended:
+            self._ended = True
+            self.recorder.mark("trial_end", self.trial_count)
 
     def _stop_now(self):
-        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
-        release wait. The control is paused, so it then holds at park and the launch can end."""
+        """Stop (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
+        release wait. No further trial starts, so the arm then holds at park and the launch can end."""
         if self._stopping:
             return
-        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
+            self._trial_over("stop_requested")
+            self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active() or self.switch_to_joint.active():
             return                                # already on the way to park
         self._stopping = True
-        self.recorder.mark("stop_requested")
+        self._trial_over("stop_requested")
         self._trial_ending = True
         self.quiet_window.stop()
         self.timeout.stop()

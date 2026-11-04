@@ -57,7 +57,7 @@ class ForceReleaseWaiter:
         )
 
     def stop(self) -> None:
-        """Stop waiting, without calling on_complete (Stop now)."""
+        """Stop waiting, without calling on_complete (Stop)."""
         self._ready = False
 
     def _on_wrench(self, msg: WrenchStamped) -> None:

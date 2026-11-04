@@ -88,7 +88,7 @@ class ParkMove(MoveToPositionJointSpace):
         self._hold.start()
 
     def cancel_hold(self) -> bool:
-        """Drop a pending wait at park (Stop now); True if there was one."""
+        """Drop a pending wait at park (Stop); True if there was one."""
         if not self._hold.active():
             return False
         self._hold.stop()

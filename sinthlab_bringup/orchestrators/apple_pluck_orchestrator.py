@@ -67,6 +67,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.perturbing = self.paradigm in ("perturb", "perturb_bump")
         self.bump = self.paradigm == "perturb_bump"
         self.trial_count = 0
+        self._ended = False
         if self.paradigm == "random_start":
             self.start_positions = {}       # name -> joint angles [deg], solved around the start pose
             self._start_offsets = {}        # name -> its plane and [a, b] offset, for the sidecar
@@ -133,13 +134,13 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # Trial data -- see README.md section 7, Data Collected.
         # disp_m is the dependent variable and is sampled here every state message, so the threshold
         # crossing can be interpolated offline to finer than the 10 ms cabinet stamp.
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
+        # Dashboard / CLI control: status topic, Stop, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "apple_pluck")
         # A live start / park pose whose move would take the end effector below the floor is refused.
         self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
-        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self.control.on_stop_request(self._stop_now)   # Stop: end the trial, park, hold
         self._stopping = False
         self.recorder = TrialRecorder(
             self, experiment="apple_pluck",
@@ -241,8 +242,11 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self._start_queue = random.sample(list(self.start_positions), len(self.start_positions))
         return self._start_queue.pop()
 
-    def start_trial(self):
+    def _next_trial(self):
+        """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
         self._stopping = False
+        self._ended = False
         self.trial_count += 1
         # Record the WHOLE trial, approach included -- analysis can trim, it cannot un-discard.
         sidecar = {"paradigm": self.paradigm, "threshold_m": self.monitor.threshold_m()}
@@ -260,6 +264,9 @@ class ApplePluckOrchestratorNode(rclpyNode):
                                        "delay_mode": self._delay_mode}
         self.recorder.start(trial_index=self.trial_count, **sidecar)
         self.recorder.mark("trial_start", self.trial_count)
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
+
+    def start_trial(self):
         self.move_to_start.start()
 
     def on_move_complete(self):
@@ -303,7 +310,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # No grasp in time: end the trial -- park, then the next trial starts as usual.
         self.grasp.stop()
         self.get_logger().info("No grasp within grasp.timeout_sec. Resetting for the next trial.")
-        self.recorder.mark("grasp_timeout")
+        self._trial_over("grasp_timeout")
         self.recorder.mark("recover_start")
         self.safety.stop()
         self.move_park.start()
@@ -328,7 +335,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — the apple is plucked: the pull-back is released.")
-        self.recorder.mark("snap", round(self.monitor.current_disp(), 6))
+        self._trial_over("snap", round(self.monitor.current_disp(), 6))
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
         self.recorder.mark("cue_snap")
@@ -374,19 +381,29 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
     def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
-        self.recorder.mark("trial_end", self.trial_count)
+        self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
-        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+        self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
 
-    def _next_trial(self):
-        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+    def _trial_over(self, why: str, arg=None):
+        """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
+        The park move that follows is still in the trial's file."""
+        self.recorder.mark(why, arg)
+        self._mark_end()
+
+    def _mark_end(self):
+        if not self._ended:
+            self._ended = True
+            self.recorder.mark("trial_end", self.trial_count)
 
     def _stop_now(self):
-        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park. The control is
-        paused, so it then holds at park and the launch can end."""
+        """Stop (the dashboard's Stop, or ~/stop): end the trial at once and park. The control is
+        stopped, so it then holds at park and the launch can end."""
         if self._stopping:
             return
-        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
+            self._trial_over("stop_requested")
+            self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active():
@@ -404,7 +421,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
     def on_safety_trip(self, reason: str):
         """The floor: the apple went below it. End the trial at once and park; the next trial follows
-        as usual (no pause)."""
+        as usual."""
         if self._stopping or self.move_park.active():
             return
         self.get_logger().error(f"SAFETY ABORT ({reason}): parking.")
@@ -413,7 +430,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def _abort_trial(self, mark: str):
         """End the trial in progress at once -- every action stopped -- and park."""
         self._stopping = True
-        self.recorder.mark(mark)
+        self._trial_over(mark)
         self.safety.stop()
         self.quiet_window.stop()
         if self.perturbing:

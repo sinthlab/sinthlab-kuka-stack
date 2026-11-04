@@ -1,25 +1,27 @@
 "use strict";
 // KUKA Experiment Control -- front end. Talks only to server.py (same origin).
 
-// The trial steps each orchestrator reports (TrialRecorder.mark / ExperimentControl.on_event).
+// The trial steps each orchestrator reports (TrialRecorder.mark / ExperimentControl.on_event). A trial
+// runs from trial_start (at park, as the wait before the move to start begins) to trial_end (the
+// outcome, or a failure); the park move after it is the trial's tail.
 // Cue-delivery tokens (cue_audio_end, cue_visual_ack, cue_snap, freeze) go to the event list only.
 const STEPS = {
-  apple_pluck: ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap", "recover_start", "trial_end"],
+  apple_pluck: ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap", "trial_end", "recover_start"],
   // Apple pluck, perturb paradigm (picked by the paradigm, see stepsFor).
   apple_pluck_perturb: ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start", "perturb_applied",
-            "armed", "snap", "recover_start", "trial_end"],
+            "armed", "snap", "trial_end", "recover_start"],
   // Apple pluck, perturb bump paradigm: the perturbation waits for the grasp.
   apple_pluck_perturb_bump: ["trial_start", "at_start", "quiet_end", "cue_go", "grasp_wait", "grasp",
-            "perturb_delay_start", "perturb_applied", "armed", "snap", "recover_start", "trial_end"],
-  restricted_plane: ["trial_start", "at_start", "cue_go", "armed", "snap", "recover_start", "trial_end"],
+            "perturb_delay_start", "perturb_applied", "armed", "snap", "trial_end", "recover_start"],
+  restricted_plane: ["trial_start", "at_start", "cue_go", "armed", "snap", "trial_end", "recover_start"],
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
-         "release_wait", "released", "trial_end"],
+         "trial_end", "release_wait", "released"],
 };
 // Pre-training. No goal: each trial is one session, ended from the dashboard (or by session_sec).
 // Move Vertical / Horizontal are Free Move on a rail.
 STEPS.free_move = STEPS.move_vertical = STEPS.move_horizontal =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
-   "release_wait", "released", "trial_end"];
+   "trial_end", "release_wait", "released"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
@@ -28,16 +30,16 @@ const STEP_LABEL = {
   session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped",
 };
 const PHASE_TEXT = {
-  starting: "starting up", trial_start: "moving to start", at_start: "quiet window", quiet_end: "go cue",
+  starting: "starting up", trial_start: "at park — then to the start pose", at_start: "quiet window", quiet_end: "go cue",
   cue_go: "go cue", armed: "waiting for the pull", snap: "threshold reached — plucked", freeze: "plucked — no pull-back",
-  cue_snap: "threshold reached — plucked", release_wait: "waiting for the arm to come to rest", recover_start: "moving to park", trial_end: "trial complete — at park",
+  cue_snap: "threshold reached — plucked", release_wait: "waiting for the arm to come to rest", recover_start: "moving to park", trial_end: "trial over",
   parking: "first move: to the park pose (slow)",
   perturb_delay_start: "delay before perturbation", perturb_applied: "perturbed — settling",
   fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
   safety_trip: "SAFETY ABORT — parking", released: "moving to park",
   early_touch: "EARLY TOUCH — no reward, parking, then a time-out",
-  paused: "paused at the start", cue_audio_end: null, cue_visual_ack: null,
+  stopped: "stopped — holding at park until the launch ends", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
   grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
@@ -55,8 +57,6 @@ const PHASE_TEXT_BY_EXP = {
   maze: { release_wait: "waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
-// Free Move has no trial end: the pause / stop-after-trial buttons end the session instead.
-const NO_TRIAL_END = new Set(["free_move", "move_vertical", "move_horizontal"]);
 const TAB_HELP = {
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
@@ -220,19 +220,7 @@ function renderControls() {
   $("#btn-start").disabled = mine || stopping || external;
   $("#btn-start").textContent = rk && rk !== S.selected ? `▶ Start (stop ${expLabel(rk)} first)` : `▶ Start ${expLabel(S.selected)}`;
   $("#btn-stop").disabled = !mine;
-  $("#btn-stop").textContent = a.stopping_now ? "■ Parking… (press to skip)" : "■ Stop now";
-  $("#btn-stop-trial").disabled = !mine || a.stop_after_trial;
-  $("#btn-restart").disabled = !mine;
-  const canPause = (mine || external) && s;
-  const pb = $("#btn-pause");
-  pb.disabled = !canPause;
-  pb.classList.toggle("on", !!(s && s.paused));
-  const noEnd = NO_TRIAL_END.has(rk || S.selected);
-  pb.textContent = s && s.paused ? (s.held ? "▶ Resume" : "⏸ Pausing… (undo)")
-                                 : (noEnd ? "⏸ End session & pause" : "⏸ Pause after trial");
-  const pre = exp(rk || S.selected)?.group === "pretraining";   // pre-training: ends at once, like Stop now
-  $("#btn-stop-trial").textContent = a.stop_after_trial ? (noEnd ? "■ Ending session…" : "■ Stopping after trial…")
-                                                        : (noEnd || pre ? "■ End session & stop" : "■ Stop after trial");
+  $("#btn-stop").textContent = a.stopping_now ? "■ Parking… (press to skip)" : "■ Stop";
   $("#btn-validate").disabled = !a.data_folder;
 
   // pills
@@ -246,7 +234,7 @@ function renderControls() {
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
-  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
+  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Stopped at park · ${expLabel(s.experiment)}`; }
   else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${expLabel(s.experiment)} · trial ${s.trial}`; }
   else if (mine) { pl.className = "pill warn"; pl.textContent = `Starting ${exp(r.experiment)?.label ?? ""}…`; }
   else { pl.className = "pill"; pl.textContent = r.exit_code != null ? `Idle (last exit ${r.exit_code})` : "Idle"; }
@@ -255,8 +243,8 @@ function renderControls() {
   const bn = $("#banner");
   let msg = "", cls = "banner";
   if (a.ros.demo) { msg = "Demo mode — a simulated experiment. Nothing is launched and no robot is connected."; cls += " demo"; }
-  else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes, pause and robot state need ROS.`;
-  if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes and pause work from here; stop it with Ctrl-C in its terminal.`;
+  else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes and robot state need ROS.`;
+  if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes work from here; stop it with Ctrl-C in its terminal.`;
   if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is moving to the park pose."; }
   if (s && s.phase === "early_touch") { msg = "Early touch: the apple was moved before the go cue. No reward; the arm parks and a time-out runs before the next trial."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
@@ -282,9 +270,9 @@ function fmtDur(sec) {
 function renderStatus() {
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
-  const phaseName = s ? (s.held ? "paused" : s.phase) : null;
+  const phaseName = s ? (s.held ? "stopped" : s.phase) : null;
   const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "not running";
-  $("#st-phase").textContent = s && s.paused && !s.held ? `${text} (pausing after this trial)` : text;
+  $("#st-phase").textContent = text;
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
 
   const key = s ? s.experiment : S.selected;
@@ -292,7 +280,7 @@ function renderStatus() {
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip") cur = "goal";
   if (cur === "early_touch") cur = "trial_end";
-  if (cur === "cue_snap" || cur === "freeze") cur = "snap";
+  if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";
   let idx = steps.indexOf(cur);
   if (idx < 0 && s) {   // a cue/ack token: keep the last real step highlighted
@@ -684,12 +672,9 @@ async function init() {
   $("#btn-stop").onclick = () => {
     const q = S.app && S.app.stopping_now
       ? "Skip parking and stop the launch now? FRI closes wherever the arm is."
-      : "Stop now? The current trial is cut short (saved, marked stop_requested), the arm parks, then the launch stops.";
-    if (confirm(q)) act(() => api("/api/stop", { mode: "now" }), "Stopping");
+      : "Stop? The current trial is cut short (saved, marked stop_requested), the arm parks, then the launch stops.";
+    if (confirm(q)) act(() => api("/api/stop", {}), "Stopping");
   };
-  $("#btn-stop-trial").onclick = () => act(() => api("/api/stop", { mode: "after_trial" }), "Will stop after this trial");
-  $("#btn-restart").onclick = () => { if (confirm("Restart? This stops the launch (the current trial is saved as partial) and starts it again with the current edits.")) act(() => api("/api/restart", {}), "Restarting"); };
-  $("#btn-pause").onclick = () => { const s = statusLive(); act(() => api("/api/pause", { paused: !(s && s.paused) }), s && s.paused ? "Resumed" : "Pause requested"); };
   $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating — see the log");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });

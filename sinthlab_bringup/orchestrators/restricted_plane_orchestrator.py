@@ -43,6 +43,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         VisualCue.warmup(self)  # logs which visual-cue trigger is active (Wi-Fi test or wire)
 
         self.trial_count = 0
+        self._ended = False
 
         # Actions that make up the trial.
         self.move_to_start = MoveToPositionJointSpace(
@@ -84,13 +85,13 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         )
         self.move_park = ParkMove(self, on_complete=self.on_park_complete)
 
-        # Dashboard / CLI control: status topic, pause between trials, live parameters, NSP sync pulses.
+        # Dashboard / CLI control: status topic, Stop, live parameters, NSP sync pulses.
         # See helpers/experiment_control.py; which parameters are live is in helpers/live_params.py.
         self.control = ExperimentControl(self, "restricted_plane")
         # A live start / park pose whose move would take the end effector below the floor is refused.
         self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
-        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self.control.on_stop_request(self._stop_now)   # Stop: end the trial, park, hold
         self._stopping = False
         # Trial data -- see README.md section 7, Data Collected. disp_m is the pull the snap is judged on.
         self.recorder = TrialRecorder(
@@ -116,13 +117,6 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
 
     def start_trial(self):
-        self._stopping = False
-        self.trial_count += 1
-        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
-        self.recorder.start(trial_index=self.trial_count, threshold_m=self.monitor.threshold_m(),
-                            fixture={"profile": self.restricted_plane.active_profile,
-                                     **self.restricted_plane.profile_config})
-        self.recorder.mark("trial_start", self.trial_count)
         self.move_to_start.start()  # joint controller is active at the start of every trial
 
     def on_move_complete(self):
@@ -131,7 +125,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
-        if self._stopping:                 # Stop now came during the switch: straight back
+        if self._stopping:                 # Stop came during the switch: straight back
             self.switch_to_joint.start()
             return
         self.get_logger().info("On CLIK. Waiting for a quiet window...")
@@ -154,7 +148,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
-        self.recorder.mark("snap")
+        self._trial_over("snap")
         self.restricted_plane.stop()
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
@@ -163,7 +157,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the time-out before the next trial."""
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
-        self.recorder.mark("early_touch")
+        self._trial_over("early_touch")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
         self.safety.stop()
         self.monitor.stop()
@@ -173,7 +167,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def on_safety_trip(self, reason: str):
         # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to park.
         self.get_logger().error("SAFETY ABORT: parking immediately.")
-        self.recorder.mark("safety_trip")
+        self._trial_over("safety_trip")
         self.safety.stop()
         self.monitor.stop()
         self.restricted_plane.stop()
@@ -191,25 +185,48 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_park_complete(self):
         self.get_logger().info(f"--- TRIAL {self.trial_count} COMPLETE ---")
-        self.recorder.mark("trial_end", self.trial_count)
+        self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
-        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+        self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
 
     def _next_trial(self):
-        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+        """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        self._stopping = False
+        self._ended = False
+        self.trial_count += 1
+        self.recorder.start(trial_index=self.trial_count, threshold_m=self.monitor.threshold_m(),
+                            fixture={"profile": self.restricted_plane.active_profile,
+                                     **self.restricted_plane.profile_config})
+        self.recorder.mark("trial_start", self.trial_count)
+        self.get_logger().info(f"--- STARTING TRIAL {self.trial_count} ---")
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
+
+    def _trial_over(self, why: str, arg=None):
+        """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
+        The park move that follows is still in the trial's file."""
+        self.recorder.mark(why, arg)
+        self._mark_end()
+
+    def _mark_end(self):
+        if not self._ended:
+            self._ended = True
+            self.recorder.mark("trial_end", self.trial_count)
 
     def _stop_now(self):
-        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
-        release wait. The control is paused, so it then holds at park and the launch can end."""
+        """Stop (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
+        release wait. No further trial starts, so the arm then holds at park and the launch can end."""
         if self._stopping:
             return
-        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
+            self._trial_over("stop_requested")
+            self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active() or self.switch_to_joint.active():
             return                                # already on the way to park
         self._stopping = True
-        self.recorder.mark("stop_requested")
+        self._trial_over("stop_requested")
         self.quiet_window.stop()
         self.monitor.stop()
         self.safety.stop()

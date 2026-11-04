@@ -51,7 +51,7 @@ flowchart LR
     L --> O
     O -- "experiment_status (JSON, latched)" --> BR
     BR -- "set_parameters_atomically (live only)" --> O
-    BR -- "pause (SetBool)" --> O
+    BR -- "stop (Trigger)" --> O
     HW -- "lbr_state (FRI session, rate)" --> BR
 ```
 
@@ -68,9 +68,9 @@ flowchart LR
 
 | File | Role |
 |---|---|
-| `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop / restart / stop-after-trial |
+| `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
-| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `pause`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
+| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb / perturb bump / random start) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
@@ -100,13 +100,13 @@ makes an orchestrator controllable from outside. Every orchestrator creates one:
 
 | Interface | Type | Behaviour |
 |---|---|---|
-| `<ns>/experiment_status` | `std_msgs/String`, JSON, transient-local | published on every trial event and once a second: experiment, trial, phase, paused / held, live values **in effect**, and changes **pending** for the next trial |
-| `<ns>/<orchestrator>/pause` | `std_srvs/SetBool` | `true`: finish this trial, recover, hold at the start. `false`: apply pending changes and start the next trial. A trial with no natural end (Free Move) registers `on_pause_request()` and ends its session at once on `true` |
+| `<ns>/experiment_status` | `std_msgs/String`, JSON, transient-local | published on every trial event and once a second: experiment, trial, phase, held (stopped and parked), live values **in effect**, and changes **pending** for the next trial |
+| `<ns>/<orchestrator>/stop` | `std_srvs/Trigger` | end the trial in progress at once, park, and hold there: no further trial starts |
 | `set_parameters` | parameter callback | names in `live_params.py` are range-checked, accepted and **applied at the next trial boundary**; anything else is rejected with the reason |
 | `on_event(token, arg)` | `TrialRecorder` hook | every `mark()` updates the status, and with `nsp_sync.enabled` sends the cabinet a TTL pulse command at `trial_start` and `trial_end` (`NspPulser`) |
 
-The orchestrators end each trial with `control.begin_trial(self.start_trial)`. That call is where a
-pause holds and where accepted changes are applied: `_reload_live()` calls `reload()` on the cue,
+The orchestrators end each trial with `control.begin_trial(self._next_trial)`. That call is where,
+after a Stop, the arm holds at park, and where accepted changes are applied: `_reload_live()` calls `reload()` on the cue,
 monitor and perturbation actions and resets the quiet-window and timeout durations. So a change
 never lands mid-trial, and the sidecar written at the next `TrialRecorder.start()` records the
 values that trial used.
@@ -290,9 +290,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal |
-| POST | `/api/stop` `{mode: "now" \| "after_trial"}` | now: the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking); after_trial: pause, then Ctrl-C once it holds at park |
-| POST | `/api/restart` | stop now, then start the same experiment with the current edits |
-| POST | `/api/pause` `{paused}` | the orchestrator's pause service |
+| POST | `/api/stop` | the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking) |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |
 | GET | `/api/post/state` | Post-processing: whether `pynwb` / `neo` are installed, the local run folders, the current job |
@@ -310,11 +308,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 - **Start:** `ros2 launch sinthlab_bringup <launch> [overrides]` runs with `start_new_session=True`,
   so one signal reaches the launch and every node it spawned. `RCUTILS_COLORIZED_OUTPUT=0` and
   `PYTHONUNBUFFERED=1` keep the log clean and live.
-- **Stop now:** SIGINT to the process group, exactly like Ctrl-C. After 20 s it sends SIGTERM, and
-  after 5 s more SIGKILL.
-- **Stop after trial:** pause, then Stop now once the status reports `held`. For the pre-training tasks
-  (labelled **End session & stop**) it is Stop now itself: the session ends at once and the arm parks.
-- **Restart:** Stop now; when the launch has exited, start again after 1 s.
+- **Stop:** the orchestrator's stop service; once the status reports `held` (parked), SIGINT to the
+  process group, exactly like Ctrl-C. After 20 s it sends SIGTERM, and after 5 s more SIGKILL.
 - **Shutting down the server** stops a launch it started, the same way.
 - **The data folder** is the newest `analysis/expt_<run_name>_*` modified since the launch started.
 
@@ -324,9 +319,9 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 
 `--demo` replaces the ROS side:
 - `demo_launch.py` stands in for `ros2 launch`. It prints a banner and exits cleanly on SIGINT, so
-  Start / Stop / Restart run for real.
+  Start / Stop run for real.
 - `DemoBridge` simulates an orchestrator on a fast clock. It uses the same trial phases, the same
-  pause / held behaviour, the same live-parameter rules (`live_params.py`), the same apply-at-next-trial
+  Stop / held behaviour, the same live-parameter rules (`live_params.py`), the same apply-at-next-trial
   behaviour, and heartbeats once a second.
 
 Nothing connects to the arm.

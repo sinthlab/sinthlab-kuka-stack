@@ -115,7 +115,7 @@ A solenoid valve has no separate control line: **power on the coil opens it, pow
 | — | D2 anode → PEDAL BNC centre; D3 anode → BUTTON BNC centre; D4 anode → NSP BNC centre |
 
 - **LED2 sits on COIL_A**, so it lights whenever the coil is powered — by FLUSH *or* by a trigger.
-- **Toggles (C&K 7101SYZQE, SPDT):** use the centre lug (common) and one outer lug; leave the other
+- **Toggles (Carling 2M1-SP1-T1-B1-M1QE, SPDT):** use the centre lug (common) and one outer lug; leave the other
   outer lug free. Find the "on" lug for lever-up with a multimeter.
 - **SSR (Crydom DC60S3):** the output and input terminals are marked + and − on the body.
 - **Valve coil contacts:** with the valve cable plugged into the valve and into the box's socket, the
@@ -157,7 +157,7 @@ shell touching something earthed outside the box; BREAKER VALVE trips on that.
 | # | Item | Part | Digi-Key # | Qty |
 |---|---|---|---|---|
 | 2 | Valve socket: M16 DIN 3-pin female, front mount (C091 A, contact layout 03-a) | [Amphenol Tuchel T3263000U](https://www.digikey.ca/en/products/result?keywords=T3263000U) | 361-1062-ND | 1 |
-| 3 | Toggle, SPDT, 5 A @ 28 V DC: POWER, FLUSH | [C&K 7101SYZQE](https://www.digikey.ca/en/products/detail/c-k/7101SYZQE/25966) | CKN1023-ND | 2 |
+| 3 | Toggle, SPDT, 5 A @ 28 V DC: POWER, FLUSH | [Carling 2M1-SP1-T1-B1-M1QE](https://www.digikey.ca/en/products/detail/carling-technologies/2M1-SP1-T1-B1-M1QE/668359) | 432-1143-ND | 2 |
 | 4 | Panel LED, green, 24 V, wire leads | [VCC 1091M5-24V](https://www.digikey.ca/en/products/detail/visual-communications-company-vcc/1091M5-24V/60780) | L50165-ND | 2 |
 | 5 | BNC jack, panel, **isolated**: NSP, PEDAL, BUTTON | [TE 5227726-1](https://www.digikey.ca/en/products/detail/te-connectivity-amp-connectors/5227726-1/813448) | A32339-ND | 3 |
 | 6 | Solid-state relay, DC output, 3.5–32 V DC input, 3 A @ 3–60 V DC | [Crydom DC60S3](https://www.digikey.ca/en/products/detail/sensata-crydom/DC60S3/221844) | CC1126-ND | 1 |
@@ -244,9 +244,9 @@ the sides, 8 mm top and bottom) clears the frame lips and panel screws.
 
 | Panel | Hole | x | y | Cut-out (mm) | Part |
 |---|---|---|---|---|---|
-| front | POWER | 40 | 38 | Ø6.5 | C&K 7101SYZQE |
+| front | POWER | 40 | 38 | Ø6.5 | Carling 2M1-SP1-T1-B1-M1QE |
 | front | LED | 40 | 64 | Ø12.7 | VCC 1091M5-24V |
-| front | FLUSH | 80 | 38 | Ø6.5 | C&K 7101SYZQE |
+| front | FLUSH | 80 | 38 | Ø6.5 | Carling 2M1-SP1-T1-B1-M1QE |
 | front | LED | 80 | 64 | Ø12.7 | VCC 1091M5-24V |
 | front | NSP, PEDAL, BUTTON | 125, 155, 185 | 42 | single-D: Ø9.9, 8.84 across the flat | TE 5227726-1 |
 | front | ETHERCAT X65 | 240 | 42 | Ø24 + 2 × Ø3.2 at (−9.5, +12) and (+9.5, −12) | Neutrik NE8FDP |

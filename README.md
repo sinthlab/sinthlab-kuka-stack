@@ -22,7 +22,7 @@ documented with its parts list, wiring and panel CAD.
 
 **To run an experiment, start with the
 [experiment control dashboard](#quick-start-the-experiment-dashboard)**, a local web page for
-picking an experiment, editing its parameters, Start / Pause / Stop, changing cues between trials,
+picking an experiment, editing its parameters, Start / Stop, changing cues between trials,
 and following the status and log. Every experiment can also be run from a terminal
 ([§5](#5-running-experiments-on-hardware)).
 
@@ -54,7 +54,7 @@ the ROS computer. From it you:
 
 - pick an experiment (Apple Pluck, with its *normal*, *perturb* and *random start* paradigms, Restricted Plane or Maze), or a pre-training task;
 - check or change its parameters;
-- Start, Pause, Stop and Restart it;
+- Start and Stop it;
 - change cues and other live settings between trials;
 - follow the trial, its events and the full log.
 
@@ -155,34 +155,24 @@ written, the page asks for the server folder and uploads it, verifying the copy.
 5. **Change live settings** on the **Live** tab at any time. A change applies **from the next
    trial**; the trial in progress is never changed. Until then the row shows a purple
    `next trial → …` badge, and the log records when the change was accepted and when it was applied.
-6. **⏸ Pause after trial** lets the current trial finish. The arm moves to the park pose, out of the
-   monkey's reach, and **holds there, still under control and compliant**. **▶ Resume** starts the next trial, with any live
-   changes made meanwhile. Pressing the button again before the trial ends cancels the pause.
-   **Free Move** has no trial end, so there the button (labelled **End session & pause**) ends the
-   session at once, the way Stop now does: the arm parks straight away and holds.
-7. **Stop:**
-   - **■ Stop after trial:** finishes this trial, parks, then stops cleanly, so every trial on disk is
-     complete. **Use this one.** In the **pre-training** tasks it is labelled **End session & stop** and
-     works exactly like Stop now: the trial or session ends at once, the arm parks, then the launch stops.
-   - **■ Stop now:** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
-     and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
-     trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
-     skip)**: a second press Ctrl-Cs at once, wherever the arm is. If the orchestrator does not
-     answer, or the arm has not parked within 60 s, the launch is stopped anyway.
-   - **↻ Restart:** Ctrl-C at once (no parking), then Start again with the current edits.
+6. **■ Stop** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
+   and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
+   trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
+   skip)**: a second press Ctrl-Cs at once, wherever the arm is. If the orchestrator does not
+   answer, or the arm has not parked within 60 s, the launch is stopped anyway.
    - **However a run ends** — any Stop, a finished run or a crash — the dashboard then ends every node
      the launch left behind, so a lingering process can never block the next run.
    - **From a terminal**, Ctrl-C reaches every process at once, so nothing parks first. To park, call
      `ros2 service call /lbr/<orchestrator>/stop std_srvs/srv/Trigger` and Ctrl-C once the log says it
      is holding.
-8. **Validate recording** checks this run's data folder
+7. **Validate recording** checks this run's data folder
    (`analysis/validate_recording.py --folder …`) and prints the result in the log. To plot the
    run afterwards, see [Working with the data](#working-with-the-data).
 
 **The log** is the launch's own output from every node, colour-coded by level. Filter it by level or
 text, or turn off *Follow* to scroll back. It is also saved to `experiment_ctrl_gui/logs/`.
 
-**An experiment started in a terminal** is picked up automatically. Live changes and pause work
+**An experiment started in a terminal** is picked up automatically. Live changes work
 from the page; stop it with Ctrl-C in its own terminal.
 
 ### Live, Per-run and Fixed parameters
@@ -246,7 +236,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The start positions `random_start.positions.*` (`[a, b]` m from the start pose) and `random_start.plane` are **per-run**. The start pose above is their origin: changing it moves them all |
 | Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
-| Free Move | `session_sec` (0 = until Pause / Stop after trial); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
+| Free Move | `session_sec` (0 = until Stop); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
 | Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`); the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
 
 These are deliberately **not** live:
@@ -313,8 +303,6 @@ ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py param
 ros2 topic echo /lbr/experiment_status                                                     # where the run is
 ros2 param set /lbr/apple_pluck_orchestrator visual_cue.enabled false                       # live: next trial
 ros2 param set /lbr/apple_pluck_orchestrator move_to_start.speed_scale 0.5                  # half-speed approach, now
-ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: true}"   # pause after trial
-ros2 service call /lbr/apple_pluck_orchestrator/pause std_srvs/srv/SetBool "{data: false}"  # resume
 ros2 service call /lbr/apple_pluck_orchestrator/stop std_srvs/srv/Trigger                    # end trial now, park, hold
 ```
 
@@ -334,7 +322,7 @@ None of these are committed to git.
 
 ### If something is wrong
 - **"ROS ✗" in the top bar.** The dashboard was started without ROS sourced, so use `run_gui.sh`.
-  Start, Stop and the log still work, but live changes, pause and robot state need ROS.
+  Start, Stop and the log still work, but live changes and robot state need ROS.
 - **"Robot: no state".** Nothing is publishing `/lbr/lbr_state` yet: the launch has not connected
   to FRI, or the SmartPad app is not running or timed out. Restart the app, then Start.
 - **The run pill stays on "Starting…".** The orchestrator has not reported yet. Look in the log for
@@ -1397,13 +1385,13 @@ they are under the **Pre-training** tab. All three:
   the height of the maze's lowest row (the maze start is 11 cm higher and 5 cm back). Their CLIK posture
   is `config/clik_nullspace_pretrain.yaml`;
 - run on the CLIK, like the maze;
-- run as one **session** with no threshold and no goal, until you end it (End session, Pause, Stop
-  after trial or Stop now), then the arm parks.
+- run as one **session** with no threshold and no goal, for `session_sec` or until **■ Stop**, then
+  the arm parks.
 - record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
-| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, until you end it (Pause / Stop after trial) |
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, for `session_sec` or until Stop |
 | **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.12 m); it stays where it is let go | no goal — one session, as Free Move |
 | **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | no goal — one session, as Free Move |
 
@@ -1412,11 +1400,10 @@ Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrat
 
 #### Free Move — admittance, no goal, no boundary
 The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
-no wall. It runs as one free-movement **session** until you end it with **End session & pause**,
-**End session & stop** or **■ Stop now** on the dashboard. All three end it at once, like Stop now:
-no end tone, no wait for the hand to let go -- the arm parks straight away. There it holds (pause;
-**▶ Resume** starts a new session) or the launch stops. For timed sessions instead, set
-`session_sec` (live; 0, the default, means no limit).
+no wall. It runs as one free-movement **session**: for `session_sec` (live), then the end tone, the
+wait for the hand to let go, park, and the next session; or, with `session_sec` 0 (the default),
+until **■ Stop** on the dashboard, which ends it at once -- no end tone, no wait for the hand to let
+go -- parks the arm and ends the launch.
 
 ROS owns the cabinet spring's **equilibrium** and moves it at a speed proportional to the hand's force
 (`speed = force / free_move.damping_ns_per_m`). The cabinet spring then pulls the arm after it
@@ -1483,7 +1470,7 @@ does the IK; ROS only moves the target point.
   orientation. On Uniform 100 the arm runs on by 2–7 cm after every let-go, and a push during that
   run-on moves it much further. So **free move checks the profile the SmartPad app reports**
   (`free_move.smartpad_stiffness_n_per_m`, 1000) before the go cue: with any other stiffness there is
-  no go cue, the log says why, and the arm parks and holds there (paused). Stop, restart
+  no go cue, the log says why, and the arm parks and holds there. Stop, restart
   LbrImpedanceControlServer with Uniform 1000, and start again. If no report has arrived, it warns
   and runs.
 - **The equilibrium is integrated from force, never copied from the arm.** An equilibrium set to
@@ -1593,7 +1580,7 @@ and the recorder, and the operator drives the orchestrator from the dashboard or
 ```mermaid
 flowchart TB
     OPS["Operator<br/>dashboard or terminal"]
-    ORCH["<b>Layer 3</b> · Orchestrator node (one per experiment)<br/>+ ExperimentControl: status · pause · live params"]
+    ORCH["<b>Layer 3</b> · Orchestrator node (one per experiment)<br/>+ ExperimentControl: status · stop · live params"]
     ACT["<b>Layer 3</b> · Actions<br/>moves · perturbation · resistance + release · admittance · fixture / maze · monitors · cues"]
     REC["<b>Layer 3</b> · TrialRecorder<br/>CSV + JSON sidecar per trial"]
     KIN["<b>Layer 2</b> · Kinematics<br/>optas FK · tf2 poses"]
@@ -1604,7 +1591,7 @@ flowchart TB
     ARM["iiwa7 arm"]
     BCAST["<b>Layer 1</b> · Broadcasters<br/>lbr_state · joint_state · force_torque"]
 
-    OPS -- "launch · status · live params · pause" --> ORCH
+    OPS -- "launch · status · live params · stop" --> ORCH
     ORCH --> ACT
     ORCH -- "events" --> REC
     ACT -. "FK / pose" .-> KIN
@@ -1651,7 +1638,7 @@ flowchart LR
     B --> HW["iiwa7_hardware.launch.py<br/>FRI client · ros2_control<br/>robot_state_publisher · controller spawners"]
     B --> O["orchestrator node<br/>trial state machine"]
     O --> A["actions<br/>(moves · monitors · cues · controller switch)"]
-    O --> C["ExperimentControl<br/>status · pause · live params · NSP hook"]
+    O --> C["ExperimentControl<br/>status · stop · live params · NSP hook"]
     O --> R["TrialRecorder<br/>(not restricted-plane)"]
 ```
 
@@ -1689,16 +1676,14 @@ flowchart LR
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
   | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
-  | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/pause`, `<ns>/<orchestrator>/stop` (end the trial now, park, hold), the live-parameter gate, and the NSP event hook |
+  | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/stop` (end the trial now, park, hold), the live-parameter gate, and the NSP event hook |
 
   **Outside control.** Every orchestrator creates one
   [`ExperimentControl`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py) and ends each
-  trial with `control.begin_trial(self.start_trial)` rather than calling `start_trial()` directly.
-  That call is where a pause holds the arm at the start, and where accepted live-parameter changes
-  are applied: `_reload_live()` calls `reload()` on the cue, monitor and perturbation actions. So a
-  change never lands mid-trial. A trial with no natural end (Free Move) also registers
-  `control.on_pause_request(...)`: a pause request — the dashboard's Pause or Stop after trial — ends
-  its session at once, so it reaches that trial boundary instead of never getting there. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
+  trial with `control.begin_trial(self._next_trial)` rather than starting the next one directly.
+  That call is where, after a Stop, the arm holds at park instead, and where accepted live-parameter
+  changes are applied: `_reload_live()` calls `reload()` on the cue, monitor and perturbation actions.
+  So a change never lands mid-trial. The dashboard ([`experiment_ctrl_gui/`](experiment_ctrl_gui/README.md))
   is built on these interfaces, and anything else can use them too.
 
   <a id="start-up-posture-zero-then-ready"></a>**Start-up posture: zero, then ready — always.** Every
@@ -1734,7 +1719,7 @@ flowchart LR
   wherever the arm is  →(slow)→  PARK  →(hold_sec)→ start → trial → PARK  →(hold_sec)→ start → …
   ```
 
-  so between trials — and while paused — the apple is **out of the monkey's reach**: pulled back over
+  so between trials the apple is **out of the monkey's reach**: pulled back over
   the robot's base and raised, at about **(0.2, 0, 1.1) m** in every experiment. The pose is
   `move_to_park.target_joint_position` in each experiment's YAML, also live on the dashboard; the move is `ParkMove`.
 
@@ -1762,11 +1747,11 @@ flowchart LR
   `move_to_start.speed_scale` 0.7 (live) — a little slower than the other moves.
 
   *The wait at park.* After reaching park — the first time and after every trial — the arm waits
-  `move_to_park.hold_sec` (live, 2 s) before it moves to the next trial's start. Pausing during that
-  wait holds there.
+  `move_to_park.hold_sec` (live, 2 s) before it moves to the next trial's start. The trial (and its
+  `trial_start` sync pulse) begins as that wait does.
 
-  *Ending a run parks first.* Stop after trial, Pause and the dashboard's Stop now all leave the arm
-  at park before anything else happens; FRI closes only after that (see Running an experiment).
+  *Ending a run parks first.* The dashboard's Stop leaves the arm at park before anything else
+  happens; FRI closes only after that (see Running an experiment).
 
   *Arriving at the start.* Apple pluck's move to the start waits until the apple is really there
   (`move_to_start.wait_for_physical_arrival`, within 3 cm, 1.5 s at most): it comes ~40 cm from park on
@@ -1906,9 +1891,13 @@ spring law to that ~100 Hz link — far coarser and riskier for torque control.
 
 ### 6.6 Experiment State Flows
 Each flow is one trial. The event token each step logs is in brackets (see [§7](#events-per-experiment)).
+A trial runs from `trial_start` — at park, as the wait before the move to start begins — to
+`trial_end`, marked at the outcome: the threshold, the goal, the timeout, the session's end, or any
+failure (early touch, safety trip, no grasp, Stop). These two are the
+[NSP sync pulses](#sync-to-the-blackrock-nsp). The move back to park after `trial_end` is still in
+the trial's file.
 Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
-next trial, or holds at the start if a pause was requested. Free Move's session only ends when a pause
-is requested (or after `session_sec`), so for it a pause means "end the session now" (Flow 5).
+next trial; after a Stop it holds at park instead, and the dashboard ends the launch.
 **In every flow, the quiet window is guarded:** moving or pushing the apple before the go cue goes
 straight to park without reward [`early_touch`], and the next trial starts only after the time-out
 ([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The diagrams leave that branch out.
@@ -1919,19 +1908,18 @@ with one slow move to the [park pose](#park-pose--out-of-reach-between-trials) a
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> QuietWindow : at start [at_start]
     QuietWindow --> GoCue : quiet_window_sec (1 s) [quiet_end]
     GoCue --> Monitor : audio + visual cue [cue_go]
-    Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap]
+    Monitor --> Snap : baseline locked, pull softened to the resistance [armed]<br/>pull ≥ threshold (0.1 m, norm) [snap, trial_end]
     Snap --> Plucked : snap cue [cue_snap], the pull-back fades to nothing [freeze]
     Plucked --> Settle : force_release_shutdown_delay_sec (0.8 s) [release_wait]
     Settle --> Park : the arm at rest, elbow bent (or 5 s) [recover_start]
-    Monitor --> Park : the apple below the floor [safety_trip]
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial
-    NextTrial --> Paused : pause requested
-    Paused --> MoveToStart : resume
+    Monitor --> Park : the apple below the floor [safety_trip, trial_end]
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next trial: the wait at park [trial_start]
+    NextTrial --> [*] : after Stop: holds at park, the launch ends
 ```
 
 **Flow 2 — Restricted Plane** (joint moves, CLIK fixture). Recorded by `TrialRecorder` like the others,
@@ -1939,7 +1927,7 @@ with `disp_m` as the extra column.
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
@@ -1949,12 +1937,12 @@ stateDiagram-v2
       fixture (sine rail by default) and streams it
       as the cabinet-impedance equilibrium.
     end note
-    Fixture --> Snap : pull ≥ threshold (0.5 m, z) [snap]<br/>fixture off, snap cue
+    Fixture --> Snap : pull ≥ threshold (0.5 m, z) [snap, trial_end]<br/>fixture off, snap cue
     Snap --> SwitchToJoint : dwell (force_release_shutdown_delay_sec)
-    Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip]
+    Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip, trial_end]
     SwitchToJoint --> Park : [recover_start]
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial (or hold if paused)
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
 
 **Flow 3 — Apple Pluck, perturb paradigm** (joint controller throughout). The cue comes **before** the
@@ -1962,17 +1950,17 @@ perturbation: the monkey starts reaching, then the apple is displaced.
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> QuietWindow : at start [at_start]
     QuietWindow --> GoCue : quiet_window_sec [quiet_end]
     GoCue --> PerturbDelay : audio + visual cue [cue_go]
     PerturbDelay --> Perturb : start_delay_sec (1.5 s) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
-    Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap]
+    Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap, trial_end]
     Snap --> Plucked : snap cue, pull-back released [freeze]
     Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial (or hold if paused)
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
 
 **Flow 3c — Apple Pluck, perturb bump paradigm** (joint controller throughout). The perturbation waits
@@ -1980,54 +1968,54 @@ for the grasp, so it lands while the hand is on the apple.
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> QuietWindow : at start [at_start]<br/>resting force measured (tare)
     QuietWindow --> GoCue : quiet_window_sec [quiet_end]
     GoCue --> GraspWait : audio + visual cue [cue_go]
     GraspWait --> Delay : |F − tare| ≥ threshold_n for hold_sec [grasp]
-    GraspWait --> Park : grasp.timeout_sec, no grasp [grasp_timeout]
+    GraspWait --> Park : grasp.timeout_sec, no grasp [grasp_timeout, trial_end]
     Delay --> Perturb : grasp.delay_* (default 0, at once) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
-    Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap]
+    Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap, trial_end]
     Snap --> Plucked : snap cue, pull-back released [freeze]
     Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial (or hold if paused)
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
 
 **Flow 4 — Maze** (joint moves, CLIK fixture)
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : [fixture_active]
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
     GoCue --> Maze : rails + checkpoints + timeout + safety on [maze_armed]
     Maze --> Maze : checkpoint reached → reward cue [checkpoint]
-    Maze --> ReleaseWait : goal [goal] or timeout_sec [timeout]<br/>fixture off, goal / timeout cue [release_wait]
+    Maze --> ReleaseWait : goal [goal] or timeout_sec [timeout], then [trial_end]<br/>fixture off, goal / timeout cue [release_wait]
     ReleaseWait --> SwitchToJoint : operator lets go [released]
-    Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip]
+    Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip, trial_end]
     SwitchToJoint --> Park
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : next trial (or hold if paused)
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
 
 **Flow 5 — Free Move, Move Vertical, Move Horizontal** (joint moves, CLIK with admittance — on a rail for the last two; no goal)
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
-    FirstPark --> MoveToStart : at park [trial_start]
+    FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
-    Free --> ReleaseWait : session_sec runs out, end tone, the arm holds [session_end]
-    Free --> SwitchToJoint : End session (pause or stop) / Stop now -- no release wait [session_end / stop_requested]
+    Free --> ReleaseWait : session_sec runs out, end tone, the arm holds [session_end, trial_end]
+    Free --> SwitchToJoint : Stop -- no end tone, no release wait [stop_requested, trial_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
-    Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip]
+    Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip, trial_end]
     SwitchToJoint --> Park
-    Park --> NextTrial : at park, out of reach [trial_end]
-    NextTrial --> MoveToStart : holds at park (paused) or the launch stops; Resume = new session
+    Park --> NextTrial : at park, out of reach
+    NextTrial --> MoveToStart : next session (after Stop: holds, the launch ends)
 ```
 
 ### 6.7 End-effector board — the visual cue
@@ -2191,13 +2179,13 @@ Why each earns its place:
 
 **Every experiment** may also record **`early_touch`** — the apple was moved or pushed in the quiet
 window ([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The trial then ends there
-without reward: `trial_start`, `at_start` (and `fixture_active` on the CLIK), `early_touch`, the move to
-park, `trial_end`. `validate_recording.py` accepts such a trial as complete.
+without reward: `trial_start`, `at_start` (and `fixture_active` on the CLIK), `early_touch`, `trial_end`,
+the move to park. `validate_recording.py` accepts such a trial as complete.
 
 #### Apple pluck
 
-**Records from** `start_trial()` **to** `on_park_complete()` — the whole trial including the
-return to start, not just the pull.
+**Records from** `_next_trial()` (at park, the wait before the move to start) **to** `on_park_complete()`
+— the whole trial including the approach and the return to park, not just the pull.
 
 **Extra column (1):** `disp_m` — displacement from the locked baseline, computed by
 `CartesianImpedanceDisplacementMonitor` every tick. **The dependent variable of the experiment.**
@@ -2206,19 +2194,19 @@ return to start, not just the pull.
 
 | Orchestrator callback | `event` | `event_arg` | Marked when |
 |---|---|---|---|
-| `start_trial()` | `trial_start` | trial index | the trial begins; the move to start is sent |
+| `_next_trial()` | `trial_start` | trial index | at park, the wait before the move to start begins |
 | `on_move_complete()` | `at_start` | — | the arm has reached the start pose |
 | `on_quiet_window_complete()` | `quiet_end` | — | the quiet window has elapsed |
 | `on_quiet_window_complete()` | `cue_go` | — | the audio + visual go cues have been fired |
 | `on_monitor_armed()` | `armed` | — | the baseline is locked; the animal may pull |
 | `on_monitor_snap()` | `snap` | **displacement, m** | the pull crosses the threshold |
+| `on_monitor_snap()` | `trial_end` | trial index | right after `snap`; also right after `grasp_timeout`, `safety_trip`, `early_touch` or `stop_requested` when one of those ends the trial |
 | `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
 | `on_monitor_snap()` | `freeze` | — | the pull-back is released: the equilibrium follows the arm (`resistance.release()`). The token keeps its old name so older recordings and `validate_recording.py` still match |
 | `on_monitor_complete()` | `release_wait` | — | the dwell is over; waiting for the arm to rest with the elbow bent |
 | `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
 | `_check_elbow()` | `elbow_flipped` | A4, deg | at `at_start` or before the park: the elbow bends the wrong way (the run carries on) |
-| `on_safety_trip()` | `safety_trip` | — | the apple went more than `floor.trip_margin_m` below [the floor](#the-floor--a-height-the-end-effector-never-goes-below); followed by `recover_start` and the park |
-| `on_park_complete()` | `trial_end` | trial index | the arm is at the park pose |
+| `on_safety_trip()` | `safety_trip` | — | the apple went more than `floor.trip_margin_m` below [the floor](#the-floor--a-height-the-end-effector-never-goes-below); followed by `trial_end`, `recover_start` and the park |
 
 **Cue delivery events** (all three experiments, fired from the cue classes rather than the state
 machine, so they can appear anywhere and more than once):
@@ -2258,7 +2246,7 @@ As perturb, but between `cue_go` and `perturb_delay_start` the trial waits for t
 |---|---|---|---|
 | `on_audio_complete()` | `grasp_wait` | — | the go cue is out; the grasp detector is armed |
 | `on_grasp()` | `grasp` | force, N | the hand force (after the tare) has stayed ≥ `grasp.threshold_n` for `grasp.hold_sec` |
-| `on_grasp_timeout()` | `grasp_timeout` | — | no grasp within `grasp.timeout_sec`; followed by `recover_start` and `trial_end` |
+| `on_grasp_timeout()` | `grasp_timeout` | — | no grasp within `grasp.timeout_sec`; followed by `trial_end` and `recover_start` |
 
 `perturb_delay_start` (arg: the delay this trial drew) then counts from `grasp`, and `armed` comes the
 moment the perturbation finishes, with the baseline at the perturbed spring position — no settle wait.
@@ -2267,8 +2255,8 @@ hold time plus the force reaching the threshold.
 
 #### Maze
 
-**Records from** `start_trial()` **to** park complete — the approach and the settle included, not
-just the maze phase.
+**Records from** `_next_trial()` (at park) **to** park complete — the approach and the settle included,
+not just the maze phase.
 
 **Extra columns (6):** `rel_a`, `rel_b`, `corridor`, `off_rail`, `rail_dist`, `rail_nearest`
 
@@ -2276,7 +2264,7 @@ just the maze phase.
 
 | Orchestrator callback | `event` | `event_arg` |
 |---|---|---|
-| `start_trial()` | `trial_start` | trial index |
+| `_next_trial()` | `trial_start` | trial index |
 | `on_move_complete()` | `at_start` | — |
 | `on_switched_to_fixture()` | `fixture_active` | — |
 | `on_quiet_window_complete()` | `cue_go` | — |
@@ -2285,15 +2273,15 @@ just the maze phase.
 | `on_goal_reached()` | `goal` | — |
 | `on_timeout()` | `timeout` | — |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
+| the outcome above | `trial_end` | trial index |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |
-| park complete | `trial_end` | trial index |
 
 `off_rail` transitions stay a column rather than events — it toggles too often to be useful as one.
 
 #### Pre-training
 
-**Records from** `start_trial()` **to** park complete, like the maze.
+**Records from** `_next_trial()` (at park) **to** park complete, like the maze.
 
 **Extra columns:** all three have six of their own: `eq_dx`, `eq_dy`, `eq_dz` (the commanded equilibrium minus the start,
 base frame, m) and `f_adm_x`, `f_adm_y`, `f_adm_z` (the force that moved it: tared, filtered and
@@ -2303,16 +2291,16 @@ past the threshold, base frame, N).
 
 | Orchestrator callback | `event` | `event_arg` |
 |---|---|---|
-| `start_trial()` | `trial_start` | trial index |
+| `_next_trial()` | `trial_start` | trial index |
 | `on_move_complete()` | `at_start` | — |
 | `on_switched_to_fixture()` | `fixture_active` | — |
 | `on_quiet_window_complete()` | `cue_go` | — |
 | `on_go_complete()` | `armed` | — |
 | `on_end_requested()` / `on_session_over()` | `session_end` | — (End session -- parks at once -- or `session_sec`, which waits for release) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
+| the outcome above | `trial_end` | trial index |
 | `force_release.start()` | `release_wait` | — |
 | force release complete | `released` | — |
-| park complete | `trial_end` | trial index |
 
 ---
 
@@ -2355,7 +2343,8 @@ cabinet code that pulses them — is in [§8 Neural Synchronisation](#8-neural-s
 orchestrator passes
 `TrialRecorder(..., on_event=self.control.on_event)`, and `mark()` calls it **synchronously, before
 anything else**, so a pulse leaves at the same instant the event is logged. There is one call site,
-so the two cannot drift apart in a later edit. At `trial_start` and `trial_end`,
+so the two cannot drift apart in a later edit. At `trial_start` (at park, as the wait before the move
+to start begins) and `trial_end` (the outcome or failure — [§6.6](#66-experiment-state-flows)),
 [`helpers/experiment_control.py`](sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py)
 sends the cabinet one UDP datagram, `PULSE <output> <width ms>`, to `<nsp_sync.cabinet_ip>:30002`
 ([the cabinet code](reward_and_sync_box/README.md#the-code)). The send takes well under a millisecond and
@@ -2565,7 +2554,7 @@ It checks each trial for:
 - for pluck / perturb, that the `disp_m` peak agrees with whether `snap` happened.
 
 Exit code 1 if any trial fails, so it can gate a batch script. A trial cut off by a Ctrl-C passes as
-`PASS (partial)`: what is there is sound, but it did not finish. One ended by **Stop now** is
+`PASS (partial)`: what is there is sound, but it did not finish. One ended by **Stop** is
 complete on disk (it ends at park) but carries `stop_requested` and lacks the events after it.
 
 **3. Plot it.**

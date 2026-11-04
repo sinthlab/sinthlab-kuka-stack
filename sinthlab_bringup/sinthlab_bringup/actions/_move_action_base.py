@@ -226,7 +226,7 @@ class MoveActionBase:
         return self._ready and not self._shutdown_requested
 
     def cancel(self) -> None:
-        """Stop streaming this move where it is, WITHOUT calling on_complete (Stop now). The arm holds
+        """Stop streaming this move where it is, WITHOUT calling on_complete (Stop). The arm holds
         at the last commanded point until the next move starts from there."""
         if self.active():
             self._shutdown_requested = True

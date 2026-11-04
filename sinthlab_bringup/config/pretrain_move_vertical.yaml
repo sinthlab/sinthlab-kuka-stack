@@ -25,7 +25,7 @@
     # PRE-TRAINING: MOVE VERTICAL. Free Move on one VERTICAL rail through the start -- one leg of the
     # maze. The arm goes up or down wherever it is pushed and stays where it is let go; across the rail
     # the cabinet spring holds it on the rail. No threshold, no goal, no reward: it runs as one SESSION
-    # until you end it (End session / Pause / Stop after trial, or session_sec), then parks.
+    # until session_sec runs out (or Stop), then parks.
     #
     # HOW: as Free Move (actions/admittance_move.py) with free_move.rail_axis z: only the hand's force
     # along the rail moves the equilibrium, only along the rail, and never past its ends.
@@ -46,7 +46,7 @@
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
-    session_sec: 0.0  # session length [s]; 0 = until Pause / Stop after trial. > 0: ends by itself, then the next starts
+    session_sec: 0.0  # session length [s]; 0 = until Stop. > 0: ends by itself, then the next starts
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]

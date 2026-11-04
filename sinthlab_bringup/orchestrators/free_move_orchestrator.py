@@ -24,8 +24,8 @@ CLIK_CTRL = "kuka_clik_controller"
 
 class FreeMoveOrchestratorNode(rclpyNode):
     """Pre-training: the arm in admittance -- it goes wherever it is pushed and stays where it is let go.
-    No goal, no reward, no threshold. A trial is one free-movement SESSION that runs until it is ended:
-    by Pause or "Stop after trial" on the dashboard (the pause service), or after session_sec if > 0.
+    No goal, no reward, no threshold. A trial is one free-movement SESSION that runs for session_sec,
+    or, with session_sec 0, until Stop.
 
     One node, three tasks, set by the YAML's `experiment`: free_move (no boundary), move_vertical and
     move_horizontal (the same admittance on one rail through the start: free_move.rail_axis).
@@ -34,7 +34,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
     -> session ended (end tone, ring dark): the arm holds where it is -> release wait
-    -> switch to JOINT -> park (out of reach) -> holds there (paused) or the launch stops.
+    -> switch to JOINT -> park (out of reach) -> the next session.
     """
 
     def __init__(self) -> None:
@@ -45,6 +45,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
         self.trial_count = 0
         self._trial_ending = False
+        self._ended = False
 
         self.move_to_start = MoveToPositionJointSpace(
             self, param_prefix="move_to_start", on_complete=self.on_move_complete)
@@ -64,11 +65,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # A live start / park pose whose move would take the end effector below the floor is refused.
         self.control.add_validator(lambda n, v, c: self.move_park.check_live(n, v, c))
         self.control.on_reload(self._reload_live)
-        self.control.on_stop_request(self._stop_now)   # Stop now: end the trial, park, hold
+        self.control.on_stop_request(self._stop_now)   # Stop: end the trial, park, hold
         self._stopping = False
-        # The session has no natural end: a pause request (Pause, or the dashboard's "Stop after trial")
-        # ends it now, so the arm parks and the pause / stop can take effect there.
-        self.control.on_pause_request(self.on_end_requested)
         self._session_live = False
         self.recorder = TrialRecorder(
             self, experiment=self.experiment,
@@ -104,12 +102,6 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
 
     def start_trial(self):
-        self._stopping = False
-        self.recorder.start(trial_index=self.trial_count + 1)
-        self.recorder.mark("trial_start", self.trial_count + 1)
-        self.trial_count += 1
-        self._trial_ending = False
-        self.get_logger().info(f"--- STARTING SESSION {self.trial_count} ---")
         self.ring.show("off")
         self.move_to_start.start()
 
@@ -118,7 +110,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
-        if self._stopping:                 # Stop now came during the switch: straight back
+        if self._stopping:                 # Stop came during the switch: straight back
             self.switch_to_joint.start()
             return
         # Hold still and measure the resting force while the quiet window runs; the arm only
@@ -145,9 +137,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.session.start()
             self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
         else:
-            self.get_logger().info("Free move: the arm follows the hand until Pause / Stop after trial.")
-        if self.control.pause_requested():      # asked to stop before the session even began
-            self.on_end_requested()
+            self.get_logger().info("Free move: the arm follows the hand until Stop.")
 
     def _smartpad_ok(self) -> bool:
         """Free move needs the SmartPad's firm spring (free_move.smartpad_stiffness_n_per_m, Uniform 1000):
@@ -177,14 +167,6 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def on_session_over(self):
         self._end_trial("session_end")
 
-    def on_end_requested(self):
-        """Pause / End session. A live session ends now; one still starting ends as it goes live. It ends
-        the way Stop now does -- straight to park, no end cue or release wait -- and, being paused, holds
-        there (Resume starts the next session)."""
-        if self._session_live:
-            self.get_logger().info("End requested: ending the session and parking.")
-            self._stop_now(mark="session_end")
-
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the time-out before the next trial."""
@@ -200,7 +182,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             return
         self._trial_ending = True
         self._session_live = False
-        self.recorder.mark(reason if reason != "safety" else "safety_trip")
+        self._trial_over(reason if reason != "safety" else "safety_trip")
         self.session.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
@@ -224,25 +206,47 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def on_park_complete(self):
         self.get_logger().info(f"--- SESSION {self.trial_count} COMPLETE ---")
-        self.recorder.mark("trial_end", self.trial_count)
+        self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
-        self.control.begin_trial(self._next_trial)   # holds at park instead if paused
+        self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
 
     def _next_trial(self):
-        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then the next trial
+        """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        self._stopping = False
+        self._trial_ending = False
+        self._ended = False
+        self.trial_count += 1
+        self.recorder.start(trial_index=self.trial_count)
+        self.recorder.mark("trial_start", self.trial_count)
+        self.get_logger().info(f"--- STARTING SESSION {self.trial_count} ---")
+        self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
 
-    def _stop_now(self, mark: str = "stop_requested"):
-        """Stop now (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no
-        release wait. The control is paused, so it then holds at park and the launch can end."""
+    def _trial_over(self, why: str, arg=None):
+        """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
+        The park move that follows is still in the trial's file."""
+        self.recorder.mark(why, arg)
+        self._mark_end()
+
+    def _mark_end(self):
+        if not self._ended:
+            self._ended = True
+            self.recorder.mark("trial_end", self.trial_count)
+
+    def _stop_now(self):
+        """Stop (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no release
+        wait. No further trial starts, so the arm then holds at park and the launch can end."""
         if self._stopping:
             return
-        if self.move_park.cancel_hold():          # at park, waiting for the next trial: just hold
+        if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
+            self._trial_over("stop_requested")
+            self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active() or self.switch_to_joint.active():
             return                                # already on the way to park
         self._stopping = True
-        self.recorder.mark(mark)
+        self._trial_over("stop_requested")
         self._trial_ending = True
         self._session_live = False
         self.quiet_window.stop()

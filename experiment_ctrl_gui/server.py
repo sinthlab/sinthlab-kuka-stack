@@ -38,7 +38,7 @@ from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
 STATUS_STALE_SEC = 3.0         # the orchestrator heartbeats every 1 s
-STOP_PARK_TIMEOUT_SEC = 60.0   # Stop now: end the launch anyway if the arm has not parked by then
+STOP_PARK_TIMEOUT_SEC = 60.0   # Stop: end the launch anyway if the arm has not parked by then
 CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom header without CORS
 
 
@@ -51,8 +51,7 @@ class App:
         self.params: Dict[str, ExperimentParams] = {e.key: ExperimentParams(e) for e in ex.EXPERIMENTS}
         self._clients: List[queue.Queue] = []
         self._clients_lock = threading.Lock()
-        self.stopping = None    # None | "after_trial" | "now" (parking, then the launch stops)
-        self.restart_pending: Optional[str] = None
+        self.stopping = False   # Stop pressed: the arm is parking, then the launch stops
         self.runner = LaunchRunner(on_line=lambda e: self.broadcast("log", e),
                                    on_state=self._on_runner_state)
         self.bridge = make_bridge(demo, robot_name, self._on_status)
@@ -113,8 +112,7 @@ class App:
             "status": status,
             "external": external,
             "robot": self.bridge.robot(),
-            "stop_after_trial": self.stopping == "after_trial",
-            "stopping_now": self.stopping == "now",
+            "stopping_now": self.stopping,
             "data_folder": self.data_folder(),
             "edited": {k: len(p.edits) for k, p in self.params.items()},
         }
@@ -137,27 +135,18 @@ class App:
 
     def _on_status(self, status: dict) -> None:
         self.broadcast("state", self.state())
-        # "Stop after this trial" = pause, then stop once the orchestrator reports it is holding at park.
-        # "Stop now" = the orchestrator ends the trial at once and parks; the same hold ends the launch.
+        # Stop: the orchestrator ends the trial at once and parks; once it reports holding there, the
+        # launch ends.
         if self.stopping and status.get("held") and self.runner.running():
-            self.stopping = None
+            self.stopping = False
             self.runner.stop("the arm is parked and holding")
 
     def _on_runner_state(self) -> None:
         if isinstance(self.bridge, DemoBridge) and not self.runner.running():
             self.bridge.launch_ended()
         if not self.runner.running():
-            self.stopping = None
-            if self.restart_pending:
-                key, self.restart_pending = self.restart_pending, None
-                threading.Timer(1.0, lambda: self._safe_start(key)).start()
+            self.stopping = False
         self.broadcast("state", self.state())
-
-    def _safe_start(self, key: str) -> None:
-        try:
-            self.start(key)
-        except Exception as exc:
-            self.runner.emit(f"Restart failed: {exc}", "error")
 
     # ------------------------------------------------------------------ actions
 
@@ -199,7 +188,7 @@ class App:
         else:
             cmd = ["ros2", "launch", "sinthlab_bringup", exp.launch_file]
             cmd += [f"{k}:={v}" for k, v in overrides.items()]
-        self.stopping = None
+        self.stopping = False
         self.runner.start(key, cmd, params_file)
         if p.edits:
             self.runner.emit(f"Per-run edits: {json.dumps(p.edits)} -> {params_file}", "gui")
@@ -210,42 +199,31 @@ class App:
             self.bridge.launch_started(exp, p.current())
         return {"ok": True}
 
-    def stop(self, mode: str) -> dict:
+    def stop(self) -> dict:
         exp = self.running_experiment()
         if not self.runner.running():
             if exp:
                 raise RuntimeError("This experiment was started outside the dashboard; stop it with "
-                                   "Ctrl-C in its terminal. (Pause works from here.)")
+                                   "Ctrl-C in its terminal.")
             raise RuntimeError("nothing is running")
-        if mode == "after_trial" and ex.BY_KEY[exp].group == "pretraining":
-            # Pre-training: "End session & stop" ends the session the way Stop now does -- straight to
-            # park, no release wait (holding there for a release is what left the arm stuck or erratic).
-            mode = "now"
-        if mode == "after_trial":
-            ok, msg = self.bridge.pause(exp, True)
-            if not ok:
-                raise RuntimeError(f"could not request a stop after this trial: {msg}")
-            self.stopping = "after_trial"
-            self.runner.emit("Will stop once this trial ends and the arm is parked.", "gui")
-            return {"ok": True, "message": msg}
-        # Stop now: park first, then end the launch -- so FRI always closes with the arm parked. A second
-        # press while it parks skips the wait, as does an orchestrator that does not answer.
-        if self.stopping == "now":
-            self.stopping = None
-            self.runner.stop("Stop now pressed again: not waiting for the arm to park")
+        # Park first, then end the launch -- so FRI always closes with the arm parked. A second press
+        # while it parks skips the wait, as does an orchestrator that does not answer.
+        if self.stopping:
+            self.stopping = False
+            self.runner.stop("Stop pressed again: not waiting for the arm to park")
             return {"ok": True}
         ok, msg = self.bridge.stop(exp)
         if not ok:
             self.runner.emit(f"The orchestrator did not take the stop ({msg}); stopping without parking.", "warn")
             self.runner.stop()
             return {"ok": True, "message": msg}
-        self.stopping = "now"
+        self.stopping = True
         self.runner.emit("Stopping: the trial ends now, the arm parks, then the launch stops "
-                         "(press Stop now again to skip parking).", "gui")
+                         "(press Stop again to skip parking).", "gui")
         run = self.runner.proc
         def fallback():
-            if self.stopping == "now" and self.runner.proc is run and self.runner.running():
-                self.stopping = None
+            if self.stopping and self.runner.proc is run and self.runner.running():
+                self.stopping = False
                 self.runner.stop(f"the arm did not report parked within {STOP_PARK_TIMEOUT_SEC:.0f} s")
         threading.Timer(STOP_PARK_TIMEOUT_SEC, fallback).start()
         return {"ok": True, "message": msg}
@@ -267,13 +245,6 @@ class App:
                                f"edge. Stop it first.")
         ok, text, ms = self.fake_cabinet.call(cmd) if self.demo else ttl.call(addr, cmd)
         return {"ok": ok, "text": text, "ms": round(ms, 1)}
-
-    def restart(self) -> dict:
-        if not self.runner.running():
-            raise RuntimeError("nothing is running")
-        self.restart_pending = self.runner.experiment
-        self.runner.stop("restart")
-        return {"ok": True}
 
 
 # ---------------------------------------------------------------------- HTTP
@@ -386,20 +357,7 @@ def make_handler(app: App):
             if path == "/api/diag/ttl":
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":
-                return app.stop(body.get("mode", "now"))
-            if path == "/api/restart":
-                return app.restart()
-            if path == "/api/pause":
-                exp = app.running_experiment()
-                if exp is None:
-                    raise RuntimeError("no experiment is running")
-                ok, msg = app.bridge.pause(exp, bool(body.get("paused")))
-                if not ok:
-                    raise RuntimeError(msg)
-                if not body.get("paused"):
-                    app.stopping = None
-                app.runner.emit(f"{'Pause' if body.get('paused') else 'Resume'}: {msg}", "gui")
-                return {"ok": True, "message": msg}
+                return app.stop()
             if path == "/api/live":
                 exp = app.running_experiment()
                 if exp is None:

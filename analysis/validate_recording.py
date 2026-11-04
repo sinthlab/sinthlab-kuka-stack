@@ -44,14 +44,14 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # maze endings, restricted plane's snap or safety_trip) is optional or repeatable.
 ORDER = {
     "apple_pluck": ["trial_start", "at_start", "quiet_end", "cue_go", "armed", "snap",
-                    "cue_snap", "freeze", "recover_start", "trial_end"],
+                    "trial_end", "cue_snap", "freeze", "recover_start"],
     "perturb": ["trial_start", "at_start", "quiet_end", "cue_go", "perturb_delay_start",
-                "perturb_applied", "armed", "snap", "cue_snap", "freeze", "recover_start",
-                "trial_end"],
+                "perturb_applied", "armed", "snap", "trial_end", "cue_snap", "freeze",
+                "recover_start"],
     # perturb_bump: the rest depends on the grasp -- see BUMP_GRASPED below.
-    "perturb_bump": ["trial_start", "at_start", "quiet_end", "cue_go", "grasp_wait", "recover_start",
-                     "trial_end"],
-    "restricted_plane": ["trial_start", "at_start", "cue_go", "armed", "recover_start", "trial_end"],
+    "perturb_bump": ["trial_start", "at_start", "quiet_end", "cue_go", "grasp_wait", "trial_end",
+                     "recover_start"],
+    "restricted_plane": ["trial_start", "at_start", "cue_go", "armed", "trial_end", "recover_start"],
     "maze": ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "trial_end"],
 }
 MAZE_ENDINGS = ("goal", "timeout", "safety_trip")
@@ -185,7 +185,7 @@ def validate(path) -> bool:
     stopped = bool(meta) and any(e.get("event") == "stop_requested" for e in meta.get("events", []))
     if meta and (meta.get("partial") or stopped):
         # The trial did not run to its natural end: Ctrl-C, a crash (`partial` -- it never reached
-        # stop_and_save), or the dashboard's Stop now (`stop_requested` -- it ended at park and was
+        # stop_and_save), or the dashboard's Stop (`stop_requested` -- it ended at park and was
         # saved). The data up to that point is real and the checks above still apply -- but demanding
         # the full event sequence from it would just be reporting the interruption ten times over.
         got_p = ([e["event"] for e in meta.get("events", [])]
@@ -194,7 +194,7 @@ def validate(path) -> bool:
         if meta.get("partial"):
             r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
         else:
-            r.note("TRIAL STOPPED (Stop now) at stop_requested -- the arm then parked and the trial was saved.")
+            r.note("TRIAL STOPPED (Stop) at stop_requested -- the arm then parked and the trial was saved.")
         r.note("Everything before that point is valid; event-sequence checks are skipped.")
         print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
         return not r.bad
@@ -227,7 +227,8 @@ def validate(path) -> bool:
         order = [t for t in ("trial_start", "at_start", "early_touch", "trial_end") if t in order + ["early_touch"]]
     for tok in order:
         r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
-    idx = [got.index(tok) for tok in order if tok in got]
+    # trial_end: at the outcome now, at park in recordings made before -- its place is not checked.
+    idx = [got.index(tok) for tok in order if tok in got and tok != "trial_end"]
     r.check(idx == sorted(idx), "required events are in the expected order")
     if exp == "maze" and "early_touch" not in got:
         ends = [t for t in got if t in MAZE_ENDINGS]
