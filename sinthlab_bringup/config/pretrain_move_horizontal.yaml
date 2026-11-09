@@ -20,7 +20,7 @@
       enabled: true  # false = the quiet window is a plain timed wait
       move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
       force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      timeout_sec: 5.0  # time-out at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # PRE-TRAINING: MOVE HORIZONTAL. Free Move on one HORIZONTAL rail through the start -- one leg of
     # the maze. The arm goes left or right wherever it is pushed and stays where it is let go; across
@@ -149,6 +149,7 @@
 
     # ---- cues (live) ----
     quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
+    response_timeout_sec: 30.0  # the arm not moved more than quiet_gate.move_m within this long after the go cue -> the session ends (event response_timeout), park [s]
     audio_cue:  # switch for every beep
       enabled: true  # false = no beeps at all; the trial sequence is unchanged
     audio_cue_play:  # go cue: free movement starts

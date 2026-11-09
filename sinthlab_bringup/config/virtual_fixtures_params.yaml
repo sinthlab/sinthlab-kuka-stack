@@ -20,7 +20,7 @@
       enabled: true  # false = the quiet window is a plain timed wait
       move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
       force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      timeout_sec: 5.0  # time-out at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # Restricted-plane runs in POSITION mode: move_to_start/move_to_park use MoveToPositionJointSpace, and
     # MoveRestrictedOnAPlaneAction streams the fixture-constrained equilibrium to kuka_clik_controller.
@@ -90,6 +90,7 @@
     # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
     # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
     quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
+    response_timeout_sec: 30.0  # no pull past the threshold within this long after armed -> the trial ends (event response_timeout), no reward, park [s]
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs

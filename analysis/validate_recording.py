@@ -54,7 +54,7 @@ ORDER = {
     "restricted_plane": ["trial_start", "at_start", "cue_go", "armed", "trial_end", "recover_start"],
     "maze": ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "trial_end"],
 }
-MAZE_ENDINGS = ("goal", "timeout", "safety_trip")
+MAZE_ENDINGS = ("goal", "response_timeout", "timeout", "safety_trip")   # "timeout": older maze files
 # A perturb_bump trial either times out waiting for the grasp, or runs these, in order.
 BUMP_GRASPED = ["grasp", "perturb_delay_start", "perturb_applied", "armed", "snap", "cue_snap", "freeze"]
 
@@ -225,6 +225,12 @@ def validate(path) -> bool:
         # The quiet window was broken (actions/quiet_gate.py): the trial ends there, without reward.
         r.note("ended by an early touch in the quiet window (no go cue, no reward)")
         order = [t for t in ("trial_start", "at_start", "early_touch", "trial_end") if t in order + ["early_touch"]]
+    timed_out = "response_timeout" in got
+    if timed_out and exp != "maze":
+        # Nothing in response_timeout_sec after armed: the trial ends there, without reward.
+        r.note("ended by the response time-out (no response in time, no reward)")
+        order = [t for t in order if t not in ("snap", "cue_snap", "freeze")]
+        order.insert(order.index("trial_end") if "trial_end" in order else len(order), "response_timeout")
     for tok in order:
         r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
     # trial_end: at the outcome now, at park in recordings made before -- its place is not checked.
@@ -235,13 +241,14 @@ def validate(path) -> bool:
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
     if exp == "perturb_bump" and "early_touch" not in got:
-        if "grasp_timeout" in got:
+        if "grasp_timeout" in got or ("response_timeout" in got and "grasp" not in got):   # grasp_timeout: older files
             r.check("grasp" not in got and "perturb_applied" not in got,
                     "no grasp within the timeout: no perturbation either")
         else:
-            for tok in BUMP_GRASPED:
+            grasped = [t for t in BUMP_GRASPED if not (timed_out and t in ("snap", "cue_snap", "freeze"))]
+            for tok in grasped:
                 r.check(got.count(tok) == 1, f"'{tok}' appears exactly once (found {got.count(tok)})")
-            seq = [got.index(t) for t in BUMP_GRASPED if t in got]
+            seq = [got.index(t) for t in grasped if t in got]
             r.check(seq == sorted(seq) and got.index("grasp_wait") < got.index("grasp") < got.index("recover_start"),
                     "grasp -> delay -> perturbation -> armed -> snap, in order")
     if exp in ("apple_pluck", "perturb", "perturb_bump") and "disp_m" in head:

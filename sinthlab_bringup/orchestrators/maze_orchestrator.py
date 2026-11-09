@@ -110,8 +110,8 @@ class MazeOrchestratorNode(rclpyNode):
         self.goal_cue_visual = VisualCue(self, label="goal", on_complete=lambda: None)
         self.timeout_cue_visual = VisualCue(self, label="timeout", on_complete=lambda: None)
         self.timeout = WaitAction(
-            self, duration_sec=float(get_required_param(self, "timeout_sec")),
-            on_complete=self.on_timeout, name="experiment_timeout",
+            self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
+            on_complete=self.on_timeout, name="response_timeout",
         )
         self.force_release = ForceReleaseWaiter(
             self, param_prefix="force_release", on_complete=self.on_force_released
@@ -177,13 +177,13 @@ class MazeOrchestratorNode(rclpyNode):
         self._end_trial("goal")
 
     def on_timeout(self):
-        self._end_trial("timeout")
+        self._end_trial("response_timeout")
 
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
-        without reward, park, and add the time-out before the next trial."""
-        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
-        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        without reward, park, and add the penalty wait before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._end_trial("early_touch")
 
     def on_safety_trip(self, reason: str):
@@ -236,7 +236,7 @@ class MazeOrchestratorNode(rclpyNode):
 
     def _next_trial(self):
         """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
-        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch penalty wait)."""
         self._stopping = False
         self._trial_ending = False
         self._ended = False
@@ -296,7 +296,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.quiet_window.reload()
         self.move_to_start.reload()      # speed limits (and, for apple pluck / perturb, the pose)
         self.move_park.reload()
-        self.timeout.set_duration(float(get_required_param(self, "timeout_sec")))
+        self.timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.maze_fixtures.reload()      # rail_lead_sec: how easy moving along a rail feels
 
 

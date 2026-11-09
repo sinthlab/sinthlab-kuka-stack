@@ -5,7 +5,7 @@ Every experiment waits `quiet_window_sec` at the start before its go cue. The re
 taken then -- the pull baseline, the resting pose and force, where a fixture anchors -- so a hand on
 the apple during that window corrupts the trial that follows. This is that wait, plus a check: if the
 apple is MOVED or PUSHED during it, the trial is broken off (on_broken). The orchestrator ends it
-without reward, parks, and adds a time-out (quiet_gate.timeout_sec) before the next trial -- shaping
+without reward, parks, and adds a penalty wait (quiet_gate.penalty_sec) before the next trial -- shaping
 "wait for the go cue". The trial records event `early_touch` with what broke the window.
 
 Both checks are against the first BASELINE_SEC of the window, so each pose's resting sag and resting

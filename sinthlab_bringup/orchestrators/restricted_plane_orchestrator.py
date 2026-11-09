@@ -56,6 +56,10 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
         self.quiet_window = QuietGate(
             self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
+        # No response: nothing within response_timeout_sec of "armed" ends the trial (no reward, park).
+        self.response_timeout = WaitAction(
+            self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
+            on_complete=self.on_response_timeout, name="response_timeout")
         self.audio_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
@@ -145,9 +149,11 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.restricted_plane.start()
         self.monitor.start()
         self.safety.start()
+        self.response_timeout.start()   # no pull past the threshold in time -> on_response_timeout
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached! Disabling virtual fixtures and playing snap cue.")
+        self.response_timeout.stop()
         self._trial_over("snap")
         self.restricted_plane.stop()
         self.audio_cue_snap.start()
@@ -155,10 +161,23 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
-        without reward, park, and add the time-out before the next trial."""
-        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
+        without reward, park, and add the penalty wait before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self._trial_over("early_touch")
-        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
+        self.safety.stop()
+        self.monitor.stop()
+        self.restricted_plane.stop()
+        self.switch_to_joint.start()
+
+    def on_response_timeout(self):
+        """No pull past the threshold within response_timeout_sec of armed: end the trial without
+        reward and park; the next trial follows as usual."""
+        if self._stopping or self._ended:
+            return
+        self.get_logger().warn(
+            f"NO RESPONSE within {self.response_timeout.duration_sec():g} s: no reward, parking.")
+        self._trial_over("response_timeout")
         self.safety.stop()
         self.monitor.stop()
         self.restricted_plane.stop()
@@ -168,6 +187,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         # Runaway (e.g. a gravity-driven fall on the free pull axis): abort straight to park.
         self.get_logger().error("SAFETY ABORT: parking immediately.")
         self._trial_over("safety_trip")
+        self.response_timeout.stop()
         self.safety.stop()
         self.monitor.stop()
         self.restricted_plane.stop()
@@ -191,7 +211,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def _next_trial(self):
         """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
-        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch penalty wait)."""
         self._stopping = False
         self._ended = False
         self.trial_count += 1
@@ -228,6 +248,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self._stopping = True
         self._trial_over("stop_requested")
         self.quiet_window.stop()
+        self.response_timeout.stop()
         self.monitor.stop()
         self.safety.stop()
         self.restricted_plane.stop()
@@ -246,6 +267,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
         self.monitor.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.quiet_window.reload()
+        self.response_timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.move_to_start.reload()      # speed limits
         self.move_park.reload()
 

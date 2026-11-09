@@ -176,6 +176,8 @@ class AdmittanceMoveAction:
         self._settle_until = 0.0                        # gliding to a stop after a let-go until this time
         self._p_prev: Optional[np.ndarray] = None
         self._t_prev: Optional[float] = None
+        self._p_go: Optional[np.ndarray] = None         # the arm at the go cue (enable_motion)
+        self._max_exc = 0.0                             # farthest the arm has been moved from there [m]
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
@@ -238,6 +240,8 @@ class AdmittanceMoveAction:
         self._node.get_logger().info(f"Free move: tare {np.round(self._tare, 2)} N (base frame), resting offset "
                                      f"{np.round(self._rest_offset * 1000, 1)} mm; moving.")
         self._pushing = False
+        self._p_go = None if self._p_meas is None else self._p_meas.copy()
+        self._max_exc = 0.0
         self._moving = True
 
     def stop(self) -> None:
@@ -245,6 +249,10 @@ class AdmittanceMoveAction:
         self._active = self._moving = False
 
     # ------------------------------------------------------------------ outputs
+    def max_excursion_m(self) -> float:
+        """Farthest the arm has been moved from where it was at the go cue [m] (the response time-out)."""
+        return self._max_exc
+
     def offset_from_anchor(self) -> Optional[np.ndarray]:
         if not self._active or self._anchor is None or self._p_meas is None:
             return None
@@ -315,6 +323,9 @@ class AdmittanceMoveAction:
                 self._tare_samples.append(f_base)
             self._publish(self._eq)
             return
+
+        if self._p_go is not None:
+            self._max_exc = max(self._max_exc, float(np.linalg.norm(self._p_meas - self._p_go)))
 
         # Force -> velocity.
         f = f_base - self._tare

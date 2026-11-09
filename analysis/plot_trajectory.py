@@ -281,7 +281,7 @@ def main() -> int:
     # referencing against a log file.
     ev_style = {"snap": ("tab:red", "v", 110), "armed": ("tab:blue", "^", 80),
                 "checkpoint": ("tab:orange", "o", 90), "goal": ("tab:green", "*", 220),
-                "timeout": ("tab:brown", "X", 110), "safety_trip": ("black", "X", 130),
+                "timeout": ("tab:brown", "X", 110), "response_timeout": ("tab:brown", "X", 110), "safety_trip": ("black", "X", 130),
                 "perturb_applied": ("tab:purple", "D", 80)}
     shown = set()
     for row, tok, _arg in d.get("_events", []):

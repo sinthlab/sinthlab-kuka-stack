@@ -36,7 +36,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
                (a polar (r, theta) offset in a plane, perturb_start.*) -> the monitor arms once the arm
                has settled there (perturb_start.baseline_settle_sec).
       perturb_bump  the same perturbation, triggered by the GRASP instead of the go cue: go cue -> wait
-               for the hand to take hold (GraspDetector, grasp.*; none within grasp.timeout_sec -> the
+               for the hand to take hold (GraspDetector, grasp.*; none within response_timeout_sec -> the
                trial ends and resets) -> perturb_delay -> perturbation -> the pull is measured from the
                perturbed SPRING position (the perturbation's target), locked at once: a held apple
                never settles there.
@@ -81,6 +81,11 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
         self.quiet_window = QuietGate(
             self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
+        # No response: nothing within response_timeout_sec of "armed" (perturb bump: of the grasp wait
+        # too) ends the trial (no reward, park).
+        self.response_timeout = WaitAction(
+            self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
+            on_complete=self.on_response_timeout, name="response_timeout")
         self.audio_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
@@ -106,13 +111,10 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self.perturb = PerturbInitialPosition(
                 self, param_prefix="perturb_start", on_complete=self.on_perturb_complete
             )
-        # Perturb bump only: wait for the grasp, for at most grasp.timeout_sec.
+        # Perturb bump only: wait for the grasp, for at most response_timeout_sec.
         if self.bump:
             self.perturb.set_speed_scale(float(get_required_param(self, "grasp.bump_speed_scale")))
             self.grasp = GraspDetector(self, param_prefix="grasp", on_grasp=self.on_grasp)
-            self.grasp_timeout = WaitAction(
-                self, duration_sec=float(get_required_param(self, "grasp.timeout_sec")),
-                on_complete=self.on_grasp_timeout, name="grasp_timeout")
         self.monitor = CartesianImpedanceDisplacementMonitor(
             self, param_prefix="apple_pluck_impedance_control_displacement",
             on_complete=self.on_monitor_complete, on_snap=self.on_monitor_snap,
@@ -244,7 +246,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
     def _next_trial(self):
         """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
-        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch penalty wait)."""
         self._stopping = False
         self._ended = False
         self.trial_count += 1
@@ -291,7 +293,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         if self.bump:
             self.get_logger().info("Audio cue played. Waiting for the grasp...")
             self.grasp.arm()
-            self.grasp_timeout.start()
+            self.response_timeout.start()   # no grasp in time -> on_response_timeout
             self.recorder.mark("grasp_wait")
         elif self.perturbing:
             self.get_logger().info("Audio cue played. Waiting before perturbation...")
@@ -301,19 +303,10 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self.monitor.start()
 
     def on_grasp(self, force_n: float):
-        self.grasp_timeout.stop()
+        self.response_timeout.stop()
         self.recorder.mark("grasp", round(force_n, 3))
         self.get_logger().info("Grasp detected. Waiting before perturbation...")
         self._start_delay()
-
-    def on_grasp_timeout(self):
-        # No grasp in time: end the trial -- park, then the next trial starts as usual.
-        self.grasp.stop()
-        self.get_logger().info("No grasp within grasp.timeout_sec. Resetting for the next trial.")
-        self._trial_over("grasp_timeout")
-        self.recorder.mark("recover_start")
-        self.safety.stop()
-        self.move_park.start()
 
     def start_perturb(self):
         self.get_logger().info("Initiating Perturbation Move.")
@@ -329,12 +322,14 @@ class ApplePluckOrchestratorNode(rclpyNode):
         # Baseline locked: this is the moment the animal may pull. Reaction time is snap - armed.
         # No cue here -- in the perturb paradigm the monkey is already reaching (cued at trial start).
         self.recorder.mark("armed")
+        self.response_timeout.start()   # no pluck in time -> on_response_timeout
         self.resistance.start()   # from here the pull is softened to the selected stiffness
         self.recorder.annotate(resistance=self.resistance.describe())   # after start(): the base it re-read
         self.recorder.annotate(baseline=self.monitor.baseline_xyz())
 
     def on_monitor_snap(self):
         self.get_logger().info("Threshold reached — the apple is plucked: the pull-back is released.")
+        self.response_timeout.stop()
         self._trial_over("snap", round(self.monitor.current_disp(), 6))
         self.audio_cue_snap.start()
         self.visual_cue_snap.start()
@@ -412,12 +407,21 @@ class ApplePluckOrchestratorNode(rclpyNode):
 
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
-        without reward, park, and add the time-out before the next trial."""
+        without reward, park, and add the penalty wait before the next trial."""
         if self._stopping or self.move_park.active():
             return
-        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
-        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._abort_trial("early_touch")
+
+    def on_response_timeout(self):
+        """No pluck within response_timeout_sec of armed (perturb bump: no grasp within it of the go cue
+        either): end the trial without reward and park; the next trial follows as usual."""
+        if self._stopping or self.move_park.active():
+            return
+        self.get_logger().warn(
+            f"NO RESPONSE within {self.response_timeout.duration_sec():g} s: no reward, parking.")
+        self._abort_trial("response_timeout")
 
     def on_safety_trip(self, reason: str):
         """The floor: the apple went below it. End the trial at once and park; the next trial follows
@@ -431,13 +435,13 @@ class ApplePluckOrchestratorNode(rclpyNode):
         """End the trial in progress at once -- every action stopped -- and park."""
         self._stopping = True
         self._trial_over(mark)
+        self.response_timeout.stop()
         self.safety.stop()
         self.quiet_window.stop()
         if self.perturbing:
             self.perturb_delay.stop()
             self.perturb.cancel()
         if self.bump:
-            self.grasp_timeout.stop()
             self.grasp.stop()
         self.move_to_start.cancel()
         self.monitor.stop()
@@ -455,6 +459,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
         self.resistance.reload()    # felt stiffness of the pull
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.quiet_window.reload()
+        self.response_timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.move_to_start.reload()      # speed limits and the start pose
         self.move_park.reload()
         if self.paradigm == "random_start":
@@ -466,7 +471,6 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self._read_delay()           # fixed or random delay, and its values
         if self.bump:
             self.grasp.reload()          # threshold, hold time
-            self.grasp_timeout.set_duration(float(get_required_param(self, "grasp.timeout_sec")))
 
 
 def main(args=None) -> None:

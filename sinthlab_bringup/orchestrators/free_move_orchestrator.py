@@ -57,6 +57,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # The quiet window, guarded: moving or pushing the apple in it ends the trial (on_early_touch).
         self.quiet_window = QuietGate(
             self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
+        # No response: the arm not moved more than quiet_gate.move_m within response_timeout_sec of the
+        # go cue ends the session (no end cue, park). Once it has been moved, the session runs on.
+        self.response_timeout = WaitAction(
+            self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
+            on_complete=self.on_response_timeout, name="response_timeout")
         self.go_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)))
@@ -132,6 +137,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.recorder.mark("armed")
         self.admittance.enable_motion()
         self.safety.start()
+        self.response_timeout.start()
         self._session_live = True
         if self._session_sec > 0:
             self.session.start()
@@ -167,11 +173,24 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def on_session_over(self):
         self._end_trial("session_end")
 
+    def on_response_timeout(self):
+        """response_timeout_sec after the go cue: if the arm has not been moved more than quiet_gate.move_m,
+        end the session without the end cue and park. If it has, nothing happens."""
+        if self._trial_ending or self._stopping:
+            return
+        moved = self.admittance.max_excursion_m()
+        if moved > float(get_required_param(self, "quiet_gate.move_m")):
+            return
+        self.get_logger().warn(
+            f"NO RESPONSE within {self.response_timeout.duration_sec():g} s (arm moved "
+            f"{moved * 100:.1f} cm): parking.")
+        self._end_trial("response_timeout")
+
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
-        without reward, park, and add the time-out before the next trial."""
-        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a time-out.")
-        self.move_park.penalize(float(get_required_param(self, "quiet_gate.timeout_sec")))
+        without reward, park, and add the penalty wait before the next trial."""
+        self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
+        self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._end_trial("early_touch")
 
     def on_safety_trip(self, reason: str):
@@ -184,10 +203,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip")
         self.session.stop()
+        self.response_timeout.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
         self.ring.show("off")
-        if reason in ("safety", "early_touch", "smartpad_mismatch"):
+        if reason in ("safety", "early_touch", "smartpad_mismatch", "response_timeout"):
             if reason == "safety":
                 self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
@@ -212,7 +232,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def _next_trial(self):
         """The trial starts at park: its file opens and trial_start goes to the NSP as the wait before the
-        move to the start pose begins (move_to_park.hold_sec, plus any early-touch time-out)."""
+        move to the start pose begins (move_to_park.hold_sec, plus any early-touch penalty wait)."""
         self._stopping = False
         self._trial_ending = False
         self._ended = False
@@ -251,6 +271,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = False
         self.quiet_window.stop()
         self.session.stop()
+        self.response_timeout.stop()
         self.safety.stop()
         self.admittance.stop()
         self.force_release.stop()
@@ -273,6 +294,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.reload()
         self._session_sec = float(get_required_param(self, "session_sec"))
         self.session.set_duration(max(self._session_sec, 1.0))
+        self.response_timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.admittance.reload()
 
 

@@ -38,7 +38,8 @@ const PHASE_TEXT = {
   fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
   goal: "goal — waiting for release", timeout: "timed out — waiting for release",
   safety_trip: "SAFETY ABORT — parking", released: "moving to park",
-  early_touch: "EARLY TOUCH — no reward, parking, then a time-out",
+  early_touch: "EARLY TOUCH — no reward, parking, then a penalty wait",
+  response_timeout: "NO RESPONSE in time — no reward, parking",
   stopped: "stopped — holding at park until the launch ends", cue_audio_end: null, cue_visual_ack: null,
   threshold: "threshold reached — coming back",
   session_end: "session over — waiting for release",
@@ -54,7 +55,7 @@ const PHASE_TEXT_BY_EXP = {
                    release_wait: "waiting for release" },
   move_horizontal: { armed: "the arm follows the hand along the rail", session_end: "session over — waiting for release",
                      release_wait: "waiting for release" },
-  maze: { release_wait: "waiting for release" },
+  maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
 const TAB_HELP = {
@@ -246,7 +247,7 @@ function renderControls() {
   else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes and robot state need ROS.`;
   if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes work from here; stop it with Ctrl-C in its terminal.`;
   if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is moving to the park pose."; }
-  if (s && s.phase === "early_touch") { msg = "Early touch: the apple was moved before the go cue. No reward; the arm parks and a time-out runs before the next trial."; }
+  if (s && s.phase === "early_touch") { msg = "Early touch: the apple was moved before the go cue. No reward; the arm parks and a penalty wait runs before the next trial."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
 
   // run info
@@ -278,8 +279,8 @@ function renderStatus() {
   const key = s ? s.experiment : S.selected;
   const steps = stepsFor(key);
   let cur = s ? s.phase : null;
-  if (cur === "timeout" || cur === "safety_trip") cur = "goal";
-  if (cur === "early_touch") cur = "trial_end";
+  if (cur === "timeout" || cur === "safety_trip" || (cur === "response_timeout" && key === "maze")) cur = "goal";
+  if (cur === "early_touch" || cur === "response_timeout") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";
   let idx = steps.indexOf(cur);

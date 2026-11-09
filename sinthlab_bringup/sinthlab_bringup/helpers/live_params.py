@@ -69,6 +69,7 @@ _RESIST = ["resistance.stiffness_n_per_m"]
 # Pre-training: Free Move, and Free Move on a rail (Move Vertical / Horizontal).
 _FREE = _COMMON + _SPEED + _RING + [
     "session_sec",
+    "response_timeout_sec",        # not moved in time -> the session ends, park
     # The feel of the admittance -- see pretrain_free_move.yaml.
     "free_move.damping_ns_per_m",
     "free_move.deadband_n",
@@ -84,6 +85,7 @@ _FREE = _COMMON + _SPEED + _RING + [
 LIVE_PARAMS: Dict[str, List[str]] = {
     # Every paradigm. perturb_start.* act only in perturb / perturb_bump, grasp.* only in perturb_bump.
     "apple_pluck": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
+        "response_timeout_sec",    # no pluck in time -> the trial ends, no reward, park
         "perturb_start.baseline_settle_sec",
         # The perturbation itself -- the manipulated variable, so it is the one most worth varying
         # trial to trial. Recorded per trial in the sidecar's `perturbation` block.
@@ -97,16 +99,15 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         # perturb_bump: detecting the grasp that triggers the perturbation, and the delay after it.
         "grasp.threshold_n",
         "grasp.hold_sec",
-        "grasp.timeout_sec",
         "grasp.bump_speed_scale",
         "grasp.delay_mode",
         "grasp.delay_sec",
         "grasp.delay_min_sec",
         "grasp.delay_max_sec",
     ],
-    "restricted_plane": _COMMON + _PULL + _SPEED,
+    "restricted_plane": _COMMON + _PULL + _SPEED + ["response_timeout_sec"],
     "maze": _COMMON + _SPEED + [
-        "timeout_sec",
+        "response_timeout_sec",    # the trial's time limit from the go cue
         # How easy moving along a rail feels -- see rail_lead_sec in maze_params.yaml. Walls unchanged.
         "virtual_fixtures.rail_lead_sec",
     ],
@@ -123,7 +124,8 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "move_to_park.hold_sec": (0.0, 600.0),
     "quiet_gate.move_m": (0.005, 0.2),
     "quiet_gate.force_n": (1.0, 50.0),
-    "quiet_gate.timeout_sec": (0.0, 120.0),
+    "quiet_gate.penalty_sec": (0.0, 120.0),
+    "response_timeout_sec": (2.0, 600.0),
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
     "visual_cue.colours.*": (0, 255),
@@ -145,14 +147,12 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "perturb_start.start_delay_max_sec": (0.0, 10.0),
     "grasp.threshold_n": (0.5, 30.0),
     "grasp.hold_sec": (0.0, 0.5),
-    "grasp.timeout_sec": (1.0, 120.0),
     # The bump: perturb's base limits x 3 / 9 / 27 at most = a 18 rad/s^2, j 135 rad/s^3, within the
     # fastest perturbation validated (a 20, j 150).
     "grasp.bump_speed_scale": (0.25, 3.0),
     "grasp.delay_sec": (0.0, 10.0),
     "grasp.delay_min_sec": (0.0, 10.0),
     "grasp.delay_max_sec": (0.0, 10.0),
-    "timeout_sec": (5.0, 600.0),
     # The cabinet's timer is good to a few ms, and shorter pulses can fall between its I/O cycles.
     "nsp_sync.pulse_width_ms": (10, 5000),
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.

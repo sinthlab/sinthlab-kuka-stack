@@ -20,7 +20,7 @@
       enabled: true  # false = the quiet window is a plain timed wait
       move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
       force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      timeout_sec: 5.0  # time-out at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     pluck_safety:  # the floor trip during a pull (SafetyStopMonitor); distance and speed checks off
       update_rate: 100  # check rate [Hz]
@@ -209,14 +209,13 @@
     # No force sensor: the hand force comes from the arm's joint torque sensors (as in Free Move), so a
     # grasp is FORCE on the apple -- a hand resting on it without pushing or pulling is not detected.
     # The resting force is measured during the quiet window (apple untouched) and subtracted; a grasp
-    # is the remaining force at or above threshold_n for hold_sec. No grasp within timeout_sec -> the
-    # trial ends (event grasp_timeout), the arm resets, and the next trial starts.
+    # is the remaining force at or above threshold_n for hold_sec. No grasp within response_timeout_sec
+    # -> the trial ends (event response_timeout), the arm parks, and the next trial starts.
     # Pick threshold_n with debug_log_enabled on: it prints the force while waiting, so you can see the
     # resting noise and a real grasp. Too low triggers on noise; too high misses light grasps.
     grasp:  # grasp detection (perturb_bump)
       threshold_n: 2.5  # force on the apple that counts as a grasp, after the resting force is subtracted [N]
       hold_sec: 0.03  # the force must stay above threshold_n this long -- rejects single-sample spikes [s]
-      timeout_sec: 10.0  # no grasp within this long after the go cue -> end the trial and reset [s]
       # HOW FAST the bump moves -- used instead of perturb_start.speed_scale in this paradigm. A bump must
       # be sudden: at perturb's gentle default (1) the spring position barely moves for ~0.2 s and a held
       # apple feels a slow lean. At r = 0.10 m: 1 -> 5 mm at 185 ms, done 0.92 s; 3 -> 5 mm at 65 ms,
@@ -284,6 +283,7 @@
     # (audio_cue_*, visual_cue) and a few experiment knobs -- the full list is
     # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
     quiet_window_sec: 1.0      # at the start pose, before the go cue [s]; keep >= grasp.tare_sec
+    response_timeout_sec: 30.0  # no pluck within this long after armed (perturb bump: no grasp within this long after the go cue) -> the trial ends (event response_timeout), no reward, park [s]
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs

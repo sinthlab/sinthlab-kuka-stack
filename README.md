@@ -216,7 +216,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Parameter | Meaning |
 |---|---|
 | `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
-| `quiet_gate.enabled`, `quiet_gate.move_m`, `quiet_gate.force_n`, `quiet_gate.timeout_sec` | the [guarded quiet window](#the-quiet-window--hands-off-until-the-go-cue): touching the apple before the go cue ends the trial with no reward and a time-out (on, 3 cm, 5 N, 5 s) |
+| `quiet_gate.enabled`, `quiet_gate.move_m`, `quiet_gate.force_n`, `quiet_gate.penalty_sec` | the [guarded quiet window](#the-quiet-window--hands-off-until-the-go-cue): touching the apple before the go cue ends the trial with no reward and a penalty wait (on, 3 cm, 5 N, 5 s) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `move_to_park.target_joint_position` | the park pose, A1..A7 [deg]; first used when the next trial ends. Checked against the limits, and A4 must keep the start's sign |
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
@@ -231,13 +231,13 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Experiment | Extra live parameters |
 |---|---|
-| Apple Pluck | **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad's profile; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
+| Apple Pluck | `response_timeout_sec`; **the resistance** `resistance.stiffness_n_per_m` (slider + text box in steps of 10, from 50 N/m up to the SmartPad's profile; see [Resistance](#resistance--the-felt-stiffness-of-the-pull)), `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec`, **the start pose** (`move_to_start.target_joint_position`; its elbow must bend the same way as the park pose's) |
 | Apple Pluck — **perturb and perturb bump paradigms** (shown under *Pluck perturb* / *Pluck perturb bump*) | the perturbation: `perturb_start.polar_r_m` (capped per plane; **0 = an unperturbed trial**), `perturb_start.polar_theta_deg`, `perturb_start.polar_plane`; **when** (perturb only, after the go cue): `perturb_start.start_delay_mode` (`fixed` / `random`), `start_delay_sec` (fixed), `start_delay_min_sec` / `start_delay_max_sec` (random); `perturb_start.baseline_settle_sec` (perturb only); and its speed `perturb_start.speed_scale` (perturb only; applies at once) |
-| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random); **how fast** the bump moves: `grasp.bump_speed_scale` (slider, 0.25–3, default 3; applies at once) |
+| Apple Pluck — **perturb bump paradigm only** (shown under *Pluck perturb bump*) | the grasp: `grasp.threshold_n`, `grasp.hold_sec`; **when**, after the grasp: `grasp.delay_mode` (`fixed` / `random`), `grasp.delay_sec` (fixed, default **0** — at once), `grasp.delay_min_sec` / `grasp.delay_max_sec` (random); **how fast** the bump moves: `grasp.bump_speed_scale` (slider, 0.25–3, default 3; applies at once) |
 | Apple Pluck — **random start paradigm only** (shown under *Pluck random start*) | none live. The start positions `random_start.positions.*` (`[a, b]` m from the start pose) and `random_start.plane` are **per-run**. The start pose above is their origin: changing it moves them all |
-| Restricted Plane | `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
-| Maze | `timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
-| Free Move | `session_sec` (0 = until Stop); the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
+| Restricted Plane | `response_timeout_sec`, `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
+| Maze | `response_timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
+| Free Move | `session_sec` (0 = until Stop), `response_timeout_sec`; the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
 | Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`); the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
 
 These are deliberately **not** live:
@@ -666,7 +666,7 @@ or pushed before the go cue,
 
 1. the trial **ends without reward** — event `early_touch`, no go cue;
 2. the arm **parks**;
-3. a **time-out** (`quiet_gate.timeout_sec`, on top of `move_to_park.hold_sec`) runs before the next
+3. a **penalty wait** (`quiet_gate.penalty_sec`, on top of `move_to_park.hold_sec`) runs before the next
    trial — shaping "wait for the go cue".
 
 Both checks compare with the window's first 0.2 s, so each pose's resting sag and resting force do
@@ -676,13 +676,30 @@ not count:
 |---|---|---|
 | `quiet_gate.move_m` | 0.03 m | the apple moves this far |
 | `quiet_gate.force_n` | 5 N | the hand force changes this much (from the joint torques) |
-| `quiet_gate.timeout_sec` | 5 s | — the time-out after an early touch |
+| `quiet_gate.penalty_sec` | 5 s | — the penalty wait at park after an early touch |
 | `quiet_gate.enabled` | true | — false = a plain timed wait |
 
 The defaults come from the recordings: an untouched arm still settles by up to 16 mm on Uniform 100
 (7 mm on 400) and its force reading wanders by up to 3 N, while an early pull moved it 74 mm with
 31 N. A very light touch can pass unnoticed; lower the two thresholds with care, or untouched trials
 will be broken off as the arm settles.
+
+### The response time-out — no response, no reward
+Every experiment ends a trial in which the animal does not respond in time, with one setting,
+`response_timeout_sec`: **30 s** in every YAML, live (2–600 s). When it runs out:
+
+1. the trial **ends without reward** — event `response_timeout`, then `trial_end` (the NSP pulse);
+2. the arm **parks**, and the next trial follows as usual. In the maze the timeout cue plays and the
+   arm waits for release first, since the hand may still be on it; everywhere else no cue plays and
+   it parks at once.
+
+| Experiment | Counts from | A response is |
+|---|---|---|
+| Apple pluck | `armed` (the baseline is locked) | the pull reaching the threshold (`snap`) |
+| Apple pluck, perturb bump | the go cue (`grasp_wait`), then again from `armed` | the grasp; then the pull reaching the threshold |
+| Restricted plane | `armed` | the pull reaching the threshold (`snap`) |
+| Maze | `maze_armed` (the go cue) | reaching the goal |
+| Free Move, Move Vertical, Move Horizontal | `armed` (the go cue) | the arm moved more than `quiet_gate.move_m` (3 cm) from where it was at the go cue; after that the session runs on to `session_sec` or Stop |
 
 ### The floor — a height the end effector never goes below
 Every experiment has a **floor**: a height above the ground (the robot stands on the ground, so
@@ -960,7 +977,7 @@ when the spring jumps, so it is felt as a **bump**.
 ```
 go cue → wait for the grasp → delay (fixed, or random per trial) → perturbation (apple's spring moves, stays there)
        → pull measured from the PERTURBED spring position → snap at 10 cm → hold → park
-       (no grasp within grasp.timeout_sec → the trial ends: park, next trial)
+       (no grasp within response_timeout_sec → the trial ends: park, next trial)
 ```
 
 **Detecting the grasp — no force sensor.** The hand force is computed from the arm's joint torque
@@ -1011,7 +1028,7 @@ is separate. Both modes and all values are live.
 softening starts at `armed`, after the perturbation (as in the perturb paradigm).
 
 **Settings** (shown under *Pluck perturb bump*): the perturbation (`perturb_start.*`, as Scenario 3),
-and `grasp.threshold_n`, `grasp.hold_sec`, `grasp.timeout_sec`, `grasp.delay_*` (live), `tare_max_n`,
+and `grasp.threshold_n`, `grasp.hold_sec`, `grasp.delay_*` (live), `tare_max_n`,
 `jacobian_damping`, debug (per-run).
 
 **Steps to run:** as Scenario 1 (same SmartPad selections), with the **Pluck perturb bump** tab
@@ -1301,7 +1318,7 @@ Work up the ladder and stop at the first rung that feels wrong.
    ```
 3. The arm drives from the ready pose (where the SmartPad app always leaves it) to ▶START.
 4. The arm settles for 3 s, the fixture anchors on where it **rests**, the go cue plays, and the rails go
-   live. Drive to the goal (or let the 60 s timeout expire).
+   live. Drive to the goal (or let the 30 s response time-out expire).
 
    > **Watching progress.** Set `virtual_fixtures.debug_log_enabled: true` and the fixture logs your
    > maze position at `debug_log_rate_hz` (2 Hz):
@@ -1896,14 +1913,16 @@ spring law to that ~100 Hz link — far coarser and riskier for torque control.
 Each flow is one trial. The event token each step logs is in brackets (see [§7](#events-per-experiment)).
 A trial runs from `trial_start` — at park, as the wait before the move to start begins — to
 `trial_end`, marked at the outcome: the threshold, the goal, the timeout, the session's end, or any
-failure (early touch, safety trip, no grasp, Stop). These two are the
+failure (early touch, no response in time, safety trip, no grasp, Stop). These two are the
 [NSP sync pulses](#sync-to-the-blackrock-nsp). The move back to park after `trial_end` is still in
 the trial's file.
 Every trial ends in `control.begin_trial(...)`: it applies any pending live changes, then starts the
 next trial; after a Stop it holds at park instead, and the dashboard ends the launch.
 **In every flow, the quiet window is guarded:** moving or pushing the apple before the go cue goes
-straight to park without reward [`early_touch`], and the next trial starts only after the time-out
+straight to park without reward [`early_touch`], and the next trial starts only after the penalty wait
 ([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The diagrams leave that branch out.
+**No response in time** ends the trial too, without reward, then parks [`response_timeout`]
+([The response time-out](#the-response-time-out--no-response-no-reward)); the diagrams show it.
 
 **Flow 1 — Apple Pluck** (joint controller throughout). The **random start** paradigm runs this same flow;
 only `MoveToStart` targets that trial's start position, picked at `trial_start`. Every flow begins
@@ -1920,6 +1939,7 @@ stateDiagram-v2
     Plucked --> Settle : force_release_shutdown_delay_sec (0.8 s) [release_wait]
     Settle --> Park : the arm at rest, elbow bent (or 5 s) [recover_start]
     Monitor --> Park : the apple below the floor [safety_trip, trial_end]
+    Monitor --> Park : no pluck within response_timeout_sec (30 s) of armed [response_timeout, trial_end]
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next trial: the wait at park [trial_start]
     NextTrial --> [*] : after Stop: holds at park, the launch ends
@@ -1943,6 +1963,7 @@ stateDiagram-v2
     Fixture --> Snap : pull ≥ threshold (0.12 m, z) [snap, trial_end]<br/>fixture off, snap cue
     Snap --> SwitchToJoint : dwell (force_release_shutdown_delay_sec)
     Fixture --> SwitchToJoint : SAFETY trip — too far / too fast [safety_trip, trial_end]
+    Fixture --> SwitchToJoint : no pull past the threshold within response_timeout_sec (30 s) [response_timeout, trial_end]
     SwitchToJoint --> Park : [recover_start]
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
@@ -1962,6 +1983,7 @@ stateDiagram-v2
     Monitor --> Snap : settle baseline_settle_sec (1 s), pull softened to the resistance [armed]<br/>pull ≥ threshold [snap, trial_end]
     Snap --> Plucked : snap cue, pull-back released [freeze]
     Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
+    Monitor --> Park : no pluck within response_timeout_sec (30 s) of armed [response_timeout, trial_end]
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
@@ -1976,12 +1998,13 @@ stateDiagram-v2
     QuietWindow --> GoCue : quiet_window_sec [quiet_end]
     GoCue --> GraspWait : audio + visual cue [cue_go]
     GraspWait --> Delay : |F − tare| ≥ threshold_n for hold_sec [grasp]
-    GraspWait --> Park : grasp.timeout_sec, no grasp [grasp_timeout, trial_end]
+    GraspWait --> Park : no grasp within response_timeout_sec (30 s) [response_timeout, trial_end]
     Delay --> Perturb : grasp.delay_* (default 0, at once) [perturb_delay_start]
     Perturb --> Monitor : polar (r, θ) move done [perturb_applied]
     Monitor --> Snap : baseline = perturbed spring position, at once [armed]<br/>pull ≥ threshold [snap, trial_end]
     Snap --> Plucked : snap cue, pull-back released [freeze]
     Plucked --> Park : dwell, then the arm at rest with the elbow bent [release_wait, recover_start]
+    Monitor --> Park : no pluck within response_timeout_sec (30 s) of armed [response_timeout, trial_end]
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
@@ -1996,7 +2019,7 @@ stateDiagram-v2
     QuietWindow --> GoCue : quiet_window_sec [cue_go]
     GoCue --> Maze : rails + checkpoints + timeout + safety on [maze_armed]
     Maze --> Maze : checkpoint reached → reward cue [checkpoint]
-    Maze --> ReleaseWait : goal [goal] or timeout_sec [timeout], then [trial_end]<br/>fixture off, goal / timeout cue [release_wait]
+    Maze --> ReleaseWait : goal [goal] or response_timeout_sec (30 s) [response_timeout], then [trial_end]<br/>fixture off, goal / timeout cue [release_wait]
     ReleaseWait --> SwitchToJoint : operator lets go [released]
     Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip, trial_end]
     SwitchToJoint --> Park
@@ -2016,6 +2039,7 @@ stateDiagram-v2
     Free --> SwitchToJoint : Stop -- no end tone, no release wait [stop_requested, trial_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip, trial_end]
+    Free --> SwitchToJoint : not moved quiet_gate.move_m within response_timeout_sec (30 s) of the go cue [response_timeout, trial_end]
     SwitchToJoint --> Park
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next session (after Stop: holds, the launch ends)
@@ -2152,7 +2176,7 @@ below.
 |---|---|---|---|---|---|---|
 | Columns | **42** | **42** | **42** | **42** | **42** | **47** |
 | Extra over the core | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `disp_m` | `rel_a` `rel_b` `corridor` `off_rail` `rail_dist` `rail_nearest` |
-| Events | 10 | 12 | 14 (8 on `grasp_timeout`) | 10 | 7 (`snap` or `safety_trip`) | 12 |
+| Events | 10 | 12 | 14 (8 on `response_timeout` with no grasp) | 10 | 7 (`snap` or `safety_trip`) | 12 |
 | Sidecar extras | `paradigm`, `threshold_m` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `perturbation` | `paradigm`, `threshold_m`, `start_position`, `start_joint_deg` | `threshold_m`, `fixture` | `maze_geometry` |
 | Size | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 2.9 MB/min | 3.2 MB/min |
 
@@ -2185,6 +2209,11 @@ window ([The quiet window](#the-quiet-window--hands-off-until-the-go-cue)). The 
 without reward: `trial_start`, `at_start` (and `fixture_active` on the CLIK), `early_touch`, `trial_end`,
 the move to park. `validate_recording.py` accepts such a trial as complete.
 
+Every experiment may record **`response_timeout`** — no response within
+`response_timeout_sec` ([The response time-out](#the-response-time-out--no-response-no-reward)). The
+trial ends there without reward: `response_timeout`, `trial_end`, the move to park, with no `snap`,
+`cue_snap` or `freeze` (in the maze, the release wait first). `validate_recording.py` accepts such a trial as complete.
+
 #### Apple pluck
 
 **Records from** `_next_trial()` (at park, the wait before the move to start) **to** `on_park_complete()`
@@ -2203,12 +2232,13 @@ the move to park. `validate_recording.py` accepts such a trial as complete.
 | `on_quiet_window_complete()` | `cue_go` | — | the audio + visual go cues have been fired |
 | `on_monitor_armed()` | `armed` | — | the baseline is locked; the animal may pull |
 | `on_monitor_snap()` | `snap` | **displacement, m** | the pull crosses the threshold |
-| `on_monitor_snap()` | `trial_end` | trial index | right after `snap`; also right after `grasp_timeout`, `safety_trip`, `early_touch` or `stop_requested` when one of those ends the trial |
+| `on_monitor_snap()` | `trial_end` | trial index | right after `snap`; also right after `response_timeout`, `safety_trip`, `early_touch` or `stop_requested` when one of those ends the trial |
 | `on_monitor_snap()` | `cue_snap` | — | the snap cues have been fired |
 | `on_monitor_snap()` | `freeze` | — | the pull-back is released: the equilibrium follows the arm (`resistance.release()`). The token keeps its old name so older recordings and `validate_recording.py` still match |
 | `on_monitor_complete()` | `release_wait` | — | the dwell is over; waiting for the arm to rest with the elbow bent |
 | `on_monitor_complete()` | `recover_start` | — | the hold has elapsed; the move back to start begins |
 | `_check_elbow()` | `elbow_flipped` | A4, deg | at `at_start` or before the park: the elbow bends the wrong way (the run carries on) |
+| `on_response_timeout()` | `response_timeout` | — | no pluck within `response_timeout_sec` of `armed`; followed by `trial_end`, `recover_start` and the park |
 | `on_safety_trip()` | `safety_trip` | — | the apple went more than `floor.trip_margin_m` below [the floor](#the-floor--a-height-the-end-effector-never-goes-below); followed by `trial_end`, `recover_start` and the park |
 
 **Cue delivery events** (all three experiments, fired from the cue classes rather than the state
@@ -2249,7 +2279,7 @@ As perturb, but between `cue_go` and `perturb_delay_start` the trial waits for t
 |---|---|---|---|
 | `on_audio_complete()` | `grasp_wait` | — | the go cue is out; the grasp detector is armed |
 | `on_grasp()` | `grasp` | force, N | the hand force (after the tare) has stayed ≥ `grasp.threshold_n` for `grasp.hold_sec` |
-| `on_grasp_timeout()` | `grasp_timeout` | — | no grasp within `grasp.timeout_sec`; followed by `trial_end` and `recover_start` |
+| `on_response_timeout()` | `response_timeout` | — | no grasp within `response_timeout_sec`; followed by `trial_end` and `recover_start` |
 
 `perturb_delay_start` (arg: the delay this trial drew) then counts from `grasp`, and `armed` comes the
 moment the perturbation finishes, with the baseline at the perturbed spring position — no settle wait.
@@ -2274,7 +2304,7 @@ not just the maze phase.
 | `on_go_complete()` | `maze_armed` | — |
 | `on_checkpoint_reward(i)` | `checkpoint` | **index** |
 | `on_goal_reached()` | `goal` | — |
-| `on_timeout()` | `timeout` | — |
+| `on_timeout()` | `response_timeout` | — (not solved within `response_timeout_sec`) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | the outcome above | `trial_end` | trial index |
 | `force_release.start()` | `release_wait` | — |
@@ -2299,7 +2329,8 @@ past the threshold, base frame, N).
 | `on_switched_to_fixture()` | `fixture_active` | — |
 | `on_quiet_window_complete()` | `cue_go` | — |
 | `on_go_complete()` | `armed` | — |
-| `on_end_requested()` / `on_session_over()` | `session_end` | — (End session -- parks at once -- or `session_sec`, which waits for release) |
+| `on_session_over()` | `session_end` | — (`session_sec` ran out; waits for release) |
+| `on_response_timeout()` | `response_timeout` | — (not moved `quiet_gate.move_m` within `response_timeout_sec` of the go cue; parks at once) |
 | `on_safety_trip(reason)` | `safety_trip` | reason code |
 | the outcome above | `trial_end` | trial index |
 | `force_release.start()` | `release_wait` | — |

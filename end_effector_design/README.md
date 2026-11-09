@@ -582,10 +582,10 @@ aimed at that. Every part from the cover down is in the pull path
 | **cover** | PETG | 0.20 mm | **6** | **8 / 8** | **40 %** gyroid | **The apple bolts to this.** Opaque filament — not translucent. |
 | **apple_stem** | PETG | **0.15 mm** | 6 | 6 / 6 | **100 %** | See below — this one is orientation-critical. |
 | **apple_retainer** | PETG | 0.15 mm | 4 | 4 / 4 | **100 %** | Flat face down. |
-| **apple_ball / apple_cap** | TPU 95A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 30 mm/s), retraction near zero. |
+| **apple_ball / apple_cap** | TPU 90A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 20 mm/s), no retraction — see [TPU presets](#2b-tpu-90a-presets-ball-and-cap). |
 
-**Temperatures.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %). TPU: nozzle
-230 °C, bed 45 °C, fan 50 %. Enclosure closed for both, no draught.
+**Temperatures.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %). TPU 90A: nozzle
+**220 °C first layer / 225 °C after**, bed 45 °C, fan 50–70 %. Enclosure closed for both, no draught.
 
 ### The apple stem — lay it down
 
@@ -616,9 +616,9 @@ Sizes, so you know what you are looking at on the plate:
 | `base_tier2` | Ø188 | 32 | PETG | — |
 | `cover` | Ø188 | 17 | PETG | — |
 | `apple_stem` | Ø44 | 116.5 | PETG | — (lie it down) |
-| `apple_ball` | Ø45 | 27.8 | TPU 95A | — |
+| `apple_ball` | Ø45 | 27.8 | TPU 90A | — |
 | `apple_retainer` | Ø22 | 6 | PETG | the stem's plate |
-| `apple_cap` | Ø43 | 22.5 | TPU 95A | — |
+| `apple_cap` | Ø43 | 22.5 | TPU 90A | — |
 | `casing` | 198 × 198 | 77 | *not printed* | acrylic, by hand |
 
 #### 0. Before you open Bambu Studio
@@ -657,6 +657,69 @@ Duplicate the Bambu PETG profile and save it as `PETG - high strength`:
 The low fan is deliberate. Part cooling makes PETG look nicer and bond worse, and every structural
 part here fails along layer boundaries.
 
+#### 2b. TPU 90A presets (ball and cap)
+
+These are for the **0.4 mm standard nozzle** — the filament settings go in the **Direct Drive:
+Standard** tab, and the extruder fed by the external spool must be set to `0.4 mm`, `Standard`.
+With the TPU High Flow kit, see the end of this section.
+
+Duplicate **Generic TPU** and save it as `TPU 90A`:
+
+| Where | Setting | Value |
+|---|---|---|
+| Filament | Nozzle temperature | **220 °C** initial layer · **225 °C** other layers |
+| | Textured PEI Plate | **45 °C** / 45 °C |
+| | Chamber temperature | 0 °C |
+| | Flow ratio | 1.00 |
+| | **Max volumetric speed** | **2.0 mm³/s** · Adaptive volumetric speed off |
+| Cooling | Initial layer fan | first **3** layers at **0 %** |
+| | Min fan speed threshold | **50 %**, layer time **30 s** |
+| | Max fan speed threshold | **70 %**, layer time **10 s** |
+| | Keep fan always on | on |
+| | Slow printing down for better layer cooling | on · **Min print speed 10 mm/s** |
+| | Force cooling for overhangs and bridges | on · fan 100 % |
+| Setting overrides | **Retraction → Length** | ticked, **0 mm** (everything below it greys out — that is correct) |
+
+Process preset `0.20 TPU`:
+
+| Tab | Setting | Value |
+|---|---|---|
+| Quality | Layer height / initial layer | **0.20 mm** / 0.20 mm |
+| | Line width | 0.42 mm |
+| | Seam | Aligned |
+| | Avoid crossing walls | on |
+| Strength | Wall loops | **3** |
+| | Top / bottom shell layers | **4 / 4** |
+| | Sparse infill | **15 %**, gyroid |
+| Speed | Initial layer | **10 mm/s** |
+| | Outer wall | **15 mm/s** |
+| | Inner wall · sparse infill · internal solid infill · top surface | **20 mm/s** |
+| | Gap infill | 15 mm/s |
+| | Acceleration: normal printing · outer wall · travel | **2000 · 1000 · 5000 mm/s²** |
+| Support | Enable support | off |
+
+At 20 mm/s a 0.42 × 0.20 mm line is about 1.7 mm³/s, under the 2.0 cap, so the slicer never throttles
+it. Feed from the **external spool**, and make sure the spool turns freely: any drag stretches soft
+TPU and starves the nozzle. Dry the spool at 55 °C for 4–6 h if it has been open.
+
+Bambu Studio warns *"floating cantilever"* on `apple_ball`. That is the tops of the grip grooves
+(a 1.2 mm half-round lip); leave supports off — supports would fill the grooves.
+
+**With the TPU High Flow kit.** Set the extruder's nozzle type to **TPU High Flow** in Bambu
+Studio; the filament settings then come from the **Direct Drive: TPU High Flow** tab, so fill that tab
+in:
+
+| Setting | Value |
+|---|---|
+| Nozzle temperature | **225 °C** initial · **230 °C** other layers |
+| Max volumetric speed | **4.0 mm³/s** |
+| Retraction length | 0 mm (override ticked) |
+| Cooling, bed, flow | as the standard nozzle |
+
+and in the process preset raise **Outer wall → 25 mm/s** and **inner wall / infill / top → 30 mm/s**
+(≈ 2.5 mm³/s), initial layer 15 mm/s. Everything else — walls, shells, infill, accelerations,
+placement — stays as above.
+
 #### 3. Per part
 
 **`flange_plate`** — highest-stressed part.
@@ -686,10 +749,9 @@ part here fails along layer boundaries.
 **`apple_cap`** — TPU, prints alone.
 1. Import. It arrives at assembly height; **Place on bed** drops it. It should sit **skirt down,
    dome up**. Check this — dome-down needs supports and ruins the press-fit surface.
-2. Assign the **TPU filament / nozzle**.
-3. **Wall loops 3**, **Top/Bottom 4**, **Sparse infill 15 %**, **Layer height 0.20**.
-4. **Speed → set everything ≤ 30 mm/s.** TPU does not survive fast corners.
-5. Retraction near zero in the TPU filament profile.
+2. Assign the **`TPU 90A`** filament (external spool) and the **`0.20 TPU`** process
+   ([2b](#2b-tpu-90a-presets-ball-and-cap)).
+3. No supports; a skirt is enough.
 
 #### 4. The apple — stem, ball, retainer
 
@@ -706,8 +768,8 @@ part here fails along layer boundaries.
 1. Import, **Place on bed**: it stands on its **flat base** (the neck pointing down, the open top up).
 2. **No supports** — the underside is a 45° cone. **Brim `5 mm`**: the base is a small ring under a
    45 mm ball.
-3. TPU settings as the cap: **Wall loops 3**, **Top/Bottom 4**, **infill 15 %**, **≤ 30 mm/s**,
-   retraction near zero.
+3. **`TPU 90A`** filament + **`0.20 TPU`** process, as the cap
+   ([2b](#2b-tpu-90a-presets-ball-and-cap)).
 
 #### 5. Check on the first layer
 
