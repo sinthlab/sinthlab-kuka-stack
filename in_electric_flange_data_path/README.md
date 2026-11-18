@@ -269,7 +269,7 @@ usbipd attach --wsl --busid <busid>
 ```
 
 Then in WSL: `ls /dev/ttyUSB*` shows the port, set the latency timer again (it resets on every
-attach), and **Ping** from Diagnostics → Visual cue → Serial. A running experiment's serial sender
+attach), and **Check board** from Diagnostics → Visual cue with the path set to **Serial**. A running experiment's serial sender
 reopens the port by itself once it is back; no restart is needed.
 
 ```bash
@@ -339,8 +339,14 @@ D2 is the board's old contact-closure input and D5 drives the ring; neither is u
        s.write(c);time.sleep(0.3);print(c,s.read(64))"
    ```
    Expect `PONG`, `ACK CUE 1` (ring flashes), `ACK CUE 2` (red), `ACK SEG` (quarter 0 green),
-   `ACK OFF` (dark). The same buttons are on the dashboard's **Diagnostics → Visual cue → Serial**
-   tab.
+   `ACK OFF` (dark).
+
+   **Or from the dashboard:** Diagnostics → Visual cue, path **Serial**. Every control there is the same
+   as on the Wi-Fi path — Check board, Apply, Fire cue, Solid colour, Quarter 0 green, Off, Save, the
+   LED-by-LED test — and each one goes down the link as `GET /<route>` and runs the board's own route,
+   so a test passes or fails the same way on both paths. If the board's `code.py` predates `GET`, the
+   page falls back to `PING` / `CUE` / `SEG` / `OFF`, and the settings and the LED test need Wi-Fi.
+   The experiments use only `CUE`, `SEG`, `OFF` and `PING`, so they never need `GET`.
 3. **Soak test:** 1000 round trips; wiggle the X76 plug and the cable while it runs.
    ```bash
    python3 - <<'EOF'
@@ -380,7 +386,7 @@ is recorded as `cue_visual_ack`. Code:
   reach. Until that is solved, the insert is left out and **the comb and contacts are wrapped in
   tape** so no contact can touch the metal housing or another contact. Nothing holds the contacts
   forward, so **recheck the link after every unplug**
-  ([3a](#3-check-the-plug-and-the-arm-with-a-meter) shorts check, then **Ping**).
+  ([3a](#3-check-the-plug-and-the-arm-with-a-meter) shorts check, then **Check board** on the Serial path).
 - **The blue bundle's drain does not reach tool pin 11** (open in the ring-out). The cable's shield
   is still bonded at the PC end; only the arm's internal CTR1 shield floats.
 - **The green-bundle black (X76 8)** may be left unpinned; it is a spare.
@@ -408,4 +414,4 @@ Work from the PC outwards; each test splits the path in two.
 | Errors in the soak test, more when wiggling | the X76 plug | re-seat and re-tape the contacts; recheck 3c while wiggling |
 | Experiment log: `serial port … cannot be opened` | steps 5 | attach the adapter, `dialout`, `python3-serial`; the sender reopens the port on its own once it exists |
 | Experiment log: `latency_timer is 16 ms` | — | `echo 1 \| sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer` (resets on every attach) |
-| Experiment log: `NOT confirmed: no reply` | Diagnostics → Serial → **Ping** | board power, the MikroE GND, the X76 plug |
+| Experiment log: `NOT confirmed: no reply` | Diagnostics → Visual cue, path **Serial**, **Check board** | board power, the MikroE GND, the X76 plug |

@@ -517,6 +517,9 @@ print("Cue input on {} (active {}), mode={}, nvm={}".format(
 #   OFF             stop any cue and LED test, ring dark           -> ACK OFF
 #   SEG f colors    static arcs, exactly as /segments?factor=f&colors=colors -> ACK SEG
 #   PING            link check                                     -> PONG
+#   GET /route?q    any board route the Wi-Fi API has (not /fs)    -> OK <its text, lines joined by tabs>
+#                   e.g. GET /status, GET /config?r=0&g=255&b=0&w=0, GET /led_test?from=0&to=59
+#                   -- the same function the HTTP route runs, so every test works on either path
 #   anything else                                                  -> ERR <reason>
 #
 # CUE behaves like /cue: it always fires, restarting a cue already running. ACK CUE is written
@@ -590,11 +593,48 @@ def _serial_ping(args):
     return "PONG"
 
 
+SERIAL_ROUTES = ("/config", "/cue", "/status", "/set_color", "/segments", "/off", "/led_test")
+
+
+def _unquote(text):
+    """Decode a URL query component: '+' is a space, %XX a byte."""
+    text = text.replace("+", " ")
+    out, i = bytearray(), 0
+    while i < len(text):
+        if text[i] == "%" and i + 2 < len(text):
+            try:
+                out.append(int(text[i + 1:i + 3], 16))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.extend(text[i].encode())
+        i += 1
+    return out.decode()
+
+
+def _serial_get(args):
+    """Run a board route exactly as Wi-Fi would. /fs is left out: a file read would stall the loop."""
+    if len(args) != 1:
+        return "ERR GET takes one path, e.g. GET /status"
+    path, _, query = args[0].partition("?")
+    if path not in SERIAL_ROUTES:
+        return "ERR GET: no route {} (routes: {})".format(path, " ".join(SERIAL_ROUTES))
+    params = {}
+    for part in query.split("&"):
+        if part:
+            key, _, value = part.partition("=")
+            params[_unquote(key)] = _unquote(value)
+    text = dict(ROUTES)[path](_SerialRequest(params))    # ROUTES is defined with the HTTP routes below
+    return "OK " + "\t".join(text.rstrip("\n").split("\n"))
+
+
 SERIAL_COMMANDS = {
     "CUE": _serial_cue,
     "OFF": _serial_off,
     "SEG": _serial_seg,
     "PING": _serial_ping,
+    "GET": _serial_get,
 }
 
 
@@ -641,6 +681,22 @@ def serial_service():
 # ---------------------------------------------------------------------------
 # Defined unconditionally, registered further down only if the Wi-Fi stack came up. Nothing
 # here sleeps -- every handler returns immediately and lets the main loop do the animation.
+
+class _SerialRequest:
+    """A serial GET, shaped like the HTTP Request the route handlers read: only .query_params.get."""
+
+    def __init__(self, params):
+        self.query_params = self
+        self._params = params
+
+    def get(self, name, default=None):
+        return self._params.get(name, default)
+
+
+def _reply(request, text):
+    """A route handler's answer: the text itself for a serial GET, an HTTP Response otherwise."""
+    return text if isinstance(request, _SerialRequest) else Response(request, text)
+
 
 def _int(request, name, default, lo=0, hi=255):
     """Query param as int, clamped. Bad input falls back to the default, never raises."""
@@ -705,7 +761,7 @@ def configure(request: Request):
         nvm_clear()
         pixels.brightness = cfg["brightness"]
         apply_polarity()
-        return Response(request, cfg_text("reset to defaults, NVM cleared"))
+        return _reply(request, cfg_text("reset to defaults, NVM cleared"))
 
     if _given(request, *CUE_FIELDS):
         cfg["r"] = _int(request, "r", cfg["r"])
@@ -735,7 +791,7 @@ def configure(request: Request):
     if _bool(request, "save", False):
         nvm_save()
         note = "saved to NVM" if _nvm_is_flash else "saved to RAM ONLY -- no NVM on this build"
-    return Response(request, cfg_text(note))
+    return _reply(request, cfg_text(note))
 
 
 # --- /cue : run the configured cue now, without the wire ---------------------
@@ -743,7 +799,7 @@ def configure(request: Request):
 #   http://192.168.4.1/cue
 def fire_cue(request: Request):
     cue_start(cfg)
-    return Response(request, "firing the configured cue ({}s)\n".format(cfg["duration"]))
+    return _reply(request, "firing the configured cue ({}s)\n".format(cfg["duration"]))
 
 
 # --- /set_color : solid colour on the whole ring ----------------------------
@@ -754,14 +810,14 @@ def set_color(request: Request):
              _int(request, "b", 0), _int(request, "w", 0))
     pixels.fill(color)
     pixels.show()
-    return Response(request, "Set to {}\n".format(color))
+    return _reply(request, "Set to {}\n".format(color))
 
 
 # --- /segments : static arcs (not a timed cue -- use pattern=segment for that)
 #   http://<board>/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255
 def set_multi_segments(request: Request):
     draw_segments(_int(request, "factor", 1, 1, PHYSICAL_LEDS), request.query_params.get("colors", ""))
-    return Response(request, "Segments updated\n")
+    return _reply(request, "Segments updated\n")
 
 
 def draw_segments(factor, colors_str):
@@ -795,7 +851,7 @@ def set_off(request: Request):
     led_test_stop(clear=False)
     pixels.fill(OFF)
     pixels.show()
-    return Response(request, "NeoPixels are now OFF\n")
+    return _reply(request, "NeoPixels are now OFF\n")
 
 
 # --- /led_test : light each LED red, green, blue, white, one at a time -------
@@ -813,7 +869,7 @@ def led_test(request: Request):
     step = _float(request, "step", 0.25, 0.05, 5.0)
     loop = _bool(request, "loop", False)
     led_test_start(first, last, step, loop)
-    return Response(request, (
+    return _reply(request, (
         "LED test: pixels {}-{}, red/green/blue/white, {} s each{}\n"
         "watch the ring; /status shows led_test_pixel; /off stops it\n"
     ).format(first, last, step, ", looping" if loop else ""))
@@ -821,7 +877,7 @@ def led_test(request: Request):
 
 # --- /status : what is the board doing? First stop when a cue "does not work"
 def status(request: Request):
-    return Response(request, cfg_text() + (
+    return _reply(request, cfg_text() + (
         "# state\nleds={}\npatterns={}\nip={}\n"
         "cue_active={}\nwire_fired={}\nserial={}\nserial_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
@@ -885,19 +941,19 @@ def _walk(rel, out, depth=0):
 def fs_list(request: Request):
     out = []
     _walk("", out)
-    return Response(request, "\n".join(out) + "\n")
+    return _reply(request, "\n".join(out) + "\n")
 
 
 def fs_get(request: Request):
     path = request.query_params.get("path", "")
     why = _fs_reject(path)
     if why:
-        return Response(request, why + "\n")
+        return _reply(request, why + "\n")
     try:
         with open(_FS_ROOT + path, "r") as f:
-            return Response(request, f.read())
+            return _reply(request, f.read())
     except OSError as e:
-        return Response(request, "cannot read {}: {}\n".format(path, e))
+        return _reply(request, "cannot read {}: {}\n".format(path, e))
 
 
 ROUTES = (

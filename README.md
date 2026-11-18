@@ -340,7 +340,7 @@ None of these are committed to git.
 - **The cue ring does not light.** Open **Diagnostics → Visual cue**: *Check board*, then *Fire cue* over
   Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics--hardware-checks).
 - **The serial cue link stopped answering after WSL restarted or crashed** (log: `serial port …
-  cannot be opened`, or Diagnostics → Serial → Ping fails). The adapter left WSL with it. In
+  cannot be opened`, or Diagnostics → Visual cue, path Serial, *Check board* fails). The adapter left WSL with it. In
   PowerShell as administrator: `usbipd attach --wsl --busid <busid>`; if that fails, `usbipd detach`,
   `unbind`, `bind`, then `attach` again. Then set the latency timer. Full steps:
   [Re-attach after WSL restarts or crashes](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes).
@@ -2149,7 +2149,7 @@ visual_cue:
 | | `serial` | `wifi` |
 |---|---|---|
 | Needs | the StarTech attached to WSL (`usbipd attach --wsl --busid <id>`) | this computer joined to the board's **`KUKA_NEOPIXEL`** network (its Ethernet link to the robot is separate) |
-| Check it | Diagnostics page, Serial path: **Ping** | `curl http://192.168.4.1/status` |
+| Check it | Diagnostics → Visual cue, path **Serial**: **Check board** | Diagnostics, path **Wi-Fi**: **Check board**, or `curl http://192.168.4.1/status` |
 | A cue | `CUE` or `CUE r g b w` | `GET /cue`, after `/config?r=..&g=..&b=..&w=..` for a colour |
 | A ring state (pre-training) | `SEG f colors` / `OFF` | `/segments?factor=f&colors=…` / `/off` |
 | Delivery time | a few ms, every cue | varies from cue to cue |

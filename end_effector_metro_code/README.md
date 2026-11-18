@@ -761,8 +761,14 @@ troubleshooting — is in [`in_electric_flange_data_path/`](../in_electric_flang
 | `CUE` | run the configured cue, exactly as `/cue` does | `ACK CUE <n>` |
 | `CUE r g b w` | run it in this colour (each 0–255); the saved settings are not changed | `ACK CUE <n>` |
 | `OFF` | stop any cue or LED test, ring dark | `ACK OFF` |
+| `SEG f colors` | static arcs, exactly as `/segments?factor=f&colors=colors` (the pre-training ring states) | `ACK SEG` |
 | `PING` | link check | `PONG` |
+| `GET /route?query` | any [HTTP route](#http-api) except `/fs`, running the very same function: `GET /status`, `GET /config?r=0&g=255&b=0&w=0`, `GET /led_test?from=0&to=59`. The query is URL-encoded (`,` may be sent as `%2C`) | `OK <the route's text, lines joined by tabs>` |
 | anything else | nothing | `ERR <reason>` |
+
+`GET` is what makes the two paths interchangeable for testing: the dashboard's Diagnostics page
+sends every one of its controls either as an HTTP request or as a `GET` line, and gets the same text
+back. `/fs` stays Wi-Fi only, because sending a whole file down the link would stall the main loop.
 
 `<n>` counts serial cues since boot, and `/status` reports it as `serial_fired`, next to
 `serial=up|unavailable`. `CUE` always fires, restarting a cue already running.
@@ -864,7 +870,7 @@ it down. The LED refresh itself (~2.4 ms for 60 RGBW pixels) happens before the 
    `/cue` over Wi-Fi, in RAM, never saved). Pattern, duration and brightness are always the board's
    settings, set from any machine joined to its access point.
 3. **The X76 plug's contacts are held by tape, not by its insulating insert,** which would not seat.
-   Recheck the link (Diagnostics, Serial path, **Ping**) after the plug is unplugged and refitted.
+   Recheck the link (Diagnostics → Visual cue, path **Serial**, **Check board**) after the plug is unplugged and refitted.
 4. **The unused `D2` input stays in the firmware.** Its pull-up keeps it idle, so it cannot fire a cue.
 5. **Settings persistence depends on `microcontroller.nvm` being present in the build.** If it is
    absent, `/config?save=1` says so and settings revert to `DEFAULTS` on reset.

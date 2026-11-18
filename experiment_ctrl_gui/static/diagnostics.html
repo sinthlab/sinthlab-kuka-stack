@@ -27,32 +27,27 @@
   </div>
 
   <section id="tab-visual" class="diag-panel">
-    <!-- ---------------- the board ---------------- -->
+    <!-- ---------------- the board, and which path reaches it ---------------- -->
     <div class="card">
       <h2>Cue board</h2>
-      <p class="note">The NeoPixel ring is driven by the Metro board in the end effector. This page talks to it
-        over the board's own Wi-Fi: <strong>join this computer to <code>KUKA_NEOPIXEL</code> first</strong>.
-        Its address on that network is always <code>192.168.4.1</code>.</p>
+      <p class="note">The NeoPixel ring is driven by the Metro board in the end effector. Every control on this
+        tab works on either path, with the same tests and the same replies — pick how to reach the board:</p>
+      <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Path to the board">
+        <button class="tab active" role="tab" data-path="wifi">Wi-Fi — the board's access point</button>
+        <button class="tab" role="tab" data-path="serial">Serial — RS-422 through X76</button>
+      </div>
+      <p class="note" id="path-note"></p>
       <div class="diag-row">
-        <label>Board address <input id="addr" value="192.168.4.1" size="14" spellcheck="false"></label>
+        <label id="addr-label">Board address <input id="addr" value="192.168.4.1" size="14" spellcheck="false"></label>
+        <label id="port-label" class="hidden">Serial port <input id="port" value="/dev/ttyUSB0" size="14" spellcheck="false"></label>
         <button class="btn" id="btn-check">Check board</button>
         <span id="reach" class="pill">not checked</span>
       </div>
       <dl class="kv diag-kv" id="board-status"></dl>
     </div>
 
-    <!-- ---------------- path ---------------- -->
-    <div class="card">
-      <h2>Path to test</h2>
-      <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Trigger path">
-        <button class="tab active" role="tab" data-path="wifi">Wi-Fi — fire from here</button>
-        <button class="tab" role="tab" data-path="serial">Serial — RS-422 through X76</button>
-      </div>
-      <p class="note" id="path-note"></p>
-    </div>
-
-    <!-- ---------------- Wi-Fi path ---------------- -->
-    <div id="path-wifi">
+    <!-- ---------------- the controls: the same on both paths ---------------- -->
+    <div id="board-controls">
       <div class="card">
         <h2>What a cue looks like</h2>
         <div class="diag-grid">
@@ -74,6 +69,7 @@
           <button class="btn primary" id="btn-apply">Apply to board</button>
           <button class="btn" id="btn-fire">▶ Fire cue</button>
           <button class="btn" id="btn-solid">Solid colour</button>
+          <button class="btn" id="btn-quarter">Quarter 0 green</button>
           <button class="btn" id="btn-off">Off</button>
           <button class="btn" id="btn-save">Save on board</button>
           <button class="btn warn" id="btn-reset">Reset to defaults</button>
@@ -92,27 +88,6 @@
           <button class="btn" id="btn-lt-off">Stop</button>
           <span class="pill" id="lt-pixel">pixel –</span>
         </div>
-      </div>
-    </div>
-
-    <!-- ---------------- serial path ---------------- -->
-    <div id="path-serial" class="hidden">
-      <div class="card">
-        <h2>Serial link</h2>
-        <p class="note">Sends the same commands the experiments send with <code>visual_cue.trigger: serial</code>,
-          through the StarTech adapter, X76, the media flange and the MikroE to the board. Attach the adapter to WSL
-          first (<code>usbipd attach --wsl --busid &lt;id&gt;</code>). Refused while an experiment runs: it owns the port.</p>
-        <div class="diag-row">
-          <label>Port <input id="ser-port" value="/dev/ttyUSB0" size="14" spellcheck="false"></label>
-          <button class="btn primary" id="btn-ser-ping">Ping</button>
-          <button class="btn" id="btn-ser-cue">▶ Fire cue</button>
-          <button class="btn" id="btn-ser-colour">▶ Fire in the colour above</button>
-          <button class="btn" id="btn-ser-quarter">Quarter 0 green</button>
-          <button class="btn" id="btn-ser-off">Off</button>
-          <span class="pill" id="ser-state">not checked</span>
-        </div>
-        <h2 style="margin-top:12px">Commands and replies</h2>
-        <ol class="diag-log" id="ser-log"></ol>
       </div>
     </div>
 

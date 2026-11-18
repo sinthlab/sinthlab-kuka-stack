@@ -1,6 +1,7 @@
 "use strict";
 // Diagnostics page. Every board command goes through the dashboard server (POST /api/diag/board),
-// which relays it to the cue board on its own Wi-Fi -- see experiment_ctrl_gui/board.py.
+// which relays it to the cue board over its own Wi-Fi or over the serial link (`GET /<cmd>` runs the
+// same board function) -- see experiment_ctrl_gui/board.py. The controls are the same on both paths.
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -9,11 +10,11 @@ const D = { path: "wifi" };
 async function board(cmd, params = {}) {
   const r = await fetch("/api/diag/board", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Experiment-Ctrl": "1" },
-    body: JSON.stringify({ addr: $("#addr").value.trim(), cmd, params }),
+    body: JSON.stringify({ addr: $("#addr").value.trim(), port: $("#port").value.trim(), path: D.path, cmd, params }),
   });
   const j = await r.json();
   if (j.error) throw new Error(j.error);
-  $("#reply").textContent = `${cmd} (${j.ms} ms)\n${j.text}`;
+  $("#reply").textContent = `${cmd} over ${D.path === "serial" ? "serial" : "Wi-Fi"} (${j.ms} ms)\n${j.text}`;
   return j;
 }
 
@@ -82,32 +83,13 @@ function brightWarn() {
 function setPath(p) {
   D.path = p;
   document.querySelectorAll(".diag-path .tab").forEach((t) => t.classList.toggle("active", t.dataset.path === p));
-  $("#path-wifi").classList.toggle("hidden", p !== "wifi");
-  $("#path-serial").classList.toggle("hidden", p !== "serial");
+  $("#addr-label").classList.toggle("hidden", p !== "wifi");
+  $("#port-label").classList.toggle("hidden", p !== "serial");
   $("#path-note").textContent = p === "wifi"
-    ? "Fires the board over its own Wi-Fi (visual_cue.trigger: wifi). If the ring lights here, the board, the Pixel Shifter and the ring are fine."
-    : "Fires the board over the RS-422 serial link (visual_cue.trigger: serial). The board answers only once the ring is lit, so the round trip below is the cue's delivery time.";
-}
-
-// ---------------- serial path: one command per click, via POST /api/diag/serial
-async function serial(cmd) {
-  const li = document.createElement("li");
-  const now = new Date().toLocaleTimeString();
-  try {
-    const r = await fetch("/api/diag/serial", {
-      method: "POST", headers: { "Content-Type": "application/json", "X-Experiment-Ctrl": "1" },
-      body: JSON.stringify({ port: $("#ser-port").value.trim(), cmd }),
-    });
-    const j = await r.json();
-    if (j.error) throw new Error(j.error);
-    li.textContent = `${now}  ${cmd}  →  ${j.text}${j.ok ? `  (${j.ms} ms)` : ""}`;
-    $("#ser-state").className = "pill " + (j.ok ? "ok" : "err");
-    $("#ser-state").textContent = j.ok ? `answered · ${j.ms} ms` : "no answer";
-  } catch (e) {
-    li.textContent = `${now}  ${cmd}  →  ${e.message}`;
-    $("#ser-state").className = "pill err"; $("#ser-state").textContent = "error";
-  }
-  $("#ser-log").prepend(li);
+    ? "Over the board's own access point (visual_cue.trigger: wifi): join this computer to KUKA_NEOPIXEL first. The board is always at 192.168.4.1."
+    : "Over the RS-422 link through X76 and the media flange (visual_cue.trigger: serial): attach the StarTech adapter to WSL first (usbipd attach --wsl --busid <id>). Refused while an experiment runs: it owns the port.";
+  $("#reach").className = "pill"; $("#reach").textContent = "not checked";
+  check();
 }
 
 // ---------------- LED test: show which pixel is lit
@@ -127,6 +109,7 @@ $("#btn-apply").onclick = () => act("config", cueParams());
 $("#btn-fire").onclick = () => act("cue");
 $("#btn-solid").onclick = () => act("set_color", { r: $("#r").value, g: $("#g").value, b: $("#b").value, w: $("#w").value });
 $("#btn-off").onclick = () => act("off");
+$("#btn-quarter").onclick = () => act("segments", { factor: 4, colors: "0,255,0,0" });  // the pre-training ring states
 $("#btn-save").onclick = () => act("config", { save: 1 });
 $("#btn-reset").onclick = () => { if (confirm("Reset every board setting to the firmware defaults?")) act("config", { reset: 1 }); };
 $("#btn-lt").onclick = async () => {
@@ -134,11 +117,5 @@ $("#btn-lt").onclick = async () => {
   if (!ltTimer) ltTimer = setInterval(ltPoll, 300);
 };
 $("#btn-lt-off").onclick = () => act("off");
-$("#btn-ser-ping").onclick = () => serial("PING");
-$("#btn-ser-cue").onclick = () => serial("CUE");
-$("#btn-ser-colour").onclick = () => serial(`CUE ${+$("#r").value} ${+$("#g").value} ${+$("#b").value} ${+$("#w").value}`);
-$("#btn-ser-quarter").onclick = () => serial("SEG 4 0,255,0,0");
-$("#btn-ser-off").onclick = () => serial("OFF");
 for (const id of ["brightness", "r", "g", "b"]) $("#" + id).addEventListener("input", brightWarn);
 setPath(location.hash === "#serial" ? "serial" : "wifi");
-check();

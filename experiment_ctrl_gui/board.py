@@ -7,9 +7,10 @@ board's own commands go through, and only to a private address -- the board serv
 its own access point -- so the relay cannot be pointed anywhere else. This computer must be joined
 to that access point (KUKA_NEOPIXEL).
 
-The Serial path sends the board's serial commands (end_effector_metro_code/README.md, "The serial
-link") through the StarTech adapter: POST /api/diag/serial {port, cmd} -> one line out, one line back.
-Only those commands, and only to a USB serial port.
+Every command can also go over the serial link instead (path "serial"): the dashboard writes
+`GET /<cmd>?<params>` to the StarTech adapter's port, and the board runs the very same route function
+and answers its text on one line (end_effector_metro_code/README.md, "The serial link"). So the page's
+controls and tests are identical on both paths. Only a USB serial port is accepted.
 
 FakeBoard answers the same commands with the same text in --demo, so the page can be tried with no
 hardware.
@@ -55,40 +56,83 @@ def call(addr: str, cmd: str, params: Dict[str, object]) -> Tuple[bool, str, flo
 
 
 SERIAL_BAUD = 115200
-SERIAL_TIMEOUT_SEC = 1.0
+SERIAL_TIMEOUT_SEC = 2.0
 _SERIAL_PORT = re.compile(r"^/dev/tty(USB|ACM)[0-9]+$")
-_SERIAL_CMD = re.compile(r"^(PING|OFF|CUE|CUE( [0-9]{1,3}){4}|SEG [0-9]{1,2} [0-9,.]{1,200})$")
 
 
 def serial_check(port: str, cmd: str) -> None:
-    """Refuse anything but the board's serial commands, to a USB serial port."""
+    """Refuse anything but the board's own commands, to a USB serial port."""
+    if cmd not in COMMANDS:
+        raise ValueError(f"unknown board command {cmd!r}")
     if not _SERIAL_PORT.match(port):
         raise ValueError(f"serial port must be /dev/ttyUSB<n> or /dev/ttyACM<n>, got {port!r}")
-    if not _SERIAL_CMD.match(cmd):
-        raise ValueError(f"not a board serial command: {cmd!r} (PING, CUE, CUE r g b w, SEG f colors, OFF)")
 
 
-def serial_call(port: str, cmd: str) -> Tuple[bool, str, float]:
-    """(answered, reply line, round trip [ms]). Opens the port for this one command."""
-    serial_check(port, cmd)
-    try:
-        import serial
-    except ImportError:
-        return False, "python3-serial is not installed (sudo apt install python3-serial)", 0.0
+def _legacy_line(cmd: str, params: Dict[str, object]):
+    """The same action in the experiment commands (CUE / SEG / OFF / PING), for board firmware without
+    GET. None when there is no equivalent: settings and the LED test need GET, or the Wi-Fi path."""
+    if cmd == "status":
+        return "PING"
+    if cmd == "cue":
+        return "CUE"
+    if cmd == "off":
+        return "OFF"
+    if cmd == "segments":
+        return f"SEG {int(params.get('factor', 1))} {params.get('colors', '')}"
+    if cmd == "set_color":
+        rgbw = ",".join(str(int(params.get(k, 0) or 0)) for k in "rgbw")
+        return f"SEG 1 {rgbw}"          # one arc of the whole ring = a solid colour
+    return None
+
+
+_LEGACY_NOTE = ("(board firmware without GET: over serial only Check board, Fire cue, Solid colour, "
+                "Quarter 0 green and Off work; settings and the LED test need the Wi-Fi path)")
+
+
+def _exchange(port: str, line: str) -> Tuple[bool, str, float]:
+    """Write one line, read one reply line: (opened, reply, round trip [ms])."""
+    import serial
     try:
         with serial.Serial(port, SERIAL_BAUD, timeout=SERIAL_TIMEOUT_SEC) as s:
             s.reset_input_buffer()
             t0 = time.monotonic()
-            s.write((cmd + "\n").encode())
-            reply = s.readline().decode(errors="replace").strip()
-            ms = (time.monotonic() - t0) * 1000.0
+            s.write((line + "\n").encode())
+            reply = s.readline().decode(errors="replace").rstrip("\r\n")
+            return True, reply, (time.monotonic() - t0) * 1000.0
     except (OSError, serial.SerialException) as exc:
         return False, (f"cannot open {port} ({exc}). Is the StarTech adapter attached to WSL "
                        f"(usbipd attach --wsl --busid <id>) and this user in the dialout group?"), 0.0
+
+
+def serial_call(port: str, cmd: str, params: Dict[str, object]) -> Tuple[bool, str, float]:
+    """The same command as call(), over the serial link: `GET /<cmd>?<params>` runs the board's own
+    route function and answers `OK <its text, lines joined by tabs>`. (reached, reply text, round trip [ms])."""
+    serial_check(port, cmd)
+    query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None and v != ""})
+    line = f"GET /{cmd}" + (f"?{query}" if query else "")
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        return False, "python3-serial is not installed (sudo apt install python3-serial)", 0.0
+    opened, reply, ms = _exchange(port, line)
+    if not opened:
+        return False, reply, 0.0
+    if reply.startswith("ERR unknown command"):        # firmware from before GET: fall back
+        legacy = _legacy_line(cmd, params)
+        if legacy is None:
+            return False, f"{cmd}: not available over serial {_LEGACY_NOTE}", ms
+        opened, reply, ms = _exchange(port, legacy)
+        if not opened:
+            return False, reply, 0.0
+        ok = reply == "PONG" or reply.startswith("ACK")
+        text = ("serial=up\n" + _LEGACY_NOTE + "\n") if cmd == "status" and ok else f"{legacy} -> {reply}\n"
+        return ok, text if ok else (reply or "no reply"), ms
     if not reply:
-        return False, (f"no reply within {SERIAL_TIMEOUT_SEC:.0f} s. Is the board powered and the link "
-                       f"wired (StarTech switch 1 ON, 2-4 OFF)?"), ms
-    return not reply.startswith("ERR"), reply, ms
+        return False, (f"no reply on {port} within {SERIAL_TIMEOUT_SEC:.0f} s. Is the board powered and "
+                       f"the link wired?"), ms
+    if not reply.startswith("OK "):
+        return False, reply, ms
+    return True, reply[3:].replace("\t", "\n") + "\n", ms
 
 
 class FakeBoard:
@@ -154,17 +198,3 @@ class FakeBoard:
         if cmd == "segments":
             return True, "Segments updated\n", 3.0
         raise ValueError(f"unknown board command {cmd!r}")
-
-    def serial(self, cmd: str) -> Tuple[bool, str, float]:
-        """The serial link's replies, simulated."""
-        word = cmd.split()[0]
-        if word == "PING":
-            return True, "PONG", 1.2
-        if word == "CUE":
-            self.cue_until = time.monotonic() + float(self.cfg["duration"])
-            self.serial_fired = getattr(self, "serial_fired", 0) + 1
-            return True, f"ACK CUE {self.serial_fired}", 1.4
-        if word == "OFF":
-            self.cue_until, self.test = 0.0, None
-            return True, "ACK OFF", 1.2
-        return True, "ACK SEG", 1.3

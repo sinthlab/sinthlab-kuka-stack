@@ -807,6 +807,40 @@ def test_serial_link():
     check("/status says so", "serial=unavailable" in call(fw, "/status"))
 
 
+def test_serial_get_matches_wifi():
+    section("Serial GET runs the same board functions as Wi-Fi")
+
+    def get(fw, path):
+        reply = serial(fw, ("GET " + path + "\n").encode()).decode()
+        return reply
+
+    def as_text(reply):
+        assert reply.startswith("OK "), reply
+        return reply[3:].rstrip("\n").replace("\t", "\n") + "\n"
+
+    a, b = load(), load()
+    for route, params, query in (
+            ("/config", {"r": 0, "g": 255, "b": 0, "w": 0, "pattern": "segment", "duration": 1.2},
+             "r=0&g=255&b=0&w=0&pattern=segment&duration=1.2"),
+            ("/set_color", {"r": 10, "g": 20, "b": 30, "w": 40}, "r=10&g=20&b=30&w=40"),
+            ("/segments", {"factor": 4, "colors": "0,255,0,0.0,0,0,0"}, "factor=4&colors=0%2C255%2C0%2C0.0%2C0%2C0%2C0"),
+            ("/off", {}, ""),
+            ("/cue", {}, ""),
+            ("/led_test", {"from": 3, "to": 5, "step": 0.5}, "from=3&to=5&step=0.5")):
+        wifi = call(a, route, **params)
+        reply = get(b, route + ("?" + query if query else ""))
+        check(f"GET {route} answers like Wi-Fi", as_text(reply) == wifi, repr(reply[:60]))
+        check(f"GET {route} leaves the ring the same", [a.pixels[i] for i in range(60)] == [b.pixels[i] for i in range(60)])
+    check("the settings changed the same way", a.cfg == b.cfg)
+    status = as_text(get(b, "/status"))
+    check("GET /status is the status text", "serial=up" in status and "led_test_pixel=3" in status)
+    check("+ and %XX are decoded", b._unquote("a+b%2Cc") == "a b,c")
+    for bad in ("/fs", "/fs/get?path=code.py", "/nope"):
+        reply = get(b, bad)
+        check(f"GET {bad} refused", reply.startswith("ERR"), reply)
+    check("GET with no path refused", serial(b, b"GET\n").startswith(b"ERR"))
+
+
 def test_surface_is_the_documented_one():
     section("The API surface is the documented one")
     fw = load()
@@ -846,6 +880,7 @@ def main():
         test_file_server_is_read_only,
         test_led_test,
         test_serial_link,
+        test_serial_get_matches_wifi,
         test_surface_is_the_documented_one,
     ):
         NVM.nvm[:] = bytearray(256)             # each test starts from a blank board
