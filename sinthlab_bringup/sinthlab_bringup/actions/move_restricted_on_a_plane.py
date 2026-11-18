@@ -83,6 +83,7 @@ class MoveRestrictedOnAPlaneAction:
 
         self._active = False
         self.last_measured_joints = np.zeros(self.robot.ndof)
+        self.latest_joints: Optional[np.ndarray] = None       # every state, active or not (live view)
         self._q_cmd_at_start: Optional[np.ndarray] = None   # commanded joints when the fixture started
         self._initial_transform: Optional[np.ndarray] = None  # the anchor; None until anchored
         self._published_xyz: Optional[np.ndarray] = None      # last commanded translation (step clamp)
@@ -181,13 +182,15 @@ class MoveRestrictedOnAPlaneAction:
 
     def _state_cb(self, msg: LBRState):
         """Runs at the state rate (~100 Hz): project the measured pose, step-clamp it, publish."""
-        if not self._active:
-            return
         q_measured = np.array(msg.measured_joint_position)
         # Drop non-finite states (lbr sets them to NaN once FRI leaves COMMANDING_ACTIVE): FK on NaN
         # yields a NaN pose/quaternion, which faults the impedance controller and shows up as
         # TF_NAN_INPUT / TF_DENORMALIZED_QUATERNION downstream.
         if not np.all(np.isfinite(q_measured)):
+            return
+        # The arm's joints, kept even while the fixture is off, for the dashboard's live maze view.
+        self.latest_joints = q_measured
+        if not self._active:
             return
         self.last_measured_joints = q_measured
 

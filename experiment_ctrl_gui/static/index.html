@@ -82,6 +82,18 @@
       </details>
     </div>
 
+    <div class="card maze-card hidden" id="maze-card">
+      <div class="maze-head">
+        <h2>Maze — live</h2>
+        <a class="btn small" href="/maze.html" target="_blank" rel="noopener" title="The same view, full screen, e.g. on a second monitor">Full screen</a>
+      </div>
+      <canvas id="maze-canvas" class="maze-canvas" aria-label="The arm's position on the maze"></canvas>
+      <p class="maze-status" id="maze-status"></p>
+      <p class="maze-legend muted small"><span class="key dot"></span> arm <span class="key trail"></span> last 10 s
+        <span class="key ring cp"></span> checkpoint (filled once visited) <span class="key ring goal"></span> goal
+        (dashed until it counts) <span class="key pull"></span> pull back to the path</p>
+    </div>
+
     <div class="card params-card">
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
@@ -122,6 +134,7 @@
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="tip" class="tip" role="tooltip"></div>
+<script src="maze_view.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

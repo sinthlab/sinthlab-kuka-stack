@@ -13,6 +13,7 @@ classified, where the parameter help comes from, and how to extend it.
 - [Robot side: ExperimentControl](#robot-side-experimentcontrol)
 - [Parameter model](#parameter-model)
 - [Parameter documentation](#parameter-documentation)
+- [Live maze view](#live-maze-view)
 - [Diagnostics page](#diagnostics-page)
 - [Post-processing page](#post-processing-page)
 - [HTTP API](#http-api)
@@ -50,6 +51,7 @@ flowchart LR
     RUN -- "subprocess (own process group)<br/>stdout → log" --> L
     L --> O
     O -- "experiment_status (JSON, latched)" --> BR
+    O -- "maze_view/geometry · maze_view/state (maze only)" --> BR
     BR -- "set_parameters_atomically (live only)" --> O
     BR -- "stop (Trigger)" --> O
     HW -- "lbr_state (FRI session, rate)" --> BR
@@ -70,14 +72,14 @@ flowchart LR
 |---|---|
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
-| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
+| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status`, `lbr_state` and the maze view topics, and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb / perturb bump / random start) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `board.py` | the Diagnostics page's Visual cue tab: sends each board command over the board's Wi-Fi or, as `GET /<cmd>`, over the serial link through the StarTech adapter; `FakeBoard` for `--demo` |
 | `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
 | `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
-| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
+| `static/` | the pages: `index.html` + `app.js`, `maze.html` + `maze_view.js` (the live maze view, also drawn on the dashboard), `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
 | `run_gui.sh` | sources ROS 2 and the workspace, then runs `server.py` |
@@ -179,6 +181,46 @@ The help text comes from the YAML files (`params.yaml_docs()`):
 
 The Fixed tab's SmartPad and launch-argument rows are not YAML keys; their help is in
 `SMARTPAD_HELP` and `LAUNCH_HELP` in `params.py`.
+
+---
+
+## Live maze view
+
+While the maze runs, the dashboard shows a **Maze — live** card under the trial status: the arm drawn
+on the maze it is in, updated 10 times a second. **Full screen** opens the same view on its own page
+(`/maze.html`), for a second monitor.
+
+| Drawn | Means |
+|---|---|
+| grey band and line | the path the arm is held to (rounded corners included), and the band within `on_rail_tol` (15 mm) of it that counts as "on the path" |
+| `+` | the start: the point the maze is anchored on |
+| blue circles, numbered | the checkpoints, numbered as in the log; filled green once visited this trial |
+| orange circle | the goal: dashed while it does not count yet (a shape's goal opens only after every checkpoint), solid once it does |
+| orange dot | the arm (the end effector); grey when the fixture is not holding it (before the maze phase, and after the goal or a timeout) |
+| faint orange line | the arm's last 10 s; cleared at each new trial |
+| amber line to a small ring | off the path: where the spring is pulling the arm back to |
+
+The line under the view says the same in words: held or not, distance from the path, checkpoints
+visited, and whether the goal counts. It also says when the arm is away from the maze (parking, or
+moving to the start), when the maze has not anchored yet this trial, and when no position has come for
+2 s.
+
+Coordinates are the maze's own plane, as in the trial data (`rel_a`, `rel_b`) and in
+`analysis/plot_trajectory.py`: a (sideways) to the right, b (up/down) upwards.
+
+**Where it comes from:** [`helpers/maze_view.py`](../sinthlab_bringup/sinthlab_bringup/helpers/maze_view.py)
+in the maze orchestrator. It only reads the fixture and the checkpoint monitor; it changes nothing in
+the experiment.
+
+| Topic | Type | Content |
+|---|---|---|
+| `<ns>/maze_view/geometry` | `std_msgs/String`, JSON, transient-local | once per run: the profile, the path as one polyline per piece, `on_rail_tol_m`, checkpoints and goal as `[a, b, radius]`, `goal_after_all` |
+| `<ns>/maze_view/state` | `std_msgs/String`, JSON, 15 Hz | `trial`, `anchored`; once anchored: `ee [a, b]`, `dist_m` to the path, `active` (the fixture is holding the arm), `target [a, b]` (where the spring pulls, while active), `visited`, `goal_armed`, `completed` |
+
+The arm's position is the measured joints through forward kinematics, relative to the anchor the
+fixture captured this trial. The last anchor is kept after the maze phase, so the arm stays in view
+through the release wait until it moves away to park. In `--demo` a simulated arm walks the selected
+maze (any profile, rails or shape) and visits the checkpoints by the same rules.
 
 ---
 
@@ -298,7 +340,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices, step), `groups` (block docs), `fixed` (Fixed tab sections) |
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
-| GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post", "data": …}` |
+| GET | `/api/maze` | the live maze view's latest `geometry` and `state` (`null` before the maze has run) |
+| GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post" \| "maze", "data": …}`; `maze` is `{kind: "geometry" \| "state", data}`, the arm at most 10 times a second |
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal. With `nsp_sync.enabled`, first sends the cabinet the experiment start pulse (`PULSE <nsp_sync.experiment_start_output> <width>`) and logs when it was sent and the answer |
@@ -334,7 +377,8 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
   Start / Stop run for real.
 - `DemoBridge` simulates an orchestrator on a fast clock. It uses the same trial phases, the same
   Stop / held behaviour, the same live-parameter rules (`live_params.py`), the same apply-at-next-trial
-  behaviour, and heartbeats once a second.
+  behaviour, and heartbeats once a second. In the maze, a simulated arm walks the selected maze for the
+  live maze view.
 
 Nothing connects to the arm.
 
@@ -385,4 +429,4 @@ URL options, for testing and for linking:
 | `?exp=maze` | select an experiment |
 | `?tab=live` \| `run` \| `fixed` | open a tab |
 | `?hover=<parameter>` | open that parameter's help popup |
-| `?nostream` | poll `/api/state` every second instead of using the event stream. Use it behind a proxy that breaks SSE, and for headless screenshots, since an open stream never lets a headless browser go idle |
+| `?nostream` | poll `/api/state` (and, in the maze, `/api/maze`) every second instead of using the event stream; `maze.html` takes it too. Use it behind a proxy that breaks SSE, and for headless screenshots, since an open stream never lets a headless browser go idle |

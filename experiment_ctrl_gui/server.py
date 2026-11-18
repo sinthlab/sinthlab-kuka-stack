@@ -38,6 +38,7 @@ from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
 STATUS_STALE_SEC = 3.0         # the orchestrator heartbeats every 1 s
+MAZE_VIEW_HZ = 10.0            # live maze view: arm positions sent to the page at most this often
 STOP_PARK_TIMEOUT_SEC = 60.0   # Stop: end the launch anyway if the arm has not parked by then
 CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom header without CORS
 
@@ -54,7 +55,8 @@ class App:
         self.stopping = False   # Stop pressed: the arm is parking, then the launch stops
         self.runner = LaunchRunner(on_line=lambda e: self.broadcast("log", e),
                                    on_state=self._on_runner_state)
-        self.bridge = make_bridge(demo, robot_name, self._on_status)
+        self._maze_sent = 0.0
+        self.bridge = make_bridge(demo, robot_name, self._on_status, self._on_maze)
         if isinstance(self.bridge, DemoBridge):
             self.bridge.attach_log(self.runner.emit)
         if not self.bridge.available:
@@ -140,6 +142,15 @@ class App:
         if self.stopping and status.get("held") and self.runner.running():
             self.stopping = False
             self.runner.stop("the arm is parked and holding")
+
+    def _on_maze(self, kind: str, data: dict) -> None:
+        """The live maze view (helpers/maze_view.py): geometry as it comes, the arm at MAZE_VIEW_HZ."""
+        now = time.time()
+        if kind == "state":
+            if now - self._maze_sent < 1.0 / MAZE_VIEW_HZ:
+                return
+            self._maze_sent = now
+        self.broadcast("maze", {"kind": kind, "data": data})
 
     def _on_runner_state(self) -> None:
         if isinstance(self.bridge, DemoBridge) and not self.runner.running():
@@ -336,6 +347,8 @@ def make_handler(app: App):
                 return self._json({"params": p.describe(), "groups": p.groups(),
                                    "fixed": read_fixed_config(ex.BY_KEY[key], p),
                                    "start_height": _start_height(p)})
+            if path == "/api/maze":
+                return self._json(app.bridge.maze())
             if path == "/api/logs":
                 return self._json(list(app.runner.lines))
             if path == "/api/post/state":

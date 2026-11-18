@@ -17,6 +17,7 @@ from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
 from sinthlab_bringup.helpers.experiment_control import ExperimentControl
+from sinthlab_bringup.helpers.maze_view import MazeView
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
@@ -101,7 +102,11 @@ class MazeOrchestratorNode(rclpyNode):
             # Place checkpoints + goal on the rails' own origin (anchored after the settle), not a
             # separate first-tick capture ~4 cm above it -- that offset made the goal unreachable.
             origin_provider=self.maze_fixtures.anchor_position,
+            # A maze shape (the "0", fish, duck) carries its own checkpoints and goal in its block.
+            waypoints_prefix=f"virtual_fixtures.{self.maze_fixtures.active_profile}.",
         )
+        # The dashboard's live maze view: the arm drawn on the maze (helpers/maze_view.py). Read-only.
+        self.maze_view = MazeView(self, self.maze_fixtures, self.checkpoint_monitor, lambda: self.trial_count)
         self.safety = SafetyStopMonitor(self, param_prefix="maze_safety", on_trip=self.on_safety_trip)
         self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self.goal_cue = AudioCue(self, param_prefix="audio_cue_goal", on_complete=lambda: None)

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maze Live View</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Maze — live</h1>
+      <p class="sub" id="maze-sub">waiting for the maze experiment</p>
+    </div>
+  </div>
+  <div class="pills">
+    <a class="btn small" href="/">← Dashboard</a>
+  </div>
+</header>
+
+<main class="maze-full">
+  <canvas id="maze-canvas" class="maze-canvas" aria-label="The arm's position on the maze"></canvas>
+  <p class="maze-status" id="maze-status"></p>
+  <p class="maze-legend muted small"><span class="key dot"></span> arm <span class="key trail"></span> last 10 s
+    <span class="key ring cp"></span> checkpoint (filled once visited) <span class="key ring goal"></span> goal
+    (dashed until it counts) <span class="key pull"></span> pull back to the path</p>
+</main>
+
+<script src="maze_view.js"></script>
+<script>
+"use strict";
+// The dashboard's maze card, full screen: the same view, fed by the same event stream.
+const view = new MazeView(document.getElementById("maze-canvas"), document.getElementById("maze-status"));
+const sub = document.getElementById("maze-sub");
+
+function showTrial(state) {
+  const s = state && state.status;
+  if (!s || s.stale || s.experiment !== "maze") { sub.textContent = "waiting for the maze experiment"; return; }
+  sub.textContent = `Trial ${s.trial} · ${String(s.phase).replace(/_/g, " ")}`;
+}
+
+async function load() {
+  try {
+    const m = await (await fetch("/api/maze", { cache: "no-store" })).json();
+    view.setGeometry(m.geometry); view.setState(m.state);
+    showTrial(await (await fetch("/api/state", { cache: "no-store" })).json());
+  } catch { /* the stream below fills in */ }
+}
+
+load();
+if (new URLSearchParams(location.search).has("nostream")) {
+  setInterval(load, 1000);      // as on the dashboard: poll, for a proxy that breaks the event stream
+} else {
+  const es = new EventSource("/api/events");
+  es.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "maze") view.feed(m.data);
+    else if (m.type === "state") showTrial(m.data);
+  };
+  es.onerror = () => { sub.textContent = "dashboard disconnected"; };
+  es.onopen = load;     // after a reconnect, the geometry may have changed (a new run)
+}
+</script>
+</body>
+</html>

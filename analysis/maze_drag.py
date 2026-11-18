@@ -198,7 +198,7 @@ def analyse_trial(path, kin, K_flange, meta):
         if not (i0 <= i <= i1):
             continue
         r = int(rail[i]) if rail is not None and np.isfinite(rail[i]) else -1
-        if 0 <= r < len(corridors):
+        if 0 <= r < len(corridors) and not geo.get("shape"):     # a shape's sides run at any angle
             a_min, a_max, b_min, b_max = corridors[r]
             along[k] = free[1] if a_min == a_max else free[0]
         else:
