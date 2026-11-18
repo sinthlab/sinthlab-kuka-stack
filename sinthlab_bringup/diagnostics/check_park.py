@@ -25,7 +25,7 @@ import numpy as np
 import yaml
 
 MIN_SIGMA, MIN_MARGIN_DEG = 0.10, 10.0
-APPLE_M = 0.212          # apple centre along the tool axis from the flange [m]
+APPLE_M = 0.2155         # apple centre along the tool axis from the flange [m]
 
 
 def main() -> int:

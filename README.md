@@ -14,8 +14,10 @@ equilibrium** via `kuka_clik_controller`. Python state machines sequence each tr
 The repo also carries the physical end of the rig: the parametric
 [end‑effector design](end_effector_design/README.md) and the
 [end‑effector board firmware](end_effector_metro_code/README.md) — a NeoPixel cue ring triggered
-over a hardwired media‑flange line, whose **appearance is configured on the board over its own
-Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue). The
+over an RS‑422 serial link through the media flange or over the board's own Wi‑Fi, whose **appearance
+is configured on the board over its Wi‑Fi**, see [§6.7](#67-end-effector-board--the-visual-cue) — and
+the [Inside electric flange data path](in_electric_flange_data_path/README.md): building that serial
+link, from the X76 plug to the software, with its tests and troubleshooting. The
 [reward and sync box](reward_and_sync_box/README.md) — the 24 V juice-valve driver (foot pedal, hand
 switch or NSP TTL trigger) and the Beckhoff TTL stack that sends trial events to the NSP — is
 documented with its parts list, wiring and panel CAD.
@@ -146,6 +148,9 @@ written, the page asks for the server folder and uploads it, verifying the copy.
    then **always** moves the arm to mechanical zero and on to the ready pose `[0, 10, 0, −80, 0, 90, 0]`
    (no prompt; hold the enabling switch while it moves; see
    [Start-up posture](#start-up-posture-zero-then-ready)). It then waits about 60 s for ROS.
+   - **Cue over the serial link** (`visual_cue.trigger: serial`): the StarTech adapter must be
+     attached to WSL — `ls /dev/ttyUSB*` shows `/dev/ttyUSB0`. After any WSL restart or crash, or a
+     Windows reboot, [re-attach it](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes) first.
 3. **Check the parameters** ([below](#live-per-run-and-fixed-parameters)). Edited rows get an
    `edited` badge, and ↺ puts one back to the YAML value. Hover over any parameter for its full
    help.
@@ -222,8 +227,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `audio_cue.enabled` | master switch for every beep; off, the trial runs the same but silent |
 | `audio_cue_*.frequency_hz`, `audio_cue_*.duration_ms` | each tone (37–32767 Hz, 10–10000 ms) |
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
-| `visual_cue.remote_test_trigger` | fire the ring over its Wi-Fi (demos) or the X76 wire |
-| `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site (Wi-Fi trigger only) |
+| `visual_cue.trigger` | how cues reach the ring: `serial` (the RS-422 link) or `wifi` (the board's access point); the experiment is the same either way |
+| `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site |
 | `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 10) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
@@ -334,6 +339,11 @@ None of these are committed to git.
   log says so.
 - **The cue ring does not light.** Open **Diagnostics → Visual cue**: *Check board*, then *Fire cue* over
   Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics--hardware-checks).
+- **The serial cue link stopped answering after WSL restarted or crashed** (log: `serial port …
+  cannot be opened`, or Diagnostics → Serial → Ping fails). The adapter left WSL with it. In
+  PowerShell as administrator: `usbipd attach --wsl --busid <busid>`; if that fails, `usbipd detach`,
+  `unbind`, `bind`, then `attach` again. Then set the latency timer. Full steps:
+  [Re-attach after WSL restarts or crashes](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes).
 - **"Dashboard disconnected".** The dashboard server stopped. Restart it. If it was running an
   experiment, that experiment was stopped cleanly when the server stopped.
 
@@ -471,11 +481,11 @@ them against your version):
    |---|---|---|---|
    | A2 | ±120° | **−112° … 112°** | 102° (maze) |
    | A4 | ±120° | **−112° … 112°** | 106° (maze) |
-   | A6 | ±120° | **−112° … 112°** | 102° (apple pluck, elbow folded the wrong way) |
+   | A6 | ±120° | **−105° … 105°** | 102° (apple pluck, elbow folded the wrong way) |
 
-   A1, A3, A5 and A7 (±170–175°) never came within 140° of their limits. The 8° margin leaves room
-   to brake before the software limit; if a hard pull still reaches it, narrow the range, and if
-   normal runs trip it, widen it. Keep every pose you configure inside these ranges, or its move
+   A1, A3, A5 and A7 (±170–175°) never came within 140° of their limits. The margin (8° on A2/A4,
+   15° on A6) leaves room to brake before the software limit; if a hard pull still reaches it,
+   narrow the range, and if normal runs trip it, widen it. Keep every pose you configure inside these ranges, or its move
    trips the stop.
 3. **Synchronize** the project to the controller. The smartPAD then reports **"safety configuration
    is not activated"** and the robot will not move: a changed safety configuration stays inactive
@@ -491,7 +501,7 @@ them against your version):
       that the error has cleared.
 5. **Do KUKA's safety acceptance** (the checklist in the operating manual) and record the new
    checksum. KUKA requires it after any change to the safety configuration.
-6. **Test in T1** before an experiment: jog A2, A4 and A6 slowly toward ±112° and check each stops
+6. **Test in T1** before an experiment: jog A2 and A4 slowly toward ±112° and A6 toward ±105°, and check each stops
    there (smartPAD error *axis range monitoring, instance N*), then recover it as below. Then run a
    normal maze trial and check it does not trip.
 
@@ -502,10 +512,40 @@ them against your version):
 2. Acknowledge the message, enable, and jog the tripped axis slowly back inside its range.
 3. Switch back to the previous mode (T1 or AUT) and restart the run.
 
-**Do not unmaster the axis.** With an axis unmastered the safety controller cannot trust its
-position, so the monitor stays violated and the axis cannot be moved even to remaster it. If that
-happens, KRF is again the way out: enable the joints there, remaster, and move the axis back
-inside the range.
+**When the axis went past its software limit as well** (±120° on A2/A4/A6; smartPAD: *hardware
+limit exceeded*): the monitor stops the arm, but a hard pull on a soft spring can carry the joint on
+past the limit while it brakes. The software limit switches are not part of the safety controller
+(Sunrise.OS manual §3.5.2.3: non-safety machine protection), so KRF does not lift them, and the
+arm will not enable even in KRF. An unmastered axis has no software limits, so the way out is to
+unmaster that axis, move it back, and master it again (manual §7.3):
+
+*Unmaster and move it back*
+1. Switch the smartPAD to **T1**. Note which axis is past its limit and on which side (the error
+   message, or the **Axis position** view).
+2. **Robot** level → **Mastering** tile. The Mastering view lists every axis and whether it is
+   mastered.
+3. Press **Unmaster** for that axis only. Nothing moves; the axis now shows as unmastered.
+4. Acknowledge the messages, select **axis-specific jogging** (an unmastered robot allows nothing
+   else) and set a low jog override (10 %).
+5. Hold the enabling switch and jog **only that axis** back towards zero, well inside its monitored
+   range (±112°, A6 ±105°).
+
+*Master it again*
+6. Still in the Mastering view, pick the tool: the **end-effector tool** if its tool offset has been
+   taught (the axis shows a taught offset), otherwise **No tool**. Always use the same choice, and
+   master from the same arm pose (the cannon position with a tool, the vertical stretch without).
+7. Hold the enabling switch and press **Master** for the axis. It searches for its mastering mark,
+   then moves to its zero position. Keep the enabling switch held until it stops; the axis now shows
+   as mastered.
+
+*Reference it and restart*
+8. **Position referencing.** A remastered axis is not position-referenced, and the axis-range
+   monitors are position-based, so they are not safe until it is (manual §13.13.1). Jog the axis
+   over 0° slowly (< 30 °/s; the 10 % override is well under) through **±10.5°** (A6/A7: **±14°**)
+   on each side. The safety controller references it as it crosses; the smartPAD's referencing
+   message clears.
+9. Check the **Safety** view shows the configuration active with no errors, switch back to the
+   previous mode, restart the SmartPad app and restart the run.
 
 ---
 
@@ -713,7 +753,7 @@ experiment's YAML as `floor` (Per-run on the dashboard):
 | `floor.trip_margin_m` | how far below the floor the measured point may get before the trial is aborted (default 0.03 m) |
 
 Both reference points follow the tool's orientation, from the end-effector geometry (apple centre
-212 mm from the flange, Ø45 ball; base Ø188, 16–90 mm from the flange). It is enforced in three
+215.5 mm from the flange, Ø45 ball; base Ø188, 16–93 mm from the flange). It is enforced in three
 layers ([`helpers/floor.py`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)):
 
 1. **A soft wall** wherever ROS moves the spring's equilibrium: the maze, restricted plane and rail
@@ -834,8 +874,8 @@ marks the start of that wait).
 **The elbow wall.** A pull toward the monkey straightens the elbow (A4 → 0), and a straight elbow can
 fold back the wrong way and stay there (see *Room for the pull* above). So the equilibrium never
 follows the arm closer to straight than `resistance.elbow_min_deg` (35°) — during the pull or after
-the snap — nor closer than 14° to any joint's limit (A2/A4/A6 stop at ±105°, inside the cabinet's
-±112° axis-range monitors), and never below [the floor](#the-floor--a-height-the-end-effector-never-goes-below).
+the snap — nor closer than 14° to any joint's limit (A2/A4/A6 stop at ±105°: inside the cabinet's
+±112° axis-range monitors on A2/A4, and at A6's ±105° one), and never below [the floor](#the-floor--a-height-the-end-effector-never-goes-below).
 From there the full base spring resists. **That is a real wall only on a stiff base**: on Uniform 400
 it holds 4 N per cm; on Uniform 100 only 1 N per cm, which a determined pull goes through. So for
 apple pluck, prefer **Uniform 400 with `resistance.stiffness_n_per_m` 100**: the pull feels as on
@@ -1545,9 +1585,8 @@ the lists to match:
 ```bash
 curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"     # quarter 0 green; /off to clear
 ```
-The quarter cues use the board's existing `/segments` endpoint, so **the firmware needs no change**.
-They need the **Wi-Fi trigger** (`visual_cue.remote_test_trigger: true`), because the X76 wire carries
-one bit, not a pattern.
+The quarter cues go out on whichever path `visual_cue.trigger` selects: the board's `/segments`
+request over Wi-Fi, or the equivalent `SEG` command over the serial link.
 
 **Reach** (IK from the maze start, holding the tool orientation): sideways to ±0.15 m and down to
 −0.12 m are fine (every joint ≥ 17° from its limit; at −0.12 m the apple bottom is at 0.90 m, above the
@@ -1641,8 +1680,8 @@ Blue: Layer 3, orchestration (Python). Green: Layer 2, kinematics (Python). Oran
 real-time control (C++, ros2_control). Purple: hardware.
 
 The actions, one by one, are in the [§6.2 table](#62-composition--the-launch-brings-up-hardware-the-orchestrator-runs-the-experiment).
-The visual cue currently fires over the ring's Wi-Fi (a test trigger); the X76 wire is planned
-([§6.7](#67-end-effector-board--the-visual-cue)).
+The visual cue fires over the RS-422 serial link or the ring's Wi-Fi, whichever `visual_cue.trigger`
+selects ([§6.7](#67-end-effector-board--the-visual-cue)).
 
 > **Where the "feel" is decided.** The fixture geometry (Python) says *where* the walls are; the
 > cabinet's **per-axis stiffness** says *how firm* they are; and the **tracking clamps**
@@ -2052,12 +2091,13 @@ The [apple‑pluck end effector](end_effector_design/README.md) carries its own 
 **visual cue** for the subject. Its CircuitPython firmware lives in
 [`end_effector_metro_code/`](end_effector_metro_code/README.md).
 
-**The cue is on and off with a timer.** The board runs its configured cue whenever **X76 contacts 1
-and 2 are shorted** at the robot base; the short travels up through the media flange to the tool
-connector and pulls the board's `D2` low:
+**The cue is on and off with a timer.** The ROS computer sends `CUE` over an RS‑422 serial link
+that runs through X76 and the media flange to the tool connector; the board runs its configured cue,
+then answers `ACK CUE` once the ring is lit:
 
 ```
-   switch at robot base ── X76 contacts 1/2 ══ media flange ══ tool pins 9/10 ──► Metro D2
+   ROS computer ─USB─► StarTech ══ X76 1/2 ══ media flange ══ tool pins 9/10 ──► MikroE ──► Metro D8
+                ◄──────────────── X76 4/5 ══ media flange ══ tool pins 12/13 ◄── MikroE ◄── Metro D0
                                                                                   ring on, then off
 ```
 
@@ -2069,11 +2109,9 @@ to **tool pins 1/2**, into the Tobsun converter, down to the 5 V rail. Full pino
 pass‑through with no cabinet‑driven I/O, and the Sunrise project has no generated I/O groups
 (`src/com/kuka/generated/` does not exist). The Sunrise application plays no part in the cue.
 
-**The wire path is an RS‑422 serial link — decided, parts on order.** The effector casing opens, so
-firmware can be redeployed, and the force/pressure sensor needs a data channel off the tool anyway; one
-full-duplex differential link carries both the cue trigger and the sensor data. A dry-contact relay on
-X76 1–2 would be **redundant and two orders of magnitude slower** — a mechanical contact is 5–15 ms
-against ~80 µs of wire time.
+**The wire path is an RS‑422 serial link.** One full-duplex differential link carries both the cue
+trigger and, later, the sensor data off the tool. A dry-contact relay on X76 1–2 would be **two
+orders of magnitude slower** — a mechanical contact is 5–15 ms against ~80 µs of wire time.
 
 | | |
 |---|---|
@@ -2083,52 +2121,55 @@ against ~80 µs of wire time.
 
 Notes:
 
-- **No optocoupler on the inbound path.** The only voltage in the trigger loop is the Metro's own
-  3.3 V through D2's pull‑up; a floating contact has nothing to isolate. The *outbound* direction is
-  different — anything the Metro drives toward a 24 V cabinet input does need one.
+- **No optocoupler.** The StarTech isolates the link from the ROS computer (2500 Vrms), and the
+  tool side runs on the Metro's own 3.3 V.
 - **`latency_timer` must be set to 1.** FTDI defaults to 16 ms of buffering, which would hand back
   exactly the delay the serial link was chosen to avoid. See §9.
-- **Until the link is fitted, the experiments run unchanged.** [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
-  is called beside `AudioCue` at all eight cue sites. On the wire path it is a **safe no‑op**: it
-  completes immediately and warns once if `visual_cue.enabled` is true.
-- **When the link is up,** implement `VisualCue._close_switch()` as a serial write
-  and set `visual_cue.remote_test_trigger: false`. If the arm box runs WSL2, the adapter needs
-  `usbipd-win attach`.
+- **The full build** — parts and links, the X76 plug assembly, wiring, WSL2 setup, tests and
+  troubleshooting — is in [`in_electric_flange_data_path/`](in_electric_flange_data_path/README.md); the command set is in
+  [the firmware README](end_effector_metro_code/README.md#the-serial-link).
+- **The ack marks the light.** The firmware writes `ACK CUE` only after `pixels.show()`, so its
+  arrival on the ROS computer is a per-trial cue-delivery timestamp, about 1 ms after the ring lit.
 
-> **Worth building at the same time: a firmware echo.** The link is full duplex, so the Metro can
-> write an ack **at the moment it calls `pixels.show()`**. That turns cue delivery from unmeasured
-> into a per‑trial timestamp accurate to ~2 ms, with no extra hardware — which is what cue‑locked
-> neural analysis needs. The firmware already has the right shape: `cue_start()` lights the ring
-> *before* the `/cue` handler returns, so the existing Wi‑Fi RTT already brackets the light.
-
-**For demos and recordings, fire the cue over Wi‑Fi instead — no wire needed.** In the
-experiment's YAML set:
+**Choosing the path.** The experiments never know which path a cue takes: `visual_cue.trigger` in each
+experiment's YAML picks it, and it can be changed live (dashboard or `ros2 param set`), taking effect
+from the next trial.
 
 ```yaml
 visual_cue:
-  enabled: true                 # on in the apple pluck and maze configs
-  remote_test_trigger: true
+  enabled: true                 # master switch
+  trigger: "serial"             # serial (the RS-422 link) or wifi (the board's access point)
+  serial_port: "/dev/ttyUSB0"   # the StarTech adapter in WSL (serial only)
+  remote_board: "192.168.4.1"   # the board on its own access point (wifi only)
   colours:                      # optional, per cue site: [r, g, b, w]
     play: [0, 255, 0, 0]        # trial start: green
     snap: [255, 0, 0, 0]        # threshold reached: red
 ```
 
-Then join the ROS computer to the board's **`KUKA_NEOPIXEL`** Wi‑Fi (its Ethernet link to the
-robot is separate) and check the link from the shell you launch from:
-`curl http://192.168.4.1/status`. Each cue site sends `GET http://192.168.4.1/cue` — the same as
-running that `curl` by hand — from a background thread, so a slow or missing board never stalls a
-trial. Every cue is logged with its round‑trip time, and a failed one says why. Each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at threshold, goal and timeout, blue for maze rewards. **Not for
-experiments:** the Wi‑Fi delay varies from cue to cue, so never align trial data to it. Code:
-[`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
+| | `serial` | `wifi` |
+|---|---|---|
+| Needs | the StarTech attached to WSL (`usbipd attach --wsl --busid <id>`) | this computer joined to the board's **`KUKA_NEOPIXEL`** network (its Ethernet link to the robot is separate) |
+| Check it | Diagnostics page, Serial path: **Ping** | `curl http://192.168.4.1/status` |
+| A cue | `CUE` or `CUE r g b w` | `GET /cue`, after `/config?r=..&g=..&b=..&w=..` for a colour |
+| A ring state (pre-training) | `SEG f colors` / `OFF` | `/segments?factor=f&colors=…` / `/off` |
+| Delivery time | a few ms, every cue | varies from cue to cue |
+| Code | [`visual_cue_serial.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py) | [`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py) |
+
+Either way each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at
+threshold, goal and timeout, blue for maze rewards. Commands go out from one background thread, so a
+slow or missing board never stalls a trial; every cue is logged with its round trip, a failed one says
+why, and the board's acknowledgement — sent only once the ring is lit — is recorded as
+`cue_visual_ack`. [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py) is called
+beside `AudioCue` at all eight cue sites.
 
 **Quarter-ring states (pre-training).** The pre-training tasks do not flash a cue; they *hold* a
 state on the ring — chosen quarters green while travelling, red at the threshold, blue on success,
-dark otherwise — with the board's `/segments` endpoint, over Wi-Fi only. See
+dark otherwise — on either path. See
 [Pre-training](#pre-training--free-move-move-vertical-move-horizontal).
 
 #### Changing what the cue looks like
 
-**On the board, not in ROS**, apart from a per‑event colour for Wi‑Fi cues (`visual_cue.colours`
+**On the board, not in ROS**, apart from a per‑event colour (`visual_cue.colours`
 above). Brightness, pattern, segments, duration, rate and the default colour live **on the board** and
 are set over the board's **own Wi‑Fi access point**:
 
@@ -2149,10 +2190,9 @@ are set over the board's **own Wi‑Fi access point**:
    [power section](end_effector_metro_code/README.md#power--read-before-raising-brightness) has
    the per‑colour current table.
 
-The split is deliberate: the trigger line is **one bit** and cannot carry a colour, and an
-experiment cue must not depend on a radio link. So the switch says *when*, and the board — already
-configured by hand — decides *what*. The Wi‑Fi test trigger adds only a colour per event: pattern, duration and brightness stay a
-commissioning step.
+The split is deliberate: each cue says *when*, and the board — already configured by hand — decides
+*what*. A cue adds only a colour per event: pattern, duration and brightness stay a commissioning
+step.
 
 > **Full settings reference, wiring, patterns, and the commissioning order are in
 > [`end_effector_metro_code/README.md`](end_effector_metro_code/README.md).**
@@ -2246,7 +2286,7 @@ machine, so they can appear anywhere and more than once):
 
 | Event | Fired when | `event_arg` | Observed or inferred? |
 |---|---|---|---|
-| `cue_visual_ack` | the board answers a Wi-Fi cue | round trip, ms | **observed** — the firmware calls `pixels.show()` *inside* the `/cue` handler and answers afterwards, so an ack means the ring is already lit |
+| `cue_visual_ack` | the board acknowledges a cue (`ACK CUE` on serial, the `/cue` reply on Wi-Fi) | round trip, ms | **observed** — the firmware calls `pixels.show()` before it answers, on either path, so an ack means the ring is already lit |
 | `cue_audio_end` | the beep subprocess exits | process lifetime, s | **observed** — `[console]::Beep` blocks for exactly `duration_ms`, so the sound's START is `end − duration_ms` |
 
 These exist because `AudioCue.on_complete` fires when `Popen` *returns* — about 49 ms in on WSL2,
@@ -2364,11 +2404,11 @@ the same callback but arrive ~340 ms apart. Two events close that gap:
 | Event | Fired when | Arg | |
 |---|---|---|---|
 | `cue_audio_end` | the beep process exits | lifetime, s | **observed** — `[console]::Beep` blocks for exactly `duration_ms`, so the sound's START is `end − duration_ms` |
-| `cue_visual_ack` | the board answers a Wi-Fi cue | round trip, ms | **observed** — the firmware calls `pixels.show()` *inside* the `/cue` handler and replies after, so an ack means the ring is already lit |
+| `cue_visual_ack` | the board acknowledges a cue (`ACK CUE` on serial, the `/cue` reply on Wi-Fi) | round trip, ms | **observed** — the firmware calls `pixels.show()` before it answers, on either path, so an ack means the ring is already lit |
 
 There is **no photodiode and no microphone**. Robot events (snap, checkpoints, goal) align to neural
-data well under 10 ms; cue-locked analysis still depends on the two markers above, or on the firmware
-echo described in §6.7.
+data well under 10 ms; cue-locked analysis still depends on the two markers above, which over the serial link
+arrives within a few ms of the ring lighting (§6.7).
 
 ### Sync to the Blackrock NSP
 
@@ -2705,9 +2745,13 @@ are all in [`reward_and_sync_box/README.md`](reward_and_sync_box/README.md#sync-
      the window.
   3. **Started too early** — before the app reached *Creating FRI connection to …* (still moving to
      zero / ready). Stop, wait for that line on the SmartPad, Start again.
+- **Visual cues over the serial link stop after WSL restarts or crashes.** The StarTech adapter is
+  detached from WSL whenever WSL stops. Re-attach it with usbipd (detach → unbind → bind → attach if
+  a plain `attach` fails) and reset the latency timer:
+  [Re-attach after WSL restarts or crashes](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes).
 - **The arm stops with a safety error and will not move** — the smartPAD shows *axis range
   monitoring, instance N* (or a *motion paused* message) after a hard or fast pull. A joint reached
-  its monitored range (A2/A4/A6 ±112°, see
+  its monitored range (A2/A4 ±112°, A6 ±105°, see
   [Joint-limit safe stop](#joint-limit-safe-stop-cabinet-safety-configuration)) and the cabinet
   stopped it. The FRI session has ended, so the run cannot carry on. Recover with **KRF**:
   1. Switch the smartPAD's operating mode to **KRF** (controlled robot retraction). It allows slow
@@ -2717,10 +2761,9 @@ are all in [`reward_and_sync_box/README.md`](reward_and_sync_box/README.md#sync-
   3. Switch back to the previous mode (T1 or AUT), restart the SmartPad app if it ended, and restart
      the run.
 
-  **Do not unmaster the axis.** With an axis unmastered the safety controller cannot trust its
-  position, so the monitor stays violated and the axis cannot be moved even to remaster it. If it
-  has been unmastered, KRF is again the way out: enable the joints there, remaster, and move the
-  axis back inside the range.
+  If the smartPAD says *hardware limit exceeded* instead, the joint went past its software limit
+  (±120°) while braking, and KRF does not lift that: unmaster the axis, jog it back, remaster
+  ([steps](#joint-limit-safe-stop-cabinet-safety-configuration)).
 - **"Overrun detected", the arm stops or jerks, or never reaches its start.** Record what the robot and
   ROS were doing, reproduce the problem, and read the summary:
   ```bash

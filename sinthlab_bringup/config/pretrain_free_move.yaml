@@ -175,8 +175,9 @@
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
-      remote_test_trigger: true  # the ring state needs the Wi-Fi trigger (the X76 wire is one bit)
-      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (Wi-Fi trigger only)
+      trigger: "wifi"  # serial (the RS-422 link) or wifi (the board's access point)
+      serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
     # The ring is GREEN while the arm is free to move, dark otherwise.
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # all four quarters (ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59)

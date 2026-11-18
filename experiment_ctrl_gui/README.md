@@ -74,6 +74,7 @@ flowchart LR
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` (apple pluck: pluck / perturb / perturb bump / random start) appear as nested tabs on its card and set its `paradigm` parameter for the next Start, and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
+| `board.py` | the Diagnostics page's Visual cue tab: relays the board's Wi-Fi commands, and sends its serial commands through the StarTech adapter; `FakeBoard` for `--demo` |
 | `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
 | `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
 | `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
@@ -192,22 +193,21 @@ that never move the arm, one tab per device.
 through its Metro board, over the board's own Wi-Fi (join this computer to `KUKA_NEOPIXEL`):
 
 - **Cue board:** is the board reachable, and what it reports — enabled, brightness, colour, pattern,
-  LEDs, whether a cue is running, how many wire cues it has fired, uptime.
+  LEDs, whether a cue is running, the serial link's state and how many serial cues it has fired, uptime.
 - **Path: Wi-Fi.** Set what a cue looks like (colour, pattern, segments, duration, period,
   brightness, enabled) and apply it; fire a cue; solid colour; off; save on the board; reset to the
   firmware defaults; the **LED-by-LED test**, showing which pixel is lit so a dead stretch of the ring
   can be located. If the ring lights here, the board, the Pixel Shifter and the ring are fine.
-- **Path: Wire** (X76 1–2 → tool pin 9 → Metro D2). Nothing on the computer can close the wire yet,
-  so it is tested by hand: short X76 1–2 at the robot base while **Start watching** polls the board's
-  D2 input (4×/s) and logs every edge and every cue the wire fires. It flags a line that reads
-  asserted with nothing shorted (inverted polarity: untick *Active low*, no rewiring) and a board
-  that is not enabled. The trigger settings (active low, debounce, retrigger, mode, enabled) are
-  set here too. `diagnostics.html#wire` opens on this path.
-- **Board replies:** the raw text of the last reply.
+- **Path: Serial** (the RS-422 link through X76). Sends the commands the experiments send with
+  `visual_cue.trigger: serial` — ping, fire a cue, fire it in the colour set above, light quarter 0,
+  off — through the StarTech adapter on the given port, and logs each reply with its round trip.
+  Refused while an experiment runs, since the experiment owns the port. `diagnostics.html#serial`
+  opens on this path.
+- **Board replies:** the raw text of the last Wi-Fi reply.
 
 The browser cannot read the board's replies itself (another origin), so the server relays each
-command (`board.py`). In `--demo` a simulated board answers, so the page can be tried without
-hardware. The command-line equivalent for the wire is `sinthlab_bringup/diagnostics/check_cue_wiring.py`.
+command (`board.py`). In `--demo` a simulated board answers both paths, so the page can be tried
+without hardware.
 
 ### TTL sync
 
@@ -302,6 +302,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/post/upload` `{nwb, dest, overwrite}` | start the verified copy to the server folder |
 | POST | `/api/post/cancel` | cancel the running job |
 | POST | `/api/diag/board` `{addr, cmd, params}` | Diagnostics page: relays one command to the end-effector cue board (`board.py`): only its own commands (`status`, `config`, `cue`, `set_color`, `segments`, `off`, `led_test`), only to a private address |
+| POST | `/api/diag/serial` `{port, cmd}` | Diagnostics page: sends one command to the cue board over the serial link (`board.py`): only `PING`, `CUE`, `CUE r g b w`, `SEG f colors`, `OFF`, only to `/dev/ttyUSB<n>` or `/dev/ttyACM<n>`; refused while an experiment runs |
 | POST | `/api/diag/ttl` `{addr, cmd}` | Diagnostics page: relays one command to the cabinet's TTL sync outputs (`ttl.py`): only `STATUS`, `ALLOFF`, `PULSE <output 1-4> <width 10-5000 ms>`, only to a private address; pulses refused while an experiment runs |
 
 ---

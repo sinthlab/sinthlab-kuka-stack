@@ -5,18 +5,24 @@
 # ---------------------------------------------------------------------------------------------
 # HOW IT WORKS
 # ---------------------------------------------------------------------------------------------
-# TRIGGER (the wire).  Shorting X76 contacts 1-2 at the robot base pulls CUE_PIN to GND.
-#                      The board runs its configured cue for its configured duration, then stops.
+# A CUE.               The board runs its configured cue for its configured duration, then stops.
 #                      On and off with a timer. That is the whole behaviour.
-#                      No network is involved, so the trigger keeps working with Wi-Fi down.
+#
+# It arrives on either path; the ROS computer's `visual_cue.trigger` picks which:
+#   SERIAL             The RS-422 link from the ROS computer, on the UART (TX D0, RX D8). One text
+#                      command per line: CUE fires the cue and answers ACK CUE once the ring is
+#                      lit. The same link will carry the pressure sensor and haptics.
+#   WI-FI              GET /cue on the board's own access point.
 #
 # SETTINGS (the API).  The board hosts its OWN Wi-Fi access point. Join it from a laptop or phone
 #                      and set what the cue looks like -- colour, brightness, pattern, segments,
 #                      duration, rate -- with /config. `save=1` keeps it across reboots.
 #
-# The two are deliberately separate: the wire cannot carry a colour (it is one bit), and the
-# experiment must never depend on a radio link. So the switch says WHEN, and the board -- already
-# configured by hand -- decides WHAT.
+# Each cue says WHEN (and optionally which colour); the board -- already configured by hand --
+# decides the rest.
+#
+# A contact-closure input on D2 (CUE_PIN) remains from before the serial link. Nothing is wired
+# to it; its pull-up keeps it idle.
 #
 # See README.md.
 
@@ -38,7 +44,10 @@ from adafruit_httpserver import Server, Request, Response
 ORDER = neopixel.GRBW
 PHYSICAL_LEDS = 60
 LED_PIN = board.D5              # -> Pixel Shifter (3.3 V -> 5 V) -> ring DIN
-CUE_PIN = board.D2              # <- tool connector pin 9 (CTR1_1, via X76 contact 1)
+CUE_PIN = board.D2              # contact-closure input, not wired (pins 9/10 carry the serial link)
+UART_TX = board.D0              # -> MikroE RS485 3 Click RX (data into the click)
+UART_RX = board.D8              # <- MikroE RS485 3 Click TX (data out of the click)
+UART_BAUD = 115200
 
 # ---------------------------------------------------------------------------
 # !!! POWER --- READ BEFORE RAISING `brightness` !!!
@@ -494,6 +503,140 @@ print("Cue input on {} (active {}), mode={}, nvm={}".format(
     "restored" if _nvm_loaded else ("available" if _nvm else "UNAVAILABLE")))
 
 # ---------------------------------------------------------------------------
+# Serial link -- RS-422 from the ROS computer   (UART: TX = D0, RX = D8)
+# ---------------------------------------------------------------------------
+# The RS-422 pairs through the media flange land on a MikroE RS485 3 Click, whose UART side is
+# wired to D0 (board TX) and D8 (board RX). This is the wired control path from ROS, and the
+# channel the pressure sensor and haptics will share: each new function is one more entry in
+# SERIAL_COMMANDS.
+#
+# One ASCII command per line, '\n'-terminated (a trailing '\r' is ignored); one reply line each:
+#
+#   CUE             run the configured cue                         -> ACK CUE <n>
+#   CUE r g b w     run it in this colour; settings unchanged      -> ACK CUE <n>
+#   OFF             stop any cue and LED test, ring dark           -> ACK OFF
+#   SEG f colors    static arcs, exactly as /segments?factor=f&colors=colors -> ACK SEG
+#   PING            link check                                     -> PONG
+#   anything else                                                  -> ERR <reason>
+#
+# CUE behaves like /cue: it always fires, restarting a cue already running. ACK CUE is written
+# AFTER cue_start() has called pixels.show(), so the ack's arrival on the computer marks the moment
+# the ring lit, plus about 1 ms on the wire at 115200 baud.
+#
+# Like Wi-Fi, a failure here is not fatal: if the UART cannot be opened, the board carries on
+# with the D2 trigger and the access point.
+SERIAL_MAX_LINE = 256           # longer than any command (a 4-arc SEG is ~70); a line past this is dropped
+uart = None
+serial_state = "unavailable"
+serial_fired = 0                # serial-triggered cue count, echoed by /status
+_serial_buf = b""
+
+try:
+    uart = busio.UART(UART_TX, UART_RX, baudrate=UART_BAUD, timeout=0)
+    serial_state = "up"
+    print("Serial link on TX {} / RX {} at {} baud".format(UART_TX, UART_RX, UART_BAUD))
+except Exception as e:
+    print("Serial link unavailable: {}".format(e))
+
+
+def _serial_reply(text):
+    try:
+        uart.write((text + "\n").encode())
+    except Exception as e:
+        print("Serial write failed: {}".format(e))
+
+
+def _serial_cue(args):
+    global serial_fired
+    spec = cfg
+    if args:
+        if len(args) != 4:
+            return "ERR CUE takes no values or exactly 4 (r g b w)"
+        try:
+            rgbw = [int(a) for a in args]
+        except ValueError:
+            return "ERR colour values must be integers"
+        if min(rgbw) < 0 or max(rgbw) > 255:
+            return "ERR colour values must be 0-255"
+        spec = dict(cfg)                # a copy: this cue's colour never touches the settings
+        spec.update({"r": rgbw[0], "g": rgbw[1], "b": rgbw[2], "w": rgbw[3]})
+    cue_start(spec)                     # the ring is lit when this returns
+    serial_fired += 1
+    return "ACK CUE {}".format(serial_fired)
+
+
+def _serial_off(args):
+    cue_stop(restore=False)
+    led_test_stop(clear=False)
+    pixels.fill(OFF)
+    pixels.show()
+    return "ACK OFF"
+
+
+def _serial_seg(args):
+    if len(args) != 2:
+        return "ERR SEG takes a factor and a colour list"
+    try:
+        factor = int(args[0])
+    except ValueError:
+        return "ERR SEG factor must be an integer"
+    if not 1 <= factor <= PHYSICAL_LEDS:
+        return "ERR SEG factor must be 1-{}".format(PHYSICAL_LEDS)
+    draw_segments(factor, args[1])      # defined with the /segments route below; same drawing
+    return "ACK SEG"
+
+
+def _serial_ping(args):
+    return "PONG"
+
+
+SERIAL_COMMANDS = {
+    "CUE": _serial_cue,
+    "OFF": _serial_off,
+    "SEG": _serial_seg,
+    "PING": _serial_ping,
+}
+
+
+def serial_handle(line):
+    """Run one command line and return the reply text (None for a blank line)."""
+    parts = line.split()
+    if not parts:
+        return None
+    handler = SERIAL_COMMANDS.get(parts[0].upper())
+    if handler is None:
+        return "ERR unknown command: " + parts[0]
+    return handler(parts[1:])
+
+
+def serial_service():
+    """Read whatever has arrived and run every complete line. Call every pass of the main loop."""
+    global _serial_buf
+    if uart is None:
+        return
+    waiting = uart.in_waiting
+    if not waiting:
+        return
+    data = uart.read(waiting)
+    if not data:
+        return
+    _serial_buf += data
+    while b"\n" in _serial_buf:
+        raw, _serial_buf = _serial_buf.split(b"\n", 1)
+        try:
+            line = raw.decode().strip()
+        except Exception:
+            _serial_reply("ERR not text")
+            continue
+        reply = serial_handle(line)
+        if reply:
+            _serial_reply(reply)
+    if len(_serial_buf) > SERIAL_MAX_LINE:
+        _serial_buf = b""               # no newline in sight: drop it rather than grow forever
+        _serial_reply("ERR line too long")
+
+
+# ---------------------------------------------------------------------------
 # HTTP route handlers
 # ---------------------------------------------------------------------------
 # Defined unconditionally, registered further down only if the Wi-Fi stack came up. Nothing
@@ -617,10 +760,16 @@ def set_color(request: Request):
 # --- /segments : static arcs (not a timed cue -- use pattern=segment for that)
 #   http://<board>/segments?factor=4&colors=255,0,0,0.0,255,0,0.0,0,255,0.0,0,0,255
 def set_multi_segments(request: Request):
+    draw_segments(_int(request, "factor", 1, 1, PHYSICAL_LEDS), request.query_params.get("colors", ""))
+    return Response(request, "Segments updated\n")
+
+
+def draw_segments(factor, colors_str):
+    """Static arcs, shared by /segments and the serial SEG command: `factor` equal arcs, coloured in
+    order by colors_str ("r,g,b[,w].r,g,b[,w]..."). Stops any cue or LED test first."""
     cue_stop(restore=False)
     led_test_stop(clear=False)
-    factor = _int(request, "factor", 1, 1, PHYSICAL_LEDS)
-    colors_str = request.query_params.get("colors", "")
+    factor = max(1, min(int(factor), PHYSICAL_LEDS))
     pixels.fill(OFF)
     if colors_str:
         seg_size = PHYSICAL_LEDS // factor      # truncates: a factor that does not divide 60
@@ -638,7 +787,6 @@ def set_multi_segments(request: Request):
                 print("Segment error:", e)
                 continue
     pixels.show()
-    return Response(request, "Segments updated\n")
 
 
 # --- /off : clear the ring and cancel any running cue -----------------------
@@ -675,13 +823,13 @@ def led_test(request: Request):
 def status(request: Request):
     return Response(request, cfg_text() + (
         "# state\nleds={}\npatterns={}\nip={}\n"
-        "cue_active={}\nwire_fired={}\nnvm_writes={}\n"
+        "cue_active={}\nwire_fired={}\nserial={}\nserial_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
         "led_test_pixel={}\nled_test_colour={}\n"
         "nvm_restored_at_boot={}\nuptime_s={:.1f}\nconnections_reclaimed={}\n"
     ).format(
         PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
-        cue_active(), fired, nvm_writes,
+        cue_active(), fired, serial_state, serial_fired, nvm_writes,
         cue_in.value, trigger_asserted(), _trig_state,
         _lt_pixel, LED_TEST_COLOURS[_lt_colour][0] if led_test_active() else "-",
         _nvm_loaded, time.monotonic_ns() / 1e9, _reclaimed,
@@ -768,11 +916,11 @@ ROUTES = (
 # Wi-Fi access point + HTTP server  (settings only -- failure here is NOT fatal)
 # ---------------------------------------------------------------------------
 # The board hosts its OWN network. Join it from a laptop or phone to change what the cue looks
-# like; nothing else routes to it, and nothing needs to. The experiment's cue arrives on the
-# WIRE, so the radio is never in the timing path and never in the experiment's path at all.
+# like, or to fire cues over Wi-Fi when the ROS computer's visual_cue.trigger is "wifi"; nothing
+# else routes to it.
 #
 # Wrapped so that a dead ESP32, a missing settings.toml, or a rejected password cannot stop the
-# board servicing the trigger. If this block fails the loop below still runs, using the settings
+# board servicing the serial link. If this block fails the loop below still runs, using the settings
 # restored from NVM (or the defaults in this file).
 wifi_ip = "-"
 server = None
@@ -843,17 +991,18 @@ try:
 except Exception as e:
     server = None
     print("WiFi/HTTP unavailable: {}".format(e))
-    print("Continuing with the WIRE ONLY (settings from NVM/defaults, not changeable until fixed).")
+    print("Continuing with the serial link only (settings from NVM/defaults, not changeable until fixed).")
 
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
-# poll_trigger() runs FIRST and cue_service() second, so the wire is serviced even while HTTP
-# traffic is arriving. server.poll() is non-blocking and no route handler sleeps, so a pass
-# through this loop is short and trigger latency stays at roughly the debounce time.
+# poll_trigger() and serial_service() run FIRST, so the wire and the serial link are serviced
+# even while HTTP traffic is arriving. server.poll() is non-blocking and no route handler sleeps,
+# so a pass through this loop is short and trigger latency stays at roughly the debounce time.
 while True:
     try:
         poll_trigger()
+        serial_service()
         cue_service()
         led_test_service()      # idle unless /led_test is running
         if server is not None:

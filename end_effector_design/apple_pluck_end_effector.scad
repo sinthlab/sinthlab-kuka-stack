@@ -119,7 +119,7 @@ m3_cbore   = 6.5;  // M3 cap/cheese-head counterbore Ø [mm] (clears the Ø5.5 h
 m3_cbore_h = 3.0;  // M3 counterbore depth [mm] (>= head height, so the head sits recessed)
 
 /* [Base electronics hub — TWO STACKED TIERS, ONE OPEN COMPARTMENT EACH]
-    Ø188 is set by the RING: groove outer r = 83.5, + rim + wall = r 94.
+    Ø188 is set by the RING: groove outer r = 81.3, + rim + wall inside r 94.
 
     Each tier is ONE open compartment with a flat floor, and every board is velcro'd wherever it
     fits — nothing is keyed to a rectangle, so boards can be swapped, moved or added without touching
@@ -139,7 +139,7 @@ base1_floor  = 14;   // TIER-1 floor thickness [mm]. This is the part that bolts
 base2_floor  = 10;   // TIER-2 floor thickness [mm] — carries far less, no need to pay the height
 base_floor   = base1_floor;  // tier-1 floor, as used by the fit mock and wire_channel()
 comp1_depth  = 19;   // tier-1 compartment depth below its top face [mm] (tallest = Metro, ~19)
-comp2_depth  = 22;   // tier-2 compartment depth below its top face [mm] (tallest = Tobsun, 22)
+comp2_depth  = 25;   // tier-2 compartment depth below its top face [mm] (tallest = Tobsun, 22, + 3 clearance under the cover)
 comp_ro      = 88;   // compartment outer radius [mm] — leaves a 6 mm rim wall at Ø188
 base_wall    = 3;    // structural wall / bridge thickness [mm]
 hub_wall     = 4;    // material between a tier's central bore and the open compartment [mm]. 4, not
@@ -289,20 +289,19 @@ haptic_pos     = [-48.0, -20.0]; haptic_rot = 0;
 
 /* [NeoPixel ring — Adafruit 2874, 60x5050 RGBW (buy 4x QUARTER-rings) — groove on the COVER TOP]
     Four butted quarter-rings do not close in a groove cut at the datasheet Ø157/145, so the groove is
-    ~3 LEDs of arc bigger: at a mean radius of 75.5 the 60 LEDs sit at 7.9 mm of arc each, so 3 more
-    LEDs = 23.7 mm of circumference = +3.8 mm of radius. 1.0 mm clearance per side lets the segments
-    drop in rather than being pressed in. */
-ring_od        = 165.0; // GROOVE outer Ø [mm]  (the ring PCB itself is 157 — see ring_pcb_od)
-ring_id        = 152.0; // GROOVE inner Ø [mm]  (the ring PCB itself is 145 — see ring_pcb_id)
+    ~2 LEDs of arc bigger: at a mean radius of 75.5 the 60 LEDs sit at 7.9 mm of arc each, so 2 more
+    LEDs = 15.8 mm of circumference = +2.5 mm of radius (mean r 78). 0.3 mm clearance per side holds
+    the segments snug at that radius. */
+ring_od        = 162.0; // GROOVE outer Ø [mm]  (the ring PCB itself is 157 — see ring_pcb_od)
+ring_id        = 150.0; // GROOVE inner Ø [mm]  (the ring PCB itself is 145 — see ring_pcb_id)
 ring_pcb_od    = 157.0; // actual Adafruit 2874 full-ring outer Ø [mm] — for the fit mock only
 ring_pcb_id    = 145.0; // actual Adafruit 2874 full-ring inner Ø [mm] — for the fit mock only
-// The channel is 8.5 mm wide against the ring's 6 mm, so the four quarter-arcs can sit anywhere
-// from r 72.5..78.5 (hard against the inner wall) out to r 77.5..83.5 (hard against the outer wall).
-// Sitting further out is what buys the extra circumference: at r 79 the 60-LED ring needs 496 mm of
-// arc against the 474 mm it needs at r 75.5 — about 3 LEDs' worth, which is what lets the four
-// segments close. Push them outward as you seat them.
+// The channel is 6.6 mm wide against the ring's 6 mm, so the four quarter-arcs sit at r 74.7..80.7
+// (against the inner wall) to r 75.3..81.3 (against the outer wall): mean r 78 +- 0.3. Sitting out at
+// r 78 is what buys the extra circumference: there the 60-LED ring has 490 mm of arc against the 474 mm
+// it needs at r 75.5 — 2 LEDs' worth, which is what lets the four segments close.
 ring_pcb_t     = 3.25;  // ring overall thickness [mm]   (PCB + LEDs, 2874 = 3.25 mm / 0.13")
-ring_clear     = 1.0;   // radial clearance per side [mm]
+ring_clear     = 0.3;   // radial clearance per side [mm] (snug)
 ring_groove_h  = 4.5;   // top-facing groove depth to seat the ring [mm] (LEDs face up; clear box shields)
 ring_wire_d    = 6.0;   // lead pass-through under the groove, one per quarter junction [mm]
 
@@ -323,9 +322,8 @@ cover_boss_fillet = 4.0; // fillet where the apple-stem boss meets the plate [mm
 /* [Base <-> cover fastening screws] */
 cover_screw_n       = 4;     // screws joining the cover down to the base
 cover_screw_bcd     = 120;   // their bolt-circle Ø [mm] — at r=60, INSIDE the ring. Outboard is not
-                             // possible: the gap between the groove outer (r 83.5) and the rim inner
-                             // (r 91) is 7.5 mm and an M3 counterbore is 6.5 wide, which leaves 0.5 mm
-                             // a side.
+                             // practical: the gap between the groove outer (r 81.3) and the rim inner
+                             // (r 91) is 9.7 mm against an M3 counterbore's 6.5, under 2 mm a side.
                              // r=60 puts the Ø12 cover pillar at 54..66, a clear 5.75 mm inboard of the
                              // tier-screw counterbore (which starts at r 71.75 at the same four
                              // angles). check_layout.py tests this.

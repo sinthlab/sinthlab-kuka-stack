@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Wi-Fi TEST trigger for the visual cue -- for demos and recordings, not experiments.
+"""Wi-Fi trigger for the visual cue -- over the board's own access point.
 
-VisualCue uses this instead of the X76 wire when `visual_cue.remote_test_trigger` is true:
+VisualCue and RingStateCue use this when `visual_cue.trigger` is "wifi"; the serial link
+(visual_cue_serial.py) offers the same calls:
 
     this computer ── joined to the board's KUKA_NEOPIXEL access point ──► GET http://192.168.4.1/cue
 
 That is the same call as `curl http://192.168.4.1/cue`. The board runs whatever cue /config holds --
-colour, pattern, duration -- exactly as if the wire had fired. No X76, no relay.
+colour, pattern, duration -- exactly as the serial CUE command does.
 
 A cue site with a colour configured (visual_cue.colours.<label>) makes TWO requests: first
 `/config?r=..&g=..&b=..&w=..` sets the colour, then `/cue` runs the cue. That uses only what the
@@ -14,8 +15,8 @@ firmware already on the board provides, so a sealed effector never needs reflash
 set in RAM -- there is no save=1, so nothing is written to flash -- and the board keeps it until the
 next cue sets another, or until a reboot restores its saved colour.
 
-NOT FOR TRIAL TIMING. The Wi-Fi delay varies from cue to cue, and a dropped link drops the cue. Each
-cue's round-trip time is logged so you can see it, but align trial data to the wire, not to this.
+TIMING. The Wi-Fi delay varies from cue to cue, and a dropped link drops the cue. Each cue's round
+trip is logged and reported, so the trial record shows it; the serial link's is a few ms every time.
 
 GUARANTEES
     * start() never waits on the network: requests are sent from one background thread.
@@ -54,8 +55,7 @@ class RemoteCueTrigger:
         self._jobs: queue.SimpleQueue = queue.SimpleQueue()
         threading.Thread(target=self._run, name="visual_cue_remote", daemon=True).start()
         self._log.info(
-            f"Visual cues will fire over Wi-Fi via http://{board}/cue -- a TEST trigger for demos, "
-            "not for trial timing.")
+            f"Visual cues will fire over Wi-Fi via http://{board}/cue (the delay varies from cue to cue).")
 
     def check(self) -> None:
         """Ask the board for /status and log whether it answered. Returns immediately."""

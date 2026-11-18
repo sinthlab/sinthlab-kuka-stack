@@ -34,7 +34,7 @@ top and a clear casing box over the lot:
         ├─ the rest of the floor is FLAT
         └─ reference boards (velcro anywhere): Metro M4 AirLift 92 × 50 · RS-422 click 45 × 28 ·
            MPRLS pressure 20 × 19
-  (1b) BASE TIER 2    Ø188 × 32 (10 mm floor + 22 mm compartment). Stacks on tier 1 with 4× M3×14
+  (1b) BASE TIER 2    Ø188 × 35 (10 mm floor + 25 mm compartment). Stacks on tier 1 with 4× M3×14
                       into tier 1's pillars. Ø20 bore — only ring/apple wiring goes higher, and those
                       5 mm of radius per side are what let the 70 × 65 Tobsun fit inside Ø188 at all.
                       ONE open compartment, r 14 → 88, flat floor (no channels).
@@ -43,7 +43,7 @@ top and a clear casing box over the lot:
         ├─ 4× Ø10 DROPS through the floor at r 58 (0/90/180/270) — tier-2 → tier-1 wiring
         └─ reference boards: Tobsun 70 × 65 (22 tall — sets the tier depth) · level shifter 36 × 28 ·
            DRV2605L 28 × 20
-  (2) COVER           Ø188 × 9. Seats the NeoPixel ring in a Ø165/152 groove on its TOP (LEDs up,
+  (2) COVER           Ø188 × 9. Seats the NeoPixel ring in a Ø162/150 groove on its TOP (LEDs up,
                       opaque cover) · closes tier 2 · 4× M3 down into tier 2 at Ø120 — INSIDE the
                       ring · 4 ring-lead pass-throughs (one per quarter) · 3× M3 pilots on Ø64 for
                       the casing box · Ø44 boss (R4 fillet to the plate) for the apple stem
@@ -146,14 +146,14 @@ The breakout is **12× AWG26 signal + 4× AWG18 power**, arriving as three 2-wir
 | 6 | BU | CAT5 RXN | X651 12 | **live EtherCAT — insulate** |
 | 7 | RD | Power2 | X76 A | 60 V / 5 A — unused; fallback supply if the cabinet 24 V won't carry the ring |
 | 8 | BK | GND2 | X76 B | |
-| **9** | BK | **CTR1_1** | X76 1 | **cue trigger** (shielded pair) |
-| **10** | BU | **CTR1_2** | X76 2 | |
+| **9** | BK | **CTR1_1** | X76 1 | **RS‑422 PC → board +** (shielded pair) |
+| **10** | BU | **CTR1_2** | X76 2 | **RS‑422 PC → board −** |
 | 11 | WH | CTR1_3 | X76 3 | drain — bond at ONE end only |
-| 12 | GN | CTR2_4 | X76 4 | spare pair — haptic trigger |
-| 13 | YE | CTR2_5 | X76 5 | |
+| **12** | GN | **CTR2_4** | X76 4 | **RS‑422 board → PC +** (shielded pair) |
+| **13** | YE | **CTR2_5** | X76 5 | **RS‑422 board → PC −** |
 | 14 | WH | CTR2_6 | X76 6 | drain |
-| 15 | RD | CTR3_7 | X76 7 | spare pair — **reserve for the force sensor** |
-| 16 | BU | CTR3_8 | X76 8 | |
+| **15** | RD | **CTR3_7** | X76 7 | **RS‑422 signal ground** |
+| 16 | BU | CTR3_8 | X76 8 | spare |
 
 > **Colour is ambiguous — meter it.** WH, BU and RD each appear three times. The bundle grouping
 > disambiguates, but map the breakout to X651/X76 with a continuity test before landing anything.
@@ -206,21 +206,44 @@ announces every edge as you make and break the short at X76. This step verifies
 
 > **Stop condition:** no edges means wiring, not firmware. The tool prints the likely causes ranked.
 
-**4. Fit the RS‑422 link (parts on order).** The cabinet cannot drive the trigger — the Sunrise
-project has no generated I/O groups — so the ROS computer drives it, over a **full‑duplex RS‑422
-serial link**. The same link carries the pressure sensor's data off the tool:
+**4. Fit the RS‑422 link.** The complete build — parts with links, the X76 plug assembly, every
+test and troubleshooting — is in [`in_electric_flange_data_path/`](../in_electric_flange_data_path/README.md); the summary follows. The cabinet cannot drive the trigger — the Sunrise project has no
+generated I/O groups — so the ROS computer drives it, over a **full‑duplex RS‑422 serial link**. The
+same link carries the pressure sensor's data off the tool:
 
 | | Part |
 |---|---|
 | ROS box | StarTech **ICUSB422IS** — isolated USB↔RS‑422, FTDI FT232RL |
 | Tool | MikroE **MIKROE‑2821** RS485 3 Click — SN65HVD31, full duplex, 3.3 V |
 
-The MikroE's screw terminals take the CTR pairs from the tool connector; its header pins go to the
-Metro's UART (3.3V, GND, TX/D1, RX/D0 — **check D0/D1 are free** on the AirLift Lite before wiring).
-It's a **crossover**: the adapter's TX pair lands on the MikroE's RX pair and vice versa. Put the
-differential signals on the **shielded** CTR pairs. Set the FTDI `latency_timer` to 1 on the ROS box,
-or you get 16 ms of buffering. Full detail in
-[§6.7 of the top-level README](../README.md#67-end-effector-board--the-visual-cue).
+It's a **crossover**: the adapter's TX pair lands on the MikroE's RX pair and vice versa, each on a
+**shielded** CTR pair. The MikroE labels its terminals from its own side (TX± out, RX± in).
+
+| Signal | StarTech | Cable (PC → X76) | X76 | Tool pin | MikroE |
+|---|---|---|---|---|---|
+| PC → board + | TX+ | blue pair, green | 1 | 9 (BK) | RX+ |
+| PC → board − | TX− | blue pair, black | 2 | 10 (BU) | RX− |
+| drain | GND | blue pair, drain | 3 | 11 (WH) | — (insulated) |
+| board → PC + | RX+ | red pair, red | 4 | 12 (GN) | TX+ |
+| board → PC − | RX− | red pair, black | 5 | 13 (YE) | TX− |
+| drain | GND | red pair, drain | 6 | 14 (WH) | — (insulated) |
+| signal ground | GND | green pair, white | 7 | 15 (RD) | GND |
+| spare | — (capped) | green pair, black | 8 | 16 (BU) | — (insulated) |
+
+Drains are bonded at the PC end only; the green pair's drain is cut back at X76.
+
+The MikroE's header goes to the Metro: **3.3V**, **GND**, its **RX → Metro D0** (board TX) and its
+**TX → Metro D8** (board RX). D0/D8 is one of the pin pairs the SAMD51 accepts for a UART.
+
+StarTech DIP switches: **1 (422) ON, 2 (N‑Ech) OFF, 3 (Term) OFF, 4 (RVD) OFF.** It is USB‑powered.
+On the ROS box (WSL2), attach it with `usbipd attach --wsl --busid <id>`, add yourself to `dialout`,
+install `python3-serial` with apt, and set the FTDI `latency_timer` to 1, or you get 16 ms of
+buffering. Full detail in
+[§6.7 of the top-level README](../README.md#67-end-effector-board--the-visual-cue) and the
+[serial protocol](../end_effector_metro_code/README.md#the-serial-link).
+
+**Loopback test, before the MikroE:** join tool pins 9↔12 and 10↔13, then send a few bytes from
+the PC; they come back if the whole path works in both directions.
 
 The jumper test in step 3 is the first check of the harness either way — it proves continuity
 before any electronics are involved.
@@ -243,7 +266,7 @@ before any electronics are involved.
 ## Components (dimensions locked from datasheets)
 | Item | Part / link | Size (mm) | Drives parameter |
 |------|-------------|-----------|------------------|
-| NeoPixel ring, 60×5050 RGBW (**buy 4× quarter-rings**) | [Adafruit 2874](https://www.adafruit.com/product/2874) | PCB Ø157 / Ø145 × 3.25 (6.2″) — **groove is cut Ø165 / Ø152** | `ring_pcb_od/id`, `ring_od`, `ring_id`, `ring_groove_h` |
+| NeoPixel ring, 60×5050 RGBW (**buy 4× quarter-rings**) | [Adafruit 2874](https://www.adafruit.com/product/2874) | PCB Ø157 / Ø145 × 3.25 (6.2″) — **groove is cut Ø162 / Ø150** | `ring_pcb_od/id`, `ring_od`, `ring_id`, `ring_groove_h` |
 | Control board (+ its power adapter) | [Metro M4 Express AirLift Lite (4000)](https://www.adafruit.com/product/4000) | **92 × 50** | `board_l/w`, `board_pos` |
 | DC-DC converter | **Tobsun 24 V→5 V** | **70 × 65** | `conv_l/w`, `conv_pos` |
 | NeoPixel level shifter | [Pixel Shifter (6066)](https://www.adafruit.com/product/6066) (3.3→5 V data) | **36 × 28** | `shifter_*` |
@@ -254,8 +277,8 @@ before any electronics are involved.
 | Force sensor **B** | [MPRLS ported pressure sensor (3965)](https://www.adafruit.com/product/3965), I²C 0–25 PSI | board **17.8 × 16.7 × 7.5** (footprint 20 × 19) · port Ø2.5 | `mprls_*` on **tier 1** + Ø2–3 tube up the riser to a *sealed* cavity |
 
 > **Fit notes (read before printing):**
-> 1. **Base is Ø188, and the RING is why — not a board.** The groove outer sits at r = 83.5; add solid
->    rim and a wall and you arrive at r = 94. Run **`python3 check_layout.py`** after *any* size change:
+> 1. **Base is Ø188, and the RING is why — not a board.** The groove outer sits at r = 81.3; add solid
+>    rim and a wall and you stay inside r = 94. Run **`python3 check_layout.py`** after *any* size change:
 >    the tightest fit is the Tobsun at **1.6 mm** of margin (corner r 86.4 against 88), and the script
 >    checks every board, screw, port, drop and trench.
 > 2. **Two tiers, and the bore sizes are load-bearing decisions.** Tier 1 has the Ø30 bore because the
@@ -274,13 +297,12 @@ before any electronics are involved.
 >    verifies even spacing, confirms they sit between the trenches and clear of the channels, and
 >    that the tier-2 pillars (to r 66) clear the tier-1 screw counterbores (from r 71.75).
 > 5. **Cover screws are INSIDE the ring (Ø120).** Outboard is not possible: the gap between the
->    groove outer (r 83.5) and the rim inner (r 91) is 7.5 mm, and an M3 counterbore is 6.5 wide. At
->    r = 60 the counterbore ends at 63.25, clear of the groove at 75.
-> 6. **The ring groove is deliberately oversized.** The channel is **8.5 mm wide against the ring's
->    6 mm**, so the arcs can sit anywhere from hard against the inner wall (r 72.5–78.5) out to hard
->    against the outer (r 77.5–83.5). Sitting further out is what buys the circumference: at r 79 the
->    60 LEDs need **496 mm** of arc against **474 mm** at r 75.5 — about three LEDs, enough to stop four
->    butted quarter-arcs closing. **Seat the segments pushed outward.**
+>    groove outer (r 81.3) and the rim inner (r 91) is 9.7 mm, against an M3 counterbore's 6.5. At
+>    r = 60 the counterbore ends at 63.25, clear of the groove at 74.7.
+> 6. **The ring groove is deliberately bigger than the ring, and snug.** It is centred on **r 78**, not
+>    the ring's r 75.5: there the 60 LEDs have **490 mm** of arc against **474 mm** — about two LEDs,
+>    enough for four butted quarter-arcs to close. The channel is **6.6 mm wide against the ring's
+>    6 mm** (0.3 mm a side), so the arcs are held at that radius rather than sliding about.
 > 7. **No pockets and no board screws.** Each tier is ONE open compartment (r 19 → 88 on tier 1,
 >    r 14 → 88 on tier 2) with a flat floor; every board is **velcro'd** wherever it fits. The board
 >    dimensions in the .scad are a *reference placement* that `check_layout.py` validates and
@@ -318,7 +340,7 @@ before any electronics are involved.
 >    ball** (`stem_base_d` → `stem_shaft_d`), with a **Ø9 feed bore** and an R2 root fillet. The base is
 >    as wide as it can be: base + fillet reach r 14, just inside the joint screws' counterbores (r 14.75),
 >    which need straight-down access for the key. It sits at the very centre, far inside the ring (ID r ≈ 75), so it doesn't occlude the
->    LEDs. Height is **fixed** at `stem_shaft_len = 100` (apple centre 212 mm above the robot flange).
+>    LEDs. Height is **fixed** at `stem_shaft_len = 100` (apple centre 215.5 mm above the robot flange).
 > 12. **Shaft strength and stiffness.** The pull's bending moment is largest at the root, which is
 >    why the shaft is thickest there: Ø24 is **8.6× stiffer** than a straight Ø14 (stiffness goes with
 >    Ø⁴), so the apple wobbles far less. A 20 N pull at the ball now peaks at about **2.4 MPa** of
@@ -488,7 +510,7 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
   use a low-temperature gun, and know it is harder to undo. Round the seam. Load the ERM + sensor through the open ball,
   route wires / FSR tail / pressure tube down the shaft bore, then fit the cap.
 - **Clear casing box:** built by hand from **clear acrylic sheet** (`case_box_*` params) — a 5-sided box
-  **198 × 198** outer, walls reaching from the cover top down to the flange plate (~74 mm) plus a
+  **198 × 198** outer, walls reaching from the cover top down to the flange plate (~77 mm) plus a
   **3 mm** top, **open on the flange side**. The top has a **Ø44.8** centre hole (clears the apple stem
   boss) and 3 clamp holes on **Ø64**. It clears the Ø188 base by 2 mm a side. Set it over the stack so the
   top covers the ring, then screw the top down with **3× M3 into the cover**. Round all edges near the
@@ -613,13 +635,13 @@ Sizes, so you know what you are looking at on the plate:
 |---|---|---|---|---|
 | `flange_plate` | Ø124 | 16 | PETG | — |
 | `base_tier1` | Ø188 | 33 | PETG | — |
-| `base_tier2` | Ø188 | 32 | PETG | — |
+| `base_tier2` | Ø188 | 35 | PETG | — |
 | `cover` | Ø188 | 17 | PETG | — |
 | `apple_stem` | Ø44 | 116.5 | PETG | — (lie it down) |
 | `apple_ball` | Ø45 | 27.8 | TPU 90A | — |
 | `apple_retainer` | Ø22 | 6 | PETG | the stem's plate |
 | `apple_cap` | Ø43 | 22.5 | TPU 90A | — |
-| `casing` | 198 × 198 | 77 | *not printed* | acrylic, by hand |
+| `casing` | 198 × 198 | 80 | *not printed* | acrylic, by hand |
 
 #### 0. Before you open Bambu Studio
 

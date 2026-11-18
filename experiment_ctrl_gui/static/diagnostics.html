@@ -46,7 +46,7 @@
       <h2>Path to test</h2>
       <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Trigger path">
         <button class="tab active" role="tab" data-path="wifi">Wi-Fi — fire from here</button>
-        <button class="tab" role="tab" data-path="wire">Wire — X76 → tool pin 9 → Metro D2</button>
+        <button class="tab" role="tab" data-path="serial">Serial — RS-422 through X76</button>
       </div>
       <p class="note" id="path-note"></p>
     </div>
@@ -95,36 +95,24 @@
       </div>
     </div>
 
-    <!-- ---------------- wire path ---------------- -->
-    <div id="path-wire" class="hidden">
+    <!-- ---------------- serial path ---------------- -->
+    <div id="path-serial" class="hidden">
       <div class="card">
-        <h2>Wire monitor</h2>
-        <p class="note">Nothing on this computer can close the wire yet (its switch hardware is not chosen),
-          so test it by hand: <strong>short X76 contacts 1 and 2 at the robot base</strong> and watch below. The
-          board reports what its D2 input sees, over Wi-Fi.</p>
+        <h2>Serial link</h2>
+        <p class="note">Sends the same commands the experiments send with <code>visual_cue.trigger: serial</code>,
+          through the StarTech adapter, X76, the media flange and the MikroE to the board. Attach the adapter to WSL
+          first (<code>usbipd attach --wsl --busid &lt;id&gt;</code>). Refused while an experiment runs: it owns the port.</p>
         <div class="diag-row">
-          <button class="btn primary" id="btn-watch">Start watching</button>
-          <span class="pill" id="w-raw">pin –</span>
-          <span class="pill" id="w-asserted">idle</span>
-          <span class="pill" id="w-fired">fired 0</span>
-          <span class="pill" id="w-cue">cue –</span>
+          <label>Port <input id="ser-port" value="/dev/ttyUSB0" size="14" spellcheck="false"></label>
+          <button class="btn primary" id="btn-ser-ping">Ping</button>
+          <button class="btn" id="btn-ser-cue">▶ Fire cue</button>
+          <button class="btn" id="btn-ser-colour">▶ Fire in the colour above</button>
+          <button class="btn" id="btn-ser-quarter">Quarter 0 green</button>
+          <button class="btn" id="btn-ser-off">Off</button>
+          <span class="pill" id="ser-state">not checked</span>
         </div>
-        <p class="note warn-text hidden" id="w-polarity"></p>
-        <h2 style="margin-top:12px">Edges seen</h2>
-        <ol class="diag-log" id="w-log"></ol>
-      </div>
-      <div class="card">
-        <h2>Trigger settings on the board</h2>
-        <div class="diag-grid">
-          <label class="chk"><input type="checkbox" id="active_low" checked> Active low (short = asserted)</label>
-          <label>Debounce [ms] <input type="number" id="debounce_ms" min="1" max="200" value="5"></label>
-          <label class="chk"><input type="checkbox" id="retrigger"> Retrigger</label>
-          <label>Mode <select id="mode"><option>pulse</option><option>follow</option></select></label>
-          <label class="chk"><input type="checkbox" id="enabled2"> Enabled</label>
-        </div>
-        <div class="row-actions">
-          <button class="btn primary" id="btn-apply-trig">Apply to board</button>
-        </div>
+        <h2 style="margin-top:12px">Commands and replies</h2>
+        <ol class="diag-log" id="ser-log"></ol>
       </div>
     </div>
 

@@ -27,10 +27,10 @@ from typing import Callable, Optional
 import numpy as np
 
 # End-effector geometry, along the tool axis from the robot flange [m] (end_effector_design/README.md).
-APPLE_CENTRE_M = 0.212
+APPLE_CENTRE_M = 0.2155
 APPLE_RADIUS_M = 0.0225         # Ø45 ball
 BASE_RADIUS_M = 0.094           # Ø188 tiers and cover
-BASE_FROM_M, BASE_TO_M = 0.016, 0.090   # the base stack: on top of the 16 mm flange plate, to the cover top
+BASE_FROM_M, BASE_TO_M = 0.016, 0.093   # the base stack: on top of the 16 mm flange plate, to the cover top
 
 REFERENCES = ("apple_bottom", "base_edge")
 

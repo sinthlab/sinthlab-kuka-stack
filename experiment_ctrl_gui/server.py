@@ -265,6 +265,17 @@ class App:
         ok, text, ms = self.fake_board.call(cmd, params) if self.demo else cue_board.call(addr, cmd, params)
         return {"ok": ok, "text": text, "ms": round(ms, 1)}
 
+    def serial(self, port: str, cmd: str) -> dict:
+        """Diagnostics page: one command to the cue board over the serial link (board.py). A running
+        experiment owns the port and reads the board's replies, so nothing is sent then."""
+        cmd = " ".join(cmd.split()).upper()
+        cue_board.serial_check(port, cmd)
+        busy = self._busy()
+        if busy:
+            raise RuntimeError(f"{busy} is running and owns the serial port. Stop it first.")
+        ok, text, ms = self.fake_board.serial(cmd) if self.demo else cue_board.serial_call(port, cmd)
+        return {"ok": ok, "text": text, "ms": round(ms, 1)}
+
     def ttl(self, addr: str, cmd: str) -> dict:
         """Diagnostics page: one command to the cabinet's TTL sync outputs (ttl.py). A test pulse
         during an experiment would land in its NSP recording as a trial edge, so only STATUS then."""
@@ -385,6 +396,8 @@ def make_handler(app: App):
                 return app.start(body["experiment"])
             if path == "/api/diag/board":
                 return app.board(str(body.get("addr", "")), str(body.get("cmd", "")), dict(body.get("params") or {}))
+            if path == "/api/diag/serial":
+                return app.serial(str(body.get("port", "")), str(body.get("cmd", "")))
             if path == "/api/diag/ttl":
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":

@@ -16,7 +16,7 @@ Beckhoff stack. The two branches share 0 V at the jack.
 - [Reward](#reward): [How it works](#how-it-works) · [Circuit](#circuit)
 - [Parts list](#parts-list)
 - [Panels and the CAD files](#panels-and-the-cad-files) · [3D-printed stand-in](#3d-printed-stand-in)
-- [Building it](#building-it)
+- [Building it](#building-it) · [Wiring, step by step](#wiring-step-by-step)
 - [Cables for the pedal, hand switch and NSP](#cables-for-the-pedal-hand-switch-and-nsp)
 - [First test](#first-test)
 - [Safety](#safety)
@@ -86,7 +86,7 @@ A solenoid valve has no separate control line: **power on the coil opens it, pow
                                  sleeve ── 0 V (star point: reward 0 V, EK1100 0 V, chassis)
                                                                          │
    VALVE   node P ── SSR out (+)      SSR out (−) ── VALVE coil A ─┐
-                                                                    coil (~58 Ω)
+                                                                    coil (~65 Ω)
            0 V ──────────────────────────────────── VALVE coil B ─┘
            node P ── [FLUSH] ──┬── VALVE coil A          (direct: bypasses the SSR)
                                └── LED2 ── 0 V
@@ -115,12 +115,12 @@ A solenoid valve has no separate control line: **power on the coil opens it, pow
 | — | D2 anode → PEDAL BNC centre; D3 anode → BUTTON BNC centre; D4 anode → NSP BNC centre |
 
 - **LED2 sits on COIL_A**, so it lights whenever the coil is powered — by FLUSH *or* by a trigger.
-- **Toggles (Carling 2M1-SP1-T1-B1-M1QE, SPDT):** use the centre lug (common) and one outer lug; leave the other
+- **Toggles (Carling 2M1-SP1-T1-B1-M1QE, ON-ON SPDT):** use the centre lug (common) and one outer lug; leave the other
   outer lug free. Find the "on" lug for lever-up with a multimeter.
-- **SSR (Crydom DC60S3):** the output and input terminals are marked + and − on the body.
-- **Valve coil contacts:** with the valve cable plugged into the valve and into the box's socket, the
-  two contacts that read **~58 Ω** are the coil (A and B, either way round — only D1's direction
-  depends on which you make A). The third reads open: the case ground.
+- **SSR (Crydom DC60S3):** terminals 1 (+) and 2 are the output, 3 (+) and 4 the input.
+- **Valve coil contacts:** with the valve cable plugged into the valve and into the box's socket,
+  socket contacts **3 and 1** read **~65 Ω**: the coil. **A = contact 3, B = contact 1.** Contact
+  **2** reads open to both: the case ground, left free.
 
 #### Current in each input
 
@@ -162,7 +162,7 @@ shell touching something earthed outside the box; BREAKER VALVE trips on that.
 | 5 | BNC jack, panel, **isolated**: NSP, PEDAL, BUTTON | [TE 5227726-1](https://www.digikey.ca/en/products/detail/te-connectivity-amp-connectors/5227726-1/813448) | A32339-ND | 3 |
 | 6 | Solid-state relay, DC output, 3.5–32 V DC input, 3 A @ 3–60 V DC | [Crydom DC60S3](https://www.digikey.ca/en/products/detail/sensata-crydom/DC60S3/221844) | CC1126-ND | 1 |
 | 7 | Diode 1N4007 (D1–D4) | [onsemi 1N4007G](https://www.digikey.ca/en/products/detail/onsemi/1N4007G/1485479) | 1N4007GOS-ND | 10 |
-| 8 | Lever connectors, 3-way | [WAGO 221-413](https://www.digikey.ca/en/products/detail/wago-corporation/221-413/13549610) | — | 15 |
+| 8 | Lever connectors, 3-way | [WAGO 221-413](https://www.digikey.ca/en/products/detail/wago-corporation/221-413/13549610) | — | 10 |
 | 9 | Hand switch: momentary push button, SPST-NO, 0.5 A @ 30 V DC, wire leads | [Switchcraft 921KX](https://www.digikey.ca/en/products/detail/switchcraft-inc/921KX/1832326) | SC1905-ND | 1 |
 
 ### Reward side — Abra Electronics
@@ -311,16 +311,93 @@ self-tapping screws.
    these are isolated jacks), VALVE socket (key notch down), the DC jack, both breakers (snap in)
    and the etherCON feedthrough (two M3 screws).
 3. **Mount the SSR** to the chassis floor with two M4 screws and nuts (no heatsink: 0.42 A).
-4. **Wire the reward side** per the [wire list](#wire-list): 22 AWG, **red for +24 V / P, black for
-   0 V**. Solder to the jack, toggle, BNC and socket lugs and sleeve each joint in heat-shrink; join
-   the rest in Wago connectors.
-5. **Diodes:** D1 across the VALVE socket's coil contacts (stripe on A). D2–D4 in the trigger leads
-   (stripe toward the SSR), sleeved in heat-shrink.
-6. **Sync stack:** screw the DIN rail to the floor behind the SYNC jacks, snap the stack on, and wire
-   it per [Assembly](#assembly) — BREAKER SYNC and the 24 V IN sleeve to the EK1100, EL2124 outputs
-   to SYNC 1–4, the short Cat5e patch from the etherCON to the EK1100's X1 IN. The stack's + comes
-   only from BREAKER SYNC; no sync wire may touch P or COIL_A.
-7. **Label** the panels — especially the BNC jacks.
+4. **Wire it** per [Wiring, step by step](#wiring-step-by-step) below.
+5. **Label** the panels — especially the BNC jacks.
+
+### Wiring, step by step
+
+Every lug gets **one wire** (a pigtail), and the joins are made in **9 WAGO 221-413** (3-way) lever
+connectors. All wire is 22 AWG: **red for +24 V, P, COIL and TRIG; black for 0 V**. Solder each
+pigtail to its lug and sleeve the joint in heat-shrink.
+
+#### Identify the lugs first (meter, nothing powered)
+
+| Part | Lugs | How to tell |
+|---|---|---|
+| **24 V IN jack** (Switchcraft 721A) | centre-pin lug, sleeve lug, switch lug | Plug in the adapter. Red probe on the centre-pin lug: the lug that reads 24 V is the **sleeve**; the one reading nothing is the **switch lug** — leave it free, cover it in heat-shrink. The meter must read **+24 V**, not −24 V |
+| **Breakers** (W28) | two tabs | No polarity: either tab is in, the other out. Pressed in (reset) they beep through |
+| **Toggles** (ON-ON SPDT) | three in a row: two end lugs and the **centre** | Lever **up**, beep the centre against each end lug: the one that beeps is the **ON lug**. The other end lug stays free (lever down = off) |
+| **LEDs** (VCC 1091M5-24V) | wire leads | **red = +, white = −** |
+| **BNC jacks** | centre pin, shell lug | The **shell lug** is the solder tab on the ring under the nut; it beeps against the outer barrel and not against the centre pin |
+| **SSR** (DC60S3) | 1–4 | **1 (+) / 2** = output, **3 (+) / 4** = input |
+| **VALVE socket** | three solder cups, numbered 1, 2, 3 | The coil is cups **3 and 1** (~65 Ω through the valve cable): **A = 3, B = 1**. Cup **2** (case ground) stays free |
+| **Diodes** (1N4007) | plain end, striped end | Current flows from the plain end to the **striped** end |
+
+#### Direct wires (no WAGO)
+
+| From | To | Wire |
+|---|---|---|
+| BREAKER VALVE, second tab | POWER centre lug | red |
+| BREAKER SYNC, second tab | EK1100 point 1 | red |
+
+#### Joints soldered at the parts
+
+1. **LED1 red** onto the **POWER ON lug**, beside that lug's red pigtail.
+2. **LED2 red** onto the **FLUSH ON lug**, beside that lug's red pigtail.
+3. **LED1 white + LED2 white** soldered together, with one black pigtail.
+4. A red jumper between the **PEDAL** and **BUTTON shell lugs**, with one red pigtail from either.
+5. **D1** across socket cups 3–1, **stripe on 3 (A)**; a red pigtail from **3**, a black pigtail from **1**.
+6. **D2, D3, D4**: the plain end soldered to the **PEDAL, BUTTON and NSP centre pins**, a red wire on
+   the striped end, heat-shrink over the diode.
+7. The **NSP shell lug**: a black wire to **SSR terminal 4**.
+
+#### The 9 WAGOs
+
+Each row is one WAGO and its three slots. *Link* is a short wire joining two WAGOs into one
+connection.
+
+| WAGO | Slot 1 | Slot 2 | Slot 3 |
+|---|---|---|---|
+| **+24 IN** | 24 V IN centre lug | BREAKER VALVE, first tab | BREAKER SYNC, first tab |
+| **STAR** (0 V star point) | 24 V IN sleeve lug | → 0V-a | EK1100 point 5 |
+| **P-a** | POWER ON lug | FLUSH centre lug | link → P-b |
+| **P-b** | link ← P-a | SSR 1 (+) | PEDAL/BUTTON shell pigtail |
+| **COIL** | FLUSH ON lug | socket 3 (A) | SSR 2 |
+| **TRIG-a** | D2 (PEDAL) wire | D3 (BUTTON) wire | link → TRIG-b |
+| **TRIG-b** | link ← TRIG-a | D4 (NSP) wire | SSR 3 (+) |
+| **0V-a** | from STAR | LED white pigtail | link → 0V-b |
+| **0V-b** | link ← 0V-a | socket 1 (B) | SSR 4, beside the NSP shell wire |
+
+SSR terminal 2 is red although it is the output's "−": when the SSR is on it carries +24 V to the
+coil. Only terminal 4 is 0 V.
+
+#### The sync stack
+
+The EK1100 and EL9505 jumpers are as in [Assembly](#assembly) (EK1100 1→2, 5→7, 6→EL9505 1,
+3→EL9505 5). EK1100 points 1 and 5 each hold two wires (supply + jumper): use a twin ferrule, or
+twist the pair before inserting.
+
+| From | To |
+|---|---|
+| SYNC 1 centre | EL2124 point 1 |
+| SYNC 2 centre | EL2124 point 5 |
+| SYNC 3 centre | EL2124 point 4 |
+| SYNC 4 centre | EL2124 point 8 |
+| SYNC 1 shell, jumpered to SYNC 3 shell | EL2124 point 3 |
+| SYNC 2 shell, jumpered to SYNC 4 shell | EL2124 point 7 |
+| etherCON (inside) | EK1100 upper RJ45 (X1 IN), 0.3 m patch |
+
+**Never connect anything to EL2124 points 2 or 6** (+5 V). The stack's + comes only from BREAKER
+SYNC; no sync wire touches P or COIL.
+
+#### Test as you go
+
+| After wiring | Check |
+|---|---|
+| +24 IN, STAR, P-a/P-b, 0V-a/0V-b | POWER on → LED1 lights |
+| COIL | Valve unplugged: FLUSH on → LED2 lights, +24 V on socket 3–1 (red probe on 3). Valve plugged in: FLUSH clicks it |
+| TRIG-a/TRIG-b | Pedal, hand switch, then a 5 V NSP pulse each light LED2 and click the valve ([First test](#first-test)) |
+| The sync stack | [Testing, step by step](#testing-step-by-step) |
 
 ---
 

@@ -13,9 +13,19 @@ NeoPixel ring** (Adafruit 2874, Ø157) seated in the cover as a **visual cue** f
 
 ## How it works
 
-**The trigger is on/off with a timer.** When **X76 contacts 1 and 2 are shorted** at the robot
-base, the short travels up the media flange to the tool connector and pulls `D2` low; the board runs
-its configured cue for its configured duration, then stops. That is the entire behaviour.
+**A cue is on and off with a timer.** The ROS computer sends a cue; the board runs its configured cue
+for its configured duration, then stops, and answers once the ring is lit. A cue can carry a colour,
+and the pre-training tasks also hold quarter-ring states. That is the entire behaviour.
+
+**It arrives on either of two paths, and the experiment is the same on both.** `visual_cue.trigger`
+in the experiment's YAML picks one:
+
+| | **Serial** — the RS-422 link | **Wi-Fi** — the board's access point |
+|---|---|---|
+| Path | StarTech → X76 → flange → tool pins 9/10, 12/13 → MikroE → UART `D0`/`D8` | the ROS computer joined to `KUKA_NEOPIXEL` → `http://192.168.4.1` |
+| A cue | `CUE`, `CUE r g b w` → `ACK CUE <n>` | `/cue`, after `/config?r=..` for a colour |
+| A ring state | `SEG f colors`, `OFF` | `/segments?factor=f&colors=…`, `/off` |
+| Delivery time | a few ms, every cue | varies from cue to cue |
 
 **What the cue looks like is a setting, changed over the board's own Wi-Fi.** Join the board's
 access point from a laptop or phone and call `/config`:
@@ -24,33 +34,20 @@ access point from a laptop or phone and call `/config`:
 curl "http://192.168.4.1/config?r=0&g=255&b=0&w=0&pattern=segment&segments=6&duration=1.2&save=1"
 ```
 
-| | **Trigger** — the wire | **Settings** — the API |
-|---|---|---|
-| Carries | one edge: "now" | colour, brightness, pattern, segments, duration, rate |
-| Path | switch at base → X76 1/2 → flange → tool pins 9/10 → `D2` | your laptop → the board's own access point |
-| When | every trial | once, at commissioning |
-| Needs a network | **no** | yes, but only yours — not the robot's |
-
-The two are separate on purpose. The trigger line is **one bit** and cannot carry a colour, and an
-experiment cue must not depend on a radio link. So **the switch says *when*, and the board — already
-configured by hand — decides *what*.**
-
-```
-  switch at robot base ── X76 1/2 ══ media flange ══ tool pins 9/10 ──► D2 ──► ring on, then off
-  (timing only)
-
-  your laptop ──joins KUKA_NEOPIXEL──► http://192.168.4.1/config   (what it looks like)
-```
+So **each cue says *when* (and optionally which colour), and the board — already configured by hand
+— decides the rest.**
 
 The board hosts its **own** access point and never joins another network. Wi-Fi bring-up is wrapped
-in `try`/`except`, so a dead ESP32 or a bad credential drops it to trigger-only operation, running
-the settings saved in NVM — it cannot stop the ring cueing.
+in `try`/`except`, so a dead ESP32 or a bad credential leaves the serial link working, running the
+settings saved in NVM; a UART that cannot be opened leaves Wi-Fi working.
 
-> ### Status — firmware running, trigger path not yet commissioned
-> The board has booted on real hardware (`nvm=available`, access point up) and has driven the ring
-> from the cabinet's 24 V. The trigger wiring through X76 is untested, and no computer-controlled
-> switch is fitted yet — see [Driving the trigger](#driving-the-trigger-from-ros-2). Until then,
-> demos fire the cue over Wi-Fi with the [demo trigger](#demo-trigger-over-wi-fi).
+The board also keeps a contact-closure input on `D2` (pull-up, active low) from before the serial
+link. Nothing is wired to it: tool pins 9/10 now carry the link.
+
+> ### Status — serial link proven to the board, ROS side untested on the arm
+> The board runs on real hardware from the cabinet's 24 V. The RS-422 link has passed an echo test
+> through X76, the flange and the MikroE; the experiments' serial sender has only been tested against
+> a simulated board.
 
 ---
 
@@ -80,7 +77,8 @@ the settings saved in NVM — it cannot stop the ring cueing.
 | **Wi-Fi** | ESP32 **co-processor over SPI** — *not* native Wi-Fi (this is why the code uses `adafruit_esp32spi`, not `wifi`) |
 | **LED ring** | 60 × 5050 **RGBW**, Adafruit [2874](https://www.adafruit.com/product/2874), bought as 4 quarter-arcs |
 | **Ring data** | `board.D5` → **Pixel Shifter** ([6066](https://www.adafruit.com/product/6066), 3.3 V → 5 V) → ring `DIN` |
-| **Cue input** | `board.D2` ← tool connector pin 9, via X76 contact 1 at the robot base (internal pull-up, active low) |
+| **Cue input** | `board.D2`, internal pull-up, active low. Nothing is wired to it: tool pins 9/10 carry the serial link |
+| **Serial link** | UART **TX `board.D0`** → MikroE RS485 3 Click RX, **RX `board.D8`** ← click TX, 115200 baud; click RX± ← tool pins 9/10, TX± → tool pins 12/13, GND ← tool pin 15 |
 | **Power** | cabinet 24 V via the X650/X651 data cable → tool pins 1/2 → Tobsun 24 V→5 V → board **and** ring (5 V injected at all 4 quarter joints) |
 
 ```
@@ -93,7 +91,9 @@ the settings saved in NVM — it cannot stop the ring cueing.
    │                                                                 └──► NeoPixel ring
    │                                                                      (5 V at all 4 quarter joints)
    │
-   └─ tool pins 9/10 ── CTR1, shorted at X76 1-2 by the trigger switch ──► Metro D2 / GND
+   ├─ tool pins 9/10  ── CTR1, RS-422 from the ROS computer ──► MikroE RX± ─┐
+   ├─ tool pins 12/13 ── CTR2, RS-422 to the ROS computer ◄── MikroE TX± ─┤ UART: Metro D0 (TX)
+   └─ tool pin 15     ── CTR3, signal ground ───────────────── MikroE GND ─┘       Metro D8 (RX)
 
    Metro D5 ── 3.3 V data ──► Pixel Shifter ── 5 V data ──► ring DIN
 ```
@@ -442,7 +442,7 @@ copies to prune.
 |---|---|---|
 | **`/config`** | any setting, plus `save=1` / `reset=1` | **The whole configurable surface.** No parameters = read-only. |
 | **`/cue`** | — | Run the configured cue **now**, without the wire. |
-| **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire count, uptime and `connections_reclaimed` (leaked HTTP connections it closed). First stop when debugging. |
+| **`/status`** | — | Everything `/config` shows, plus the **live trigger-pin state**, fire counts (`wire_fired`, `serial_fired`), the serial link's state (`serial`), uptime and `connections_reclaimed` (leaked HTTP connections it closed). First stop when debugging. |
 | `/off` | — | Clear the ring and cancel a running cue. |
 | `/set_color` | `r` `g` `b` `w` | Hold a solid colour (not a cue — it does not time out). |
 | `/segments` | `factor`, `colors` | Static arcs. For a *timed* segmented cue use `pattern=segment`. |
@@ -742,25 +742,48 @@ and no optocoupler. Full pinout in
 **Not the cabinet.** The flange has no cabinet-driven I/O and the Sunrise project has no generated
 I/O groups, so Sunrise has no output that could drive X76.
 
-**Driven by the ROS computer, over an RS‑422 serial link — decided, parts on order.** The pressure
-sensor needs a data channel off the tool anyway, and one differential link carries both; a
-dry-contact relay on X76 1/2 would be two orders of magnitude slower (5–15 ms mechanical against
-~80 µs of wire time). StarTech ICUSB422IS
+**Driven by the ROS computer, over an RS‑422 serial link.** The pressure sensor needs a data channel
+off the tool anyway, and one differential link carries both; a dry-contact relay on X76 1/2 would be
+two orders of magnitude slower (5–15 ms mechanical against ~80 µs of wire time). StarTech ICUSB422IS
 on the ROS box, MikroE MIKROE‑2821 at the tool; wiring in
 [`end_effector_design/README.md`](../end_effector_design/README.md) step 4.
 
-**What the firmware will need.** A `busio.UART` on the MikroE's pins, a framed command parser, and a
-handler shaped exactly like `fire_cue` — which already lights the ring *before* it replies:
+### The serial link
 
-```python
-def fire_cue(request):
-    cue_start(cfg)             # -> _render(0.0) -> pixels.show()   ring lit HERE
-    return Response(request, ...)   # reply goes out AFTER
+Building the link itself — cable, X76 plug, StarTech, MikroE, WSL setup, tests and
+troubleshooting — is in [`in_electric_flange_data_path/`](../in_electric_flange_data_path/README.md).
+
+`busio.UART` on **TX `D0` / RX `D8`**, 115200 baud, 8N1. One ASCII command per line, ending in `\n`
+(a trailing `\r` is ignored, and commands are not case-sensitive). Every command gets one reply line:
+
+| Command | Effect | Reply |
+|---|---|---|
+| `CUE` | run the configured cue, exactly as `/cue` does | `ACK CUE <n>` |
+| `CUE r g b w` | run it in this colour (each 0–255); the saved settings are not changed | `ACK CUE <n>` |
+| `OFF` | stop any cue or LED test, ring dark | `ACK OFF` |
+| `PING` | link check | `PONG` |
+| anything else | nothing | `ERR <reason>` |
+
+`<n>` counts serial cues since boot, and `/status` reports it as `serial_fired`, next to
+`serial=up|unavailable`. `CUE` always fires, restarting a cue already running.
+
+**The ack marks the light.** `ACK CUE` is written only after `cue_start()` has called
+`pixels.show()`, so its arrival on the ROS computer is a per-trial cue-delivery timestamp: the ring
+lit about 1 ms (wire time at 115200 baud) before the ack arrived.
+
+**A failed UART is not fatal.** If the port cannot be opened, the board boots without it, prints
+why on the serial console, and reports `serial=unavailable`; the access point keeps working.
+
+**Adding a function** (haptics, the pressure sensor) is one more entry in `SERIAL_COMMANDS`: a
+handler that takes the command's arguments and returns its reply line.
+
+Check the link from the ROS computer (after `usbipd attach` on Windows):
+
+```bash
+python3 -c "import serial,time;s=serial.Serial('/dev/ttyUSB0',115200,timeout=0.5);s.write(b'PING\n');time.sleep(0.1);print(s.read(64))"
 ```
 
-Mirror that on serial and write an ack **immediately after `cue_start()` returns**. That ack is a
-per‑trial cue‑delivery timestamp accurate to ~2 ms with no extra hardware, which is what cue‑locked
-neural analysis needs. The ROS side already logs `cue_visual_ack` from the Wi‑Fi path's equivalent.
+`b'PONG\n'` means the whole path works: PC → StarTech → X76 → flange → MikroE → Metro, and back.
 
 > **Optocoupler or not?** Not on the inbound trigger: the only voltage in that loop is the Metro's
 > own 3.3 V. The *outbound* direction is different — anything the Metro drives toward a 24 V cabinet
@@ -786,85 +809,63 @@ come first, is the
 ### The ROS side
 
 [`sinthlab_bringup/actions/visual_cue.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py)
-mirrors `AudioCue` and is called beside it at every cue site — all four experiments, eight sites.
-Two parameters in the shared `visual_cue` block drive it: `enabled` turns visual cues on or off, and
-`remote_test_trigger` picks how they fire — `true` over Wi-Fi ([below](#demo-trigger-over-wi-fi)),
-`false` over the wire. **The wire path is a safe no-op until the switch is fitted:** `start()`
-completes immediately, and `VisualCue.warmup()` warns once. The experiments run unchanged.
-
-When the relay arrives, implement `VisualCue._close_switch()` and set `remote_test_trigger: false` —
-nothing else changes. Keep the closure short (it only has to outlast the board's 5 ms debounce; the
-board's own `duration` decides how long the ring stays lit), and make sure it can never raise or
-block the orchestrator.
-
-### Demo trigger over Wi-Fi
-
-For demos and recordings the experiments can fire the cue over the board's access point, with no
-wire at all. In the experiment's YAML:
+mirrors `AudioCue` and is called beside it at every cue site — all four experiments, eight sites —
+and [`ring_state_cue.py`](../sinthlab_bringup/sinthlab_bringup/actions/ring_state_cue.py) holds the
+pre-training quarter states. Both hand each request to the sender `visual_cue.trigger` selects:
 
 ```yaml
 visual_cue:
-  enabled: true                 # on in the apple pluck, perturb and maze configs
-  remote_test_trigger: true
+  enabled: true                 # master switch
+  trigger: "serial"             # serial or wifi
+  serial_port: "/dev/ttyUSB0"   # serial only
+  remote_board: "192.168.4.1"   # wifi only
   colours:                      # optional: [r, g, b, w] per cue site
     play: [0, 255, 0, 0]        # green
     snap: [255, 0, 0, 0]        # red
 ```
 
-Join the ROS computer to **`KUKA_NEOPIXEL`** — its Ethernet link to the robot is separate — and
-check the link from the shell you launch from with `curl http://192.168.4.1/status`. Each cue site
-then sends `GET /cue`. A site with a colour configured first sets it with `/config?r=0&g=255&b=0&w=0`,
-then sends `/cue`. There is no `save=1`, so nothing is written to flash, and it needs nothing the
-firmware on the board does not already have. The board keeps that colour until the next cue sets
-another, or a reboot restores its saved colour. Pattern, duration and brightness still come from the
-board's settings. The cue sites are `play` and `snap` in apple pluck and perturb, and
-`play`, `reward`, `goal` and `timeout` in the maze.
+The cue sites are `play` and `snap` in apple pluck and perturb, and `play`, `reward`, `goal` and
+`timeout` in the maze. The trigger is a live parameter, read at every cue.
 
-- **It never stalls a trial.** Requests go out one at a time from a background thread, and
-  `start()` returns at once.
-- **Everything is logged.** At startup, whether the board answered; then each cue with its
-  round-trip time, or why it failed.
-- **A late cue is dropped, not shown.** A cue still waiting behind a slow request after 0.5 s is
-  skipped and logged.
-- **Not for experiments.** The Wi-Fi delay varies from cue to cue. Align trial data to the wire,
-  never to this.
+- **[`visual_cue_serial.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py)**
+  writes the [serial commands](#the-serial-link) and waits for each reply. It opens the port on first
+  use and reopens it after an error, so re-attaching the adapter recovers without a restart, and it
+  warns at startup if the FTDI `latency_timer` is not 1 ms.
+- **[`visual_cue_remote.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py)**
+  sends the HTTP requests. A cue with a colour first sets it with `/config?r=0&g=255&b=0&w=0` (in RAM;
+  no `save=1`), then sends `/cue`; the board keeps that colour until the next one. Join the ROS
+  computer to `KUKA_NEOPIXEL` first — its Ethernet link to the robot is separate.
 
-The code is one self-contained file:
-[`visual_cue_remote.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py).
+Both behave the same way:
+
+- **They never stall a trial.** Commands go out one at a time from a background thread, and
+  `start()` returns at once. Nothing raises into the orchestrator.
+- **Everything is logged.** At startup, whether the board answered; then each cue with its round
+  trip, or why it failed.
+- **A late cue is dropped, not shown.** A cue still waiting behind a slow command after 0.5 s is
+  skipped and logged. Ring states are never dropped: a late state is still the right one.
+- **The ack is recorded.** The board answers only once the ring is lit, and that answer is recorded
+  as `cue_visual_ack` with its round trip.
 
 ### On timestamping the cue against motion
 
-Log the ROS time at which `_close_switch()` fires; that puts the cue on the same clock as the
-trajectory. What it does *not* tell you is when the light appeared. Between the two sit the switch's
-closing time (a few milliseconds for a mechanical relay, microseconds for a solid-state one), the
-board's debounce (`debounce_ms`, 5 ms by default) and one LED refresh (~2.4 ms for 60 RGBW pixels).
-That offset is mostly fixed: **measure it once with a photodiode and a scope** rather than assuming
-it.
-
-### The wire does not need Wi-Fi
-
-The wire trigger never touches the radio. A dead ESP32 or a missing access point leaves it working,
-running the settings saved in NVM. The [demo trigger](#demo-trigger-over-wi-fi) is the opposite: it
-is *only* the radio.
+The ack puts the light on the ROS clock. Over the serial link it arrives about 1 ms after the
+ring lit (wire time at 115200 baud) plus the adapter's USB latency (1 ms with `latency_timer` at 1).
+Over Wi-Fi the round trip varies from cue to cue, so it bounds when the ring lit without pinning
+it down. The LED refresh itself (~2.4 ms for 60 RGBW pixels) happens before the ack on both paths.
 
 ---
 
 ## Known limitations
 
-1. **The wire is not commissioned yet.** No wire-triggered cue has run on real hardware. Demos use
-   the [Wi-Fi demo trigger](#demo-trigger-over-wi-fi), which the apple pluck, perturb and maze configs
-   enable.
-2. **Only colour comes from ROS, and only over Wi-Fi.** Before a Wi-Fi cue, ROS sets its colour with
-   `/config` (in RAM, never saved). Pattern, duration and brightness are always the board's settings,
-   set from any machine joined to its access point.
-3. **The wire has one appearance.** It carries one bit, so every wire-triggered cue is the configured
-   cue. Per-event colours work over Wi-Fi only; giving the wire the same would need a second trigger
-   line into another free pin, with the firmware holding one colour per line.
-4. **`CUE_PIN = board.D2` is unverified on real hardware.** The tool-connector pinout comes from the
-   KUKA media-flange manual, not from a measurement. Run the
-   [commissioning checklist](../end_effector_design/README.md#commissioning-the-trigger--do-it-in-this-order)
-   — continuity first, then the jumper test with `check_cue_wiring.py` — **before closing the
-   effector casing**: polarity can be fixed over Wi-Fi afterwards, the pin choice cannot.
+1. **The serial path is untested in an experiment.** The link passed an echo test to the board, and
+   the ROS sender passed tests against a simulated board; no experiment has run on it yet.
+2. **Only colour comes from ROS.** Each cue can carry a colour (`CUE r g b w`, or `/config` before
+   `/cue` over Wi-Fi, in RAM, never saved). Pattern, duration and brightness are always the board's
+   settings, set from any machine joined to its access point.
+3. **The X76 plug's contacts are held by tape, not by its insulating insert,** which would not seat.
+   Recheck the link (Diagnostics, Serial path, **Ping**) after the plug is unplugged and refitted.
+4. **The unused `D2` input stays in the firmware.** Its pull-up keeps it idle, so it cannot fire a cue.
 5. **Settings persistence depends on `microcontroller.nvm` being present in the build.** If it is
    absent, `/config?save=1` says so and settings revert to `DEFAULTS` on reset.
 6. **No code upload over Wi-Fi.** Deliberate — see

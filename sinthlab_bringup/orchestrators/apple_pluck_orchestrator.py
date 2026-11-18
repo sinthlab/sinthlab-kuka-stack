@@ -56,7 +56,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             automatically_declare_parameters_from_overrides=True,
         )
         AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
-        VisualCue.warmup(self)  # logs which visual-cue trigger is active (Wi-Fi test or wire)
+        VisualCue.warmup(self)  # logs which visual-cue trigger is active (serial or Wi-Fi)
 
         # The launch argument `paradigm:=` (paradigm_override) wins over the YAML, so the paradigm can
         # be chosen at launch without editing a file; the dashboard edits the YAML copy instead.

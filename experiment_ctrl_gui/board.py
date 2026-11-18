@@ -7,12 +7,17 @@ board's own commands go through, and only to a private address -- the board serv
 its own access point -- so the relay cannot be pointed anywhere else. This computer must be joined
 to that access point (KUKA_NEOPIXEL).
 
+The Serial path sends the board's serial commands (end_effector_metro_code/README.md, "The serial
+link") through the StarTech adapter: POST /api/diag/serial {port, cmd} -> one line out, one line back.
+Only those commands, and only to a USB serial port.
+
 FakeBoard answers the same commands with the same text in --demo, so the page can be tried with no
 hardware.
 """
 from __future__ import annotations
 
 import ipaddress
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -49,6 +54,43 @@ def call(addr: str, cmd: str, params: Dict[str, object]) -> Tuple[bool, str, flo
                        f"its Wi-Fi (KUKA_NEOPIXEL), and is the board powered?"), (time.monotonic() - t0) * 1000.0
 
 
+SERIAL_BAUD = 115200
+SERIAL_TIMEOUT_SEC = 1.0
+_SERIAL_PORT = re.compile(r"^/dev/tty(USB|ACM)[0-9]+$")
+_SERIAL_CMD = re.compile(r"^(PING|OFF|CUE|CUE( [0-9]{1,3}){4}|SEG [0-9]{1,2} [0-9,.]{1,200})$")
+
+
+def serial_check(port: str, cmd: str) -> None:
+    """Refuse anything but the board's serial commands, to a USB serial port."""
+    if not _SERIAL_PORT.match(port):
+        raise ValueError(f"serial port must be /dev/ttyUSB<n> or /dev/ttyACM<n>, got {port!r}")
+    if not _SERIAL_CMD.match(cmd):
+        raise ValueError(f"not a board serial command: {cmd!r} (PING, CUE, CUE r g b w, SEG f colors, OFF)")
+
+
+def serial_call(port: str, cmd: str) -> Tuple[bool, str, float]:
+    """(answered, reply line, round trip [ms]). Opens the port for this one command."""
+    serial_check(port, cmd)
+    try:
+        import serial
+    except ImportError:
+        return False, "python3-serial is not installed (sudo apt install python3-serial)", 0.0
+    try:
+        with serial.Serial(port, SERIAL_BAUD, timeout=SERIAL_TIMEOUT_SEC) as s:
+            s.reset_input_buffer()
+            t0 = time.monotonic()
+            s.write((cmd + "\n").encode())
+            reply = s.readline().decode(errors="replace").strip()
+            ms = (time.monotonic() - t0) * 1000.0
+    except (OSError, serial.SerialException) as exc:
+        return False, (f"cannot open {port} ({exc}). Is the StarTech adapter attached to WSL "
+                       f"(usbipd attach --wsl --busid <id>) and this user in the dialout group?"), 0.0
+    if not reply:
+        return False, (f"no reply within {SERIAL_TIMEOUT_SEC:.0f} s. Is the board powered and the link "
+                       f"wired (StarTech switch 1 ON, 2-4 OFF)?"), ms
+    return not reply.startswith("ERR"), reply, ms
+
+
 class FakeBoard:
     """The firmware's replies, simulated, for --demo."""
 
@@ -81,7 +123,8 @@ class FakeBoard:
                     self.test, px = None, -1
             return True, self._cfg_text() + (
                 f"leds=60\npatterns=flash,solid,breathe,chase,segment\nip=192.168.4.1\n"
-                f"cue_active={int(now < self.cue_until)}\nwire_fired=0\nnvm_writes=0\n"
+                f"cue_active={int(now < self.cue_until)}\nwire_fired=0\nserial=up\n"
+                f"serial_fired={getattr(self, 'serial_fired', 0)}\nnvm_writes=0\n"
                 f"trigger_pin_raw=1\ntrigger_asserted=0\ntrigger_debounced=0\n"
                 f"led_test_pixel={px}\nled_test_colour={'red' if px >= 0 else '-'}\n"
                 f"nvm_restored_at_boot=0\nuptime_s={now - self.t0:.1f}\n"), 3.0
@@ -111,3 +154,17 @@ class FakeBoard:
         if cmd == "segments":
             return True, "Segments updated\n", 3.0
         raise ValueError(f"unknown board command {cmd!r}")
+
+    def serial(self, cmd: str) -> Tuple[bool, str, float]:
+        """The serial link's replies, simulated."""
+        word = cmd.split()[0]
+        if word == "PING":
+            return True, "PONG", 1.2
+        if word == "CUE":
+            self.cue_until = time.monotonic() + float(self.cfg["duration"])
+            self.serial_fired = getattr(self, "serial_fired", 0) + 1
+            return True, f"ACK CUE {self.serial_fired}", 1.4
+        if word == "OFF":
+            self.cue_until, self.test = 0.0, None
+            return True, "ACK OFF", 1.2
+        return True, "ACK SEG", 1.3

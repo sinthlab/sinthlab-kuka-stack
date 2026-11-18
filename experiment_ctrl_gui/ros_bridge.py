@@ -277,8 +277,8 @@ class DemoBridge:
                 return False
             self._phase_to("cue_go", None, "Quiet window complete. Sounding audio cue."
                            if cue() else "Quiet window complete. (audio cues off)")
-            if self._effective.get("visual_cue.enabled") and not self._effective.get("visual_cue.remote_test_trigger"):
-                self._log("visual_cue.enabled is true, but no trigger switch is wired to this computer yet", "WARN")
+            if self._effective.get("visual_cue.enabled"):
+                self._log(f"Visual cue 'play' fired over the {self._effective.get('visual_cue.trigger', 'wifi')} trigger.")
             if not self._sleep(run_id, 0.5):
                 return False
             self._phase_to("armed", None, "Monitor armed (baseline locked). Watching for the pull.")

@@ -32,7 +32,7 @@ _COMMON = [
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
     "visual_cue.enabled",          # master switch for the NeoPixel ring
-    "visual_cue.remote_test_trigger",
+    "visual_cue.trigger",          # serial (the RS-422 link) or wifi (the board's access point)
     "visual_cue.colours.*",
     # TTL sync pulses to the Blackrock NSP: switch, cabinet address, the trial outputs, width. Not
     # nsp_sync.experiment_start_output: that pulse is sent once, by the dashboard at Start (per-run).
@@ -252,6 +252,7 @@ CHOICES: Dict[str, List[str]] = {
     "grasp.delay_mode": ["fixed", "random"],
     "free_move.rail_axis": ["none", "x", "y", "z"],
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
+    "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
 }
 
 

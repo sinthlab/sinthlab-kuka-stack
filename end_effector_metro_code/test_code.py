@@ -39,11 +39,48 @@ FIRMWARE = os.path.join(HERE, "code.py")
 # ---------------------------------------------------------------------------
 def install_stubs():
     board = types.ModuleType("board")
-    for pin in ("D5", "D2", "ESP_CS", "ESP_BUSY", "ESP_RESET", "SCK", "MOSI", "MISO"):
+    for pin in ("D5", "D2", "D0", "D8", "ESP_CS", "ESP_BUSY", "ESP_RESET", "SCK", "MOSI", "MISO"):
         setattr(board, pin, pin)
 
     busio = types.ModuleType("busio")
     busio.SPI = lambda *a, **k: "spi"
+
+    class UART:
+        """A UART whose receive side is fed by the test (feed) and whose writes are recorded.
+        on_write, if set, is called at each write -- used to check WHEN the ack goes out.
+        Set busio.UART_FAILS = True to make opening it raise, like a pin the chip refuses."""
+
+        def __init__(self, tx, rx, baudrate=9600, timeout=1):
+            if busio.UART_FAILS:
+                raise ValueError("Invalid pins")
+            self.tx, self.rx, self.baudrate = tx, rx, baudrate
+            self._rx = b""
+            self.written = b""
+            self.on_write = None
+
+        def feed(self, data):
+            self._rx += data
+
+        @property
+        def in_waiting(self):
+            return len(self._rx)
+
+        def read(self, n):
+            data, self._rx = self._rx[:n], self._rx[n:]
+            return data
+
+        def write(self, data):
+            if self.on_write:
+                self.on_write()
+            self.written += data
+            return len(data)
+
+        def take(self):
+            out, self.written = self.written, b""
+            return out
+
+    busio.UART = UART
+    busio.UART_FAILS = False
 
     digitalio = types.ModuleType("digitalio")
 
@@ -686,6 +723,90 @@ def test_led_test():
     trigger_off(fw)
 
 
+def serial(fw, data):
+    """Deliver bytes on the serial link, run one service pass, return what the board wrote."""
+    fw.uart.feed(data)
+    fw.serial_service()
+    return fw.uart.take()
+
+
+def test_serial_link():
+    section("Serial link — commands from the ROS computer over RS-422")
+    fw = load()
+    check("UART opened on TX D0 / RX D8",
+          fw.serial_state == "up" and (fw.uart.tx, fw.uart.rx) == ("D0", "D8"),
+          f"{fw.serial_state} {getattr(fw.uart, 'tx', None)}/{getattr(fw.uart, 'rx', None)}")
+    check("115200 baud", fw.uart.baudrate == 115200)
+    check("PING -> PONG", serial(fw, b"PING\n") == b"PONG\n")
+    check("lower case and CRLF are accepted", serial(fw, b"ping\r\n") == b"PONG\n")
+
+    call(fw, "/config", r=0, g=0, b=0, w=255, duration=1.0, pattern="solid")
+    shows_at_ack = []
+    fw.uart.on_write = lambda: shows_at_ack.append(fw.pixels.shows)
+    shows_before = fw.pixels.shows
+    reply = serial(fw, b"CUE\n")
+    fw.uart.on_write = None
+    check("CUE fires the configured cue", fw.cue_active() and fw._cue_color == (0, 0, 0, 255))
+    check("and answers ACK CUE 1", reply == b"ACK CUE 1\n", reply)
+    check("the ack goes out only after the ring was shown",
+          shows_at_ack and shows_at_ack[0] > shows_before, f"{shows_before} -> {shows_at_ack}")
+    advance(1.1)
+    fw.cue_service()
+    check("and the board's timer ends it", not fw.cue_active())
+
+    reply = serial(fw, b"CUE 255 0 0 0\n")
+    check("CUE r g b w fires in that colour", fw._cue_color == (255, 0, 0, 0), fw._cue_color)
+    check("counts on", reply == b"ACK CUE 2\n", reply)
+    check("and leaves the settings' colour alone",
+          (fw.cfg["r"], fw.cfg["g"], fw.cfg["b"], fw.cfg["w"]) == (0, 0, 0, 255))
+    check("CUE while a cue runs restarts it, like /cue", serial(fw, b"CUE\n") == b"ACK CUE 3\n")
+
+    check("OFF stops it", serial(fw, b"OFF\n") == b"ACK OFF\n" and not fw.cue_active())
+    check("and the ring is dark", all(fw.pixels[i] == (0, 0, 0, 0) for i in range(60)))
+
+    seg = b"SEG 4 255,255,255,255.0,0,0,0.0,255,0,0.0,0,0,0\n"
+    check("SEG draws arcs like /segments", serial(fw, seg) == b"ACK SEG\n"
+          and fw.pixels[0] == (255, 255, 255, 255) and fw.pixels[15] == (0, 0, 0, 0)
+          and fw.pixels[30] == (0, 255, 0, 0) and fw.pixels[59] == (0, 0, 0, 0))
+    after_serial = [fw.pixels[i] for i in range(60)]
+    call(fw, "/segments", factor=4, colors="255,255,255,255.0,0,0,0.0,255,0,0.0,0,0,0")
+    check("and draws exactly what /segments draws", after_serial == [fw.pixels[i] for i in range(60)])
+    serial(fw, b"CUE\n")
+    serial(fw, b"SEG 4 0,0,255,0\n")
+    check("SEG stops a running cue", not fw.cue_active() and fw.pixels[0] == (0, 0, 255, 0))
+    for bad in (b"SEG\n", b"SEG x 1,2,3\n", b"SEG 0 1,2,3\n", b"SEG 4\n"):
+        reply = serial(fw, bad)
+        check(f"ERR for {bad.strip().decode()!r}", reply.startswith(b"ERR"), reply)
+
+    check("a command split across reads is joined",
+          serial(fw, b"PI") == b"" and serial(fw, b"NG\n") == b"PONG\n")
+    check("two commands in one read both run", serial(fw, b"PING\nPING\n") == b"PONG\nPONG\n")
+    check("a blank line gets no reply", serial(fw, b"\n") == b"")
+
+    for bad, why in ((b"CUE 1 2\n", "wrong count"), (b"CUE 300 0 0 0\n", "out of range"),
+                     (b"CUE a b c d\n", "not numbers"), (b"HELLO\n", "unknown command")):
+        reply = serial(fw, bad)
+        check(f"ERR for {why}, and no cue", reply.startswith(b"ERR") and not fw.cue_active(), reply)
+
+    reply = serial(fw, b"X" * 300)
+    check("a runaway line is dropped with an error", reply == b"ERR line too long\n", reply)
+    check("and the link still works after it", serial(fw, b"PING\n") == b"PONG\n")
+    check("/status reports the link", "serial=up" in call(fw, "/status")
+          and "serial_fired=4" in call(fw, "/status"))
+
+    busio = sys.modules["busio"]
+    busio.UART_FAILS = True
+    try:
+        fw = load()
+    finally:
+        busio.UART_FAILS = False
+    check("no UART: the board still boots", fw.uart is None and fw.serial_state == "unavailable")
+    fw.serial_service()
+    trigger_on(fw)
+    check("and the wire trigger still works", fw.cue_active())
+    check("/status says so", "serial=unavailable" in call(fw, "/status"))
+
+
 def test_surface_is_the_documented_one():
     section("The API surface is the documented one")
     fw = load()
@@ -695,6 +816,7 @@ def test_surface_is_the_documented_one():
           sorted(fw.server.routes))
     body = call(fw, "/status")
     for field in ("trigger_pin_raw", "trigger_asserted", "trigger_debounced", "wire_fired",
+                  "serial", "serial_fired",
                   "cue_active", "uptime_s", "nvm", "led_test_pixel", "led_test_colour"):
         check(f"/status reports {field}", field + "=" in body)
     # names that must not exist in the firmware: arming, stored profiles, a brightness cap and a
@@ -723,6 +845,7 @@ def main():
         test_cue_is_non_destructive,
         test_file_server_is_read_only,
         test_led_test,
+        test_serial_link,
         test_surface_is_the_documented_one,
     ):
         NVM.nvm[:] = bytearray(256)             # each test starts from a blank board

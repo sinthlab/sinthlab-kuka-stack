@@ -3,8 +3,7 @@
 while the arm may travel, red once the threshold is reached, dark between trials.
 
 Unlike VisualCue (a timed flash the board runs on a trigger), this sets what the ring SHOWS and it
-stays that way until the next state. It uses the board's existing `/segments` endpoint, so the
-firmware already on the effector needs no change:
+stays that way until the next state. It is expressed as the board's `/segments` request:
 
     /segments?factor=4&colors=0,255,0,0.0,0,0,0.0,255,0,0.0,0,0,0     quarters 0 and 2 green
     /off                                                               all dark
@@ -14,9 +13,9 @@ quarter 0..3 below means that arc. WHICH ONE IS "UP" depends on how the ring sit
 on A7 at the start pose; find it once with `curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"`
 (lights quarter 0 only) and set `ring_cue.quarters` to match.
 
-Wi-Fi only (`visual_cue.remote_test_trigger: true`): the X76 wire is one bit and cannot carry a
-colour pattern. With the wire selected this is a no-op and says so once. `visual_cue.enabled: false`
-turns it off too, like every other visual cue.
+It goes out on whichever path `visual_cue.trigger` selects: over Wi-Fi as the request above, over the
+serial link as the equivalent `SEG` / `OFF` command (visual_cue_serial.py). `visual_cue.enabled: false`
+turns it off, like every other visual cue.
 
 Parameters (all live):
     ring_cue.quarters        int[]  which quarters light, 0-3
@@ -36,8 +35,6 @@ _QUARTERS = 4
 
 
 class RingStateCue:
-    _warned = False
-
     def __init__(self, node: rclpyNode, *, param_prefix: str = "ring_cue") -> None:
         self._node = node
         self._p = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
@@ -47,7 +44,6 @@ class RingStateCue:
     def reload(self) -> None:
         node = self._node
         self._enabled = bool(get_required_param(node, "visual_cue.enabled"))
-        self._wifi = bool(get_required_param(node, "visual_cue.remote_test_trigger"))
         self._quarters = sorted({int(q) for q in get_required_param(node, self._p + "quarters")
                                  if 0 <= int(q) < _QUARTERS})
 
@@ -79,15 +75,10 @@ class RingStateCue:
         self._state = state
         if not self._enabled:
             return
-        if not self._wifi:
-            if not RingStateCue._warned:
-                RingStateCue._warned = True
-                self._node.get_logger().warn(
-                    "Quarter-ring cues need the Wi-Fi trigger (visual_cue.remote_test_trigger: true); "
-                    "the X76 wire carries one bit, not a pattern. The ring will stay dark.")
-            return
         try:
-            VisualCue._remote_trigger(self._node).show(self.path_for(state), f"ring_{state}")
+            sender = VisualCue.sender(self._node)
+            if sender is not None:
+                sender.show(self.path_for(state), f"ring_{state}")
         except Exception as exc:
             self._node.get_logger().warn(f"Ring cue '{state}' not sent: {exc}")
 
