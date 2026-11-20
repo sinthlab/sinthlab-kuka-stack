@@ -109,7 +109,12 @@ $("#btn-apply").onclick = () => act("config", cueParams());
 $("#btn-fire").onclick = () => act("cue");
 $("#btn-solid").onclick = () => act("set_color", { r: $("#r").value, g: $("#g").value, b: $("#b").value, w: $("#w").value });
 $("#btn-off").onclick = () => act("off");
-$("#btn-quarter").onclick = () => act("segments", { factor: 4, colors: "0,255,0,0" });  // the pre-training ring states
+// One ring quarter green (pixels 15q..15q+14), the rest dark: the quarters the pre-training ring states use.
+document.querySelectorAll("[data-quarter]").forEach((b) => (b.onclick = () => {
+  const q = +b.dataset.quarter;
+  const colors = [0, 1, 2, 3].map((i) => (i === q ? "0,255,0,0" : "0,0,0,0")).join(".");
+  act("segments", { factor: 4, colors });
+}));
 $("#btn-save").onclick = () => act("config", { save: 1 });
 $("#btn-reset").onclick = () => { if (confirm("Reset every board setting to the firmware defaults?")) act("config", { reset: 1 }); };
 $("#btn-lt").onclick = async () => {

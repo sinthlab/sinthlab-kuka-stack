@@ -199,7 +199,7 @@ either path, with the same tests and the same replies**; pick the path at the to
   board runs with the very same function as the HTTP route. Refused while an experiment runs, since
   the experiment owns the port. `diagnostics.html#serial` opens on this path. On board firmware from
   before `GET`, the page falls back to the experiment commands by itself: *Check board* sends `PING`,
-  *Fire cue* `CUE`, *Solid colour* and *Quarter 0 green* `SEG`, *Off* `OFF`; the settings and the
+  *Fire cue* `CUE`, *Solid colour* and *Quarter 0*–*3* `SEG`, *Off* `OFF`; the settings and the
   LED test then need the Wi-Fi path.
 
 The controls:
@@ -208,7 +208,7 @@ The controls:
   colour, pattern, LEDs, whether a cue is running, the serial link's state and how many serial cues
   it has fired, uptime.
 - **What a cue looks like:** colour, pattern, segments, duration, period, brightness, enabled; apply
-  it; fire a cue; solid colour; **Quarter 0 green** (the pre-training ring state); off; save on the
+  it; fire a cue; solid colour; **Quarter 0**–**3** (one quarter green, the rest dark: the quarters of the pre-training ring states); off; save on the
   board; reset to the firmware defaults.
 - **LED-by-LED test**, showing which pixel is lit so a dead stretch of the ring can be located. If the
   ring lights here, the board, the Pixel Shifter and the ring are fine.

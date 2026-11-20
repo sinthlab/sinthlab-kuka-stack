@@ -1585,11 +1585,9 @@ height on the vertical rail. `rail_axis: none` is Free Move itself.
 
 **The ring.** `ring_cue.quarters` names the quarters that light green while the arm is free to move:
 Move Vertical `[0, 2]` (up and down), Move Horizontal `[1, 3]` (left and right), Free Move all four.
-Which quarter faces up depends on how the ring sits on the flange. Light quarter 0 alone once and set
-the lists to match:
-```bash
-curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"     # quarter 0 green; /off to clear
-```
+Which quarter faces which way depends on how the ring sits on the flange. Light each quarter alone
+with Diagnostics → Visual cue → **Quarter 0**–**3** (one quarter green, the rest dark; **Off** clears
+it), with the arm at the start pose, and set the lists to match.
 The quarter cues go out on whichever path `visual_cue.trigger` selects: the board's `/segments`
 request over Wi-Fi, or the equivalent `SEG` command over the serial link.
 

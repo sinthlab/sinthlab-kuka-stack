@@ -86,7 +86,7 @@ def _legacy_line(cmd: str, params: Dict[str, object]):
 
 
 _LEGACY_NOTE = ("(board firmware without GET: over serial only Check board, Fire cue, Solid colour, "
-                "Quarter 0 green and Off work; settings and the LED test need the Wi-Fi path)")
+                "Quarter 0-3 and Off work; settings and the LED test need the Wi-Fi path)")
 
 
 def _exchange(port: str, line: str) -> Tuple[bool, str, float]:
