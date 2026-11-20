@@ -1,0 +1,75 @@
+{
+    "additional_cooling_fan_speed": [
+        "0"
+    ],
+    "close_fan_the_first_x_layers": [
+        "3"
+    ],
+    "fan_cooling_layer_time": [
+        "30"
+    ],
+    "fan_max_speed": [
+        "70"
+    ],
+    "fan_min_speed": [
+        "50"
+    ],
+    "filament_extruder_variant": [
+        "Direct Drive Standard",
+        "Direct Drive High Flow",
+        "Direct Drive TPU High Flow"
+    ],
+    "filament_max_volumetric_speed": [
+        "2",
+        "nil",
+        "4"
+    ],
+    "filament_retraction_length": [
+        "0",
+        "nil",
+        "0"
+    ],
+    "filament_settings_id": [
+        "TPU 90A - Cap"
+    ],
+    "filament_z_hop": [
+        "0",
+        "nil",
+        "0"
+    ],
+    "from": "User",
+    "inherits": "Bambu TPU 90A @BBL H2D",
+    "name": "TPU 90A - Cap",
+    "nozzle_temperature": [
+        "225",
+        "nil",
+        "230"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "220",
+        "nil",
+        "225"
+    ],
+    "nozzle_temperature_range_high": [
+        "230"
+    ],
+    "nozzle_temperature_range_low": [
+        "220"
+    ],
+    "slow_down_layer_time": [
+        "10"
+    ],
+    "slow_down_min_speed": [
+        "10",
+        "25",
+        "50"
+    ],
+    "textured_plate_temp": [
+        "45"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "45"
+    ],
+    "type": "filament",
+    "version": "2.7.0.8"
+}

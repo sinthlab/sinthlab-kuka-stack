@@ -17,17 +17,19 @@ const STEPS = {
   maze: ["trial_start", "at_start", "fixture_active", "cue_go", "maze_armed", "checkpoint", "goal",
          "trial_end", "release_wait", "released"],
 };
-// Pre-training. No goal: each trial is one session, ended from the dashboard (or by session_sec).
-// Move Vertical / Horizontal are Free Move on a rail.
-STEPS.free_move = STEPS.move_vertical = STEPS.move_horizontal =
-  ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+// Pre-training. Free Move: each trial is one session, ended by session_sec or Stop. Move Vertical /
+// Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
+STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+                   "trial_end", "release_wait", "released"];
+STEPS.move_vertical = STEPS.move_horizontal =
+  ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
-  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped",
+  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "at park — then to the start pose", at_start: "quiet window", quiet_end: "go cue",
@@ -51,10 +53,10 @@ const PHASE_TEXT = {
 const PHASE_TEXT_BY_EXP = {
   free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release",
                release_wait: "waiting for release" },
-  move_vertical: { armed: "the arm follows the hand along the rail", session_end: "session over — waiting for release",
-                   release_wait: "waiting for release" },
-  move_horizontal: { armed: "the arm follows the hand along the rail", session_end: "session over — waiting for release",
-                     release_wait: "waiting for release" },
+  move_vertical: { session_end: "session over — waiting for release",
+                   release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
+  move_horizontal: { session_end: "session over — waiting for release",
+                     release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
@@ -280,6 +282,7 @@ function renderStatus() {
   const steps = stepsFor(key);
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip" || (cur === "response_timeout" && key === "maze")) cur = "goal";
+  if (cur === "reach_wrong") cur = "reach";
   if (cur === "early_touch" || cur === "response_timeout") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";

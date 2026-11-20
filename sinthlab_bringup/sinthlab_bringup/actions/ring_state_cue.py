@@ -59,26 +59,29 @@ class RingStateCue:
             return None
         return tuple(vals + [0] * (4 - len(vals)))
 
-    def path_for(self, state: str) -> str:
-        """The board request for `state` (kept separate so it can be checked without a board)."""
+    def path_for(self, state: str, quarters: Optional[List[int]] = None) -> str:
+        """The board request for `state` (kept separate so it can be checked without a board). `quarters`
+        lights those instead of ring_cue.quarters (the centre-out task's cued end)."""
         colour = self._colour(state) if state != "off" else None
-        if colour is None or not any(colour) or not self._quarters:
+        lit = self._quarters if quarters is None else sorted({int(q) for q in quarters if 0 <= int(q) < _QUARTERS})
+        if colour is None or not any(colour) or not lit:
             return "/off"
         parts: List[str] = []
         for q in range(_QUARTERS):
-            c = colour if q in self._quarters else (0, 0, 0, 0)
+            c = colour if q in lit else (0, 0, 0, 0)
             parts.append(",".join(str(v) for v in c))
         return "/segments?factor=4&colors=" + ".".join(parts)
 
-    def show(self, state: str) -> None:
-        """Show `state` on the ring until the next show(). Never blocks, never raises."""
+    def show(self, state: str, quarters: Optional[List[int]] = None) -> None:
+        """Show `state` on the ring until the next show(), on ring_cue.quarters or on `quarters`. Never
+        blocks, never raises."""
         self._state = state
         if not self._enabled:
             return
         try:
             sender = VisualCue.sender(self._node)
             if sender is not None:
-                sender.show(self.path_for(state), f"ring_{state}")
+                sender.show(self.path_for(state, quarters), f"ring_{state}")
         except Exception as exc:
             self._node.get_logger().warn(f"Ring cue '{state}' not sent: {exc}")
 

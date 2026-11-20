@@ -39,6 +39,10 @@ _COMMON = [
     "nsp_sync.enabled", "nsp_sync.cabinet_ip", "nsp_sync.trial_*_output", "nsp_sync.pulse_width_ms",
 ]
 
+# The reward: a pulse on a Beckhoff output (SYNC 4) into the reward box's NSP jack on a successful trial.
+# Every experiment has it; the success outcomes are experiment_control.REWARD_EVENTS.
+_REWARD = ["reward_pulse.enabled", "reward_pulse.output", "reward_pulse.pulse_ms"]
+
 # The pull threshold and its dwell. Deliberately NOT cartesian_axis: that changes what the
 # threshold means, so it is a different experiment, not a different trial.
 _PULL = [
@@ -67,7 +71,9 @@ _RING = ["ring_cue.quarters", "ring_cue.colours.*"]
 _RESIST = ["resistance.stiffness_n_per_m"]
 
 # Pre-training: Free Move, and Free Move on a rail (Move Vertical / Horizontal).
-_FREE = _COMMON + _SPEED + _RING + [
+_FREE = _COMMON + _REWARD + _SPEED + _RING + [
+    # Move Vertical / Horizontal: the centre-out reach (actions/centre_out.py). Free Move has none.
+    "centre_out.*",
     "session_sec",
     "response_timeout_sec",        # not moved in time -> the session ends, park
     # The feel of the admittance -- see pretrain_free_move.yaml.
@@ -84,7 +90,7 @@ _FREE = _COMMON + _SPEED + _RING + [
 
 LIVE_PARAMS: Dict[str, List[str]] = {
     # Every paradigm. perturb_start.* act only in perturb / perturb_bump, grasp.* only in perturb_bump.
-    "apple_pluck": _COMMON + _PULL + _SPEED + _POSE + _RESIST + [
+    "apple_pluck": _COMMON + _REWARD + _PULL + _SPEED + _POSE + _RESIST + [
         "response_timeout_sec",    # no pluck in time -> the trial ends, no reward, park
         "perturb_start.baseline_settle_sec",
         # The perturbation itself -- the manipulated variable, so it is the one most worth varying
@@ -105,8 +111,8 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "grasp.delay_min_sec",
         "grasp.delay_max_sec",
     ],
-    "restricted_plane": _COMMON + _PULL + _SPEED + ["response_timeout_sec"],
-    "maze": _COMMON + _SPEED + [
+    "restricted_plane": _COMMON + _REWARD + _PULL + _SPEED + ["response_timeout_sec"],
+    "maze": _COMMON + _REWARD + _SPEED + [
         "response_timeout_sec",    # the trial's time limit from the go cue
         # How easy moving along a rail feels -- see rail_lead_sec in maze_params.yaml. Walls unchanged.
         "virtual_fixtures.rail_lead_sec",
@@ -155,6 +161,10 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "grasp.delay_max_sec": (0.0, 10.0),
     # The cabinet's timer is good to a few ms, and shorter pulses can fall between its I/O cycles.
     "nsp_sync.pulse_width_ms": (10, 5000),
+    # How long the juice valve stays open. The cabinet pulses 1-5000 ms.
+    "reward_pulse.pulse_ms": (10, 5000),
+    # Centre-out: how close to a rail end counts as reaching it.
+    "centre_out.end_tol_m": (0.005, 0.03),
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
     # Drag may go further -- it only ever resists.
     "virtual_fixtures.rail_lead_sec": (-0.15, 0.05),
@@ -252,6 +262,9 @@ CHOICES: Dict[str, List[str]] = {
     "grasp.delay_mode": ["fixed", "random"],
     "free_move.rail_axis": ["none", "x", "y", "z"],
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
+    "reward_pulse.output": ["1", "2", "3", "4"],
+    "centre_out.target": ["either", "cued"],                  # actions/centre_out.TARGETS
+    "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
 }
 
@@ -266,7 +279,8 @@ _R, _PLANE = "perturb_start.polar_r_m", "perturb_start.polar_plane"
 # Delay ranges (min, max): perturb's after the go cue, perturb_bump's after the grasp.
 _DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_delay_max_sec"),
                  ("grasp.delay_min_sec", "grasp.delay_max_sec"))
-_SYNC_OUTPUTS = ("nsp_sync.trial_start_output", "nsp_sync.trial_end_output", "nsp_sync.experiment_start_output")
+_SYNC_OUTPUTS = ("nsp_sync.trial_start_output", "nsp_sync.trial_end_output", "nsp_sync.experiment_start_output",
+                 "reward_pulse.output")
 PAIRED = (_R, _PLANE, _START, _PARK, _K, _K_BASE) + sum(_DELAY_RANGES, ()) + _SYNC_OUTPUTS   # checked together: see check_value(context=...)
 
 

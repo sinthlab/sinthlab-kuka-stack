@@ -215,6 +215,12 @@ class DemoBridge:
             self._log(log)
         self._publish()
 
+    def _reward(self, token: str) -> None:
+        """As helpers/experiment_control.py does on a successful outcome (REWARD_EVENTS)."""
+        if self._effective.get("reward_pulse.enabled"):
+            out, ms = self._effective.get("reward_pulse.output", 4), self._effective.get("reward_pulse.pulse_ms", 500)
+            self._log(f"Reward: PULSE {out} {ms} (SYNC {out}, valve open {ms} ms) on {token}.")
+
     def _sleep(self, run_id: int, sec: float) -> bool:
         """Sleep, heartbeating once a second like the real node; False if the run was stopped."""
         end = time.time() + sec
@@ -289,6 +295,21 @@ class DemoBridge:
                 if not self._sleep(run_id, 1.0):
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
+                self._reward("goal")
+            elif self._exp.group == "pretraining" and self._effective.get(
+                    "centre_out.enabled", self._params.get("centre_out.enabled")):
+                # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other.
+                mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
+                target = random.choice(("min", "max")) if mode == "cued" else "either"
+                self._phase_to("target", target, f"Centre-out: the goal is {target}.")
+                if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                    return False
+                end = random.choice(("min", "max"))
+                if target in ("either", end):
+                    self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
+                    self._reward("reach")
+                else:
+                    self._phase_to("reach_wrong", end, f"Centre-out: reached the {end} end, the target was {target} -- no reward.")
             elif self._exp.group == "pretraining":
                 # Runs for session_sec, or (0) until Stop.
                 limit = float(self._effective.get("session_sec", 0.0) or 0.0)
@@ -297,10 +318,12 @@ class DemoBridge:
                     if not self._sleep(run_id, 0.2):
                         return False
                 self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
+                self._reward("session_end")
             else:
                 thr = self._effective.get(
                     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", 0.1)
                 self._phase_to("snap", thr, f"Threshold reached ({thr} m) — freezing the arm at its current pose.")
+                self._reward("snap")
             if not self._sleep(run_id, 1.0):
                 return False
         return run_id == self._run_id

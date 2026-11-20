@@ -28,7 +28,7 @@ def generate_launch_description():
             # start pose. Relative paths are under the package share; an absolute path is used as is.
             DeclareLaunchArgument(
                 "clik_nullspace_cfg",
-                default_value="config/clik_nullspace_pretrain.yaml",
+                default_value="config/clik_nullspace_pretrain_vertical.yaml",
                 description="CLIK redundancy posture YAML (must equal move_to_start).",
             ),
             IncludeLaunchDescription(

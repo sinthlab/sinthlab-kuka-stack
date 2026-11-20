@@ -24,8 +24,9 @@
 
     # PRE-TRAINING: MOVE VERTICAL. Free Move on one VERTICAL rail through the start -- one leg of the
     # maze. The arm goes up or down wherever it is pushed and stays where it is let go; across the rail
-    # the cabinet spring holds it on the rail. No threshold, no goal, no reward: it runs as one SESSION
-    # until session_sec runs out (or Stop), then parks.
+    # the cabinet spring holds it on the rail. No threshold. It runs as one SESSION until session_sec runs
+    # out (or Stop), then parks; within it, centre-out reaches to the rail's ends are rewarded (the
+    # centre_out block below).
     #
     # HOW: as Free Move (actions/admittance_move.py) with free_move.rail_axis z: only the hand's force
     # along the rail moves the equilibrium, only along the rail, and never past its ends.
@@ -34,10 +35,13 @@
     #     (flange Z = tool axis, along base +X) holds the plane; along the rail the spring is 1000 N/m,
     #     as in Free Move, so the same feel settings apply (damping 50 -- see the free_move block).
     #
-    # REACH, from this start holding the tool orientation (optas IK on the iiwa7 URDF): UP is the limit --
-    # the arm nears a singular pose above +0.02 m (smallest singular value 0.12 at +0.02, 0.095 at +0.04)
-    # and +0.08 m is out of reach; down to -0.12 m every joint stays >= 17 deg from its limit, with the
-    # apple bottom at 0.90 m, above the 0.88 m floor. Hence a rail of -0.12 / +0.02 m.
+    # REACH, holding the tool orientation (optas IK on the iiwa7 URDF): from the maze start, UP is the
+    # limit -- the arm nears a singular pose above +0.02 m (smallest singular value 0.12 at +0.02, 0.095
+    # at +0.04) and +0.08 m is out of reach; down to -0.12 m every joint stays >= 17 deg from its limit,
+    # with the apple bottom at 0.90 m, above the 0.88 m floor. So the usable span is the maze start
+    # -0.12 / +0.02 m. For centre-out the start is the MIDDLE of that span -- 5 cm below the maze start
+    # -- and the rail is +/-0.07 m: the same span (apple bottom 0.90-1.04 m), every 1 cm of it solved
+    # with every joint 17-31 deg from its limit.
     #
     # GRAVITY: the equilibrium is moved by force, never copied from the arm, so an untouched arm holds
     # its height on the rail (as in Free Move); the floor still applies below.
@@ -48,11 +52,24 @@
 
     session_sec: 0.0  # session length [s]; 0 = until Stop. > 0: ends by itself, then the next starts
 
-    move_to_start:  # joint-space move to the trial start pose (the maze start)
+    # CENTRE-OUT (actions/centre_out.py): ONE REACH PER TRIAL. The centre is the start, the goals are the
+    # rail's two ends. At the go cue the ring lights the goal; the first end the arm reaches ends the
+    # trial -- a goal end gives the reward (event `reach`), the other end none (`reach_wrong`) -- then the
+    # release wait and park, as any trial. No reach within response_timeout_sec ends it too (no reward).
+    # With it on, session_sec does not apply.
+    centre_out:  # one rewarded reach per trial, from the centre to an end of the rail
+      enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
+      target: "either"  # either = both ends are goals and both light | cued = one end drawn at random per trial, only it lights and only it is rewarded
+      end_tol_m: 0.02  # this close to an end counts as reaching it [m]
+      quarter_min: 2  # ring quarter (0-3) lit for the rail_min_m end (down) -- check on the arm, swap with quarter_max if the wrong side lights
+      quarter_max: 0  # ring quarter (0-3) lit for the rail_max_m end (up)
+
+    move_to_start:  # joint-space move to the trial start pose (the middle of the vertical rail)
       update_rate: 200  # loop rate of this action [Hz]
-      # The pre-training start is the MAZE START: EE ~ (0.38, 0.01, 1.03) m, tool along +X toward the
-      # subject. Keep equal to nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
-      target_joint_position: [1.4, 45.1, 1.1, 49.2, 0.6, 90.5, 2.0]  # start pose, joint angles A1..A7 [deg]
+      # 5 cm BELOW the maze start, the middle of the vertical rail: EE ~ (0.38, 0.01, 0.98) m, tool along
+      # +X toward the subject. Keep equal to nullspace_desired_configuration in
+      # config/clik_nullspace_pretrain_vertical.yaml.
+      target_joint_position: [1.6, 53.6, 1.0, 63.4, 0.6, 96.1, 2.0]  # start pose, joint angles A1..A7 [deg]
       joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
       wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
@@ -128,8 +145,8 @@
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: z  # the rail: the base Z axis through the start (none = free in every direction, as Free Move)
-      rail_min_m: -0.12  # the rail's lower end, from the start [m]: the equilibrium stops there
-      rail_max_m: 0.02  # the rail's upper end, from the start [m]: the arm's reach ends just above
+      rail_min_m: -0.07  # the rail's lower end, from the start [m]: the equilibrium stops there (apple bottom 0.90 m)
+      rail_max_m: 0.07  # the rail's upper end, from the start [m]: the arm's reach ends just above
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
@@ -169,6 +186,11 @@
       trial_end_output: 2  # EL2124 output (1-4) pulsed at trial end
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
       pulse_width_ms: 10  # how long each pulse stays high [ms], 10-5000
+
+    reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
+      enabled: true  # send the reward pulse when the centre-out reach gets to a goal end (centre_out.enabled), else when a session runs its full session_sec; a wrong end, no response, early touch, safety trip and Stop get none
+      output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
+      pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout

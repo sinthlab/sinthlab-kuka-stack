@@ -51,7 +51,7 @@ top and a clear casing box over the lot:
   (3a) APPLE STEM     ONE PETG part: Ø44 cover flange + 100 mm shaft TAPERING Ø24 → Ø14 (Ø9 feed bore,
                       R2 root fillet), then a Ø20 SEAT and a Ø12 TIP up through the ball. Apple height is FIXED
                       by stem_shaft_len — reprint to change it. Apple centre sits 212 mm above the flange.
-  (3b) TPU BALL       Ø45, printed alone. Flat base sits on the seat; Ø12 hole for the tip; solid floor;
+  (3b) TPU BALL       Ø45, printed ON the stem (one print, two nozzles). Flat base sits on the seat; Ø12 hole for the tip; solid floor;
                       OPEN top loads the ERM + force sensor. 45° teardrop neck, so it prints unsupported.
   (3c) RETAINER       small PETG ring (Ø22 × 3 + Ø16 hub), dropped in through the open top and GLUED onto
                       the tip — it clamps the ball's floor down onto the seat.
@@ -67,8 +67,9 @@ top and a clear casing box over the lot:
 > **Fixed height.** The flange, tapered shaft, seat and tip are **one PETG part** (`apple_stem`). One piece has no radial slop to rock on; height is set by
 > **`stem_shaft_len` (100 mm)** — change it and reprint.
 >
-> **The apple prints as four single-material parts:** stem (PETG), ball and
-> cap (TPU), retainer (PETG). The ball slides down the tip onto the stem's **seat**; the **retainer**
+> **The apple is three prints:** the stem (PETG) and ball (TPU) **together**, as one two-material print
+> on the H2D's two nozzles; the retainer (PETG); and the cap (TPU). The ball prints sitting on the stem's
+> **seat**, round the tip; the **retainer**
 > drops in through the open top and is **glued onto the tip** — PETG to PETG, a strong bond — clamping the
 > ball's solid floor between retainer and seat. **Pulled, the floor bears on the retainer; pushed, the
 > base bears on the seat.** No load rides on a TPU bond (TPU barely bonds to anything). Then load the
@@ -422,6 +423,7 @@ both share the Ø5.5/Ø10 head, so the counterbores fit either. The build here u
 | File | What |
 |------|------|
 | `apple_pluck_end_effector.scad` | the parametric model (flange plate, both base tiers, cover, apple stem, ball, cap, casing, assembly) |
+| `bambu_presets/` | Bambu Studio presets (H2D, 0.4 mm nozzles) for every printed part — see [Print settings](#print-settings) |
 | `check_layout.py` | verifies board fit, pillars, ports, drops, trenches, screw clearances and the strength section against the `.scad` |
 | `README.md` | this file |
 
@@ -434,9 +436,9 @@ openscad -D 'part="flange_plate"'    -o flange_plate.stl    apple_pluck_end_effe
 openscad -D 'part="base_tier1"'      -o base_tier1.stl      apple_pluck_end_effector.scad   # lower tier + cable trenches
 openscad -D 'part="base_tier2"'      -o base_tier2.stl      apple_pluck_end_effector.scad   # upper tier
 openscad -D 'part="cover"'           -o cover.stl           apple_pluck_end_effector.scad
-# APPLE — four single-material prints:
+# APPLE — the stem and ball print together (one object, two parts); retainer and cap separately:
 openscad -D 'part="apple_stem"'      -o apple_stem.stl      apple_pluck_end_effector.scad   # PETG (flange + shaft + seat + tip)
-openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effector.scad   # TPU  (lower ball)
+openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effector.scad   # TPU  (lower ball, printed on the stem)
 openscad -D 'part="apple_retainer"'  -o apple_retainer.stl  apple_pluck_end_effector.scad   # PETG (glued onto the tip)
 openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effector.scad   # TPU  (press-fit cap)
 # previews only: 'part="assembly"' (default), 'part="apple"' (stem + ball + retainer + cap),
@@ -496,13 +498,12 @@ openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effe
   [Print settings](#print-settings) for the per-part walls, shells and infill.
 - **Cover:** opaque, same material as the base; print **top-face up** so the ring groove + screw
   counterbores are open on top (the ring drops in from above). The clear casing box shields it.
-- **APPLE STEM (`apple_stem.stl`, PETG):** print it **lying on its side** — the strong axis for a
-  100 mm cantilever — with tree supports under the flange and seat; or upright with the layer-adhesion
-  settings in [Print settings](#the-apple-stem--lay-it-down). Print it **solid** (load path).
-- **APPLE BALL (`apple_ball.stl`, TPU):** prints **upright on its flat base**, no supports (the
-  underside is a 45° neck). Low infill keeps it soft and grippable. Keep it **rounded and smooth** — no
-  sharp edges or pinch points.
-- **RETAINER (`apple_retainer.stl`, PETG):** flat face down, solid. Tiny — put it on the stem's plate.
+- **APPLE STEM + BALL (`apple_stem.stl` PETG + `apple_ball.stl` TPU), one print:** the two STLs share
+  coordinates, so they import as one object with two parts — the ball sits on the stem's seat round the
+  tip. It prints **upright, flange down**, with supports under the flange only (the seat and the ball's
+  neck are 45°). Keep the ball **rounded and smooth** — no sharp edges or pinch points. See
+  [The apple stem and ball](#the-apple-stem-and-ball--one-upright-print).
+- **RETAINER (`apple_retainer.stl`, PETG):** flat face down, solid, on the same plate as the stem + ball.
 - **APPLE CAP (`apple_cap.stl`, TPU, separate):** the top dome; print **dome-up** (skirt on the bed). It
   **press-fits** onto the lower ball's rim rebate — tune `cap_lip_clear` on a test print. To hold it
   against pulls, run a thin bead of **neutral-cure silicone (RTV)** round the skirt: flexible, and it peels
@@ -556,9 +557,9 @@ populate — the boards go in over the screw heads.
 7. **Attach the apple stem, then the ball.** The stem pokes up through the box's top centre hole; set its
    flange on the cover boss (the **spigot** centres it) and drive the **3× M3×10** down into the cover boss.
    Pass the apple wiring up through its bore. Then:
-   - **Dry-fit first.** Slide the **ball** down the tip until its flat base sits on the **seat**, and the
-     **retainer** onto the tip through the open top: it should sit flat in the floor recess, flush with
-     the tip top. Ease a tight fit by sanding, not by forcing the TPU.
+   - **Dry-fit first.** The ball is already on the seat (it printed there). Drop the **retainer** onto
+     the tip through the open top: it should sit flat in the floor recess, flush with the tip top. Ease a
+     tight fit by sanding the retainer, not by forcing the TPU.
    - **Glue the retainer.** Lift it off, put **thin CA (superglue) or 5-minute epoxy** round the top
      ~6 mm of the tip, push the retainer down hard so it clamps the floor, and hold it 30 s. Keep glue
      off the TPU and **out of the Ø9 bore** (run the wiring first, or plug the bore with a wire). Let it
@@ -596,29 +597,36 @@ aimed at that. Every part from the cover down is in the pull path
 
 ### Per part
 
+Every number is in the presets in [`bambu_presets/`](bambu_presets/); this is what they hold.
+
 | Part | Material | Layer | Walls | Top / bottom | Infill | Notes |
 |---|---|---|---|---|---|---|
 | **flange_plate** | PETG (**PAHT-CF / PET-CF if you have it**) | 0.20 mm | **8** | **8 / 8** | **60 %** gyroid | Highest-stressed part. Mating face down. |
 | **base_tier1** | PETG (**PAHT-CF / PET-CF if you have it**) | 0.20 mm | **8** | **8 / 8** | **50 %** gyroid | Carries the base↔flange joint. Floor down on the plate. |
 | **base_tier2** | PETG | 0.20 mm | **6** | **6 / 6** | **35 %** gyroid | In the load path, with large margins. |
 | **cover** | PETG | 0.20 mm | **6** | **8 / 8** | **40 %** gyroid | **The apple bolts to this.** Opaque filament — not translucent. |
-| **apple_stem** | PETG | **0.15 mm** | 6 | 6 / 6 | **100 %** | See below — this one is orientation-critical. |
-| **apple_retainer** | PETG | 0.15 mm | 4 | 4 / 4 | **100 %** | Flat face down. |
-| **apple_ball / apple_cap** | TPU 90A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 20 mm/s), no retraction — see [TPU presets](#2b-tpu-90a-presets-ball-and-cap). |
+| **apple_stem** + **apple_retainer** | PETG | **0.16 mm** | 6 | 6 / 6 | **100 %** rectilinear | Upright, printed with the ball — see below. |
+| **apple_ball** | TPU 90A | 0.16 mm | 3 | 4 / 4 | 15 % gyroid | Printed on the stem. |
+| **apple_cap** | TPU 90A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 20 mm/s), no retraction. |
 
-**Temperatures.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %). TPU 90A: nozzle
-**220 °C first layer / 225 °C after**, bed 45 °C, fan 50–70 %. Enclosure closed for both, no draught.
+**Temperatures and fans.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %); the
+upright stem runs hotter — 255 °C, fan off for its first ~25 mm. TPU 90A: 220–225 °C, fan 30–70 %.
+**The auxiliary (side) fan is off in every preset**: Bambu's own TPU 90A profile runs it at 100 %, and
+its blast blows a fresh TPU line off its base.
 
-### The apple stem — lay it down
+### The apple stem and ball — one upright print
 
-The stem is a 100 mm cantilever. Printed upright its layers lie **perpendicular to the bending
-stress** — the worst possible orientation. Printed on its own (the separate build), it can lie down:
+The stem is a 100 mm cantilever, and printed upright its layers lie **across the bending stress**. That
+is why the stem preset leans hard on layer adhesion: **255 °C, fan off for the first ~25 mm** (the
+flange and the root of the shaft), solid, 0.16 mm layers. At the 20 N design pull the shaft peaks at
+~2.4 MPa — roughly a tenth of what a well-bonded upright PETG layer holds.
 
-- **Lying on its side (recommended):** layers run along the shaft, its strong axis. Tree supports
-  under the Ø44 flange and the Ø20 seat; brim on. Check the root fillet came out clean.
-- **Upright, if you must:** lean hard on layer adhesion — **0.15 mm layers, 255 °C, fan off for the
-  first 20 mm above the flange**, 100 % infill, alone on the plate, **brim 8 mm** (the Ø24 spigot is a
-  small footprint for a 120 mm part).
+The ball prints on the stem's seat, round the Ø12 tip with 0.2 mm clearance. TPU barely bonds to
+PETG, and nothing relies on it: the **glued retainer** holds the ball on, exactly as before.
+
+Placed flange down, the part stands on the Ø24 spigot with an **8 mm brim**; the only support is
+under the Ø44 flange, from the build plate. Above ~100.7 mm the two nozzles take turns every layer —
+that is where to watch the print.
 
 ### Do not
 
@@ -637,9 +645,8 @@ Sizes, so you know what you are looking at on the plate:
 | `base_tier1` | Ø188 | 33 | PETG | — |
 | `base_tier2` | Ø188 | 35 | PETG | — |
 | `cover` | Ø188 | 17 | PETG | — |
-| `apple_stem` | Ø44 | 116.5 | PETG | — (lie it down) |
-| `apple_ball` | Ø45 | 27.8 | TPU 90A | — |
-| `apple_retainer` | Ø22 | 6 | PETG | the stem's plate |
+| `apple_stem` + `apple_ball` | Ø45 | 131 | PETG + TPU 90A | one object, two parts |
+| `apple_retainer` | Ø22 | 6 | PETG | the stem + ball plate |
 | `apple_cap` | Ø43 | 22.5 | TPU 90A | — |
 | `casing` | 198 × 198 | 80 | *not printed* | acrylic, by hand |
 
@@ -648,154 +655,103 @@ Sizes, so you know what you are looking at on the plate:
 - **Dry the PETG.** 65 °C for 6–8 h. This matters more than any slicer setting — see above.
 - **Use the textured PEI plate for PETG.** PETG bonds *too well* to smooth PEI and can tear the
   coating off. If you only have smooth PEI, put a glue-stick layer down as a release agent.
-- **TPU must come off the external spool holder, not the AMS.** Soft filament buckles in the AMS
-  path.
-- Optional but worth it for `base_tier1` and `flange_plate`: fit the **0.6 mm nozzle**. Fatter
-  extrusions bond better between layers, which is precisely the failure mode being designed against.
-  Nothing in this design needs finer than 0.6 — the smallest features are Ø3.4 holes.
+- **Nozzles.** Both are **0.4 mm Standard**: the **left** takes PETG from the AMS, the **right** takes
+  TPU from the **external spool**, through a short, straight tube — soft filament buckles in the AMS
+  path. If the automatic load will not push TPU through, load it by hand at 230 °C.
+- **Dry the TPU** too: 55 °C for 4–6 h if the spool has been open.
 
-#### 1. Make a process preset once, reuse it
+#### 1. Import the presets (once)
 
-Load any part, then in the right-hand parameter panel:
+**File → Import → Import Configs…**, select every `.json` in
+[`bambu_presets/process/`](bambu_presets/process/) and [`bambu_presets/filament/`](bambu_presets/filament/).
+They build on Bambu's own H2D 0.4 mm presets, so pick the **Bambu Lab H2D 0.4 nozzle** printer first.
 
-- **Quality → Layer height** `0.20`
-- **Strength → Wall loops** `8`
-- **Strength → Top shell layers** `8` · **Bottom shell layers** `8`
-- **Strength → Sparse infill density** `50 %` · **Sparse infill pattern** `Gyroid`
-- **Others → Brim type** `Outer brim only`, **Brim width** `5 mm`
-
-Save it as a preset (the 💾 next to the process dropdown) called something like
-`0.20 Structural PETG`. Now each part below is just "load this preset, change these two things".
-
-#### 2. Filament preset
-
-Duplicate the Bambu PETG profile and save it as `PETG - high strength`:
-
-- **Filament → Nozzle temperature** `250 °C` (both layers)
-- **Filament → Bed temperature** `80 °C`
-- **Cooling → Minimum fan speed** `20 %` · **Maximum fan speed** `30 %`
-- **Cooling → Keep fan always on** OFF
-
-The low fan is deliberate. Part cooling makes PETG look nicer and bond worse, and every structural
-part here fails along layer boundaries.
-
-#### 2b. TPU 90A presets (ball and cap)
-
-These are for the **0.4 mm standard nozzle** — the filament settings go in the **Direct Drive:
-Standard** tab, and the extruder fed by the external spool must be set to `0.4 mm`, `Standard`.
-With the TPU High Flow kit, see the end of this section.
-
-Duplicate **Generic TPU** and save it as `TPU 90A`:
-
-| Where | Setting | Value |
+| Preset | Type | For |
 |---|---|---|
-| Filament | Nozzle temperature | **220 °C** initial layer · **225 °C** other layers |
-| | Textured PEI Plate | **45 °C** / 45 °C |
-| | Chamber temperature | 0 °C |
-| | Flow ratio | 1.00 |
-| | **Max volumetric speed** | **2.0 mm³/s** · Adaptive volumetric speed off |
-| Cooling | Initial layer fan | first **3** layers at **0 %** |
-| | Min fan speed threshold | **50 %**, layer time **30 s** |
-| | Max fan speed threshold | **70 %**, layer time **10 s** |
-| | Keep fan always on | on |
-| | Slow printing down for better layer cooling | on · **Min print speed 10 mm/s** |
-| | Force cooling for overhangs and bridges | on · fan 100 % |
-| Setting overrides | **Retraction → Length** | ticked, **0 mm** (everything below it greys out — that is correct) |
+| `0.20 Flange Plate PETG` | process | `flange_plate` |
+| `0.20 Base Tier1 PETG` | process | `base_tier1` |
+| `0.20 Base Tier2 PETG` | process | `base_tier2` |
+| `0.20 Cover PETG` | process | `cover` |
+| `PETG - High Strength` | filament | the four above |
+| `0.16 Stem+Ball PETG-TPU` | process | `apple_stem` + `apple_ball` + `apple_retainer` |
+| `PETG - Stem upright` | filament | the stem and retainer (left nozzle) |
+| `TPU 90A - Stem+Ball` | filament | the ball (right nozzle) |
+| `0.20 TPU Cap` | process | `apple_cap` |
+| `TPU 90A - Cap` | filament | the cap (right nozzle) |
 
-Process preset `0.20 TPU`:
+The two TPU 90A cap presets also carry the values for the **TPU High Flow** nozzle: set the right
+nozzle's type to TPU High Flow and they apply.
 
-| Tab | Setting | Value |
+#### 2. Per part
+
+For each part: **import, Place on bed, pick its process preset and filament**, slice. Nothing to change
+by hand except where noted.
+
+| Part | On the plate | Note |
 |---|---|---|
-| Quality | Layer height / initial layer | **0.20 mm** / 0.20 mm |
-| | Line width | 0.42 mm |
-| | Seam | Aligned |
-| | Avoid crossing walls | on |
-| Strength | Wall loops | **3** |
-| | Top / bottom shell layers | **4 / 4** |
-| | Sparse infill | **15 %**, gyroid |
-| Speed | Initial layer | **10 mm/s** |
-| | Outer wall | **15 mm/s** |
-| | Inner wall · sparse infill · internal solid infill · top surface | **20 mm/s** |
-| | Gap infill | 15 mm/s |
-| | Acceleration: normal printing · outer wall · travel | **2000 · 1000 · 5000 mm/s²** |
-| Support | Enable support | off |
+| `flange_plate` | mating face down | No supports — the M6 head wells are flat-bottomed. |
+| `base_tier1` | floor down | **Alone on the plate.** No supports: the trenches, channels and bore ports are open-topped or short bridges. |
+| `base_tier2` | floor down | |
+| `cover` | ring groove up | **Opaque** filament — the cover is the light barrier behind the ring. |
+| `apple_cap` | **skirt down, dome up** | Check it — dome-down needs supports and ruins the press-fit surface. No supports. |
 
-At 20 mm/s a 0.42 × 0.20 mm line is about 1.7 mm³/s, under the 2.0 cap, so the slicer never throttles
-it. Feed from the **external spool**, and make sure the spool turns freely: any drag stretches soft
-TPU and starves the nozzle. Dry the spool at 55 °C for 4–6 h if it has been open.
+#### 3. The apple — stem + ball, and the retainer
 
-Bambu Studio warns *"floating cantilever"* on `apple_ball`. That is the tops of the grip grooves
-(a 1.2 mm half-round lip); leave supports off — supports would fill the grooves.
+All of this is on the **Prepare** tab (right-click menus do not work in Preview).
 
-**With the TPU High Flow kit.** Set the extruder's nozzle type to **TPU High Flow** in Bambu
-Studio; the filament settings then come from the **Direct Drive: TPU High Flow** tab, so fill that tab
-in:
+1. **Filaments first.** In **Project Filaments** (left panel), open each slot's drop-down and pick from
+   **User presets**: the left-nozzle PETG slot → **`PETG - Stem upright`**, the external-spool (right
+   nozzle) slot → **`TPU 90A - Stem+Ball`** (add a slot with **+** if there is none). The fans,
+   temperatures and the TPU's flow limit live in these filament presets, not in the process preset.
+   After a **Sync AMS**, check the slots again — a sync can put them back to the detected presets.
+2. **Import `apple_stem.stl` and `apple_ball.stl` together** (select both) and answer **Yes** to
+   *load as a single object with multiple parts* — that keeps the ball on the seat. The object must
+   read about **44 × 44 × 131 mm**; if it is 116.5 or 27.8 mm tall, they did not combine.
+3. Switch **Process** to **Objects**, expand the object, and set each part's filament in the **Fila.**
+   column: **stem → the `PETG - Stem upright` slot**, **ball → the `TPU 90A - Stem+Ball` slot**. The
+   icon beside **+ −** above the filament list sets which nozzle each filament uses: PETG **left**,
+   TPU **right**.
+4. **Right-click the ball part → Add settings → Strength → Wall loops 3, Sparse infill 15 %,
+   Gyroid.** The process preset is the stem's (solid); this is the one setting a preset cannot hold.
+   A settings row then shows under the ball in the object list.
+5. Import `apple_retainer.stl` as a **separate object** (answer No), PETG, beside the stem.
+6. Process: `0.16 Stem+Ball PETG-TPU`. Leave the parts upright, flange down — do not *Auto orient*.
+7. **Block the supports above the flange.** Left alone, tree supports climb from the plate past the
+   shaft to the undersides of the ball's grip grooves — they would fill the grooves. The only support
+   this print needs is under the Ø44 flange.
+   1. Right-click the stem + ball object → **Add support blocker → Cylinder**. It appears as a row
+      under the object.
+   2. Select the object row, press **M** (Move) and read its **X** and **Y** (World coordinates).
+   3. Select the blocker row, press **M** and type the same **X** and **Y**, and **Z 70**.
+   4. Press **S** (Scale), untick **Uniform scale**, and set the size to **X 60, Y 60, Z 125 mm**.
+   5. Click **Front** on the view cube: the blocker (translucent red) must start **on top of the
+      flange** — leaving the flange's underside uncovered — and reach past the top of the ball.
+      Nudge **Z** with **M** if it does not.
 
-| Setting | Value |
-|---|---|
-| Nozzle temperature | **225 °C** initial · **230 °C** other layers |
-| Max volumetric speed | **4.0 mm³/s** |
-| Retraction length | 0 mm (override ticked) |
-| Cooling, bed, flow | as the standard nozzle |
+   ![Support blocker in place, front view](support_blocker_front.png)
 
-and in the process preset raise **Outer wall → 25 mm/s** and **inner wall / infill / top → 30 mm/s**
-(≈ 2.5 mm³/s), initial layer 15 mm/s. Everything else — walls, shells, infill, accelerations,
-placement — stays as above.
+8. **Slice plate**, then check in Preview. The legend is the **Slicing Result** bar at the top of the
+   3D view — click the arrows at its right end to open it; its **Color Scheme** drop-down switches
+   the view.
+   - **Line Type:** support (green) only in a ring **under the flange** (~3–5 mm); none at ~60 mm and
+     none on the ball.
+   - **Line Type, only Sparse infill ticked, bottom slider handle raised to ~640, top at ~650
+     (~104 mm), Top view:** the ball's floor shows **wavy gyroid with gaps** (15 %). Packed straight
+     lines there mean step 4 did not take.
+   - **Fan Speed:** **0 %** up to ~25 mm, **~20–30 %** up the shaft, **~30–40 %** on the ball.
+   - The ball's first TPU layer at **~100.7 mm** lies on the PETG seat.
+   - The prime tower (~32 g) is expected: it has to stand ready for the nozzle changes in the ball.
+9. On the printer: spaghetti detection on **low** (it reads TPU stringing as a failure) and the door
+   ajar from ~95 mm, so the warm chamber does not soften the TPU in the right hotend. Be there when it
+   reaches ~100 mm.
+10. Afterwards: clear the supports from the flange underside, and check the root fillet came out clean.
 
-#### 3. Per part
+**`apple_cap`** — Bambu Studio warns *"floating cantilever"* on the ball and the cap: that is the tops
+of the grip grooves (a 1.2 mm half-round lip). Leave supports off — supports would fill the grooves.
 
-**`flange_plate`** — highest-stressed part.
-1. Import, **Place on bed**. It lands mating-face down, which is what you want.
-2. Process: `0.20 Structural PETG`, change **Sparse infill density → 60 %**.
-3. No supports. The M6 head wells are flat-bottomed and print fine.
+#### 4. Check on the first layer
 
-**`base_tier1`** — carries the base↔flange joint.
-1. Import, **Place on bed** (floor down).
-2. Process: `0.20 Structural PETG` as-is (8 walls, 8/8 shells, 50 %).
-3. No supports needed: the trenches, channels and bore ports are all open-topped or short bridges.
-4. Print it **alone on the plate**. It is the one part where a failed layer matters most.
-
-**`base_tier2`** — same shape, lower stress but still in the pull path.
-1. Import, **Place on bed**.
-2. Process: `0.20 Structural PETG`, then set **Wall loops → 6**, **Top/Bottom shell layers → 6**,
-   **Sparse infill density → 35 %**.
-
-**`cover`** — **more structural than it looks; the apple bolts to it.**
-1. Import, **Place on bed** (ring groove facing up).
-2. Process: **Wall loops 6**, **Top/Bottom 8**, **Sparse infill 40 %**. The top and bottom shells are
-   the ones doing the work here: a plate in bending behaves like an I-beam and the solid skins carry
-   almost all of it, so shell count buys more than infill percentage.
-3. Use an **opaque** filament. The cover is the light barrier behind the ring — a translucent one
-   will glow.
-
-**`apple_cap`** — TPU, prints alone.
-1. Import. It arrives at assembly height; **Place on bed** drops it. It should sit **skirt down,
-   dome up**. Check this — dome-down needs supports and ruins the press-fit surface.
-2. Assign the **`TPU 90A`** filament (external spool) and the **`0.20 TPU`** process
-   ([2b](#2b-tpu-90a-presets-ball-and-cap)).
-3. No supports; a skirt is enough.
-
-#### 4. The apple — stem, ball, retainer
-
-**`apple_stem` + `apple_retainer`** — PETG, one plate.
-1. Import both. Rotate the **stem onto its side** (90° about X), **Place on bed**; the retainer
-   **flat face down**.
-2. **Support → Enable, type `tree(auto)`**, on build plate only — under the flange and the seat.
-   **Others → Brim `8 mm`.**
-3. **Layer height `0.15`**, **Sparse infill `100 %`**, **Wall loops 6**. Dry PETG, 250–255 °C, fan low.
-4. Clean the supports off the flange underside and seat; the seat's top face is what the ball sits on,
-   so keep it flat.
-
-**`apple_ball`** — TPU, prints alone.
-1. Import, **Place on bed**: it stands on its **flat base** (the neck pointing down, the open top up).
-2. **No supports** — the underside is a 45° cone. **Brim `5 mm`**: the base is a small ring under a
-   45 mm ball.
-3. **`TPU 90A`** filament + **`0.20 TPU`** process, as the cap
-   ([2b](#2b-tpu-90a-presets-ball-and-cap)).
-
-#### 5. Check on the first layer
-
-- **Brim stuck down all the way round** on the stem and the ball — both stand on small footprints.
+- **Brim stuck down all the way round** on the stem — it stands on the Ø24 spigot.
 - **No gaps at the Ø30 bore wall** on `base_tier1`. It is a 4 mm ring and the first layer is where
   under-extrusion shows.
 - If the first layer looks glassy and translucent rather than matte, the bed is too hot or the

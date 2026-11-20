@@ -240,6 +240,14 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
+    if exp in ("move_vertical", "move_horizontal") and "target" in got:
+        # Centre-out (actions/centre_out.py): one reach per trial -- to the goal, to the other end, or none.
+        outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
+        r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
+        tgt = [a for _, t, a in seq if t == "target"]
+        ends = [a for _, t, a in seq if t in ("reach", "reach_wrong")]
+        r.note(f"centre-out: target {tgt[0] if tgt else '?'}, " + (f"{outcome[0]} at the {ends[0]} end" if ends
+               else (outcome[0] if outcome else "no outcome")))
     if exp == "perturb_bump" and "early_touch" not in got:
         if "grasp_timeout" in got or ("response_timeout" in got and "grasp" not in got):   # grasp_timeout: older files
             r.check("grasp" not in got and "perturb_applied" not in got,

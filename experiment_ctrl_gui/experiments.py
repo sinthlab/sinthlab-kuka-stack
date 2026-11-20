@@ -138,17 +138,19 @@ EXPERIMENTS += [
     ),
     Experiment(
         key="move_vertical", label="Move Vertical", group="pretraining",
-        summary="Free Move on one vertical rail: the arm goes up or down wherever it is pushed and holds where it is let go. No threshold.",
+        summary="Free Move on one vertical rail, centre-out: reaches from the centre up or down to an end of the rail are rewarded. No threshold.",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+        # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
     Experiment(
         key="move_horizontal", label="Move Horizontal", group="pretraining",
-        summary="Free Move on one horizontal rail: the arm goes left or right wherever it is pushed and holds where it is let go. No threshold.",
+        summary="Free Move on one horizontal rail, centre-out: reaches from the centre left or right to an end of the rail are rewarded. No threshold.",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",

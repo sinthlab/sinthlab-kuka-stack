@@ -12,11 +12,12 @@ from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
+from sinthlab_bringup.actions.centre_out import CentreOutMonitor
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
 from sinthlab_bringup.helpers.node_utils import get_required_param, build_node
-from sinthlab_bringup.helpers.experiment_control import ExperimentControl
+from sinthlab_bringup.helpers.experiment_control import ExperimentControl, REWARD_EVENTS
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
@@ -24,11 +25,17 @@ CLIK_CTRL = "kuka_clik_controller"
 
 class FreeMoveOrchestratorNode(rclpyNode):
     """Pre-training: the arm in admittance -- it goes wherever it is pushed and stays where it is let go.
-    No goal, no reward, no threshold. A trial is one free-movement SESSION that runs for session_sec,
-    or, with session_sec 0, until Stop.
+    No threshold. A trial is one free-movement SESSION that runs for session_sec, or, with session_sec
+    0, until Stop.
 
     One node, three tasks, set by the YAML's `experiment`: free_move (no boundary), move_vertical and
     move_horizontal (the same admittance on one rail through the start: free_move.rail_axis).
+
+    REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
+    centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
+    goal end(s) of the rail; the first end the arm reaches ends the trial: a goal end gives the reward
+    (`reach`), the other end none (`reach_wrong`); then the release wait and park, as any trial. No
+    reach within response_timeout_sec ends it too; session_sec does not apply.
 
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
@@ -59,6 +66,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, on_complete=self.on_quiet_window_complete, on_broken=self.on_early_touch)
         # No response: the arm not moved more than quiet_gate.move_m within response_timeout_sec of the
         # go cue ends the session (no end cue, park). Once it has been moved, the session runs on.
+        self.centre_out = None             # Move Vertical / Horizontal: the centre-out reach, created below
         self.response_timeout = WaitAction(
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
@@ -79,6 +87,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
             on_event=self.control.on_event)
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
+        # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
+        if self.has_parameter("centre_out.enabled"):
+            self.centre_out = CentreOutMonitor(self, self.admittance)
+        self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
         self.end_cue = AudioCue(self, param_prefix="audio_cue_end", on_complete=lambda: None)
@@ -128,8 +140,23 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if not self._smartpad_ok():        # checked before the go cue: no "go" for an arm that will not move
             return
         self.recorder.mark("cue_go")
-        self.ring.show("go")
+        if self._centre_out_on():          # this trial's goal: drawn now, lit with the go cue
+            self.recorder.mark("target", self.centre_out.pick_target())
+            self.ring.show("go", self.centre_out.quarters())
+        else:
+            self.ring.show("go")
         self.go_cue.start()
+
+    def _centre_out_on(self) -> bool:
+        return self.centre_out is not None and self.centre_out.enabled
+
+    def _set_reward_events(self):
+        """Centre-out on: the reach to a goal end gives the reward, not the session's end."""
+        self.control.set_reward_events(("reach",) if self._centre_out_on() else REWARD_EVENTS)
+
+    def on_reach(self, end: str, rewarded: bool):
+        """Centre-out: the arm reached an end of the rail -- the trial's outcome."""
+        self._end_trial("reach" if rewarded else "reach_wrong", end)
 
     def on_go_complete(self):
         if self._stopping:
@@ -139,7 +166,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.safety.start()
         self.response_timeout.start()
         self._session_live = True
-        if self._session_sec > 0:
+        if self._centre_out_on():
+            self.centre_out.start(self.on_reach)
+            self.get_logger().info("Centre-out: reach to the lit end of the rail.")
+        elif self._session_sec > 0:
             self.session.start()
             self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
         else:
@@ -175,8 +205,13 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def on_response_timeout(self):
         """response_timeout_sec after the go cue: if the arm has not been moved more than quiet_gate.move_m,
-        end the session without the end cue and park. If it has, nothing happens."""
+        end the session without the end cue and park. If it has, nothing happens -- except in centre-out,
+        where the response is the reach itself: no reach by then ends the trial."""
         if self._trial_ending or self._stopping:
+            return
+        if self._centre_out_on():
+            self.get_logger().warn(f"NO REACH within {self.response_timeout.duration_sec():g} s: parking.")
+            self._end_trial("response_timeout")
             return
         moved = self.admittance.max_excursion_m()
         if moved > float(get_required_param(self, "quiet_gate.move_m")):
@@ -196,12 +231,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")
 
-    def _end_trial(self, reason: str):
+    def _end_trial(self, reason: str, arg=None):
         if self._trial_ending:
             return
         self._trial_ending = True
         self._session_live = False
-        self._trial_over(reason if reason != "safety" else "safety_trip")
+        self._trial_over(reason if reason != "safety" else "safety_trip", arg)
+        if self.centre_out is not None:
+            self.centre_out.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -212,8 +249,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
                 self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
             return
-        self.get_logger().info("Session over. The arm holds; waiting for release before reset.")
-        self.end_cue.start()
+        # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
+        self.get_logger().info("Session over. The arm holds; waiting for release before reset."
+                               if reason == "session_end" else "The arm holds; waiting for release before reset.")
+        if reason != "reach_wrong":
+            self.end_cue.start()
         self.recorder.mark("release_wait")
         self.force_release.start()
 
@@ -225,7 +265,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.start()
 
     def on_park_complete(self):
-        self.get_logger().info(f"--- SESSION {self.trial_count} COMPLETE ---")
+        self.get_logger().info(f"--- {'TRIAL' if self._centre_out_on() else 'SESSION'} {self.trial_count} COMPLETE ---")
         self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
         self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
@@ -239,7 +279,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.trial_count += 1
         self.recorder.start(trial_index=self.trial_count)
         self.recorder.mark("trial_start", self.trial_count)
-        self.get_logger().info(f"--- STARTING SESSION {self.trial_count} ---")
+        self.get_logger().info(f"--- STARTING {'TRIAL' if self._centre_out_on() else 'SESSION'} {self.trial_count} ---")
         self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
 
     def _trial_over(self, why: str, arg=None):
@@ -270,6 +310,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._trial_ending = True
         self._session_live = False
         self.quiet_window.stop()
+        if self.centre_out is not None:
+            self.centre_out.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -296,6 +338,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.session.set_duration(max(self._session_sec, 1.0))
         self.response_timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.admittance.reload()
+        if self.centre_out is not None:
+            self.centre_out.reload()
+        self._set_reward_events()
 
 
 def main(args=None) -> None:

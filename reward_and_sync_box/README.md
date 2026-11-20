@@ -35,7 +35,7 @@ three inputs:
 
 | Input | Connects with | Opens the valve |
 |---|---|---|
-| **NSP** | BNC cable from the Blackrock NSP digital out | for as long as the TTL pulse is high |
+| **NSP** | BNC cable from **SYNC 4**, the arm's reward pulse | for as long as the TTL pulse is high |
 | **PEDAL** | foot pedal, plugged into its BNC jack | while the pedal is held down |
 | **BUTTON** | hand switch, plugged into its BNC jack | while the button is held |
 
@@ -44,8 +44,9 @@ filling and cleaning the line regardless of anything else.
 
 **Plugging a device in is what arms it.** Nothing unplugged can trigger the valve.
 
-The reward size is set by **how long** the valve is open: the NSP pulse width, or how long the pedal
-or button is held.
+The reward size is set by **how long** the valve is open: the reward pulse's width
+(`reward_pulse.pulse_ms`, see [Reward pulse](../README.md#reward-pulse)), or how long the pedal or button
+is held.
 
 ### How it works
 
@@ -406,7 +407,7 @@ SYNC; no sync wire touches P or COIL.
 ```
  PEDAL        COM + NO ── own 2 m cable ──[Wago]── CC2-22 (if longer) ──► [BB-BNC-P] ═► PEDAL jack
  HAND SWITCH  its two leads ──────────────[Wago]── CC2-22 (if longer) ──► [BB-BNC-P] ═► BUTTON jack
- NSP          digital out ═══════════ BNC-120 RG58 ══════════════════════════════════► NSP jack
+ REWARD PULSE SYNC 4 ════════════════ BNC-120 RG58 ══════════════════════════════════► NSP jack
 ```
 
 - **Pedal (Adafruit 423):** find **COM + NO** with a multimeter (the pair that closes when pressed).
@@ -415,8 +416,8 @@ SYNC; no sync wire touches P or COIL.
 - **At the BB-BNC-P:** one wire to the centre terminal, one to the shield terminal (a switch has no
   polarity). With CC2-22, connect its drain wire to the shield terminal here only. Cover the
   terminals with heat-shrink or tape and add a cable tie as strain relief.
-- **NSP:** a BNC cable from the NSP digital output; a TTL pulse opens the valve for the pulse's
-  duration.
+- **Reward pulse:** a BNC cable from the box's own **SYNC 4** jack to its **NSP** jack. On a successful
+  trial the experiment pulses SYNC 4 (`reward_pulse.*`), which opens the valve for the pulse's duration.
 
 ---
 
@@ -665,7 +666,10 @@ All in [`sunrise_controller_code/`](../sunrise_controller_code/); deploy it like
   *All* fires output N as N pulses, so each line identifies itself on the NSP. It serves the same UDP
   commands, so the network path from the ROS computer can be tested at the same time.
 
-**From ROS**, each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and the
+**From ROS**, a successful trial also sends the reward pulse, `PULSE 4 500` by default, on SYNC 4, cabled
+to the reward box's NSP jack ([Reward pulse](../README.md#reward-pulse)).
+
+Each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and the
 dashboard sends one the moment **Start** is pressed (experiment start), with the cabinet address, the
 three outputs and the width set in its `nsp_sync` parameters (defaults `172.31.1.147`, outputs 1, 2
 and 3, 10 ms): see

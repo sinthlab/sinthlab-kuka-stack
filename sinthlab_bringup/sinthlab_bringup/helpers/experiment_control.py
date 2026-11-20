@@ -23,6 +23,12 @@ NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); wi
 (sunrise_controller_code/) pulses that EL2124 output -- one BNC line per event to the Blackrock NSP.
 The send never blocks or raises; the cabinet's replies are read on a background thread, and a
 refusal or silence is logged (see reward_and_sync_box/README.md, "Sync: TTL pulses to the NSP").
+
+REWARD. With `reward_pulse.enabled`, a successful trial's outcome (REWARD_EVENTS: the snap, the maze
+goal, a pre-training session that ran its full session_sec, or -- in the centre-out version of Move
+Vertical / Horizontal, which calls set_reward_events(("reach",)) -- each rewarded reach) sends "PULSE <reward_pulse.output> <reward_pulse.pulse_ms>" the same way; that output's jack (SYNC 4)
+is cabled to the reward box's NSP jack, so the pulse holds the juice valve open for pulse_ms. Failures
+(timeout, early touch, safety trip, Stop) send none. Independent of nsp_sync.enabled; same cabinet_ip.
 """
 from __future__ import annotations
 
@@ -51,6 +57,8 @@ NSP_OUTPUTS: Dict[str, str] = {
     "trial_start": "nsp_sync.trial_start_output",
     "trial_end": "nsp_sync.trial_end_output",
 }
+# The outcome tokens that mean success: each sends the reward pulse.
+REWARD_EVENTS = ("snap", "goal", "session_end")    # the default; set_reward_events() replaces it
 # Must equal TtlPulser.DEFAULT_PORT in sunrise_controller_code/TtlPulser.java.
 PULSE_PORT = 30002
 
@@ -91,6 +99,7 @@ class ExperimentControl:
         self._effective: Dict[str, object] = {
             name: _plain(node.get_parameter(name).value)
             for name in node._parameters if is_live(experiment, name)}   # noqa: SLF001
+        self._reward_events = REWARD_EVENTS
         self._nsp = NspPulser(self._log)
         self._read_nsp()
         self._smartpad = SmartPadLink.get(self._log)    # what the SmartPad app reports it runs with
@@ -104,6 +113,10 @@ class ExperimentControl:
         self._publish()
 
     # ------------------------------------------------------------------ orchestrator API
+
+    def set_reward_events(self, tokens) -> None:
+        """Which event tokens send the reward pulse, in place of REWARD_EVENTS."""
+        self._reward_events = tuple(tokens)
 
     def on_reload(self, fn: Callable[[], None]) -> None:
         """Register a function that re-reads live parameters. Called at a trial boundary."""
@@ -153,6 +166,10 @@ class ExperimentControl:
         """Every trial event: NSP sync pulse first (timing matters), then status."""
         if self._nsp_enabled and token in NSP_OUTPUTS:
             self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
+        if self._reward is not None and token in self._reward_events:
+            output, ms = self._reward
+            self._nsp.pulse(output, ms, f"reward on {token}")
+            self._log.info(f"Reward: PULSE {output} {ms} (SYNC {output}, valve open {ms} ms) on {token}.")
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
@@ -260,7 +277,11 @@ class ExperimentControl:
         self._nsp_enabled = bool(p("nsp_sync.enabled"))
         self._nsp_cfg = {token: int(p(name)) for token, name in NSP_OUTPUTS.items()}
         self._nsp_cfg["width_ms"] = int(p("nsp_sync.pulse_width_ms"))
-        self._nsp.set_target(str(p("nsp_sync.cabinet_ip")).strip(), self._nsp_enabled)
+        # The reward pulse: (output, ms) when on, else None.
+        self._reward = None
+        if self._node.has_parameter("reward_pulse.enabled") and bool(p("reward_pulse.enabled")):
+            self._reward = (int(p("reward_pulse.output")), int(p("reward_pulse.pulse_ms")))
+        self._nsp.set_target(str(p("nsp_sync.cabinet_ip")).strip(), self._nsp_enabled or self._reward is not None)
 
 
 class NspPulser:
@@ -295,7 +316,7 @@ class NspPulser:
             self._host, self._confirmed, self._silent_warned = host, False, False
             self._sent.clear()
         if enabled:
-            self._log.info(f"NSP sync: pulses go to {host}:{PULSE_PORT}.")
+            self._log.info(f"NSP sync / reward: pulses go to {host}:{PULSE_PORT}.")
 
     def pulse(self, output: int, width_ms: int, token: str) -> None:
         if self._sock is None or self._host is None:

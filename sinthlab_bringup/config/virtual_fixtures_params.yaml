@@ -101,6 +101,11 @@
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
       pulse_width_ms: 10       # how long each pulse stays high [ms], 10-5000
 
+    reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
+      enabled: true  # send the reward pulse at the snap; failures (timeout, early touch, safety trip, Stop) get none
+      output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
+      pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
+
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
     #

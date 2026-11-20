@@ -1,0 +1,12 @@
+/**/kuka_clik_controller:
+  ros__parameters:
+    # CLIK redundancy posture for the PRE-TRAINING task Move Vertical, in DEGREES (controller_base converts to rad).
+    #
+    # The CLIK matches only the EE *pose* and resolves the arm's redundant 7th DOF toward this posture.
+    # It MUST equal move_to_start.target_joint_position in config/pretrain_move_vertical.yaml -- otherwise
+    # the arm holds the right EE pose in a different arm shape and drifts toward this one while you guide
+    # it, which feels like the fixture fighting you.
+    #
+    # 5 cm below the maze start, the middle of the vertical rail: EE ≈ (0.380, 0.007, 0.980) m in
+    # lbr_link_0, tool ≈ +X.
+    nullspace_desired_configuration: [1.6, 53.6, 1.0, 63.4, 0.6, 96.1, 2.0]  # preferred arm posture A1..A7 [deg]

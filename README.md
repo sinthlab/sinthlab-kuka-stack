@@ -230,6 +230,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.trigger` | how cues reach the ring: `serial` (the RS-422 link) or `wifi` (the board's access point); the experiment is the same either way |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site |
 | `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 10) |
+| `reward_pulse.enabled`, `reward_pulse.output`, `reward_pulse.pulse_ms` | the [reward pulse](#reward-pulse) on a successful trial — on/off (default on), the EL2124 output cabled to the reward box (1–4, default 4, different from the `nsp_sync` outputs), and how long the valve stays open (10–5000 ms, default 500) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
@@ -243,7 +244,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | Restricted Plane | `response_timeout_sec`, `…displacement.cartesian_displacement_threshold_m`, `…displacement.force_release_shutdown_delay_sec` |
 | Maze | `response_timeout_sec`, `virtual_fixtures.rail_lead_sec` (how easy moving along a rail feels: + lighter, − heavier, −0.15 to +0.05 s) |
 | Free Move | `session_sec` (0 = until Stop), `response_timeout_sec`; the ring `ring_cue.quarters`, `ring_cue.colours.*`; the feel `free_move.damping_ns_per_m` (3–200, lower = lighter), `free_move.deadband_n` (0–15, default 2.5), `free_move.max_speed_mps` (≤ 0.5), `free_move.accel_limit_mps2`, `free_move.force_filter_tau_sec`, `free_move.tare_sec`, `free_move.trail_m` (0–0.03), `free_move.low_force_n` (0–30), `free_move.low_force_damping_ns_per_m` (40–300) |
-| Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`); the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
+| Move Vertical / Move Horizontal | the same as Free Move (`session_sec`, the ring, the feel `free_move.*`), and the [centre-out reach](#centre-out-reach) `centre_out.*`; the rail itself (`free_move.rail_axis`, `rail_min_m`, `rail_max_m`) is per-run |
 
 These are deliberately **not** live:
 - `cartesian_axis`: it changes what the threshold means, so it is a different experiment, not a
@@ -739,7 +740,8 @@ Every experiment ends a trial in which the animal does not respond in time, with
 | Apple pluck, perturb bump | the go cue (`grasp_wait`), then again from `armed` | the grasp; then the pull reaching the threshold |
 | Restricted plane | `armed` | the pull reaching the threshold (`snap`) |
 | Maze | `maze_armed` (the go cue) | reaching the goal |
-| Free Move, Move Vertical, Move Horizontal | `armed` (the go cue) | the arm moved more than `quiet_gate.move_m` (3 cm) from where it was at the go cue; after that the session runs on to `session_sec` or Stop |
+| Free Move | `armed` (the go cue) | the arm moved more than `quiet_gate.move_m` (3 cm) from where it was at the go cue; after that the session runs on to `session_sec` or Stop |
+| Move Vertical, Move Horizontal | `armed` (the go cue) | the [centre-out reach](#centre-out-reach): the arm at an end of the rail (with `centre_out.enabled` off: as Free Move) |
 
 ### The floor — a height the end effector never goes below
 Every experiment has a **floor**: a height above the ground (the robot stands on the ground, so
@@ -773,7 +775,7 @@ layers ([`helpers/floor.py`](sinthlab_bringup/sinthlab_bringup/helpers/floor.py)
      ends a pull. With the default start (apple bottom 1.057 m) and the 10 cm threshold, the floor
      can be at most 0.947 m;
    - **maze and Move Vertical:** the lowest rail point must be 1 cm above the floor (Move Vertical: at most
-     0.786 m; maze: 0.906 m). Free Move has no task to protect: only the start and park.
+     0.891 m; maze: 0.906 m). Free Move has no task to protect: only the start and park.
 
    **The dashboard refuses a setup that breaks these, with the reason and the highest floor that
    would work** — when you edit the floor, a pose, the threshold, the paradigm, the random-start
@@ -1274,7 +1276,8 @@ and that envelope is a **trapezoid** — full width low down, sharply pinched at
 only a ∈ ±0.10). Vertical room is the scarce resource; sideways room is plentiful.
 
 **If you change `move_to_start`**, you must also update `config/clik_nullspace_maze.yaml` (the
-pre-training tasks have their own, `config/clik_nullspace_pretrain.yaml`)
+pre-training tasks have their own, `config/clik_nullspace_pretrain.yaml`, and Move Vertical
+`config/clik_nullspace_pretrain_vertical.yaml`)
 (`nullspace_desired_configuration`) to the same joint array, or the CLIK will hold the right EE pose in
 the wrong arm posture. And re-check the *orientation-constrained* cost of the free directions — that is
 what decides whether guiding feels light or like treacle, and it is not visible in reach alone.
@@ -1443,25 +1446,27 @@ Work up the ladder and stop at the first rung that feels wrong.
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
 they are under the **Pre-training** tab. All three:
 
-- start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject. Their CLIK
-  posture is `config/clik_nullspace_pretrain.yaml` (the same as the maze's);
+- start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject, with the
+  CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except **Move
+  Vertical**, which starts **5 cm lower**, in the middle of its rail, with its own posture
+  `config/clik_nullspace_pretrain_vertical.yaml`;
 - run on the CLIK, like the maze;
-- run as one **session** with no threshold and no goal, for `session_sec` or until **■ Stop**, then
-  the arm parks.
+- have no threshold. Free Move runs as one **session**, for `session_sec` or until **■ Stop**, then the
+  arm parks; in Move Vertical / Horizontal each trial is one **centre-out reach**.
 - record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
-| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | no goal — one session, for `session_sec` or until Stop |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (−0.12 / +0.02 m); it stays where it is let go | no goal — one session, as Free Move |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | no goal — one session, as Free Move |
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | the session running its full `session_sec` |
+| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
 
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
 (`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.
 
 #### Free Move — admittance, no goal, no boundary
-The arm goes wherever it is pushed and stays wherever it is let go. There is no goal, no reward and
-no wall. It runs as one free-movement **session**: for `session_sec` (live), then the end tone, the
+The arm goes wherever it is pushed and stays wherever it is let go. There is no goal and no wall; the
+reward is the session running its full `session_sec`. It runs as one free-movement **session**: for `session_sec` (live), then the end tone, the
 wait for the hand to let go, park, and the next session; or, with `session_sec` 0 (the default),
 until **■ Stop** on the dashboard, which ends it at once -- no end tone, no wait for the hand to let
 go -- parks the arm and ends the launch.
@@ -1563,15 +1568,15 @@ does the IK; ROS only moves the target point.
 #### Move Vertical / Move Horizontal — Free Move on one rail
 Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The
 arm goes along the rail wherever it is pushed and stays where it is let go; across the rail the
-cabinet spring holds it on the rail. There is **no threshold, no goal and no reward**: it runs as one
-session, ended the same ways as Free Move, and it has the same feel settings (`free_move.*`, all live).
+cabinet spring holds it on the rail. There is **no threshold**, and it has the same feel settings
+(`free_move.*`, all live). Each trial is one [centre-out reach](#centre-out-reach) along the rail.
 
 The rail is per-run, in the `free_move` block:
 
 | Parameter | Move Vertical | Move Horizontal |
 |---|---|---|
 | `rail_axis` | `z` | `y` |
-| `rail_min_m` / `rail_max_m` | −0.12 / +0.02 m | −0.15 / +0.15 m |
+| `rail_min_m` / `rail_max_m` | −0.07 / +0.07 m | −0.15 / +0.15 m |
 
 Only the hand's force **along** the rail counts, the equilibrium moves only along it, and it stops at
 the rail's ends ([`admittance_move.py`](sinthlab_bringup/sinthlab_bringup/actions/admittance_move.py)).
@@ -1588,10 +1593,42 @@ curl "http://192.168.4.1/segments?factor=4&colors=0,255,0,0"     # quarter 0 gre
 The quarter cues go out on whichever path `visual_cue.trigger` selects: the board's `/segments`
 request over Wi-Fi, or the equivalent `SEG` command over the serial link.
 
-**Reach** (IK from the maze start, holding the tool orientation): sideways to ±0.15 m and down to
+**Reach** (IK holding the tool orientation): from the maze start, sideways to ±0.15 m and down to
 −0.12 m are fine (every joint ≥ 17° from its limit; at −0.12 m the apple bottom is at 0.90 m, above the
 0.88 m floor); **up is the limit** — the arm nears a singular pose above +0.02 m, and +0.08 m is out of
-reach. Hence the vertical rail's −0.12 / +0.02 m ends.
+reach. So the vertical span is the maze start −0.12 / +0.02 m. Move Vertical starts in the **middle**
+of that span, 5 cm below the maze start (A1–A7 `[1.6, 53.6, 1.0, 63.4, 0.6, 96.1, 2.0]`), so its rail is
+**±0.07 m** — the same span, apple bottom 0.90–1.04 m, every 1 cm of it solved with every joint 17–31°
+from its limit.
+
+#### Centre-out reach
+In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
+two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
+
+1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), or one
+   end drawn at random (`target: cued`).
+2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
+   - a **goal end**: the **reward pulse** and the end tone;
+   - the **other end** (cued): no reward, no tone.
+3. Then, as any trial: the arm holds where it is, the **release wait**, **park**, and the next trial from
+   the start.
+4. **No reach** within `response_timeout_sec` (30 s) ends the trial too, without reward. Moving the arm
+   is not enough here: the response is the reach. `session_sec` does not apply.
+
+The position is the arm's own along the rail, where it rests — not the equilibrium — so a reach counts
+only when the arm is really there. All of it is live, in the `centre_out` block:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
+| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded |
+| `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |
+| `centre_out.quarter_min` / `quarter_max` | Vertical `2` / `0`, Horizontal `1` / `3` | the ring quarter lit for the `rail_min_m` end and for the `rail_max_m` end |
+
+Events: `target` at the go cue (`min`, `max` or `either`), then the outcome — `reach` (a goal end, the
+reward) or `reach_wrong` (the other end), each with the end (`min` / `max`) as its argument — or
+`response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's
+target and outcome.
 
 #### Before the first session with a subject
 1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`
@@ -1601,12 +1638,14 @@ reach. Hence the vertical rail's −0.12 / +0.02 m ends.
 2. **Free Move, creep and feel.** Leave the arm untouched for 10 s; it must not move. Then move it
    around the space the subject will use, and tune `damping_ns_per_m` and `deadband_n` live.
 3. **Move Vertical, hold.** Let go at a few heights on the rail; the arm must stay where it is let go.
-4. **Ring.** Confirm the rail quarters really are up/down (or left/right) as seen by the subject.
+4. **Ring.** Confirm the rail quarters really are up/down (or left/right) as seen by the subject, and
+   that `centre_out.quarter_min` lights at the `rail_min_m` end (down / −Y) — swap it with
+   `quarter_max` if not.
 
 #### A suggested progression
 1. **Free Move:** sessions of free handling, damping lowered as the subject gets confident.
-2. **Move Horizontal:** free sessions along the horizontal rail.
-3. **Move Vertical:** free sessions along the vertical rail.
+2. **Move Horizontal:** centre-out reaches along the horizontal rail.
+3. **Move Vertical:** centre-out reaches along the vertical rail.
 4. **Maze**, along its own diagnostic ladder: `free_plane` → `single_line` → `maze`.
 
 #### Further pre-training tasks worth adding (not implemented yet)
@@ -2066,7 +2105,7 @@ stateDiagram-v2
     NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
 
-**Flow 5 — Free Move, Move Vertical, Move Horizontal** (joint moves, CLIK with admittance — on a rail for the last two; no goal)
+**Flow 5 — Free Move, Move Vertical, Move Horizontal** (joint moves, CLIK with admittance — on a rail, one centre-out reach per trial, for the last two)
 ```mermaid
 stateDiagram-v2
     [*] --> FirstPark : from wherever the arm is, slow [parking]
@@ -2074,11 +2113,13 @@ stateDiagram-v2
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
-    Free --> ReleaseWait : session_sec runs out, end tone, the arm holds [session_end, trial_end]
+    QuietWindow --> Free : rail tasks: the goal lit with the go cue [target]
+    Free --> ReleaseWait : session_sec runs out (Free Move), end tone, the arm holds [session_end, trial_end]
+    Free --> ReleaseWait : rail tasks: a goal end -- reward, end tone [reach, trial_end]<br/>the other end -- no reward [reach_wrong, trial_end]
     Free --> SwitchToJoint : Stop -- no end tone, no release wait [stop_requested, trial_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip, trial_end]
-    Free --> SwitchToJoint : not moved quiet_gate.move_m within response_timeout_sec (30 s) of the go cue [response_timeout, trial_end]
+    Free --> SwitchToJoint : not moved quiet_gate.move_m (rail tasks: no reach) within response_timeout_sec (30 s) of the go cue [response_timeout, trial_end]
     SwitchToJoint --> Park
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next session (after Stop: holds, the launch ends)
@@ -2446,6 +2487,26 @@ Start:
 
 If the outputs are changed, change the post-processing page's sync channels to the NSP analog inputs
 those jacks are cabled to.
+
+#### Reward pulse
+
+A successful trial opens the juice valve: at its outcome — the **snap** in apple pluck and restricted
+plane, the **goal** in the maze, the **centre-out reach** to a goal end in Move Vertical and Move
+Horizontal, and in Free Move a **session that runs its full `session_sec`** — the experiment sends `PULSE <reward_pulse.output> <reward_pulse.pulse_ms>`
+to the cabinet the same way. That output's jack, **SYNC 4**, is cabled to the reward box's **NSP**
+jack, so the valve stays open for `pulse_ms`: that is the reward size. Failures (no response, early
+touch, safety trip, Stop, a reach to the wrong end) get none. A Free Move session with `session_sec` 0
+runs until Stop, so it never sends one: set a session length to reward it.
+
+It is independent of `nsp_sync.enabled` and uses the same `nsp_sync.cabinet_ip`. Each reward is logged
+(*Reward: PULSE 4 500 (SYNC 4, valve open 500 ms) on snap.*). The settings are the `reward_pulse`
+block of every experiment YAML, all live:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `reward_pulse.enabled` | `true` | send the reward pulse on a successful trial |
+| `reward_pulse.output` | `4` | EL2124 output (front jack SYNC 1–4) cabled to the reward box's NSP jack; must differ from the `nsp_sync` outputs |
+| `reward_pulse.pulse_ms` | `500` | how long the valve stays open, 10–5000 ms |
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event

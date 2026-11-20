@@ -253,6 +253,18 @@ class AdmittanceMoveAction:
         """Farthest the arm has been moved from where it was at the go cue [m] (the response time-out)."""
         return self._max_exc
 
+    def rail_ends(self) -> Optional[tuple]:
+        """(rail_min_m, rail_max_m) from the start, or None off a rail (Free Move)."""
+        return None if self._rail is None else (self._rail[1], self._rail[2])
+
+    def rail_position(self) -> Optional[float]:
+        """Where the arm is along the rail, from the start [m] (+ toward rail_max_m), or None before it has
+        anchored / off a rail. The arm is taken where it would REST (measured + the resting sag found at the
+        tare), the same reference the rail ends clamp the equilibrium to -- so the centre reads ~0 at rest."""
+        if self._rail is None or not self._active or self._anchor is None or self._p_meas is None:
+            return None
+        return float((self._p_meas + self._rest_offset - self._anchor[0:3, 3]) @ self._rail[0])
+
     def offset_from_anchor(self) -> Optional[np.ndarray]:
         if not self._active or self._anchor is None or self._p_meas is None:
             return None
