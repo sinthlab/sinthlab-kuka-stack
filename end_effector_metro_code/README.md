@@ -532,6 +532,23 @@ segment is skipped with a message on the serial console rather than failing the 
 > the remaining pixels **dark** — e.g. `factor=7` lights 7 × 8 = 56 LEDs and leaves 4 off. Clean
 > divisors of 60: **2, 3, 4, 5, 6, 10, 12, 15, 20, 30**.
 
+### Ring addressing on the arm
+
+Pixels are numbered in data order from the ring's `DIN`: pixel index **0–59** in the code and the
+commands, **LED 1–60** counting from 1 (LED *n* = pixel *n* − 1). With `factor=4` each segment is one
+quarter-arc of 15 pixels. On the arm, at the experiments' start poses (A7 at 2°), seen from the front:
+
+| Segment (`factor=4`) | Pixels | LEDs | Faces |
+|---|---|---|---|
+| 0 | 0–14 | 1–15 | up |
+| 1 | 15–29 | 16–30 | right |
+| 2 | 30–44 | 31–45 | down |
+| 3 | 45–59 | 46–60 | left — does not light on the current ring |
+
+The ring turns with A7, so at another A7 the directions turn with it. The dashboard's Diagnostics →
+Visual cue → **Quarter 0**–**3** lights one segment alone to check it. The pre-training experiments'
+use of the quarters is in the [main README](../README.md#centre-out-reach).
+
 ---
 
 ## Deployment

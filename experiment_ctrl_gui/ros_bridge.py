@@ -300,11 +300,12 @@ class DemoBridge:
                     "centre_out.enabled", self._params.get("centre_out.enabled")):
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other.
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
-                target = random.choice(("min", "max")) if mode == "cued" else "either"
+                ends = ("down", "up") if self._exp.key == "move_vertical" else ("left", "right")
+                target = random.choice(ends) if mode == "cued" else "either"
                 self._phase_to("target", target, f"Centre-out: the goal is {target}.")
                 if not self._sleep(run_id, random.uniform(1.0, 3.0)):
                     return False
-                end = random.choice(("min", "max"))
+                end = random.choice(ends)
                 if target in ("either", end):
                     self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
                     self._reward("reach")

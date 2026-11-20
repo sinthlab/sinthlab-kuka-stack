@@ -61,8 +61,8 @@
       enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
       target: "either"  # either = both ends are goals and both light | cued = one end drawn at random per trial, only it lights and only it is rewarded
       end_tol_m: 0.02  # this close to an end counts as reaching it [m]
-      quarter_min: 2  # ring quarter (0-3) lit for the rail_min_m end (down) -- check on the arm, swap with quarter_max if the wrong side lights
-      quarter_max: 0  # ring quarter (0-3) lit for the rail_max_m end (up)
+      quarter_down: 2  # ring quarter (0-3) lit for the down end (rail_min_m, -Z) (README, "The ring")
+      quarter_up: 0  # ring quarter (0-3) lit for the up end (rail_max_m, +Z)
 
     move_to_start:  # joint-space move to the trial start pose (the middle of the vertical rail)
       update_rate: 200  # loop rate of this action [Hz]

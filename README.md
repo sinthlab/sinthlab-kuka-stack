@@ -1584,10 +1584,24 @@ Because the equilibrium is moved by force and never copied from the arm, an unto
 height on the vertical rail. `rail_axis: none` is Free Move itself.
 
 **The ring.** `ring_cue.quarters` names the quarters that light green while the arm is free to move:
-Move Vertical `[0, 2]` (up and down), Move Horizontal `[1, 3]` (left and right), Free Move all four.
-Which quarter faces which way depends on how the ring sits on the flange. Light each quarter alone
-with Diagnostics → Visual cue → **Quarter 0**–**3** (one quarter green, the rest dark; **Off** clears
-it), with the arm at the start pose, and set the lists to match.
+Move Vertical `[0, 2]` (up and down), Move Horizontal `[1, 3]` (right and left), Free Move all four.
+The ring's 60 LEDs are addressed in data order from the ring's `DIN`: pixel index 0–59 (LED 1–60,
+counting from 1), so quarter *q* is pixels 15*q* to 15*q* + 14 (the board's `/segments` / `SEG` with
+`factor=4`, [end-effector firmware](end_effector_metro_code/README.md#ring-addressing-on-the-arm)).
+At the start pose, seen from the front of the arm, the quarters face:
+
+| Quarter | Pixels | LEDs | Faces | Rail end | Setting |
+|---|---|---|---|---|---|
+| 0 | 0–14 | 1–15 | up | Move Vertical's up end (`rail_max_m`, +Z) | `centre_out.quarter_up: 0` |
+| 1 | 15–29 | 16–30 | right | Move Horizontal's right end (`rail_max_m`, +Y) | `centre_out.quarter_right: 1` |
+| 2 | 30–44 | 31–45 | down | Move Vertical's down end (`rail_min_m`, −Z) | `centre_out.quarter_down: 2` |
+| 3 | 45–59 | 46–60 | left | Move Horizontal's left end (`rail_min_m`, −Y) | `centre_out.quarter_left: 3` |
+
+Quarter 3 (LEDs 46–60) does not light on the current ring: Move Horizontal's left end shows dark.
+
+The ring turns with A7, so the map holds for the start poses' A7 (2°). Check it with Diagnostics →
+Visual cue → **Quarter 0**–**3** (one quarter green, the rest dark; **Off** clears it) with the arm at
+the start pose.
 The quarter cues go out on whichever path `visual_cue.trigger` selects: the board's `/segments`
 request over Wi-Fi, or the equivalent `SEG` command over the serial link.
 
@@ -1624,10 +1638,14 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 | `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
 | `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded |
 | `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |
-| `centre_out.quarter_min` / `quarter_max` | Vertical `2` / `0`, Horizontal `1` / `3` | the ring quarter lit for the `rail_min_m` end and for the `rail_max_m` end |
+| `centre_out.quarter_down` / `quarter_up` | `2` / `0` | Move Vertical: the ring quarter lit for the down end (`rail_min_m`) and for the up end (`rail_max_m`) |
+| `centre_out.quarter_left` / `quarter_right` | `3` / `1` | Move Horizontal: the ring quarter lit for the left end (`rail_min_m`) and for the right end (`rail_max_m`) |
 
-Events: `target` at the go cue (`min`, `max` or `either`), then the outcome — `reach` (a goal end, the
-reward) or `reach_wrong` (the other end), each with the end (`min` / `max`) as its argument — or
+The ends are named by where they are, seen from the front of the arm: **down** / **up** on Move
+Vertical's rail, **left** / **right** on Move Horizontal's.
+
+Events: `target` at the go cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
+end, the reward) or `reach_wrong` (the other end), each with the end's name as its argument — or
 `response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's
 target and outcome.
 
@@ -1640,8 +1658,8 @@ target and outcome.
    around the space the subject will use, and tune `damping_ns_per_m` and `deadband_n` live.
 3. **Move Vertical, hold.** Let go at a few heights on the rail; the arm must stay where it is let go.
 4. **Ring.** Confirm the rail quarters really are up/down (or left/right) as seen by the subject, and
-   that `centre_out.quarter_min` lights at the `rail_min_m` end (down / −Y) — swap it with
-   `quarter_max` if not.
+   that `centre_out.quarter_down` / `quarter_left` lights at the down / left end — swap it with
+   `quarter_up` / `quarter_right` if not.
 
 #### A suggested progression
 1. **Free Move:** sessions of free handling, damping lowered as the subject gets confident.

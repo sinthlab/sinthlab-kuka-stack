@@ -257,6 +257,10 @@ class AdmittanceMoveAction:
         """(rail_min_m, rail_max_m) from the start, or None off a rail (Free Move)."""
         return None if self._rail is None else (self._rail[1], self._rail[2])
 
+    def rail_axis(self) -> Optional[str]:
+        """The rail's base axis ("x" | "y" | "z"), or None off a rail (Free Move)."""
+        return None if self._rail is None else "xyz"[int(np.argmax(self._rail[0]))]
+
     def rail_position(self) -> Optional[float]:
         """Where the arm is along the rail, from the start [m] (+ toward rail_max_m), or None before it has
         anchored / off a rail. The arm is taken where it would REST (measured + the resting sag found at the
