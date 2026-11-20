@@ -129,9 +129,11 @@ function runningKey() {
 }
 function isRunningSelected() { return runningKey() === S.selected; }
 function exp(key) { return S.experiments.find((e) => e.key === key); }
-// Paradigm experiments (apple pluck): the run's paradigm is the `paradigm` parameter.
+// Paradigm experiments (apple pluck; Move Vertical / Horizontal): the run's paradigm is the
+// experiment's paradigm_param (`paradigm`, or `centre_out.target`).
+function paradigmParam(key) { return exp(key)?.paradigm_param || "paradigm"; }
 function paradigmOf(key) {
-  const d = S.params[key]; const p = d && d.params.find((x) => x.name === "paradigm");
+  const d = S.params[key], name = paradigmParam(key); const p = d && d.params.find((x) => x.name === name);
   return p ? String(p.value) : null;
 }
 function expLabel(key) {
@@ -170,8 +172,8 @@ function renderExperiments() {
       <div class="d">${esc(e.summary)}</div>`;
     b.onclick = () => select(e.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: normal / perturb / random start), on the selected card. They set
-    // `paradigm` for the next Start; locked while that experiment runs.
+    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued end), on
+    // the selected card. They set the paradigm parameter for the next Start; locked while that experiment runs.
     if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
       const cur = paradigmOf(e.key), locked = rk === e.key;
       const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
@@ -183,7 +185,7 @@ function renderExperiments() {
         t.title = locked ? "Fixed for this run — stop to change it" : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
         t.onclick = async () => {
           if (locked || pr.key === cur) return;
-          await act(() => api(`/api/params/${e.key}`, { name: "paradigm", value: pr.key }));
+          await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
           await loadParams(e.key, true); renderExperiments(); renderControls();
         };
         sub.appendChild(t);

@@ -228,9 +228,9 @@ class ExperimentParams:
                 "limits": list(lim) if lim else None,
                 "step": ex.live_params.step_for(name),     # set -> the dashboard draws a slider
                 "immediate": ex.live_params.is_immediate(name),  # live and applied at once (next move), not next trial
-                # Paradigm experiments (apple pluck): the paradigm is chosen with the card's nested tabs,
+                # Paradigm experiments (apple pluck, the rails' centre-out target): the paradigm is chosen with the card's nested tabs,
                 # and parameters of one paradigm only are shown only under it.
-                "hidden": bool(self.exp.paradigms) and name == "paradigm",
+                "hidden": bool(self.exp.paradigms) and name == self.exp.paradigm_param,
                 "paradigm_only": ex.live_params.paradigm_of(name) if self.exp.paradigms else None,
             })
         return rows

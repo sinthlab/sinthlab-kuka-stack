@@ -229,7 +229,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.enabled` | master switch for the NeoPixel ring |
 | `visual_cue.trigger` | how cues reach the ring: `serial` (the RS-422 link) or `wifi` (the board's access point); the experiment is the same either way |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site |
-| `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 10) |
+| `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 500) |
 | `reward_pulse.enabled`, `reward_pulse.output`, `reward_pulse.pulse_ms` | the [reward pulse](#reward-pulse) on a successful trial — on/off (default on), the EL2124 output cabled to the reward box (1–4, default 4, different from the `nsp_sync` outputs), and how long the valve stays open (10–5000 ms, default 500) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
@@ -1610,7 +1610,10 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the **reward pulse** and the end tone;
    - the **other end** (cued): no reward, no tone.
-3. Then, as any trial: the arm holds where it is, the **release wait**, **park**, and the next trial from
+
+   Either way the lit quarters turn **red** (`ring_cue.colours.reached`) and stay red until the hand
+   lets go.
+3. Then, as any trial: the arm holds where it is, the **release wait** (the ring goes dark at release), **park**, and the next trial from
    the start.
 4. **No reach** within `response_timeout_sec` (30 s) ends the trial too, without reward. Moving the arm
    is not enough here: the response is the reach. `session_sec` does not apply.
@@ -2478,12 +2481,12 @@ Start:
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `nsp_sync.enabled` | `false` | send the pulses |
+| `nsp_sync.enabled` | `true` | send the pulses |
 | `nsp_sync.cabinet_ip` | `172.31.1.147` | the cabinet's address on the network this computer reaches it by (X66: `172.31.1.147`) |
 | `nsp_sync.trial_start_output` | `1` | EL2124 output (front jack SYNC 1–4) pulsed at trial start |
 | `nsp_sync.trial_end_output` | `2` | EL2124 output pulsed at trial end |
 | `nsp_sync.experiment_start_output` | `3` | EL2124 output pulsed once when Start is pressed (per-run). The three outputs must all differ |
-| `nsp_sync.pulse_width_ms` | `10` | how long each pulse stays high, 10–5000 ms |
+| `nsp_sync.pulse_width_ms` | `500` | how long each pulse stays high, 10–5000 ms |
 
 If the outputs are changed, change the post-processing page's sync channels to the NSP analog inputs
 those jacks are cabled to.

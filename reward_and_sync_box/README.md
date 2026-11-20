@@ -672,7 +672,7 @@ to the reward box's NSP jack ([Reward pulse](../README.md#reward-pulse)).
 Each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and the
 dashboard sends one the moment **Start** is pressed (experiment start), with the cabinet address, the
 three outputs and the width set in its `nsp_sync` parameters (defaults `172.31.1.147`, outputs 1, 2
-and 3, 10 ms): see
+and 3, 500 ms): see
 [Sync to the Blackrock NSP](../README.md#sync-to-the-blackrock-nsp).
 
 **Timing.** The edge leaves when the cabinet writes the output, a few ms after the command, with a few

@@ -57,10 +57,11 @@ class Experiment:
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
-    # Variants of one experiment, chosen per run by its `paradigm` parameter and shown as nested tabs
-    # on its card: [(value, label), ...]. Parameters that belong to one paradigm only
+    # Variants of one experiment, chosen per run by its `paradigm_param` parameter and shown as nested
+    # tabs on its card: [(value, label), ...]. Parameters that belong to one paradigm only
     # (live_params.PARADIGM_ONLY) are shown only under it.
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
+    paradigm_param: str = "paradigm"
 
     def smartpad(self) -> Dict[str, str]:
         """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
@@ -125,6 +126,8 @@ EXPERIMENTS: List[Experiment] = [
 _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
                 "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
+# Move Vertical / Horizontal: the centre-out goal (centre_out.target).
+_CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
@@ -144,6 +147,7 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
+        paradigms=list(_CENTRE_OUT), paradigm_param="centre_out.target",
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
@@ -156,6 +160,7 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
+        paradigms=list(_CENTRE_OUT), paradigm_param="centre_out.target",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]

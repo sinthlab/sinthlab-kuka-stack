@@ -40,7 +40,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
-    -> session ended (end tone, ring dark): the arm holds where it is -> release wait
+    -> session ended (end tone, ring dark; a centre-out reach: ring RED): the arm holds where it is
+    -> release wait (ring dark at release)
     -> switch to JOINT -> park (out of reach) -> the next session.
     """
 
@@ -237,13 +238,17 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._trial_ending = True
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip", arg)
+        lit = self.centre_out.quarters() if self.centre_out is not None else None
         if self.centre_out is not None:
             self.centre_out.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
-        self.ring.show("off")
+        if reason in ("reach", "reach_wrong"):
+            self.ring.show("reached", lit)   # the lit quarters turn red until the hand lets go
+        else:
+            self.ring.show("off")
         if reason in ("safety", "early_touch", "smartpad_mismatch", "response_timeout"):
             if reason == "safety":
                 self.get_logger().error("SAFETY ABORT: parking immediately.")
@@ -259,6 +264,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def on_force_released(self):
         self.recorder.mark("released")
+        self.ring.show("off")
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):

@@ -94,12 +94,12 @@
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
-      enabled: false           # send a pulse at Start (experiment start) and at every trial start and trial end
+      enabled: true           # send a pulse at Start (experiment start) and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
       trial_start_output: 1    # EL2124 output (1-4, front jack SYNC 1-4) pulsed at trial start
       trial_end_output: 2      # EL2124 output (1-4) pulsed at trial end
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
-      pulse_width_ms: 10       # how long each pulse stays high [ms], 10-5000
+      pulse_width_ms: 500       # how long each pulse stays high [ms], 10-5000
 
     reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
       enabled: true  # send the reward pulse at the snap; failures (timeout, early touch, safety trip, Stop) get none
@@ -119,7 +119,7 @@
     #                 as cue_visual_ack.
     visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
       enabled: false  # master switch for the ring; false = no visual cues at all
-      trigger: "wifi"  # serial (the RS-422 link) or wifi (the board's access point)
+      trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
       # Colour per cue event, [r, g, b, w] 0-255 -- as in apple_pluck_impedance.yaml. Present even
