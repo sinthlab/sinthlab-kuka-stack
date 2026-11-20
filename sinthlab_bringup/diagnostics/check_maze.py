@@ -21,12 +21,6 @@ import sys
 
 import yaml
 
-try:
-    from sinthlab_bringup.helpers import maze_path
-except ImportError:      # run from the source tree, not an installed package
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-    from sinthlab_bringup.helpers import maze_path
-
 OK, BAD = "  [ok] ", "  [--] "
 EPS = 1e-6
 
@@ -112,17 +106,8 @@ def main() -> int:
     top = doc["/**"]["ros__parameters"]
     profile = a.profile or top["virtual_fixture_profile"]
     p, cfg = load(params_path, profile)
-    shape = "path_a" in cfg
-    if shape:
-        pts = list(zip([float(v) for v in cfg["path_a"]], [float(v) for v in cfg["path_b"]]))
-        closed = bool(cfg.get("path_closed", False))
-        sides = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts) if closed else len(pts) - 1)]
-        rails = [(min(p0[0], p1[0]), max(p0[0], p1[0]), min(p0[1], p1[1]), max(p0[1], p1[1])) for p0, p1 in sides]
-        print(f"maze check: {params_path}\n            profile {profile!r}, "
-              f"{'closed ' if closed else ''}shape of {len(pts)} points\n")
-    else:
-        rails = rails_of(cfg)
-        print(f"maze check: {params_path}\n            profile {profile!r}, {len(rails)} rails\n")
+    rails = rails_of(cfg)
+    print(f"maze check: {params_path}\n            profile {profile!r}, {len(rails)} rails\n")
     fails = 0
 
     print("structure")
@@ -135,129 +120,56 @@ def main() -> int:
     else:
         print(OK + "no duplicate keys")
 
-    if shape:
-        # ---- 1-3 (shape). It builds, START is on it, and it never comes close to itself --------
-        try:
-            path = maze_path.build_shape(pts, closed, float(cfg.get("corner_radius_m", 0.0)))
-            print(OK + f"{len(sides)} sides, every point rounded (up to {float(cfg.get('corner_radius_m', 0.0))*1000:.0f} mm "
-                       f"where the sides allow)")
-        except ValueError as exc:
-            fails += 1
-            path = None
-            print(BAD + str(exc))
-        if path is not None:
-            d0 = maze_path.nearest(path, 0.0, 0.0)[1][2] ** 0.5
-            if d0 > a.tol:
-                fails += 1
-                print(BAD + f"START (0,0) is {d0*1000:.0f} mm off the shape -- make (0,0) one of its points")
-            else:
-                print(OK + "START (0,0) lies on the shape")
-            nb = maze_path.neighbours(path)
-            seen, stack = {0}, [0]
-            while stack:
-                i = stack.pop()
-                for j in nb[i] - seen:
-                    seen.add(j); stack.append(j)
-            if len(seen) != len(path):
-                fails += 1
-                print(BAD + "the shape is broken into separate pieces")
-            else:
-                print(OK + "the shape is one connected " + ("loop" if closed else "line"))
-            # Closest approach between parts of the outline that are far apart ALONG it: a tight neck
-            # makes a hard push feel like it could jump across (the latch prevents it, but it confuses).
-            smp = maze_path.sample(path, 0.002)
-            ordered, run = [], 0.0
-            for i, q in enumerate(smp):
-                run += math.dist(q, smp[i - 1]) if i else 0.0
-                ordered.append((run, q))
-            total = run
-            gap = min((math.dist(q1, q2) for k, (s1, q1) in enumerate(ordered[::5]) for (s2, q2) in ordered[::5][k + 1:]
-                       if min(abs(s2 - s1), total - abs(s2 - s1) if closed else 1e9) > 0.06), default=1.0)
-            if gap < 0.015:
-                fails += 1
-                print(BAD + f"two parts of the shape come within {gap*1000:.0f} mm of each other -- spread them apart")
-            else:
-                print(OK + f"no two parts of the shape closer than {gap*1000:.0f} mm; path length {total:.2f} m")
+    # ---- 1. every rail must be LINEAR (a degenerate rectangle) -------------------------------
+    boxes = [i for i, r in enumerate(rails) if (r[1] - r[0]) > EPS and (r[3] - r[2]) > EPS]
+    if boxes:
+        fails += 1
+        print(BAD + f"rails {boxes} have width in BOTH axes -- they are boxes, not lines. "
+                    f"A horizontal leg needs b_min == b_max; a vertical leg needs a_min == a_max.")
     else:
-        # ---- 1. every rail must be LINEAR (a degenerate rectangle) -------------------------------
-        boxes = [i for i, r in enumerate(rails) if (r[1] - r[0]) > EPS and (r[3] - r[2]) > EPS]
-        if boxes:
-            fails += 1
-            print(BAD + f"rails {boxes} have width in BOTH axes -- they are boxes, not lines. "
-                        f"A horizontal leg needs b_min == b_max; a vertical leg needs a_min == a_max.")
-        else:
-            print(OK + "all rails are linear (degenerate in one axis)")
+        print(OK + "all rails are linear (degenerate in one axis)")
 
-        # ---- 2. start must lie ON a rail ---------------------------------------------------------
-        d0 = min(point_dist((0.0, 0.0), r) for r in rails)
-        if d0 > a.tol:
-            fails += 1
-            print(BAD + f"START (0,0) is {d0*1000:.0f} mm off the nearest rail -- the arm begins pinned "
-                        f"against a wall. Add a rail through the origin.")
-        else:
-            print(OK + "START (0,0) lies on a rail")
+    # ---- 2. start must lie ON a rail ---------------------------------------------------------
+    d0 = min(point_dist((0.0, 0.0), r) for r in rails)
+    if d0 > a.tol:
+        fails += 1
+        print(BAD + f"START (0,0) is {d0*1000:.0f} mm off the nearest rail -- the arm begins pinned "
+                    f"against a wall. Add a rail through the origin.")
+    else:
+        print(OK + "START (0,0) lies on a rail")
 
-        # ---- 3. connectivity: every rail reachable from the one holding START ---------------------
-        start = min(range(len(rails)), key=lambda i: point_dist((0.0, 0.0), rails[i]))
-        seen, stack = {start}, [start]
-        while stack:
-            i = stack.pop()
-            for j in range(len(rails)):
-                if j not in seen and seg_dist(rails[i], rails[j]) <= EPS:
-                    seen.add(j); stack.append(j)
-        orphans = sorted(set(range(len(rails))) - seen)
-        if orphans:
-            fails += 1
-            print(BAD + f"rails {orphans} are NOT connected to the start -- unreachable, the arm can "
-                        f"never enter them. Segments must touch (share an endpoint) to form a junction.")
-        else:
-            print(OK + f"all {len(rails)} rails connected to the start")
+    # ---- 3. connectivity: every rail reachable from the one holding START ---------------------
+    start = min(range(len(rails)), key=lambda i: point_dist((0.0, 0.0), rails[i]))
+    seen, stack = {start}, [start]
+    while stack:
+        i = stack.pop()
+        for j in range(len(rails)):
+            if j not in seen and seg_dist(rails[i], rails[j]) <= EPS:
+                seen.add(j); stack.append(j)
+    orphans = sorted(set(range(len(rails))) - seen)
+    if orphans:
+        fails += 1
+        print(BAD + f"rails {orphans} are NOT connected to the start -- unreachable, the arm can "
+                    f"never enter them. Segments must touch (share an endpoint) to form a junction.")
+    else:
+        print(OK + f"all {len(rails)} rails connected to the start")
 
     # ---- 4. checkpoints and goal must lie on rails --------------------------------------------
-    cm = cfg if "checkpoint_y" in cfg else p["checkpoint_monitor"]   # a shape carries its own
+    cm = p["checkpoint_monitor"]
     n = len(cm["checkpoint_y"])
     if len({len(cm[k]) for k in ("checkpoint_x", "checkpoint_y", "checkpoint_z", "checkpoint_radius")}) != 1:
         fails += 1
         print(BAD + "checkpoint_x/y/z/radius must all be the same length")
     wps = [(f"CP{i+1}", (cm["checkpoint_y"][i], cm["checkpoint_z"][i])) for i in range(n)]
     wps.append(("GOAL", (cm["goal_y"], cm["goal_z"])))
-    if shape:
-        off = [(nm, (maze_path.nearest(path, *w)[1][2] ** 0.5) if path is not None else 0.0) for nm, w in wps]
-    else:
-        off = [(nm, min(point_dist(w, r) for r in rails)) for nm, w in wps]
+    off = [(nm, min(point_dist(w, r) for r in rails)) for nm, w in wps]
     bad = [(nm, d) for nm, d in off if d > a.tol]
     if bad:
         fails += 1
         for nm, d in bad:
             print(BAD + f"{nm} is {d*1000:.0f} mm off every rail -- it can never be triggered.")
     else:
-        print(OK + f"all {len(wps)} waypoints (checkpoints + goal) lie on the {'shape' if shape else 'rails'}")
-
-    # ---- 4b. rounded corners: the radius fits, and the rounded path still meets every waypoint ---
-    radius = float(cfg.get("corner_radius_m", 0.0))
-    if not shape:
-        try:
-            path = maze_path.build_path(rails, radius)
-        except ValueError as exc:
-            fails += 1
-            path = None
-            print(BAD + str(exc))
-    if path is not None and radius > 0:
-        radii = list(cm["checkpoint_radius"]) + [cm["goal_radius"]]
-        missed = []
-        for (nm, w), rad in zip(wps, radii):
-            d = maze_path.nearest(path, w[0], w[1])[1][2] ** 0.5
-            if d >= rad:
-                missed.append((nm, d, rad))
-        if missed:
-            fails += 1
-            for nm, d, rad in missed:
-                print(BAD + f"{nm}: the rounded path passes {d*1000:.0f} mm from it, outside its "
-                            f"{rad*1000:.0f} mm radius -- the corner arc cuts it off. Lower corner_radius_m.")
-        else:
-            arcs = len(path) - len(rails)
-            print(OK + f"corners rounded to {radius*1000:.0f} mm ({arcs} arcs); the rounded path passes "
-                       f"inside every checkpoint and the goal")
+        print(OK + f"all {len(wps)} waypoints (checkpoints + goal) lie on rails")
 
     # ---- 5. safety envelope must contain the maze ---------------------------------------------
     far = max(math.hypot(x, y) for r in rails
@@ -346,9 +258,7 @@ def main() -> int:
         return None
 
     pts, unreachable, costs = set(), [], []
-    if shape and path is not None:
-        pts = {(round(q[0], 4), round(q[1], 4)) for q in maze_path.sample(path, 0.03)}
-    for r in ([] if shape else rails):
+    for r in rails:
         steps = max(3, int(max(r[1] - r[0], r[3] - r[2]) / 0.05) + 1)
         for t in [i / (steps - 1) for i in range(steps)]:
             pts.add((round(r[0] + t * (r[1] - r[0]), 4), round(r[2] + t * (r[3] - r[2]), 4)))

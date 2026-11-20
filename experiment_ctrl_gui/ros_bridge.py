@@ -4,8 +4,6 @@
     <ns>/lbr_state           lbr_fri_idl/LBRState      FRI session state and stream rate
     <ns>/<node>/set_parameters                         live parameters (the node rejects the rest)
     <ns>/<node>/stop         std_srvs/Trigger          end the trial now, park, and hold
-    <ns>/maze_view/geometry  std_msgs/String (JSON)    the maze's path, checkpoints and goal (latched)
-    <ns>/maze_view/state     std_msgs/String (JSON)    where the arm is in the maze (helpers/maze_view.py)
 
 It talks to whatever orchestrator is running -- one started from the dashboard, or one started in a
 terminal with `ros2 launch` -- so the live controls work either way.
@@ -16,7 +14,6 @@ developed, on a computer with no robot and no ROS.
 from __future__ import annotations
 
 import json
-import math
 import random
 import threading
 import time
@@ -31,8 +28,7 @@ CALL_TIMEOUT_SEC = 3.0
 
 
 class RosBridge:
-    def __init__(self, robot_name: str, on_status: Callable[[dict], None],
-                 on_maze: Callable[[str, dict], None]) -> None:
+    def __init__(self, robot_name: str, on_status: Callable[[dict], None]) -> None:
         import rclpy
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -41,9 +37,7 @@ class RosBridge:
         self.available, self.reason = True, ""
         self._ns = f"/{robot_name}"
         self._on_status = on_status
-        self._on_maze = on_maze
         self._status: Optional[dict] = None
-        self._maze: Dict[str, Optional[dict]] = {"geometry": None, "state": None}
         self._state_times: deque = deque(maxlen=200)
         self._session_state: Optional[int] = None
 
@@ -53,10 +47,6 @@ class RosBridge:
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
         self._node.create_subscription(String, f"{self._ns}/experiment_status", self._on_msg, latched)
-        self._node.create_subscription(String, f"{self._ns}/maze_view/geometry",
-                                       lambda m: self._on_maze_msg("geometry", m), latched)
-        self._node.create_subscription(String, f"{self._ns}/maze_view/state",
-                                       lambda m: self._on_maze_msg("state", m), 1)
         try:
             from lbr_fri_idl.msg import LBRState
             self._node.create_subscription(LBRState, f"{self._ns}/lbr_state", self._on_state,
@@ -77,18 +67,6 @@ class RosBridge:
             return
         self._status["_rx"] = time.time()
         self._on_status(self._status)
-
-    def _on_maze_msg(self, kind: str, msg) -> None:
-        try:
-            data = json.loads(msg.data)
-        except ValueError:
-            return
-        data["_rx"] = time.time()
-        self._maze[kind] = data
-        self._on_maze(kind, data)
-
-    def maze(self) -> dict:
-        return dict(self._maze)
 
     def _on_state(self, msg) -> None:
         self._state_times.append(time.monotonic())
@@ -164,9 +142,6 @@ class UnavailableBridge:
     def robot(self) -> dict:
         return {"lbr_state_hz": None, "session_state": None}
 
-    def maze(self) -> dict:
-        return {"geometry": None, "state": None}
-
     def set_params(self, exp, values):
         return False, f"ROS is not available here: {self.reason}"
 
@@ -178,114 +153,13 @@ class _DemoStop(Exception):
     """Stop, inside a demo trial: jump to parking."""
 
 
-class _DemoMaze:
-    """The demo's arm in the maze, for the live maze view: it walks the configured path piece by piece
-    (picking a random way at each junction) with a little wobble, and visits the checkpoints and goal
-    by the same rules as actions/checkpoint_monitor.py. Publishes what helpers/maze_view.py would."""
-
-    RATE_HZ = 15.0
-    STEP_M = 0.004            # along the path per tick (6 cm/s)
-
-    def __init__(self, params: Dict[str, object], on_maze: Callable[[str, dict], None]) -> None:
-        from sinthlab_bringup.helpers import maze_path
-        self._mp = maze_path
-        prof = str(params["virtual_fixture_profile"])
-        fx = f"virtual_fixtures.{prof}."
-        if params.get(fx + "type") != "maze":
-            raise ValueError(f"profile {prof} is not a maze")
-        r = float(params[fx + "corner_radius_m"])
-        closed = False
-        if fx + "path_a" in params:
-            closed = bool(params[fx + "path_closed"])
-            self.path = maze_path.build_shape(list(zip(params[fx + "path_a"], params[fx + "path_b"])), closed, r)
-        else:
-            rails = list(zip(*(params[fx + k] for k in ("corridor_a_min", "corridor_a_max",
-                                                         "corridor_b_min", "corridor_b_max"))))
-            self.path = maze_path.build_path(rails, r)
-        self.nbrs = maze_path.neighbours(self.path)
-        axis = str(params[fx + "restricted_axis"]).lower()
-        ia, ib = {"x": (1, 2), "y": (0, 2), "z": (0, 1)}[axis]
-        wp = fx if fx + "checkpoint_y" in params else "checkpoint_monitor."
-        xyz = [params[wp + f"checkpoint_{c}"] for c in "xyz"]
-        self.cps = [[float(xyz[ia][i]), float(xyz[ib][i]), float(params[wp + "checkpoint_radius"][i])]
-                    for i in range(len(xyz[0]))]
-        g = [float(params[wp + f"goal_{c}"]) for c in "xyz"]
-        self.goal = [g[ia], g[ib], float(params[wp + "goal_radius"])]
-        self.goal_after_all = bool(params[wp + "goal_after_all_checkpoints"])
-        self._on_maze = on_maze
-        self.geometry = {
-            "profile": prof, "restricted_axis": axis,
-            "relative": str(params[fx + "corridor_frame"]).lower() != "absolute",
-            "on_rail_tol_m": 0.015, "corner_radius_m": r, "closed": closed,
-            "pieces": [[[round(a, 4), round(b, 4)] for a, b in maze_path.sample([e], 0.005)] for e in self.path],
-            "checkpoints": self.cps, "goal": self.goal, "goal_after_all": self.goal_after_all,
-            "_rx": time.time(),
-        }
-        self.state: Dict[str, object] = {"anchored": False, "trial": 0}
-        on_maze("geometry", self.geometry)
-
-    def publish(self, trial: int) -> None:
-        self.state.update(t=time.time(), trial=trial, _rx=time.time())
-        self._on_maze("state", dict(self.state))
-
-    def walk(self, keep_going: Callable[[float], bool], on_checkpoint: Callable[[int], None],
-             limit_sec: float) -> str:
-        """One trial in the maze: 'goal', or 'response_timeout' after limit_sec. keep_going(sec) sleeps
-        and returns False if the run was stopped (it may raise _DemoStop)."""
-        mp, dt = self._mp, 1.0 / self.RATE_HZ
-        visited: set = set()
-        cur = mp.nearest(self.path, 0.0, 0.0)[0]
-        pts = mp.sample([self.path[cur]], self.STEP_M)
-        k = min(range(len(pts)), key=lambda j: math.dist(pts[j], (0.0, 0.0)))
-        pts = pts[k:] if random.random() < 0.5 else pts[:k + 1][::-1]
-        prev, wob, t0 = None, [0.0, 0.0], time.time()
-        self.state.update(anchored=True, active=True, visited=[], completed=False, monitoring=True,
-                          goal_armed=not self.goal_after_all)
-        while True:
-            for p in pts:
-                wob = [0.85 * w + random.gauss(0.0, 0.0015) for w in wob]
-                ee = (p[0] + wob[0], p[1] + wob[1])
-                d = mp.nearest(self.path, *ee)[1][2] ** 0.5
-                for i, (ca, cb, cr) in enumerate(self.cps):
-                    if i not in visited and math.dist(ee, (ca, cb)) <= cr:
-                        visited.add(i)
-                        on_checkpoint(i)
-                armed = not self.goal_after_all or len(visited) == len(self.cps)
-                self.state.update(ee=[round(ee[0], 4), round(ee[1], 4)], target=[round(p[0], 4), round(p[1], 4)],
-                                  dist_m=round(d, 4), visited=sorted(visited), goal_armed=armed)
-                if armed and math.dist(ee, self.goal[:2]) <= self.goal[2]:
-                    self.state.update(active=False, monitoring=False, completed=True)
-                    self.state.pop("target", None)
-                    return "goal"
-                if time.time() - t0 > limit_sec:
-                    self.state.update(active=False, monitoring=False)
-                    self.state.pop("target", None)
-                    return "response_timeout"
-                if not keep_going(dt):
-                    return "stopped"
-            # The end of this piece: on along a piece that touches it, not back the way we came.
-            end = pts[-1]
-            options = [j for j in self.nbrs[cur] if j != prev] or sorted(self.nbrs[cur]) or [cur]
-            prev, cur = cur, random.choice(options)
-            pts = mp.sample([self.path[cur]], self.STEP_M)
-            if math.dist(pts[-1], end) < math.dist(pts[0], end):
-                pts = pts[::-1]
-
-    def idle(self) -> None:
-        """Out of the maze phase: the fixture lets go; the arm stays where it was."""
-        self.state.update(active=False, monitoring=False)
-        self.state.pop("target", None)
-
-
 class DemoBridge:
     """A simulated orchestrator: the same phases, Stop and live-parameter rules as the real one,
     on a fast clock. Logs go to the runner's log stream as if the launch had printed them."""
 
-    def __init__(self, on_status: Callable[[dict], None], on_maze: Callable[[str, dict], None]) -> None:
+    def __init__(self, on_status: Callable[[dict], None]) -> None:
         self.available, self.reason = True, "demo mode (simulated robot)"
         self._on_status = on_status
-        self._on_maze = on_maze
-        self._maze: Optional[_DemoMaze] = None
         self._emit: Optional[Callable[[str, Optional[str]], None]] = None
         self._lock = threading.Lock()
         self._status: Optional[dict] = None
@@ -308,24 +182,7 @@ class DemoBridge:
             self._in_trial = False
             self._trial = 0
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
-            self._maze = None
-            if exp.key == "maze":
-                try:
-                    self._maze = _DemoMaze(params, self._on_maze)
-                except (KeyError, ValueError, TypeError) as exc:
-                    self._log(f"demo maze view off: {exc}", "WARN")
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
-        if self._maze is not None:
-            threading.Thread(target=self._maze_heartbeat, args=(self._run_id, self._maze), daemon=True).start()
-
-    def _maze_heartbeat(self, run_id: int, maze: "_DemoMaze") -> None:
-        while run_id == self._run_id:
-            maze.publish(self._trial)
-            time.sleep(1.0 / maze.RATE_HZ)
-
-    def maze(self) -> dict:
-        m = self._maze
-        return {"geometry": m.geometry if m else None, "state": dict(m.state) if m else None}
 
     def launch_ended(self) -> None:
         with self._lock:
@@ -427,19 +284,7 @@ class DemoBridge:
             self._phase_to("armed", None, "Monitor armed (baseline locked). Watching for the pull.")
             if not self._sleep(run_id, random.uniform(2.0, 4.5)):
                 return False
-            if self._exp.key == "maze" and self._maze is not None:
-                def reward(i):
-                    self._phase_to("checkpoint", i, f"Reward at checkpoint {i}.")
-                try:
-                    how = self._maze.walk(lambda sec: self._sleep(run_id, sec), reward,
-                                          float(self._effective.get("response_timeout_sec", 30.0)))
-                finally:
-                    self._maze.idle()
-                if how == "stopped":
-                    return False
-                self._phase_to(how, None, "Maze solved! Playing goal cue; waiting for release before reset."
-                               if how == "goal" else "Timeout reached. Playing timeout cue.")
-            elif self._exp.key == "maze":
+            if self._exp.key == "maze":
                 self._phase_to("checkpoint", 0, "Reward at checkpoint 0.")
                 if not self._sleep(run_id, 1.0):
                     return False
@@ -500,12 +345,11 @@ class DemoBridge:
         self.launch_ended()
 
 
-def make_bridge(demo: bool, robot_name: str, on_status: Callable[[dict], None],
-                on_maze: Callable[[str, dict], None]):
+def make_bridge(demo: bool, robot_name: str, on_status: Callable[[dict], None]):
     if demo:
-        return DemoBridge(on_status, on_maze)
+        return DemoBridge(on_status)
     try:
-        return RosBridge(robot_name, on_status, on_maze)
+        return RosBridge(robot_name, on_status)
     except Exception as exc:     # rclpy missing or ROS not sourced
         return UnavailableBridge(f"{type(exc).__name__}: {exc}. Source ROS and the workspace "
                                  "(run_gui.sh does), then restart the dashboard.")

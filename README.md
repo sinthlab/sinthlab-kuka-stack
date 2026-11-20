@@ -1229,61 +1229,12 @@ over to a rail that *physically touches* it — a real junction. Push sideways m
 equilibrium stays clamped to that rail, so the cabinet spring pulls you back onto it. A hard push can
 never make an unrelated rail "nearest" and drag the arm through a wall.
 
-**Corners are rounded.** Where two rails meet at a right angle the fixture follows a quarter circle of
-`corner_radius_m` (2 cm) instead of the sharp corner: at a corner both rails are cut back by the radius
-and joined by the arc; at a fork the through rail stays whole and the branch joins it with an arc on
-each side. With sharp corners the equilibrium jumped from one rail to the other, so the spring's pull
-swung through 90° in one step — felt as a snag or kick at every turn. Rounded, a hand cutting a corner
-moves the equilibrium at most ~1 mm per mm of travel and the pull turns by a few degrees per step. The
-arc passes 0.41 × radius (8 mm) from the corner point, inside the 20 mm checkpoint radius, so the fork
-cues still fire. `corner_radius_m: 0` restores sharp corners. Code:
-[`helpers/maze_path.py`](sinthlab_bringup/sinthlab_bringup/helpers/maze_path.py).
-
 **The gap matters.** On the b=0 row there is deliberately **no rail between a=−0.075 and a=0.00**
 (the shaded cells left of ▶). Without it the arm could run straight from START to the goal up-link and
 the maze would be trivial — that gap is what forces the long way round.
 
 Every rail is verified reachable by IK while holding the tool orientation (`check_maze.py`: all sampled
 rail points reachable, sideways cost median 2.7 / max 2.8).
-
-#### Maze shapes — the "0", the fish and the duck
-
-Besides the rails maze, three **closed-loop shapes** can be run in its place. Pick one with
-`virtual_fixture_profile` — a drop-down on the dashboard (per-run: choose before Start) or the YAML —
-from `maze` (the rails above), `zero`, `fish` and `duck`:
-
-![The three maze shapes](docs/maze_shapes.png)
-
-- **A shape is a list of points** (`path_a` = Y sideways, `path_b` = Z up/down, offsets from the start
-  like the rails) joined by straight sides at any angle and closed back to the first point, which is
-  START. Every point is rounded by an arc tangent to both sides; `corner_radius_m` is the largest
-  radius, and a point between short sides gets the largest one that fits.
-- **The trial is one lap.** A loop has no far end, so the **goal is the start**, and it counts only
-  once every checkpoint has been visited (`goal_after_all_checkpoints: true`), in either direction.
-  The three checkpoints sit on sides spread around the loop and reward once each, in any order.
-- **Each shape carries its own checkpoints and goal** in its block; the rails maze keeps using
-  `checkpoint_monitor`'s.
-- All three sit below the start inside the same area as the rails maze (a −0.12…+0.15, b 0…−0.14).
-- In the trial data a shape's `corridor` / `rail_nearest` is the index of the **side** the arm is on,
-  and the sidecar's `maze_geometry` records the profile, the points and the radius;
-  `plot_trajectory.py` draws the rounded outline.
-- **Tight features pull harder.** Where the hand cuts inside a small corner (the fish's tail fork, the
-  duck's beak and neck), a 1 mm hand movement sweeps the equilibrium a few mm round the corner
-  (simulated: up to ~5–10 mm per mm with the hand 6 mm off the path). The "0", with 4 cm corners,
-  stays at ~1 mm per mm.
-
-To make your own shape, copy a shape block under `virtual_fixtures`, give it a new name, change its
-points and checkpoints, and check it: `ros2 run sinthlab_bringup check_maze.py --profile <name>`. The
-check confirms the shape builds, START is on it, it is one connected loop, no two parts come within
-15 mm of each other, every checkpoint and the goal are on it, and (with the URDF) every point is
-reachable. It appears in the dashboard's drop-down by itself.
-
-#### Watching the arm in the maze
-
-While the maze runs, the dashboard shows the arm live on the maze it is in: the path, the checkpoints
-(filled once visited), the goal (dashed until it counts), the arm's last 10 s, and the pull back when
-it is off the path. **Full screen** opens the same view on its own page for a second monitor. Any maze
-works, rails or shape. Details: [experiment_ctrl_gui/README.md — Live maze view](experiment_ctrl_gui/README.md#live-maze-view).
 
 #### Changing or extending the maze
 
@@ -1313,8 +1264,6 @@ non-zero you have made a *box* — an open area the arm can wander inside — no
 | all four `corridor_*` arrays the same length | they are read positionally |
 | START `(0,0)` lies on a rail | otherwise the arm begins pinned against a wall |
 | segments **touch** to form junctions | rails that don't touch are separate; the arm can't cross between them |
-| `corner_radius_m` at most half the shortest rail rounded at both ends | the arcs at its two ends would overlap; the run refuses it |
-| the rounded path passes inside every checkpoint's and the goal's radius | an arc cutting a corner can miss a waypoint placed right on the corner |
 | every checkpoint and the goal lies on a rail | a waypoint off the rails can never be triggered |
 | `checkpoint_x/y/z/radius` the same length | read positionally, like the rails |
 | `maze_safety.max_displacement_m` exceeds the farthest rail point | otherwise the safety stop fires mid-trial |
@@ -2524,7 +2473,7 @@ Two fields worth knowing:
   on every event, so an interrupted trial still has one and identifies itself rather than looking
   like a finished trial with events missing.
 
-- **`maze_geometry`** embeds the corridors as they were *at record time*, and `corner_radius_m`. Without it a six-month-old
+- **`maze_geometry`** embeds the corridors as they were *at record time*. Without it a six-month-old
   run silently plots against whatever `maze_params.yaml` says today.
 
 ### Data dictionary
@@ -2611,11 +2560,10 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `rel_b` | m | Same, second free axis. Plot `rel_b` against `rel_a` to get the maze view. |
 | `corridor` | index | Index of the nearest corridor **when on-rail**, else **−1**. Not a strict inside/outside test: the corridors are zero-width lines, so "on rail" means within `on_rail_tol` of one. |
 | `off_rail` | 0 / 1 | 1 when the arm is further than `on_rail_tol` from every corridor — i.e. being actively pulled back by the virtual fixture. Mirrors `corridor == -1`. |
-| `rail_dist` | m | Distance to the **nearest** piece of the path the fixture holds the arm to — the rails with their rounded corners — always populated. On-rail it is ≤ `on_rail_tol`; off-rail it is how hard the fixture is working. |
+| `rail_dist` | m | Distance to the **nearest** corridor segment, always populated. On-rail it is ≤ `on_rail_tol`; off-rail it is how hard the fixture is working. |
 
 `rail_nearest` is the index of the nearest corridor, **always populated** — on-rail or not. Off-rail,
-`corridor` reads −1, and `rail_nearest` says *which* corridor the arm has been pushed off. On a corner
-arc, both report the rail the arc leads into (at a fork, the branch).
+`corridor` reads −1, and `rail_nearest` says *which* corridor the arm has been pushed off.
 
 #### Sidecar fields
 

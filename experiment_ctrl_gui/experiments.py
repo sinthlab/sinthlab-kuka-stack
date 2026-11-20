@@ -180,8 +180,6 @@ CAUTION: Dict[str, str] = {
     "move_to_park.target_joint_position": (
         "Park pose: out of the monkey's reach, between trials. Its elbow (A4) must bend the same way as "
         "the start pose's -- otherwise every park <-> start move passes a straight, singular elbow."),
-    "virtual_fixtures.*.corner_radius_m": ("Every corner and fork becomes an arc of this radius. At most half the shortest "
-                                          "rail rounded at both ends; the run refuses a radius that does not fit. 0 = sharp."),
     "virtual_fixtures.maze.*": "Maze rail. Run check_maze.py on the edited YAML (runs/…) to confirm reachability.",
     "checkpoint_monitor.checkpoint_*": "Checkpoints must sit on the rails. Arrays stay the same length.",
     "checkpoint_monitor.goal_[xyz]": "The goal must sit on a rail.",

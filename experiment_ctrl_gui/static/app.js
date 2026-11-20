@@ -622,26 +622,13 @@ function onState(a) {
   renderControls();
   if (key !== prevKey) renderExperiments();
   renderParams();
-  renderMazeCard(key);
-}
-// The live maze view (maze_view.js): shown while the maze experiment runs.
-function renderMazeCard(key) {
-  const show = key === "maze";
-  const card = $("#maze-card");
-  if (show && card.classList.contains("hidden")) {
-    card.classList.remove("hidden");
-    api("/api/maze").then((m) => { S.maze.setGeometry(m.geometry); S.maze.setState(m.state); }).catch(() => {});
-  } else if (!show) card.classList.add("hidden");
 }
 function connect() {
   // ?nostream: poll instead of streaming -- for a proxy that breaks Server-Sent Events, and for
   // headless screenshots (an open stream never lets a headless browser go idle).
   if (new URLSearchParams(location.search).has("nostream")) {
     setInterval(async () => {
-      try {
-        onState(await api("/api/state")); (await api("/api/logs")).forEach(appendLog);
-        if (runningKey() === "maze") { const m = await api("/api/maze"); S.maze.setGeometry(m.geometry); S.maze.setState(m.state); }
-      } catch { /* retry */ }
+      try { onState(await api("/api/state")); (await api("/api/logs")).forEach(appendLog); } catch { /* retry */ }
     }, 1000);
     return;
   }
@@ -651,7 +638,6 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.type === "log") appendLog(m.data);
     else if (m.type === "state") onState(m.data);
-    else if (m.type === "maze") S.maze.feed(m.data);
   };
   es.onerror = () => { $("#pill-run").className = "pill err"; $("#pill-run").textContent = "Dashboard disconnected"; };
 }
@@ -663,7 +649,6 @@ async function init() {
   S.group = exp(S.selected).group;
   (await api("/api/logs")).forEach(appendLog);
   S.app = await api("/api/state");
-  S.maze = new MazeView($("#maze-canvas"), $("#maze-status"));
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
   renderExperiments(); renderChecklist();
   await loadParams(S.selected);

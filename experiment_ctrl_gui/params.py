@@ -270,11 +270,11 @@ class ExperimentParams:
             if ch is not None and str(value) not in ch:
                 problem = f"{name} must be one of {ch}"
         if problem is None and isinstance(default, list) and len(value) != len(default) and (
-                ".corridor_" in name or ".checkpoint_" in name or ".path_" in name):
-            # Rails, shape points and checkpoints are parallel arrays: one entry per rail / point /
-            # checkpoint across several parameters. Changing one array's length alone breaks the set.
+                ".corridor_" in name or ".checkpoint_" in name):
+            # Rails and checkpoints are parallel arrays: one entry per rail / checkpoint across
+            # several parameters. Changing one array's length alone breaks the set.
             problem = (f"{name} must keep {len(default)} entries -- it is one of several parallel "
-                       f"arrays. To add or remove a rail, a shape point or a checkpoint, edit the YAML.")
+                       f"arrays. To add or remove a rail or checkpoint, edit the YAML.")
         if problem:
             raise ValueError(problem)
         if value == default:

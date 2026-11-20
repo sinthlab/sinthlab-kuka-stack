@@ -7,7 +7,6 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.actions.move_restricted_on_a_plane import MoveRestrictedOnAPlaneAction
-from sinthlab_bringup.helpers import maze_path
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 
 
@@ -40,31 +39,11 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
 
         prefix = self._param_prefix + "virtual_fixtures." + f"{self.active_profile}."
 
-        # TWO KINDS OF MAZE, both a "maze" profile:
-        #   rails  corridor_a_min/a_max/b_min/b_max -- axis-aligned rails meeting at junctions and forks
-        #   shape  path_a/path_b (+ path_closed) -- points joined by straight sides at any angle, usually
-        #          a closed loop (the "0", the fish, the duck)
-        # Either way corner_radius_m rounds every corner (helpers/maze_path.py).
-        self._shape_points = None
-        self._shape_closed = False
-        if node.has_parameter(prefix + "path_a"):
-            pa_ = [float(v) for v in get_required_param(node, prefix + "path_a")]
-            pb_ = [float(v) for v in get_required_param(node, prefix + "path_b")]
-            if len(pa_) != len(pb_):
-                raise ValueError("maze shape needs equal-length path_a / path_b arrays")
-            self._shape_points = list(zip(pa_, pb_))
-            self._shape_closed = bool(get_required_param(node, prefix + "path_closed"))
-            # Each side, as a degenerate box, so maze_geometry and the plots still list "corridors".
-            pts = self._shape_points
-            sides = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts) if self._shape_closed else len(pts) - 1)]
-            amn, amx = [min(p0[0], p1[0]) for p0, p1 in sides], [max(p0[0], p1[0]) for p0, p1 in sides]
-            bmn, bmx = [min(p0[1], p1[1]) for p0, p1 in sides], [max(p0[1], p1[1]) for p0, p1 in sides]
-        else:
-            amn, amx, bmn, bmx = (list(get_required_param(node, prefix + k))
-                                  for k in ("corridor_a_min", "corridor_a_max", "corridor_b_min", "corridor_b_max"))
         # Corridors = parallel arrays of axis-aligned rectangles in the two in-plane (a, b) axes (the
         # non-restricted axes). Free inside any corridor; clamped to the nearest edge outside it (the
         # cabinet impedance then turns "outside" into a soft/firm wall).
+        amn, amx, bmn, bmx = (list(get_required_param(node, prefix + k))
+                              for k in ("corridor_a_min", "corridor_a_max", "corridor_b_min", "corridor_b_max"))
         if len(amn) == 0 or not (len(amn) == len(amx) == len(bmn) == len(bmx)):
             # Empty corridors => projection passes the point straight through => the same silent
             # no-fixture failure as a missing profile. Refuse to run.
@@ -78,19 +57,17 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         # arm starts. "absolute": corridors are raw base-frame coords.
         self._corridor_relative = str(get_required_param(node, prefix + "corridor_frame")).lower() != "absolute"
 
-        # ROUNDED CORNERS. The path the arm is held to is the rails with every corner and fork turned
-        # into a quarter arc of corner_radius_m (helpers/maze_path.py), so the pull turns smoothly
-        # through a corner instead of swinging 90 degrees in one tick. 0 = the bare rails.
-        self._corner_radius = float(get_required_param(node, prefix + "corner_radius_m"))
-        if self._shape_points is not None:
-            self._path = maze_path.build_shape(self._shape_points, self._shape_closed, self._corner_radius)
-        else:
-            self._path = maze_path.build_path(self._maze_corridors, self._corner_radius)   # raises if it does not fit
-
-        # PATH ADJACENCY. Two pieces of the path are neighbours if they touch -- a junction, or where
-        # an arc meets its rail. Precomputed once so the per-tick projection can be restricted to the
-        # piece we are ON and the pieces it actually connects to.
-        self._rail_neighbours = maze_path.neighbours(self._path)
+        # RAIL ADJACENCY. Two rails are neighbours if they touch (share a point) -- that is a junction.
+        # Precomputed once so the per-tick projection can be restricted to the rail we are ON and the
+        # rails it actually connects to.
+        def _touch(r, s_):
+            da = max(0.0, r[0] - s_[1], s_[0] - r[1])
+            db = max(0.0, r[2] - s_[3], s_[2] - r[3])
+            return (da * da + db * db) <= 1e-12
+        self._rail_neighbours = [
+            {j for j in range(len(self._maze_corridors)) if j != i and _touch(self._maze_corridors[i], self._maze_corridors[j])}
+            for i in range(len(self._maze_corridors))
+        ]
         # The rail the arm is currently travelling. Latched: see _project_to_corridors.
         self._cur_rail = None
 
@@ -119,12 +96,7 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         self._dbg = DebugTicker(float(get_required_param(node, fx + "debug_log_rate_hz")))
         self._log_dt = 1.0 / 100.0
 
-        if self._shape_points is not None:
-            what = f"{'closed ' if self._shape_closed else ''}shape of {len(self._shape_points)} points"
-        else:
-            what = f"{len(self._maze_corridors)} rails"
-        node.get_logger().info(f"Maze fixture '{self.active_profile}': {what}, corners rounded to "
-                               f"{self._corner_radius * 1000:.0f} mm.")
+        node.get_logger().info(f"Maze fixture: {len(self._maze_corridors)} corridors loaded.")
 
     def start(self) -> None:
         # Forget which rail we were on; the next trial re-latches from wherever the arm actually is.
@@ -204,46 +176,8 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             "restricted_axis": self.profile_config["restricted_axis"],
             "corridor_relative": bool(self._corridor_relative),
             "on_rail_tol_m": float(self._on_rail_tol),
-            "corner_radius_m": float(self._corner_radius),
-            "profile": self.active_profile,
-            "shape": ([list(map(float, p)) for p in self._shape_points] if self._shape_points else None),
-            "shape_closed": bool(self._shape_closed),
             "corridors": [list(map(float, c)) for c in self._maze_corridors],
         }
-
-    # ---------------- the dashboard's live maze view (helpers/maze_view.py) -------------------------------
-    def plane_axes(self):
-        """Base-frame indices of the two in-plane axes (a, b)."""
-        return {"x": (1, 2), "y": (0, 2), "z": (0, 1)}[self.profile_config["restricted_axis"]]
-
-    def view_geometry(self, step: float = 0.005) -> dict:
-        """The path as drawn: one polyline per piece (straight or arc), in maze (a, b) coordinates."""
-        return {
-            "profile": self.active_profile,
-            "restricted_axis": self.profile_config["restricted_axis"],
-            "relative": bool(self._corridor_relative),
-            "on_rail_tol_m": float(self._on_rail_tol),
-            "corner_radius_m": float(self._corner_radius),
-            "closed": bool(self._shape_closed),
-            "pieces": [[[round(a, 4), round(b, 4)] for a, b in maze_path.sample([e], step)] for e in self._path],
-        }
-
-    def view_state(self):
-        """Where the arm is in the maze now, or None before the fixture has first anchored. After a trial
-        the last anchor is kept, so the arm stays in view through the release wait and the park."""
-        q = self.latest_joints
-        if self._initial_transform is None or q is None:
-            return None
-        ia, ib = self.plane_axes()
-        o = self._initial_transform[0:3, 3] if self._corridor_relative else np.zeros(3)
-        p = self._fk_func(q)[0:3, 3]
-        qa, qb = float(p[ia] - o[ia]), float(p[ib] - o[ib])
-        _, (_, _, d2) = maze_path.nearest(self._path, qa, qb)
-        state = {"ee": [round(qa, 4), round(qb, 4)], "dist_m": round(d2 ** 0.5, 4), "active": bool(self._active)}
-        if self._active and self._published_xyz is not None:     # where the spring is pulling the arm
-            t = self._published_xyz
-            state["target"] = [round(float(t[ia] - o[ia]), 4), round(float(t[ib] - o[ib]), 4)]
-        return state
 
     def _maze_coords(self, measured_T):
         """Return (a, b, corridor_index, clamped) for a measured EE transform.
@@ -269,13 +203,16 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             a, b = measured_T[0, 3], measured_T[1, 3]
             a0, b0 = (si[0, 3], si[1, 3]) if self._corridor_relative else (0.0, 0.0)
         qa, qb = a - a0, b - b0
-        # Report the NEAREST piece of the path and how far off it we are, rather than a strict
-        # inside/outside test. With zero-width (linear) corridors a strict test can never pass -- the
-        # arm is only ever exactly on a rail by coincidence -- so it would always read "outside" and
-        # tell you nothing. The distance is to the rounded path the spring actually pulls toward; an
-        # arc reports the rail it leads into.
-        el, (_, _, d2) = maze_path.nearest(self._path, qa, qb)
-        best, idx = d2 ** 0.5, self._path[el].rail
+        # Report the NEAREST segment and how far off it we are, rather than a strict inside/outside
+        # test. With zero-width (linear) corridors a strict test can never pass -- the arm is only ever
+        # exactly on a rail by coincidence -- so it would always read "outside" and tell you nothing.
+        idx, best = -1, float("inf")
+        for i, (amn, amx, bmn, bmx) in enumerate(self._maze_corridors):
+            ca = min(max(qa, amn), amx)
+            cb = min(max(qb, bmn), bmx)
+            d = ((qa - ca) ** 2 + (qb - cb) ** 2) ** 0.5
+            if d < best:
+                best, idx = d, i
         # "on the rail" if within this distance of it; beyond that the spring is actively pulling back.
         on_rail = best <= self._on_rail_tol
         return qa, qb, (idx if on_rail else -1), (0 if on_rail else 1), best, idx
@@ -292,12 +229,15 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
             )
         return [round(qa, 5), round(qb, 5), idx, clamped, round(dist, 5), nearest]
 
+    @staticmethod
+    def _clamp_to(rail, qa, qb):
+        ca = min(max(qa, rail[0]), rail[1])
+        cb = min(max(qb, rail[2]), rail[3])
+        return ca, cb, (qa - ca) ** 2 + (qb - cb) ** 2
+
     def _project_to_corridors(self, pa: float, pb: float,
                               a0: float = 0.0, b0: float = 0.0) -> tuple[float, float]:
-        """Project the point onto the piece of path the arm is CURRENTLY on, or one it connects to.
-
-        The path is the rails with rounded corners (helpers/maze_path.py); "rail" below means any
-        piece of it, a straight rail or a corner arc.
+        """Project the point onto the rail the arm is CURRENTLY on, or one that rail connects to.
 
         WHY NOT SIMPLY THE NEAREST RAIL: that let the arm pass through walls. Push hard enough off
         rail A and some unrelated rail B becomes the closest one, so the equilibrium jumps to B and the
@@ -310,27 +250,32 @@ class MoveInMazeAction(MoveRestrictedOnAPlaneAction):
         endpoint, and the spring holds the arm there -- a wall you cannot walk through, only push
         against.
         """
-        path = self._path
-        if not path:
+        corridors = self._maze_corridors
+        if not corridors:
             return pa, pb
         qa, qb = pa - a0, pb - b0  # into corridor-local (origin-relative) coordinates
 
-        # First tick of a trial: latch onto whichever piece of the path we are actually on.
+        # First tick of a trial: latch onto whichever rail we are actually on.
         if self._cur_rail is None:
-            self._cur_rail = maze_path.nearest(path, qa, qb)[0]
+            self._cur_rail = min(range(len(corridors)),
+                                 key=lambda i: self._clamp_to(corridors[i], qa, qb)[2])
 
-        # Candidates = the piece we are on + the pieces it connects to. Never the whole maze.
+        # Candidates = the rail we are on + the rails it connects to. Never the whole maze.
         candidates = [self._cur_rail] + sorted(self._rail_neighbours[self._cur_rail])
-        best_i, best = maze_path.nearest(path, qa, qb, candidates)
+        best_i, best = candidates[0], self._clamp_to(corridors[candidates[0]], qa, qb)
+        for i in candidates[1:]:
+            c = self._clamp_to(corridors[i], qa, qb)
+            if c[2] < best[2]:
+                best_i, best = i, c
         self._cur_rail = best_i
 
-        # Lead / trail along the chosen piece (see rail_lead_sec in __init__). The piece is chosen from
-        # the ACTUAL position above; only the projected point moves, and only along that piece.
+        # Lead / trail along the chosen rail (see rail_lead_sec in __init__). The rail is chosen from
+        # the ACTUAL position above; only the projected point moves, and only along that rail.
         va, vb = self._update_velocity(qa, qb)
         if self._rail_lead_sec != 0.0:
             da, db = self._rail_lead_sec * va, self._rail_lead_sec * vb
             n = (da * da + db * db) ** 0.5
             if n > self._lead_cap_m:
                 da, db = da * self._lead_cap_m / n, db * self._lead_cap_m / n
-            best = path[best_i].closest(qa + da, qb + db)
+            best = self._clamp_to(corridors[best_i], qa + da, qb + db)
         return best[0] + a0, best[1] + b0  # back to absolute

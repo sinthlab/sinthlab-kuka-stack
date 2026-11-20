@@ -119,40 +119,21 @@ def plot_displacement(ax, chosen, sidecar):
     ax.legend(fontsize=8, loc="best")
 
 
-def _rounded_outline(points, closed, radius):
-    """A maze shape's outline as the fixture holds it -- with its rounded corners -- as one polyline."""
-    sys.path.insert(0, os.path.join(HERE, "..", "sinthlab_bringup"))
-    from sinthlab_bringup.helpers import maze_path
-    return maze_path.sample(maze_path.build_shape(points, closed, radius), 0.002)
-
-
 def load_rails(profile=None, sidecar=None):
-    """Maze lines to draw, and its checkpoints/goal, PREFERRING the geometry recorded in the sidecar.
-
-    Returns ([polyline, ...], {"checkpoint_monitor": {...}} or None). A rail is a two-point line; a
-    maze shape (the "0", fish, duck) is one polyline along its rounded outline.
+    """Maze rails, PREFERRING the geometry recorded in the trial's sidecar.
 
     maze_params.yaml is whatever the maze looks like TODAY. A run from six months ago plotted
     against it is silently wrong: the path is real and the rails drawn under it are not. The sidecar
     carries the geometry that was live when the run happened, so it wins when present; the YAML is
     the fallback for older recordings, which have nothing else."""
-    def waypoints(src):
-        keys = ("checkpoint_y", "checkpoint_z", "goal_y", "goal_z")
-        return {"checkpoint_monitor": {k: src[k] for k in keys}} if all(k in src for k in keys) else None
-
     if sidecar and isinstance(sidecar.get("maze_geometry"), dict):
-        g = sidecar["maze_geometry"]
-        flat = sidecar.get("params") or {}
-        # the sidecar flattens nested params to "<block>.<key>"; a shape's waypoints live in its own block
-        prof = g.get("profile")
-        own = {k.split(".", 2)[2]: v for k, v in flat.items() if prof and k.startswith(f"virtual_fixtures.{prof}.")}
-        cm = {k.split(".", 1)[1]: v for k, v in flat.items() if k.startswith("checkpoint_monitor.")}
-        wp = waypoints(own) or waypoints(cm)
-        if g.get("shape"):
-            return [_rounded_outline(g["shape"], g.get("shape_closed", True), g.get("corner_radius_m", 0.0))], wp
-        rails = [tuple(map(float, c)) for c in g.get("corridors", [])]
+        rails = [tuple(map(float, c)) for c in sidecar["maze_geometry"].get("corridors", [])]
         if rails:
-            return [[(r[0], r[2]), (r[1], r[3])] for r in rails], wp
+            # the sidecar flattens nested params to "checkpoint_monitor.<key>"; nest them back
+            flat = sidecar.get("params") or {}
+            cm = {k.split(".", 1)[1]: v for k, v in flat.items()
+                  if k.startswith("checkpoint_monitor.")}
+            return rails, ({"checkpoint_monitor": cm} if "goal_y" in cm else None)
     try:
         import yaml
     except Exception:
@@ -163,13 +144,9 @@ def load_rails(profile=None, sidecar=None):
         vf = p["virtual_fixtures"]
         prof = profile or p["virtual_fixture_profile"]
         c = vf[prof]
-        wp = waypoints(c) or waypoints(p["checkpoint_monitor"])
-        if "path_a" in c:
-            pts = list(zip(c["path_a"], c["path_b"]))
-            return [_rounded_outline(pts, c.get("path_closed", True), c.get("corner_radius_m", 0.0))], wp
         n = len(c["corridor_a_min"])
-        return [[(c["corridor_a_min"][i], c["corridor_b_min"][i]),
-                 (c["corridor_a_max"][i], c["corridor_b_max"][i])] for i in range(n)], wp
+        return [(c["corridor_a_min"][i], c["corridor_a_max"][i],
+                 c["corridor_b_min"][i], c["corridor_b_max"][i]) for i in range(n)], p
     except Exception:
         return []
 
@@ -235,13 +212,12 @@ def main() -> int:
     # ---- panel 1: maze view, or the pull for pluck/perturb ----------------------------------
     if has_disp and not has_maze:
         plot_displacement(ax1, chosen, sidecar)
-    for line in rails:
-        xs, ys = zip(*line)
-        ax1.plot(xs, ys, color="0.75", lw=6, solid_capstyle="round", zorder=1)
+    for (amn, amx, bmn, bmx) in rails:
+        ax1.plot([amn, amx], [bmn, bmx], color="0.75", lw=6, solid_capstyle="round", zorder=1)
     if params:
         cm = params["checkpoint_monitor"]
         ax1.scatter(cm["checkpoint_y"], cm["checkpoint_z"], s=200, facecolors="none",
-                    edgecolors="tab:orange", lw=2, zorder=4, label="checkpoint")
+                    edgecolors="tab:orange", lw=2, zorder=4, label="fork (checkpoint)")
         ax1.scatter([cm["goal_y"]], [cm["goal_z"]], marker="*", s=320, color="tab:green",
                     zorder=5, label="goal")
         ax1.scatter([0], [0], marker="s", s=90, color="tab:blue", zorder=5, label="start")

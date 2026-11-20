@@ -7,12 +7,6 @@ the EE enters the goal sphere it fires `on_complete`. Like the displacement moni
 — it commands no motion; the operator drives the compliant arm through the maze. `stop()` lets an
 external timeout halt it.
 
-A maze shape can carry its own checkpoints and goal: pass `waypoints_prefix` (the active fixture
-profile's block, e.g. "virtual_fixtures.fish.") and, if that block has `checkpoint_y`, the checkpoints,
-goal and `goal_after_all_checkpoints` are read from it instead of from this monitor's own block.
-`goal_after_all_checkpoints: true` makes the goal count only once every checkpoint has been visited --
-for a closed loop whose goal is the start, that is one full lap.
-
 In relative mode, pass `origin_provider` (the maze fixture's `anchor_position`) so checkpoints and
 the goal are placed on exactly the origin the rails use. Without it the monitor anchors on its own
 first tick -- which, when the fixture waits for the arm to settle, is ~4 cm above the rails.
@@ -33,8 +27,7 @@ from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param
 class CheckpointMonitor:
     def __init__(self, node: rclpyNode, *, param_prefix: str = "",
                  on_complete: Callable[[], None], on_reward: Optional[Callable[[int], None]] = None,
-                 origin_provider: Optional[Callable[[], Optional[np.ndarray]]] = None,
-                 waypoints_prefix: Optional[str] = None) -> None:
+                 origin_provider: Optional[Callable[[], Optional[np.ndarray]]] = None) -> None:
         self._node = node
         self._on_complete = on_complete
         self._on_reward = on_reward
@@ -49,27 +42,20 @@ class CheckpointMonitor:
         self._base_frame = str(get_required_param(node, self._param_prefix + "base_frame"))
         self._ee_frame = str(get_required_param(node, self._param_prefix + "ee_frame"))
 
-        # Where the checkpoints and goal come from: the active maze shape's own block if it has them.
-        wp = self._param_prefix
-        if waypoints_prefix and node.has_parameter(waypoints_prefix + "checkpoint_y"):
-            wp = waypoints_prefix
-        self._waypoints_from = wp.rstrip(".")
-        cx = [float(v) for v in get_required_param(node, wp + "checkpoint_x")]
-        cy = [float(v) for v in get_required_param(node, wp + "checkpoint_y")]
-        cz = [float(v) for v in get_required_param(node, wp + "checkpoint_z")]
-        cr = [float(v) for v in get_required_param(node, wp + "checkpoint_radius")]
+        cx = [float(v) for v in get_required_param(node, self._param_prefix + "checkpoint_x")]
+        cy = [float(v) for v in get_required_param(node, self._param_prefix + "checkpoint_y")]
+        cz = [float(v) for v in get_required_param(node, self._param_prefix + "checkpoint_z")]
+        cr = [float(v) for v in get_required_param(node, self._param_prefix + "checkpoint_radius")]
         if not (len(cx) == len(cy) == len(cz) == len(cr)):
             raise ValueError("checkpoint_x/y/z/radius must be equal-length arrays")
         self._checkpoints = [(np.array([cx[i], cy[i], cz[i]]), cr[i]) for i in range(len(cx))]
 
         self._goal = np.array([
-            float(get_required_param(node, wp + "goal_x")),
-            float(get_required_param(node, wp + "goal_y")),
-            float(get_required_param(node, wp + "goal_z")),
+            float(get_required_param(node, self._param_prefix + "goal_x")),
+            float(get_required_param(node, self._param_prefix + "goal_y")),
+            float(get_required_param(node, self._param_prefix + "goal_z")),
         ])
-        self._goal_radius = float(get_required_param(node, wp + "goal_radius"))
-        # The goal counts only after every checkpoint (one full lap of a loop whose goal is the start).
-        self._goal_after_all = bool(get_required_param(node, wp + "goal_after_all_checkpoints"))
+        self._goal_radius = float(get_required_param(node, self._param_prefix + "goal_radius"))
 
         # RELATIVE: checkpoint_*/goal_* are OFFSETS from the start EE, captured on the first
         # tick, so they track move_to_start exactly like the relative maze corridors do. Keep this in
@@ -91,7 +77,6 @@ class CheckpointMonitor:
         node.get_logger().info(
             f"CheckpointMonitor: {len(self._checkpoints)} checkpoints (any order), "
             f"goal r={self._goal_radius:.3f} m"
-            f"{' after all checkpoints' if self._goal_after_all else ''}, from {self._waypoints_from}"
         )
 
     def start(self) -> None:
@@ -107,24 +92,6 @@ class CheckpointMonitor:
     def stop(self) -> None:
         """Halt monitoring (e.g. on a whole-experiment timeout)."""
         self._ready = False
-
-    def view_geometry(self) -> dict:
-        """Checkpoints and goal as [x, y, z, radius], in this monitor's frame (offsets from the anchor
-        when relative), for the dashboard's live maze view."""
-        return {
-            "checkpoints": [[*map(float, c), float(r)] for c, r in self._checkpoints],
-            "goal": [*map(float, self._goal), float(self._goal_radius)],
-            "goal_after_all": self._goal_after_all,
-        }
-
-    def view_state(self) -> dict:
-        """Which checkpoints this trial has visited, and whether reaching the goal would end it now."""
-        return {
-            "visited": sorted(self._visited),
-            "goal_armed": not self._goal_after_all or len(self._visited) == len(self._checkpoints),
-            "monitoring": self._ready,
-            "completed": self._completed,
-        }
 
     def _ee_pos(self) -> Optional[np.ndarray]:
         try:
@@ -177,9 +144,8 @@ class CheckpointMonitor:
                 if self._on_reward is not None:
                     self._on_reward(i)
 
-        # Goal — ends the trial (only once every checkpoint is visited, if goal_after_all_checkpoints).
-        armed = not self._goal_after_all or len(self._visited) == len(self._checkpoints)
-        if armed and float(np.linalg.norm(p - (self._goal + off))) <= self._goal_radius:
+        # Goal — ends the trial.
+        if float(np.linalg.norm(p - (self._goal + off))) <= self._goal_radius:
             self._completed = True
             self._ready = False
             self._node.get_logger().info("GOAL reached — maze complete.")

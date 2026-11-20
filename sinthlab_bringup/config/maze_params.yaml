@@ -215,9 +215,6 @@
       goal_y:  0.075  # goal Y [m]
       goal_z: -0.110  # goal Z [m]
       goal_radius: 0.015  # the goal is reached within this distance [m]
-      # true = the goal counts only once every checkpoint has been visited. The maze shapes below
-      # (zero, fish, duck) carry their own checkpoints, goal and this flag in their own block.
-      goal_after_all_checkpoints: false  # goal only after every checkpoint (one full lap of a loop)
       debug_log_enabled: true  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 
@@ -314,7 +311,6 @@
         corridor_a_max: [ 0.20]  # a (1st free axis) upper bound, per rail [m]
         corridor_b_min: [-0.18]  # b (2nd free axis) lower bound, per rail [m]
         corridor_b_max: [ 0.14]  # b (2nd free axis) upper bound, per rail [m]
-        corner_radius_m: 0.0  # corner rounding [m]; a box has no corners to round
 
       # --- rung 2: a single horizontal LINE along Y (thin in Z = one wall pair). ---
       single_line:  # diagnostic rung 2: one horizontal rail
@@ -325,7 +321,6 @@
         corridor_a_max: [ 0.19]  # a (1st free axis) upper bound, per rail [m]
         corridor_b_min: [-0.02]  # b (2nd free axis) lower bound, per rail [m]
         corridor_b_max: [ 0.02]  # b (2nd free axis) upper bound, per rail [m]
-        corner_radius_m: 0.0  # corner rounding [m]; one rail has no corners to round
 
       # --- rung 3: the real maze ---
       maze:  # the maze: linear rails in the vertical Y-Z plane
@@ -379,85 +374,3 @@
         corridor_a_max: [ 0.075,  0.075,  0.075, -0.075,  0.075, -0.150]  # a (1st free axis) upper bound, per rail [m]
         corridor_b_min: [ 0.000, -0.055, -0.055, -0.110, -0.110, -0.110]  # b (2nd free axis) lower bound, per rail [m]
         corridor_b_max: [ 0.000,  0.000, -0.055, -0.055, -0.110, -0.055]  # b (2nd free axis) upper bound, per rail [m]
-        # ROUNDED CORNERS. At a corner the rails meet at a right angle, so the equilibrium -- and the
-        # spring's pull on the arm -- would swing through 90 degrees in one step, felt as a snag or a
-        # kick. Instead every corner and fork is a quarter circle of this radius, tangent to both rails
-        # (actions/../helpers/maze_path.py): at a corner both rails are cut back by it and joined by the
-        # arc; at a fork the through rail stays whole and the branch joins it with an arc on each side.
-        # The arc passes 0.41 x radius from the corner point (8 mm at 0.02), inside the 20 mm
-        # checkpoint radius. At most half the shortest rail rounded at both ends (R2, R4, R6: 0.055 m,
-        # so at most 0.0275). 0 = sharp corners. Checked by check_maze.py.
-        corner_radius_m: 0.02  # radius of every corner and fork [m]; 0 = sharp
-
-      # ============================ MAZE SHAPES: closed loops ============================
-      # Pick one with virtual_fixture_profile (a drop-down on the dashboard). Instead of rails, a shape
-      # is a list of POINTS (path_a = Y sideways, path_b = Z up/down, offsets from the start like the
-      # rails), joined in order by straight sides at any angle and closed back to the first point. Every
-      # point is rounded by an arc tangent to both sides, so the outline is smooth: corner_radius_m is
-      # the LARGEST radius, and a point between short sides gets the largest one that fits.
-      # START (0,0) is the first point; the whole shape sits below it, inside the reach checked for
-      # the rails maze (a -0.15..+0.15, b 0..-0.14).
-      #
-      # A loop has no far end, so the GOAL IS THE START, and it counts only after every checkpoint has
-      # been visited (goal_after_all_checkpoints): one full lap, in either direction. The checkpoints
-      # sit on three sides spread around the loop and reward once each, in any order. Check a shape
-      # with:  ros2 run sinthlab_bringup check_maze.py --profile fish
-
-      # "0": a rounded square, 0.12 wide x 0.14 tall.
-      zero:  # maze shape: a rounded square ("0"), closed loop
-        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
-        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
-        corridor_frame: "relative"  # path points are OFFSETS from the start EE (a=Y, b=Z)
-        path_a: [0.000, 0.060,  0.060, -0.060, -0.060]  # shape points, a (sideways), in order [m]
-        path_b: [0.000, 0.000, -0.140, -0.140,  0.000]  # shape points, b (up/down), in order [m]
-        path_closed: true  # join the last point back to the first (a loop)
-        corner_radius_m: 0.04  # largest radius a point is rounded to [m]
-        checkpoint_x:      [ 0.000,  0.000,  0.000]  # checkpoint X (on the locked plane), one per checkpoint [m]
-        checkpoint_y:      [ 0.060,  0.000, -0.060]  # checkpoint Y: right side, bottom, left side [m]
-        checkpoint_z:      [-0.070, -0.140, -0.070]  # checkpoint Z [m]
-        checkpoint_radius: [ 0.020,  0.020,  0.020]  # reward within this distance of a checkpoint [m]
-        goal_x: 0.000  # goal X: the start [m]
-        goal_y: 0.000  # goal Y: the start [m]
-        goal_z: 0.000  # goal Z: the start [m]
-        goal_radius: 0.015  # the goal is reached within this distance [m]
-        goal_after_all_checkpoints: true  # the goal counts only after every checkpoint: one full lap
-
-      # A fish facing left: body, nose on the left, forked tail on the right.
-      fish:  # maze shape: a fish outline, closed loop
-        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
-        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
-        corridor_frame: "relative"  # path points are OFFSETS from the start EE (a=Y, b=Z)
-        #        top    upper  tail   tail   tail   lower  belly  chin   nose   brow
-        path_a: [0.000, 0.060, 0.125, 0.100, 0.125, 0.060, 0.000, -0.070, -0.115, -0.070]  # shape points, a (sideways), in order [m]
-        path_b: [0.000, -0.045, -0.005, -0.065, -0.125, -0.085, -0.130, -0.110, -0.065, -0.020]  # shape points, b (up/down), in order [m]
-        path_closed: true  # join the last point back to the first (a loop)
-        corner_radius_m: 0.012  # largest radius a point is rounded to [m]
-        checkpoint_x:      [ 0.000,  0.000,  0.000]  # checkpoint X (on the locked plane), one per checkpoint [m]
-        checkpoint_y:      [ 0.0925,  0.030, -0.0925]  # checkpoint Y: upper tail, lower body, under the nose [m]
-        checkpoint_z:      [-0.025, -0.1075, -0.0875]  # checkpoint Z [m]
-        checkpoint_radius: [ 0.020,  0.020,  0.020]  # reward within this distance of a checkpoint [m]
-        goal_x: 0.000  # goal X: the start [m]
-        goal_y: 0.000  # goal Y: the start [m]
-        goal_z: 0.000  # goal Z: the start [m]
-        goal_radius: 0.015  # the goal is reached within this distance [m]
-        goal_after_all_checkpoints: true  # the goal counts only after every checkpoint: one full lap
-
-      # A duck facing left: round head (START on top), blunt beak, body, tail up on the right.
-      duck:  # maze shape: a duck outline, closed loop
-        type: "maze"  # geometry class: plane | cartesian_box | cylinder | sinusoid | maze
-        restricted_axis: "x"  # locked base axis (x | y | z); the other two stay free
-        corridor_frame: "relative"  # path points are OFFSETS from the start EE (a=Y, b=Z)
-        #        head   head    nape    neck    back    tail    tail    rump    belly   breast  throat  chin    beak    beak    brow
-        path_a: [0.000, 0.021,  0.030,  0.026,  0.090,  0.145,  0.130,  0.105,  0.000, -0.045, -0.022, -0.030, -0.072, -0.072, -0.026]  # shape points, a (sideways), in order [m]
-        path_b: [0.000, -0.009, -0.030, -0.052, -0.050, -0.028, -0.078, -0.115, -0.125, -0.100, -0.060, -0.044, -0.042, -0.026, -0.016]  # shape points, b (up/down), in order [m]
-        path_closed: true  # join the last point back to the first (a loop)
-        corner_radius_m: 0.008  # largest radius a point is rounded to [m]
-        checkpoint_x:      [ 0.000,  0.000,  0.000]  # checkpoint X (on the locked plane), one per checkpoint [m]
-        checkpoint_y:      [ 0.058,  0.0525, -0.072]  # checkpoint Y: back, belly, beak [m]
-        checkpoint_z:      [-0.051, -0.120, -0.034]  # checkpoint Z [m]
-        checkpoint_radius: [ 0.020,  0.020,  0.020]  # reward within this distance of a checkpoint [m]
-        goal_x: 0.000  # goal X: the start [m]
-        goal_y: 0.000  # goal Y: the start [m]
-        goal_z: 0.000  # goal Z: the start [m]
-        goal_radius: 0.015  # the goal is reached within this distance [m]
-        goal_after_all_checkpoints: true  # the goal counts only after every checkpoint: one full lap
