@@ -131,7 +131,7 @@ _CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
-        summary="Admittance: the arm goes wherever it is pushed and holds where it is let go. No goal, no boundary.",
+        summary="Admittance: the arm goes wherever it is pushed within a box around the start, and holds where it is let go. No goal.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile="Uniform 1000",

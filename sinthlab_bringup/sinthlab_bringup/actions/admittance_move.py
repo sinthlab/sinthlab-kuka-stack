@@ -82,6 +82,13 @@ the start. Only the hand's force ALONG the rail counts, the equilibrium only mov
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
 holds the arm on the rail. rail_axis none = free in every direction (Free Move).
 
+THE BOX (Free Move, rail_axis none): the equilibrium never leaves a box around the start -- box_min_m to
+box_max_m from the start, per base axis [x, y, z] -- a soft wall like the floor: pushing past a face only
+stretches the cabinet spring. It keeps the arm where its posture is safe: in the 23 Nov test a hand
+took the arm 0.4 m sideways and 10 cm up, the elbow (A4) straightened past 0 deg -- the jerk -- and
+the arm ran on in the other elbow posture until the stack died. On a rail the rail's ends bound it
+instead and the box is not used.
+
 THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
 base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext, with a damped pseudo-inverse
 (jacobian_damping) and this action's own ROUND threshold (deadband_n) -- the same in every direction, so
@@ -153,6 +160,14 @@ class AdmittanceMoveAction:
             np.eye(3)["xyz".index(axis)],
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
+        self._box = None                        # Free Move: (box_min_m, box_max_m) from the start [x, y, z]
+        if self._rail is None:
+            lo = np.asarray(get_required_param(node, self._p + "box_min_m"), dtype=float)
+            hi = np.asarray(get_required_param(node, self._p + "box_max_m"), dtype=float)
+            if lo.shape != (3,) or hi.shape != (3,) or np.any(lo > 0.0) or np.any(hi < 0.0):
+                raise ValueError(f"{self._p}box_min_m / box_max_m must be [x, y, z] with min <= 0 <= max "
+                                 f"(the start inside the box), got {lo.tolist()} / {hi.tolist()}")
+            self._box = (lo, hi)
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
@@ -181,7 +196,7 @@ class AdmittanceMoveAction:
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
-        log.info(f"Admittance free move: {'no boundary' if self._rail is None else f'on a {axis} rail, {self._rail[1]:+.2f} to {self._rail[2]:+.2f} m'}, leash {self._leash} m, force from the joint torques "
+        log.info(f"Admittance free move: {f'in the box {self._box[0].tolist()} to {self._box[1].tolist()} m from the start' if self._rail is None else f'on a {axis} rail, {self._rail[1]:+.2f} to {self._rail[2]:+.2f} m'}, leash {self._leash} m, force from the joint torques "
                  f"(Jacobian damping {self._jac_damping:g})")
 
     # ------------------------------------------------------------------ parameters
@@ -369,8 +384,7 @@ class AdmittanceMoveAction:
         if not self._pushing:
             if not np.any(self._f_used):
                 if now < self._settle_until:
-                    target = self._floor.clamp_xyz(self._on_rail(self._p_meas + self._rest_offset),
-                                                   self._anchor[0:3, 0:3])
+                    target = self._bound(self._p_meas + self._rest_offset)
                     self._eq = self._eq + min(1.0, dt / GLIDE_TAU_SEC) * (target - self._eq)
                     if arm_speed < SETTLED_MPS and float(np.linalg.norm(target - self._eq)) < 1e-3:
                         self._settle_until = 0.0
@@ -404,13 +418,13 @@ class AdmittanceMoveAction:
             # floor sinks the arm itself below it, and trailing that point pulled the equilibrium down along
             # the push -- the floor then took back only the drop, and the push's forward part was left as a
             # jump ahead (2.6 cm in 60 ms in the 10 Nov Free Move run).
-            rest = self._floor.clamp_xyz(self._on_rail(self._p_meas + self._rest_offset), self._anchor[0:3, 0:3])
+            rest = self._bound(self._p_meas + self._rest_offset)
             behind = float((rest - eq) @ u) - self._trail
             if behind > 0.0:
                 eq = eq + u * behind
-        # The rail, then the floor: clamp the integrated equilibrium itself, so a push past a rail end or
-        # down at the floor winds nothing up and the arm comes away from it at once.
-        eq = self._floor.clamp_xyz(self._on_rail(eq), self._anchor[0:3, 0:3])
+        # The rail or the box, then the floor: clamp the integrated equilibrium itself, so a push past a
+        # rail end, a box face or down at the floor winds nothing up and the arm comes away from it at once.
+        eq = self._bound(eq)
         # Remember the speed actually applied (after the leash and the trail), so a held-back equilibrium
         # does not build up speed it would release as a lurch -- capped at max_speed_mps, so the speed of a
         # hand dragging it is not carried on, ahead of the arm, once the hand eases off.
@@ -430,6 +444,14 @@ class AdmittanceMoveAction:
                 + f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
                 + f"q4={np.degrees(self._q_last[3]):.1f} deg  "
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
+
+    def _bound(self, xyz: np.ndarray) -> np.ndarray:
+        """xyz kept where the equilibrium may be: on the rail (or in the box), then above the floor."""
+        xyz = self._on_rail(xyz)
+        if self._box is not None:
+            a = self._anchor[0:3, 3]
+            xyz = a + np.clip(np.asarray(xyz, dtype=float) - a, self._box[0], self._box[1])
+        return self._floor.clamp_xyz(xyz, self._anchor[0:3, 0:3])
 
     def _on_rail(self, xyz: np.ndarray) -> np.ndarray:
         """xyz moved onto the rail -- the nearest point of the line through the start, within its ends."""

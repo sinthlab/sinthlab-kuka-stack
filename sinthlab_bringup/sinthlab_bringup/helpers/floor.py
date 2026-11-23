@@ -103,7 +103,8 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
       * apple pluck: a pull straight DOWN to the threshold, from the start, every random-start position
         (needs `grid`, a StartGrid) and the perturbed start, must stay ROOM_M above the floor -- the
         floor must never be what ends a pull;
-      * maze and Move Vertical: the lowest rail point must be ROOM_M above the floor."""
+      * maze and Move Vertical: the lowest rail point must be ROOM_M above the floor;
+      * Free Move (needs `grid`): its box must keep the arm's posture safe (StartGrid.box_problem)."""
     floor = Floor(params["floor.height_m"], params["floor.reference"], params.get("floor.trip_margin_m", 0.03))
     what = floor.reference.replace("_", " ")
     start, park = params.get(_START), params.get(_PARK)
@@ -147,6 +148,12 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         name, z = min(starts.items(), key=lambda kv: kv[1])
         return room(z - float(threshold), f"a {float(threshold) * 100:.0f} cm pull straight down from {name}")
 
+    box_min, box_max = params.get("free_move.box_min_m"), params.get("free_move.box_max_m")
+    if (box_min is not None and box_max is not None and grid is not None
+            and str(params.get("free_move.rail_axis", "none")) == "none"):      # Free Move: the box
+        problem = grid.box_problem(start, box_min, box_max)
+        if problem:
+            return f"Free Move's box (free_move.box_min_m / box_max_m): {problem}"
     if str(params.get("free_move.rail_axis", "none")) == "z":      # Move Vertical: the rail's bottom end
         return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
     profile = params.get("virtual_fixture_profile")                # maze

@@ -97,3 +97,11 @@ def start_for_height(height_m: float, current: dict) -> Tuple[list, str]:
     return q, (f"{floor.reference.replace('_', ' ')} at {reference_z(T, floor.reference):.3f} m "
                f"(was {now:.3f} m); flange at ({T[0, 3]:.3f}, {T[1, 3]:.3f}, {T[2, 3]:.3f}) m, "
                f"{grid.margin_deg(np.radians(q)):.0f} deg from the nearest joint limit")
+
+
+def ee_pose(q_rad) -> Optional[np.ndarray]:
+    """The flange pose (4x4, base frame) for joint angles in radians, or None without a model."""
+    _load()
+    if _MODEL is None:
+        return None
+    return np.asarray(_MODEL[0](np.asarray(q_rad, dtype=float)), dtype=float)

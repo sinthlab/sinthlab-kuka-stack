@@ -23,7 +23,7 @@
       penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
-    # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
+    # is let go, within a box around the start (free_move.box_*). No goal -- for getting used to holding and moving the arm. It
     # runs as one free-movement SESSION, for session_sec or (0) until Stop.
     # At its end the arm holds, waits to be let go, parks, and the next session starts; Stop parks at once.
     #
@@ -133,15 +133,19 @@
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: none  # none = free in every direction; x | y | z = only along that base axis through the start (Move Vertical / Horizontal)
+      # THE BOX: the equilibrium stays within these offsets from the start, base frame [x (toward the subject), y (left/right), z (up)] -- a soft wall, like the floor.
+      # This is the largest box with the elbow (A4) >= 30 deg, every joint >= 10 deg from its limit and the arm away from singular postures at every corner (README, Free Move, "The box").
+      box_min_m: [-0.05, -0.20, -0.12]  # back (-X), -Y, down limits [m] (min <= 0)
+      box_max_m: [0.04, 0.20, 0.0]  # forward (+X), +Y, up limits [m] (max >= 0); up is the arm's reach limit at this start
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
-    # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
+    # Runaway stop: the speed, and a distance well past the box's farthest corner (0.24 m from the start).
     free_move_safety:  # runaway stop
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
+      max_displacement_m: 0.32  # abort if the EE is dragged this far from the start: 8 cm past the box's farthest corner, against the spring (~80 N at 1000 N/m) [m]
       max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off

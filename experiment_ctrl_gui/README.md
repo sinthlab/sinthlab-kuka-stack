@@ -14,6 +14,7 @@ classified, where the parameter help comes from, and how to extend it.
 - [Parameter model](#parameter-model)
 - [Parameter documentation](#parameter-documentation)
 - [Diagnostics page](#diagnostics-page)
+- [Live view](#live-view)
 - [Post-processing page](#post-processing-page)
 - [HTTP API](#http-api)
 - [Process control](#process-control)
@@ -70,14 +71,15 @@ flowchart LR
 |---|---|
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
-| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status` and `lbr_state` and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
+| `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status`, `lbr_state` and the CLIK's `target_frame` (the live view's pull point) and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
 | `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
 | `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` appear as nested tabs on its card and set its `paradigm_param` for the next Start (apple pluck: pluck / perturb / perturb bump / random start, `paradigm`; Move Vertical / Horizontal: either / cued end, `centre_out.target`), and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `board.py` | the Diagnostics page's Visual cue tab: sends each board command over the board's Wi-Fi or, as `GET /<cmd>`, over the serial link through the StarTech adapter; `FakeBoard` for `--demo` |
 | `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
+| `live_view.py` | the Live view: builds the running experiment's bounds from the parameters it runs with, anchors them once per trial, and turns the measured joints into the end effector by forward kinematics (`kinematics.py`) |
 | `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
-| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, and `style.css`. No external libraries or fonts |
+| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, `live.html` + `live_view.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
 | `run_gui.sh` | sources ROS 2 and the workspace, then runs `server.py` |
@@ -237,6 +239,38 @@ edge); *Check outputs* still works. The browser cannot send UDP, so the server r
 (`ttl.py`): only `STATUS`, `ALLOFF` and `PULSE <output> <width ms>`, only to a private address. In
 `--demo` a simulated cabinet answers.
 
+## Live view
+
+`/live.html` — the **Live view** button at the top right of the dashboard, in its own tab. The running
+experiment's bounds and the arm in them, in two views of the robot's base frame: **front** (Y to the
+right, Z up: as seen from the subject's side) and **top** (Y to the right, X toward the subject
+downward). Read-only, and entirely on the dashboard's side: the experiments do not change for it.
+
+- **The bounds** are built by `live_view.py` from the parameters the run uses (the dashboard's copy,
+  with the live values the orchestrator reports), in the base frame. Start-relative bounds are placed
+  at the start pose's end effector (forward kinematics) until the trial is armed, then where the arm
+  was at that moment. The experiments anchor on the arm around then (the maze after it settles, Free
+  Move at the tare), so the drawing can sit a few mm off their own anchor.
+- **The arm:** the end effector, from the measured joints on `lbr_state` by forward kinematics, with
+  its last 8 s as a trail; the **pull point**, the CLIK's `target_frame` (where the spring pulls the
+  arm), in the CLIK experiments.
+- **The trial so far** — the centre-out goal and the end reached, the forks passed — is followed on the
+  server from every status, so a page opened mid-trial shows it too.
+
+| Experiment | Bounds shown |
+|---|---|
+| every one | the start; the floor (`floor.height_m`, for the flange at the start's orientation) and its safety trip line; the safety distance (`*_safety.max_displacement_m`) where it is on |
+| Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
+| Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
+| Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
+| Free Move | the box (`free_move.box_min_m` / `box_max_m`) |
+| Move Vertical / Horizontal | the rail and its end zones (`centre_out.end_tol_m`); the goal end filled green once lit (both for `either`), red once reached |
+
+It updates 15 times a second on the event stream (`live` events) and fetches `/api/live_view` again
+whenever the bounds change (a new trial's anchor, a live parameter). Without a robot model (no ROS: the
+demo without ROS sourced) it draws around a nominal start and says so. `?nostream` polls instead, as
+on the dashboard.
+
 ## Post-processing page
 
 `/postprocess.html` — the **Post-processing** button at the top right of the dashboard. It archives a
@@ -298,6 +332,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/params/<exp>` | `params` (typed rows with tier, value, default, description, notes, caution, links, limits, choices, step), `groups` (block docs), `fixed` (Fixed tab sections) |
 | GET | `/api/state` | runner state, ROS availability, status, robot, data folder, edit counts |
 | GET | `/api/logs` | the log ring buffer |
+| GET | `/api/live_view` | the Live view: `geometry` (the running experiment's bounds, anchor, start) and `live` (end effector, pull point, trial, phase, the trial's goal / reached end / forks passed) |
 | GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post", "data": …}` |
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
