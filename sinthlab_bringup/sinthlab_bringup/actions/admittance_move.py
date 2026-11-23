@@ -80,7 +80,9 @@ deliberate pushes above low_force_n feel exactly as before.
 ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal): the same, along one base axis through
 the start. Only the hand's force ALONG the rail counts, the equilibrium only moves along it, between
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
-holds the arm on the rail. rail_axis none = free in every direction (Free Move).
+holds the arm on the rail. rail_axis none = free in every direction (Free Move). set_open_span() narrows
+the rail for one trial (the centre-out reach's one-direction trials, actions/centre_out.py): the
+equilibrium is then clamped to that part, so the closed side feels like a rail end.
 
 THE FORCE. Computed here from the arm's external joint torques (LBRState.external_torque) through the
 base-frame Jacobian of lbr_link_ee:  F = pinv(J)^T tau_ext, with a damped pseudo-inverse
@@ -153,6 +155,7 @@ class AdmittanceMoveAction:
             np.eye(3)["xyz".index(axis)],
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
+        self._open: Optional[tuple] = None      # this trial's open part of the rail (lo, hi), None = all of it
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))
@@ -220,6 +223,7 @@ class AdmittanceMoveAction:
         self._quiet = 0.0
         self._low_t = 0.0
         self._settle_until = 0.0
+        self._open = None                       # every trial starts with the whole rail open
         self._t_start = time.monotonic()
 
     def enable_motion(self) -> None:
@@ -248,13 +252,30 @@ class AdmittanceMoveAction:
         """Stop moving. The CLIK keeps the last equilibrium, so the arm holds where it is."""
         self._active = self._moving = False
 
+    def set_open_span(self, span: Optional[tuple]) -> None:
+        """Open only part of the rail, (lo, hi) [m from the start, within rail_min_m..rail_max_m], for this
+        trial; None opens all of it. Call after start() (which reopens the whole rail) and before
+        enable_motion(). Off a rail it does nothing."""
+        if self._rail is None:
+            return
+        if span is None:
+            self._open = None
+            return
+        lo, hi = float(span[0]), float(span[1])
+        lo, hi = max(lo, self._rail[1]), min(hi, self._rail[2])
+        if lo > hi:
+            raise ValueError(f"open span {span!r} is outside the rail {self._rail[1]:+.3f}..{self._rail[2]:+.3f} m")
+        self._open = (lo, hi)
+        self._node.get_logger().info(f"Free move: rail open from {lo:+.3f} to {hi:+.3f} m this trial.")
+
     # ------------------------------------------------------------------ outputs
     def max_excursion_m(self) -> float:
         """Farthest the arm has been moved from where it was at the go cue [m] (the response time-out)."""
         return self._max_exc
 
     def rail_ends(self) -> Optional[tuple]:
-        """(rail_min_m, rail_max_m) from the start, or None off a rail (Free Move)."""
+        """(rail_min_m, rail_max_m) from the start, or None off a rail (Free Move). The whole rail, even when
+        set_open_span() has closed part of it."""
         return None if self._rail is None else (self._rail[1], self._rail[2])
 
     def rail_axis(self) -> Optional[str]:
@@ -427,10 +448,13 @@ class AdmittanceMoveAction:
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
 
     def _on_rail(self, xyz: np.ndarray) -> np.ndarray:
-        """xyz moved onto the rail -- the nearest point of the line through the start, within its ends."""
+        """xyz moved onto the rail -- the nearest point of the line through the start, within its ends (or
+        within this trial's open span)."""
         if self._rail is None:
             return xyz
         u, lo, hi = self._rail
+        if self._open is not None:
+            lo, hi = self._open
         a = self._anchor[0:3, 3]
         return a + u * float(np.clip((np.asarray(xyz, dtype=float) - a) @ u, lo, hi))
 

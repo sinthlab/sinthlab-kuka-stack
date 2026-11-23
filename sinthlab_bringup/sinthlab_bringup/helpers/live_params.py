@@ -165,6 +165,8 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "reward_pulse.pulse_ms": (10, 5000),
     # Centre-out: how close to a rail end counts as reaching it.
     "centre_out.end_tol_m": (0.005, 0.03),
+    # Cued: at most this many trials in a row to the same end (0 = no cap).
+    "centre_out.max_repeats": (0, 20),
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
     # Drag may go further -- it only ever resists.
     "virtual_fixtures.rail_lead_sec": (-0.15, 0.05),
@@ -205,8 +207,9 @@ IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
 _START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_joint_position"
 
-# Paradigm-only parameters: in an experiment with a `paradigm` (apple pluck), these act -- and the
-# dashboard shows them -- only in those paradigms. The first matching pattern wins.
+# Paradigm-only parameters: in an experiment with a paradigm (apple pluck's `paradigm`, the rails'
+# `centre_out.target`), these act -- and the dashboard shows them -- only in those paradigms. The first
+# matching pattern wins.
 PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.baseline_settle_sec": ("perturb",),
     "perturb_start.speed_scale": ("perturb",),           # perturb_bump: grasp.bump_speed_scale
@@ -214,6 +217,9 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.*": ("perturb", "perturb_bump"),
     "grasp.*": ("perturb_bump",),
     "random_start.*": ("random_start",),
+    # Move Vertical / Horizontal, whose paradigm is centre_out.target.
+    "centre_out.max_repeats": ("cued",),
+    "centre_out.block_other_end": ("cued", "left", "right", "down", "up"),
 }
 
 
@@ -231,6 +237,7 @@ STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
     "*.speed_scale": 0.05,
     "grasp.bump_speed_scale": 0.05,
+    "centre_out.max_repeats": 1,
 }
 
 # Live parameters applied the moment they are set, instead of at the next trial boundary. Only for
@@ -263,7 +270,9 @@ CHOICES: Dict[str, List[str]] = {
     "free_move.rail_axis": ["none", "x", "y", "z"],
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
-    "centre_out.target": ["either", "cued"],                  # actions/centre_out.TARGETS
+    # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
+    # does not have (left / right on the vertical rail, down / up on the horizontal one).
+    "centre_out.target": ["either", "cued", "left", "right", "down", "up"],
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
 }

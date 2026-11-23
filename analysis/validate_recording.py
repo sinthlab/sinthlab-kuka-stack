@@ -246,8 +246,15 @@ def validate(path) -> bool:
         r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
         tgt = [a for _, t, a in seq if t == "target"]
         ends = [a for _, t, a in seq if t in ("reach", "reach_wrong")]
-        r.note(f"centre-out: target {tgt[0] if tgt else '?'}, " + (f"{outcome[0]} at the {ends[0]} end" if ends
-               else (outcome[0] if outcome else "no outcome")))
+        closed = [a for _, t, a in seq if t == "closed_end"]
+        if closed:
+            # One-direction trial with the other half of the rail closed: the closed end is not the goal,
+            # and cannot be reached.
+            r.check(len(closed) == 1 and (not tgt or closed[0] != tgt[0]),
+                    f"one closed end, not the target (closed {closed}, target {tgt[0] if tgt else '?'})")
+            r.check("reach_wrong" not in got, "no reach_wrong with the other half of the rail closed")
+        r.note(f"centre-out: target {tgt[0] if tgt else '?'}" + (f" ({closed[0]} half closed)" if closed else "")
+               + ", " + (f"{outcome[0]} at the {ends[0]} end" if ends else (outcome[0] if outcome else "no outcome")))
     if exp == "perturb_bump" and "early_touch" not in got:
         if "grasp_timeout" in got or ("response_timeout" in got and "grasp" not in got):   # grasp_timeout: older files
             r.check("grasp" not in got and "perturb_applied" not in got,
