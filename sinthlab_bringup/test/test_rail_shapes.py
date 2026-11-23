@@ -112,3 +112,41 @@ def test_the_asterisk_has_no_box():
     adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
     a = adm._anchor[0:3, 3]
     assert np.allclose(adm._bound(a + [0, 0, 0.2]), a + [0, 0, 0.07])
+
+
+# ---------------------------------------------------------------- every rail reachable before the asterisk runs
+class FakeGrid:
+    """StartGrid.solve stand-in: anything higher than `up_limit` above the start is out of reach."""
+    def __init__(self, up_limit):
+        self.up_limit, self.asked = up_limit, {}
+
+    def solve(self, start, plane, offsets):
+        assert plane == "frontal"
+        self.asked.update(offsets)
+        return {n: ([0] * 7, "out of reach" if ab[1] > self.up_limit else None) for n, ab in offsets.items()}
+
+
+def test_rays_problem_checks_every_rails_end_and_middle():
+    g = FakeGrid(up_limit=1.0)
+    assert rs.rays_problem(g, [0] * 7, rs.layout_degs(4), 0.07) is None
+    assert len(g.asked) == 8                                                 # 4 ends + 4 middles
+    assert g.asked["the up rail's end"] == pytest.approx([0.0, 0.07])
+    problem = rs.rays_problem(FakeGrid(up_limit=0.05), [0] * 7, rs.layout_degs(4), 0.07)
+    assert problem == "the up rail's end (7 cm rails) is out of reach"
+    assert rs.rays_problem(FakeGrid(up_limit=0.05), [0] * 7, rs.layout_degs(2), 0.07) is None   # left / right only
+
+
+def test_dashboard_check_refuses_an_unreachable_asterisk():
+    from sinthlab_bringup.helpers import floor
+
+    def fk(q):
+        T = np.eye(4)
+        T[2, 3] = 1.0 - floor.reference_drop(np.eye(3), "apple_bottom")
+        return T
+
+    params = {"floor.height_m": 0.88, "floor.reference": "apple_bottom", "floor.trip_margin_m": 0.03,
+              "move_to_start.target_joint_position": [0] * 7, "free_move.rail_axis": "rays",
+              "free_move.ray_layout": "3", "free_move.ray_length_m": 0.07}
+    problem = floor.setup_problem(params, fk, FakeGrid(up_limit=0.02))      # 3 = down, 30 deg, 150 deg: up 3.5 cm
+    assert problem and problem.startswith("N-choice:") and "30deg" in problem
+    assert floor.setup_problem(params, fk, FakeGrid(up_limit=0.05)) is None

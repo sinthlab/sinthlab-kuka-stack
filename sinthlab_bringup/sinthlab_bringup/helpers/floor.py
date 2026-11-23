@@ -161,9 +161,13 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
             return f"Free Move's box ({what}): {problem}"
     if str(params.get("free_move.rail_axis", "none")) == "z":      # Move Vertical: the rail's bottom end
         return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
-    if str(params.get("free_move.rail_axis", "none")) == "rays":   # N-choice: the asterisk's lowest end
-        from sinthlab_bringup.helpers.rail_shapes import layout_degs
+    if str(params.get("free_move.rail_axis", "none")) == "rays":   # N-choice: every rail reachable, and the lowest end
+        from sinthlab_bringup.helpers.rail_shapes import layout_degs, rays_problem
         degs = layout_degs(params["free_move.ray_layout"])
+        if grid is not None:
+            problem = rays_problem(grid, start, degs, float(params["free_move.ray_length_m"]))
+            if problem:
+                return f"N-choice: {problem}"
         low = min(float(np.sin(np.radians(a))) for a in degs)
         return room(z0 + low * float(params["free_move.ray_length_m"]), "the lowest rail's end")
     profile = params.get("virtual_fixture_profile")                # maze

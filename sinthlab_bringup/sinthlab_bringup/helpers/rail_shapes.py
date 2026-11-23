@@ -15,7 +15,7 @@ Offsets here are from the start (the anchor), in the base frame, in metres.
 """
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -74,6 +74,22 @@ def on_rays(offset: np.ndarray, dirs: np.ndarray, length: float) -> Tuple[np.nda
     pts = dirs * t[:, None]
     i = int(np.argmin(np.linalg.norm(pts - offset, axis=1)))
     return pts[i], i, float(t[i])
+
+
+def rays_problem(grid, start_deg, degs: Sequence[float], length: float) -> Optional[str]:
+    """None if the arm can hold the start's orientation along every rail of the asterisk -- its end and its
+    middle, solved by `grid` (helpers/start_grid.StartGrid: reach, elbow, joint limits, singular poses),
+    else the reason. The node refuses an asterisk that fails it at start-up, and the dashboard before Start,
+    as for Free Move's box."""
+    offsets = {}
+    for a in degs:
+        d = frontal_dir(a)
+        for frac, where in ((1.0, "end"), (0.5, "middle")):
+            offsets[f"the {direction_name(a)} rail's {where}"] = [float(d[1]) * length * frac, float(d[2]) * length * frac]
+    for name, (_, why) in grid.solve(start_deg, "frontal", offsets).items():   # frontal: a = +Y, b = +Z
+        if why:
+            return f"{name} ({length * 100:.0f} cm rails) is {why}"
+    return None
 
 
 def direction_name(deg: float) -> str:
