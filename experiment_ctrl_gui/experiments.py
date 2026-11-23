@@ -162,6 +162,24 @@ EXPERIMENTS += [
         task_settings=("session_sec", "long_move.min_m", "long_move.min_straightness", "long_move.min_gap_sec"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
+    # Reach Map: Free Move in the frontal plane, mapping how far this monkey reaches in each direction; the
+    # Reach Map view turns the run into his profile's reach. Run once or twice per animal.
+    Experiment(
+        key="reach_map", label="Reach Map", group="pretraining",
+        summary="Map how far this monkey reaches: he moves the arm freely in the plane facing him, rewarded for long "
+                "movements or for each new best reach in a direction. Sets the reach in his profile. Once or twice per animal.",
+        launch_file="iiwa7_reach_map.launch.py",
+        params_yaml="reach_map.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("reach_map"),
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_reach_map",
+        paradigms=[("each_move", "Long moves"), ("new_best", "New best")], paradigm_param="long_move.reward",
+        task_settings=("long_move.min_m", "long_move.min_gap_sec", "reach_map.margin_m", "reach_map.min_m",
+                       "reach_map.percentile"),
+        # It starts where the vertical tasks do (the middle of the arm's vertical span), so it has their posture.
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
     # Restricted Move: Free Move held to one rail, a session per trial, rewarded at its end. No target.
     Experiment(
         key="restricted_move_horizontal", label="Restricted Move · Horizontal", group="pretraining",

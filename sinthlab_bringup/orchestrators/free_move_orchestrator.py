@@ -35,7 +35,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
     One node, several tasks, set by the YAML's `experiment`: free_move (in a box around the start);
     restricted_move_horizontal / _vertical (the same admittance on one rail through the start,
     free_move.rail_axis, a session per trial); move_horizontal / move_vertical (the Cued Reaches card: that
-    rail with one centre-out reach per trial); colour_rule; n_choice.
+    rail with one centre-out reach per trial); colour_rule; n_choice; reach_map (Free Move in the frontal
+    plane, rewarding long movements or each new best reach per direction: maps how far the monkey reaches).
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
@@ -217,12 +218,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
         each long movement does."""
         self.control.set_reward_events(("reach",) if self._centre_out_on() else
                                        ("choice",) if self._n_choice_on() else
-                                       ("long_move",) if self._long_move_on() else REWARD_EVENTS)
+                                       ("long_move", "new_best") if self._long_move_on() else REWARD_EVENTS)
 
     def _on_long_move(self, token: str, arg=None):
         """Long moves: a movement started / ended / earned the reward (the pulse follows the mark)."""
         self.recorder.mark(token, arg)
-        if token == "long_move":
+        if token in ("long_move", "new_best"):
             self.reward_cue.start()
 
     def on_reach(self, end: str, rewarded: bool):

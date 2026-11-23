@@ -1586,13 +1586,14 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 (the diagonals especially); then push out along each rail and check the junction at the start is smooth,
 with no snag when committing to a rail.
 
-### Pre-training — Free Move, Restricted Move, Cued Reaches
+### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
 Short tasks that get a subject used to the arm before the real experiments. In the dashboard they are
-three cards under the **Pre-training** tab:
+four cards under the **Pre-training** tab:
 
 | Card | Tabs | Experiments (each its own YAML and launch file) |
 |---|---|---|
 | **Free Move** | Session · Long moves | `free_move` |
+| **Reach Map** | Long moves · New best | `reach_map`: maps how far the monkey reaches in each direction and sets his profile's reach ([below](#reach-map--how-far-this-monkey-reaches)) |
 | **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
 | **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Cued end · Left / Down only · Right / Up only | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
 
@@ -1794,6 +1795,30 @@ All live, from the next session. Events: `move_start` (confirmed), `move_end` (a
 **On the rig, before a subject:** with debug logging on, make a few long and short pushes and check the
 log reports one movement per push with about the right length; rest a hand on the apple and check it
 reports none.
+
+#### Reach Map — how far this monkey reaches
+Run once or twice per animal, instead of guessing the reach and adjusting it after he arrives
+(`config/reach_map.yaml`, `iiwa7_reach_map.launch.py`, SmartPad **Z lock 2500, X/Y 1000, rot 120**).
+Free Move in the **frontal plane** (`free_move.rail_axis: frontal`: left, right, up, down, no depth) from the
+vertical tasks' start (the middle of the arm's vertical span), inside its own box (±0.18 m sideways, 8 cm
+down, 6 cm up), one session until Stop. Two rewards, switchable mid-session (`long_move.reward`, live):
+
+- **Long moves** (`each_move`): every movement of at least `long_move.min_m` (6 cm) pays. Start here.
+- **New best** (`new_best`): the plane is split into `reach_map.sectors` directions (12, every 30°); a
+  movement pays when its farthest point beats its direction's best this run by `reach_map.margin_m` (1 cm),
+  at least `reach_map.min_m` (3 cm) from the start (`helpers/reach_map.py`, `BestTracker`; event
+  `new_best` `deg=..;reach=..;prev=..`). The bests last the whole run, so the rewards thin out as the edges
+  stop moving: switch back to Long moves to keep him working.
+
+The dashboard's Run monitor for this card is the map (experiment_ctrl_gui/README.md, "Monkey profiles"),
+read from the trajectory CSVs as they are written. Per direction: the **comfortable reach** (the
+`reach_map.percentile`, 80, of the farthest points of his outward movements that way) and the farthest;
+a reach that ends at the box is **arm-limited** (he would have gone farther). Its four values (right, up,
+left, down) are saved to the monkey's profile, which sets the rail ends of Restricted Move, Cued Reaches
+and the Colour Rule. Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail.
+
+Rig checks: the box passes the Start check (posture, floor) from this start; New best pays as the hand
+pushes out and stops paying once a direction's edge is reached; the map's points line up with the live view.
 
 #### Move Vertical / Move Horizontal — Free Move on one rail
 Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The

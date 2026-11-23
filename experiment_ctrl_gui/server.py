@@ -35,6 +35,7 @@ from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
 import profiles  # noqa: E402
+import reach_view  # noqa: E402
 from live_view import LiveView  # noqa: E402
 import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
@@ -224,8 +225,12 @@ class App:
             if key not in ex.BY_KEY:
                 raise KeyError(f"unknown experiment {key}")
             values = {**profiles.from_task(ex.BY_KEY[key], self._values_in_effect(key)), **values}
+        reach_map = None
+        if body.get("reach_map_run"):     # the reach from a Reach Map run: keep a record of the map with it
+            data = self.reach_map(key or "reach_map", str(body["reach_map_run"]))
+            reach_map = {**reach_view.record(data), "saved": time.strftime("%Y-%m-%d %H:%M")}
         prof = profiles.save(self.subject, values, by,
-                             {key: task_only} if task_only else None, str(body.get("note") or ""))
+                             {key: task_only} if task_only else None, str(body.get("note") or ""), reach_map)
         self.profile = prof
         self._apply_profile()
         self.runner.emit(f"{self.subject}'s profile saved: v{prof['version']} (from {by})", "gui")
@@ -455,6 +460,31 @@ class App:
         return {"experiment": key, "subject": subject, "sessions": sessions, "settings": settings,
                 "subjects": recent_subjects()}
 
+    def reach_map(self, key: str = "reach_map", run: str = "") -> dict:
+        """The Reach Map view: this run's map (or the given run's, or the latest one's)."""
+        exp = ex.BY_KEY["reach_map"]
+        running = self.runner.running() and self.runner.experiment == exp.key
+        folder = None
+        if run:
+            cand = ex.DATA / run
+            if not (run.startswith(f"expt_{exp.run_name}_") and "/" not in run and cand.is_dir()):
+                raise ValueError(f"no Reach Map run {run!r}")
+            folder = str(cand)
+        elif running:
+            folder = self.data_folder()
+        if folder is None:
+            runs = sorted((p for p in ex.DATA.glob(f"expt_{exp.run_name}_*") if p.is_dir()),
+                          key=lambda p: p.stat().st_mtime)
+            folder = str(runs[-1]) if runs else None
+        params = dict(self.params[exp.key].current())
+        metas = ex.outcome_tables.sidecars(folder) if folder else []
+        if metas and metas[-1].get("params"):      # the run's own settings (box, sectors), where recorded
+            params.update(metas[-1]["params"])
+        data = reach_view.compute(folder, params, self.profile)
+        data["running"] = running
+        data["subject"] = self.subject
+        return data
+
     def ttl(self, addr: str, cmd: str) -> dict:
         """Diagnostics page: one command to the cabinet's TTL sync outputs (ttl.py). A test pulse
         during an experiment would land in its NSP recording as a trial edge, so only STATUS then."""
@@ -540,6 +570,12 @@ def make_handler(app: App):
             if path == "/api/run/trials":         # the run monitor: this (or the last) run's trials.csv
                 q = parse_qs(urlparse(self.path).query)
                 return self._json(app.run_trials((q.get("exp") or [""])[0]))
+            if path == "/api/reach_map":          # the Reach Map view
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    return self._json(app.reach_map("reach_map", (q.get("run") or [""])[0]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
             if path == "/api/history":            # today vs recent sessions
                 q = parse_qs(urlparse(self.path).query)
                 return self._json(app.history((q.get("exp") or [""])[0], (q.get("subject") or [""])[0]))

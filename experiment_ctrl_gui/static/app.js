@@ -21,6 +21,7 @@ const STEPS = {
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
 STEPS.restricted_move_horizontal = STEPS.restricted_move_vertical = STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
+STEPS.reach_map = STEPS.free_move;
 STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
                   "trial_end", "release_wait", "released"];
 STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
@@ -68,6 +69,9 @@ const PHASE_TEXT_BY_EXP = {
               choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
   colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
                  reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
+  reach_map: { armed: "mapping — he moves the arm freely in the plane", session_end: "session over — waiting for release",
+               release_wait: "waiting for release", move_start: "moving", move_end: "mapping — he moves the arm freely in the plane",
+               long_move: "long movement — reward", new_best: "new best reach — reward" },
   restricted_move_horizontal: { armed: "free move on the rail", session_end: "session over — waiting for release",
                                 release_wait: "waiting for release" },
   restricted_move_vertical: { armed: "free move on the rail", session_end: "session over — waiting for release",
@@ -1010,7 +1014,7 @@ function pct(n, d) { return d ? `${Math.round(100 * n / d)}%` : "–"; }
 const num = (v) => (v === "" || v == null ? NaN : Number(v));
 
 function chooseSessionView() {
-  if (!SV.userView) SV.view = runningKey() ? "monitor" : "history";
+  if (!SV.userView) SV.view = runningKey() || sessionKey() === "reach_map" ? "monitor" : "history";
   document.querySelectorAll(".session-card .tab").forEach((t) => {
     const on = t.dataset.view === SV.view;
     t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
@@ -1025,7 +1029,8 @@ async function refreshSession(force = false) {
   if (!force && now - SV.lastFetch < 1500) return;
   SV.busy = true; SV.lastFetch = now;
   try {
-    if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
+    if (SV.view === "monitor" && key === "reach_map") SV.map = await api("/api/reach_map");
+    else if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
     else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(curSubject() || store.get("subject", ""))}`);
   } catch (e) { /* shown as empty */ }
   finally { SV.busy = false; }
@@ -1039,10 +1044,89 @@ function sessionOnState() {
   const viewWas = SV.view;
   chooseSessionView();
   if (t !== SV.lastTrial || SV.view !== viewWas) { SV.lastTrial = t; refreshSession(true); }
+  // The Reach Map grows within its one long session: redraw it every few seconds while it runs.
+  else if (s && s.experiment === "reach_map" && SV.view === "monitor" && Date.now() - SV.lastFetch > 5000) refreshSession(true);
 }
 
 function renderSession() {
-  if (SV.view === "monitor") renderMonitor(); else renderHistory();
+  if (SV.view === "monitor" && sessionKey() === "reach_map") renderReachMap();
+  else if (SV.view === "monitor") renderMonitor(); else renderHistory();
+}
+
+// ---------------------------------------------------------------- the Reach Map view
+// Where the hand went (frontal plane, as the monkey sees it: right is +Y), each movement's farthest point,
+// the comfortable-reach outline (the percentile per direction) and the farthest one, the box (the arm's
+// limit), the horizontal tasks' rail height; then the four profile values, now vs this map, to save.
+const REACH_DIRS = [["reach.left_m", "Left", ""], ["reach.right_m", "Right", ""],
+                    ["reach.down_m", "Down", "on the vertical rail"], ["reach.up_m", "Up", "on the vertical rail"]];
+function cm(v) { return v == null ? "–" : `${(v * 100).toFixed(1)} cm`; }
+function reachSvg(d) {
+  const box = d.box || [-0.2, 0.2, -0.1, 0.1], pad = 0.025;
+  const x0 = Math.min(box[0], -0.05) - pad, x1 = Math.max(box[1], 0.05) + pad;
+  const y0 = Math.min(box[2], -0.05) - pad, y1 = Math.max(box[3], d.horizontal_dz || 0, 0.05) + pad;
+  const W = 600, sc = W / (x1 - x0), H = Math.round((y1 - y0) * sc);
+  const X = (a) => ((a - x0) * sc).toFixed(1), Y = (b) => ((y1 - b) * sc).toFixed(1);
+  const poly = (key) => {
+    const rows = d.rows; if (rows.some((r) => r[key] == null)) {
+      return rows.map((r, i) => { const n = rows[(i + 1) % rows.length]; if (r[key] == null || n[key] == null) return "";
+        const p = [r, n].map((q) => [q[key] * Math.cos(q.deg * Math.PI / 180), q[key] * Math.sin(q.deg * Math.PI / 180)]);
+        return `M${X(p[0][0])},${Y(p[0][1])}L${X(p[1][0])},${Y(p[1][1])}`; }).join("");
+    }
+    return rows.map((r, i) => `${i ? "L" : "M"}${X(r[key] * Math.cos(r.deg * Math.PI / 180))},${Y(r[key] * Math.sin(r.deg * Math.PI / 180))}`).join("") + "Z";
+  };
+  const pr = d.proposal, cur = d.profile_reach, dz = d.horizontal_dz || 0;
+  // All four at the map's start: left and right are measured there (5 cm below the horizontal rail).
+  const at = { "reach.left_m": (v) => [-v, 0], "reach.right_m": (v) => [v, 0], "reach.down_m": (v) => [0, -v], "reach.up_m": (v) => [0, v] };
+  const marks = (vals, cls) => Object.entries(at).map(([k, f]) => vals && vals[k] != null ? (([a, b]) => `<circle class="${cls}" cx="${X(a)}" cy="${Y(b)}" r="5"/>`)(f(vals[k])) : "").join("");
+  const propVals = Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, v.value]));
+  return `<svg class="reach-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Reach map: where the hand went and the reach per direction">
+    <rect class="rm-box" x="${X(box[0])}" y="${Y(box[3])}" width="${((box[1] - box[0]) * sc).toFixed(1)}" height="${((box[3] - box[2]) * sc).toFixed(1)}"/>
+    <line class="rm-rail" x1="${X(x0)}" x2="${X(x1)}" y1="${Y(dz)}" y2="${Y(dz)}"/><text class="rm-label" x="${X(x0) * 1 + 4}" y="${Y(dz) - 4}">horizontal tasks' rail</text>
+    <line class="rm-rail" x1="${X(0)}" x2="${X(0)}" y1="${Y(y1)}" y2="${Y(y0)}"/>
+    <g class="rm-pts">${d.points.map(([a, b]) => `<circle cx="${X(a)}" cy="${Y(b)}" r="1.2"/>`).join("")}</g>
+    <g class="rm-reach">${d.reaches.map(([a, b]) => `<circle cx="${X(a)}" cy="${Y(b)}" r="2.6"/>`).join("")}</g>
+    <path class="rm-far" d="${poly("farthest_m")}"/><path class="rm-comf" d="${poly("comfortable_m")}"/>
+    ${d.rows.filter((r) => r.arm_limited).map((r) => `<circle class="rm-limited" cx="${X(r.comfortable_m * Math.cos(r.deg * Math.PI / 180))}" cy="${Y(r.comfortable_m * Math.sin(r.deg * Math.PI / 180))}" r="6"/>`).join("")}
+    ${marks(cur, "rm-cur")}${marks(propVals, "rm-prop")}
+    <path class="rm-start" d="M${X(-0.006)},${Y(0)}H${X(0.006)}M${X(0)},${Y(-0.006)}V${Y(0.006)}"/>
+    <text class="rm-label" x="${W - 4}" y="${H - 6}" text-anchor="end">box = the arm's limit · right = +Y, as he sees it</text>
+  </svg>`;
+}
+function renderReachMap() {
+  const box = $("#session-view"), d = SV.map;
+  $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
+  if (!d || !d.run) { box.innerHTML = `<p class="empty">No Reach Map run yet. Start one: the map fills in as he moves the arm.</p>`; return; }
+  const enough = d.rows.filter((r) => r.comfortable_m != null).length;
+  const tiles = [["Movements", d.n_movements], ["Mapped", `${d.minutes} <small>min</small>`],
+                 ["Directions", `${enough}/${d.sectors} <small>with ≥5 movements</small>`]];
+  const who = d.subject, canSave = who && who !== "test";
+  const rows = REACH_DIRS.map(([k, label, where], i) => {
+    const p = d.proposal[k], now = d.profile_reach ? d.profile_reach[k] : null;
+    const usable = p.value != null;
+    const note = !usable ? p.why : p.arm_limited ? "arm-limited: against the box, he would go farther" : p.why || where;
+    return `<tr><td><input type="checkbox" id="rmv${i}" ${usable && !p.arm_limited ? "checked" : ""} ${usable && canSave ? "" : "disabled"} aria-label="Save ${label}"></td>
+      <td><label for="rmv${i}">${label}</label></td><td class="v">${cm(now)}</td><td class="v"><strong>${cm(p.value)}</strong></td>
+      <td class="small ${p.arm_limited ? "warn" : "muted"}">${esc(note)}</td></tr>`;
+  }).join("");
+  box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+    ${reachSvg(d)}
+    <div class="rm-legend small"><span class="lg comf"></span>comfortable reach (${d.percentile}th percentile of each direction's movements)
+      <span class="lg far"></span>farthest <span class="lg reach"></span>a movement's farthest point
+      <span class="lg prop"></span>this map's values <span class="lg cur"></span>${esc(who || "the profile")}'s now</div>
+    <table class="save-rows rm-table"><tr><th></th><th>Reach</th><th>${esc(who || "Profile")} now</th><th>This map</th><th></th></tr>${rows}</table>
+    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save ticked to ${esc(who)}'s reach` : "Choose the monkey to save"}</button>
+      <span class="muted small">The horizontal rail is ${(d.horizontal_dz * 100).toFixed(1)} cm above this map's start (${esc(d.horizontal_dz_how)}).</span></div>
+    <details class="rm-sectors"><summary class="small">Every direction</summary><table class="save-rows"><tr><th>Direction</th><th>Movements</th><th>Comfortable</th><th>Farthest</th><th>Box</th></tr>
+      ${d.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td class="v">${cm(r.comfortable_m)}${r.arm_limited ? " ⚠" : ""}</td><td class="v">${cm(r.farthest_m)}</td><td class="v">${cm(r.wall_m)}</td></tr>`).join("")}</table></details>`;
+  const b = $("#rm-save");
+  if (b) b.onclick = async () => {
+    const values = {};
+    REACH_DIRS.forEach(([k], i) => { if ($(`#rmv${i}`).checked) values[k] = d.proposal[k].value; });
+    if (!Object.keys(values).length) { toast("Tick at least one direction", "err"); return; }
+    if (!confirm(`Save ${Object.entries(values).map(([k, v]) => `${k.slice(6, -2)} ${cm(v)}`).join(", ")} to ${who}'s reach? The rail tasks use it from their next Start.`)) return;
+    await act(() => api("/api/profile/save", { exp: "reach_map", values, reach_map_run: d.run, note: `Reach Map ${d.run}` }), `Saved to ${who}'s reach`);
+    refreshSession(true);
+  };
 }
 
 function renderMonitor() {

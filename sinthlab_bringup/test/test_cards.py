@@ -30,6 +30,7 @@ def test_pretraining_cards_and_their_variants():
             cards.setdefault(e.card or e.key, []).append((e.variant, e.key))
     assert cards == {
         "free_move": [("", "free_move")],
+        "reach_map": [("", "reach_map")],
         "restricted_move": [("Horizontal", "restricted_move_horizontal"), ("Vertical", "restricted_move_vertical")],
         "cued_reach": [("Horizontal", "move_horizontal"), ("Vertical", "move_vertical")],
     }

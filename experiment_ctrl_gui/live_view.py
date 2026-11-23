@@ -153,7 +153,7 @@ class LiveView:
         elif key == "maze":
             self._maze(p, a, add)
         elif key in ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                     "restricted_move_vertical", "colour_rule", "n_choice"):
+                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map"):
             self._free_move(p, a, add)
         return {"experiment": key, "shapes": shapes, "anchor": a.tolist(), "start": start.tolist(),
                 "model": real, "version": self._version + 1}

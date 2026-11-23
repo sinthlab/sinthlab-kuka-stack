@@ -417,3 +417,27 @@ table.hist tr.changed td.today { color: var(--warn); font-weight: 600; }
 .reward-head .reward-now { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 .reward-head .btn { margin-left: auto; }
 .param .ctl .btn.step { padding: 3px 7px; font-family: var(--mono); flex: none; }
+
+/* ---------- the Reach Map view ---------- */
+.reach-svg { width: 100%; height: auto; display: block; background: var(--panel-2); border-radius: 8px; margin: 4px 0; }
+.reach-svg .rm-box { fill: none; stroke: var(--muted); stroke-dasharray: 5 4; }
+.reach-svg .rm-rail { stroke: var(--line); stroke-width: 1; }
+.reach-svg .rm-pts circle { fill: var(--muted); opacity: .18; }
+.reach-svg .rm-reach circle { fill: var(--info); opacity: .7; }
+.reach-svg .rm-comf { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 2.5; }
+.reach-svg .rm-far { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: .8; }
+.reach-svg .rm-limited { fill: none; stroke: var(--err); stroke-width: 2; }
+.reach-svg .rm-prop { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+.reach-svg .rm-cur { fill: none; stroke: var(--ink); stroke-width: 2; }
+.reach-svg .rm-start { stroke: var(--ink); stroke-width: 2; }
+.reach-svg .rm-label { fill: var(--muted); font-size: 11px; }
+.rm-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; color: var(--muted); margin: 4px 0 8px; }
+.rm-legend .lg { display: inline-block; width: 14px; height: 10px; margin-right: 4px; vertical-align: -1px; border-radius: 2px; }
+.rm-legend .lg.comf { background: color-mix(in srgb, var(--accent) 20%, transparent); border: 2px solid var(--accent); }
+.rm-legend .lg.far { border-top: 2px dashed var(--accent); height: 0; }
+.rm-legend .lg.reach { background: var(--info); border-radius: 50%; width: 8px; height: 8px; }
+.rm-legend .lg.prop { background: var(--accent); border-radius: 50%; width: 10px; }
+.rm-legend .lg.cur { border: 2px solid var(--ink); border-radius: 50%; width: 8px; height: 8px; }
+.rm-table td.warn { color: var(--warn); }
+.rm-sectors { margin-top: 8px; }
+.rm-sectors summary { cursor: pointer; }

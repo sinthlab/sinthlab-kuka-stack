@@ -143,7 +143,8 @@ def load(subject: str) -> Optional[dict]:
     by_task = {t: {f"reward.{k}": v for k, v in (d or {}).items() if f"reward.{k}" in BY_NAME}
                for t, d in (doc.get("reward_by_task") or {}).items()}
     return {"subject": subject, "version": int(doc.get("version", 0)), "updated": str(doc.get("updated", "")),
-            "values": values, "reward_by_task": by_task, "missing": missing}
+            "values": values, "reward_by_task": by_task, "missing": missing,
+            "reach_map": doc.get("reach_map")}       # the Reach Map run the reach was last set from, if any
 
 
 def check(values: Dict[str, object]) -> Optional[str]:
@@ -168,7 +169,7 @@ def coerce_field(name: str, raw, like) -> object:
 
 
 def save(subject: str, values: Dict[str, object], by: str, by_task: Optional[Dict[str, Dict[str, object]]] = None,
-         note: str = "") -> dict:
+         note: str = "", reach_map: Optional[dict] = None) -> dict:
     """Write the profile (values merged over the current one), bump its version, log the change."""
     cur = load(subject)
     old_vals = dict(cur["values"]) if cur else defaults()
@@ -204,11 +205,14 @@ def save(subject: str, values: Dict[str, object], by: str, by_task: Optional[Dic
                         if old_by_task.get(t, {}).get(n) != new_by_task.get(t, {}).get(n)}
                     for t in set(old_by_task) | set(new_by_task)}
     task_changes = {t: c for t, c in task_changes.items() if c}
-    if cur and not changes and not task_changes:
+    if cur and not changes and not task_changes and reach_map is None:
         return cur
     version = (cur["version"] if cur else 0) + 1
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     doc = {"subject": subject, "version": version, "updated": stamp, **_nest(new_vals)}
+    kept_map = reach_map if reach_map is not None else (cur or {}).get("reach_map")
+    if kept_map:
+        doc["reach_map"] = kept_map
     if new_by_task:
         doc["reward_by_task"] = {t: {n.split(".", 1)[1]: v for n, v in d.items()} for t, d in new_by_task.items()}
     folder().mkdir(parents=True, exist_ok=True)
@@ -220,7 +224,8 @@ def save(subject: str, values: Dict[str, object], by: str, by_task: Optional[Dic
     tmp.replace(path_for(subject))
     with open(folder() / f"{subject}.changes.jsonl", "a") as fh:
         fh.write(json.dumps({"time": stamp, "version": version, "by": by, "note": note,
-                             "changes": changes, "reward_by_task": task_changes}) + "\n")
+                             "changes": changes, "reward_by_task": task_changes,
+                             **({"reach_map_run": reach_map.get("run")} if reach_map else {})}) + "\n")
     return load(subject)
 
 

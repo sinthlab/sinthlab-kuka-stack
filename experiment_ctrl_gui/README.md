@@ -196,6 +196,19 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
 - **New monkey:** *New monkey...* in the picker creates a profile from the defaults (the same values every
   task's YAML has, so nothing changes until it is tuned); for a subject with recordings but no profile,
   *Create from <task>* takes the selected task's current values. `test` never has a profile.
+- **Reach Map** (Pre-training card; `config/reach_map.yaml`, [`reach_view.py`](reach_view.py),
+  [`helpers/reach_map.py`](../sinthlab_bringup/sinthlab_bringup/helpers/reach_map.py)): measures the reach
+  instead of guessing it, once or twice per animal. Free Move in the frontal plane from the vertical tasks'
+  start, inside its own box; tabs **Long moves** (every movement of at least `long_move.min_m` pays) and
+  **New best** (`long_move.reward: new_best`: a movement pays when it goes at least `reach_map.margin_m`
+  farther than any before it in its direction, of `reach_map.sectors`; bests last the whole run), switchable
+  mid-session. Its Run monitor is the map, read from the run's trajectory CSVs as they are written
+  (`GET /api/reach_map`, redrawn every 5 s while running): where the hand went, each OUTWARD movement's
+  farthest point, the comfortable reach per direction (`reach_map.percentile`, 80) and the farthest, the box.
+  A direction whose reach ends at the box is **arm-limited** (the arm, not the monkey, stopped it; not ticked
+  for saving). Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail (that
+  rail runs near the top of the arm's workspace, where the box cuts every reach short). *Save ticked to
+  <monkey>'s reach* writes them into the profile with a record of the map (`reach_map` in the profile file).
 - **Start** uses the monkey chosen on the page. Typing another ID in the Start dialog selects that monkey
   first and asks you to check its settings before starting.
 
@@ -378,9 +391,10 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
 | GET | `/api/profile` | the chosen monkey, its profile, the profile layout, profile names, recent subjects, its change log |
+| GET | `/api/reach_map[?run=<folder name>]` | the Reach Map view: this (or the given, or the latest) Reach Map run's points, outward reaches, reach per direction and the four proposed profile values |
 | GET | `/api/profile/diff?exp=<exp>` | Save to profile: the profile fields where that task's values in effect differ |
 | POST | `/api/subject` `{subject}` | choose the monkey; its profile applies to every free-move task (refused while a run for another subject is going) |
-| POST | `/api/profile/save` `{values, task_only, exp, note, from_task}` | write the chosen monkey's profile (a new version); `task_only` = rewards for `exp` only (null = back to the profile's); `from_task` = start from `exp`'s values |
+| POST | `/api/profile/save` `{values, task_only, exp, note, from_task, reach_map_run}` | write the chosen monkey's profile (a new version); `task_only` = rewards for `exp` only (null = back to the profile's); `from_task` = start from `exp`'s values; `reach_map_run` = keep a record of that Reach Map run with the reach |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal. With `nsp_sync.enabled`, first sends the cabinet the experiment start pulse (`PULSE <nsp_sync.experiment_start_output> <width>`) and logs when it was sent and the answer |
 | POST | `/api/stop` | the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking) |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
