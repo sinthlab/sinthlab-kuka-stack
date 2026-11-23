@@ -413,6 +413,9 @@ def make_handler(app: App):
                     "run_name": e.run_name, "smartpad": e.smartpad(), "group": e.group,
                     "paradigms": [{"key": k, "label": lab} for k, lab in e.paradigms],
                     "paradigm_param": e.paradigm_param,
+                    # Cards holding several experiments (experiments.CARDS): the card and this one's variant.
+                    "card": e.card, "card_label": ex.CARDS.get(e.card, ("", ""))[0] if e.card else "",
+                    "card_summary": ex.CARDS.get(e.card, ("", ""))[1] if e.card else "", "variant": e.variant,
                 } for e in ex.EXPERIMENTS])
             if path == "/api/groups":
                 return self._json([{"key": k, "label": v} for k, v in ex.GROUPS])

@@ -42,7 +42,8 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # The free-move node's tasks: the admittance's equilibrium offset and hand force
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
-ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")
+ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
+                    "restricted_move_vertical", "colour_rule", "n_choice")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three

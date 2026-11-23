@@ -22,11 +22,11 @@
       force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
       penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
-    # PRE-TRAINING: MOVE VERTICAL. Free Move on one VERTICAL rail through the start -- one leg of the
-    # maze. The arm goes up or down wherever it is pushed and stays where it is let go; across the rail
-    # the cabinet spring holds it on the rail. No threshold. It runs as one SESSION until session_sec runs
-    # out (or Stop), then parks; within it, centre-out reaches to the rail's ends are rewarded (the
-    # centre_out block below).
+    # PRE-TRAINING: CUED REACHES, VERTICAL (the Cued Reaches card, Vertical; experiment key
+    # move_vertical, as on main). Free Move on one VERTICAL rail through the start, ONE CENTRE-OUT REACH PER
+    # TRIAL (up or down): either end, a cued end, or one end only -- the card's mode tabs, switchable
+    # mid-session (the centre_out block below). Free movement on the rail without a target is the
+    # Restricted Move card.
     #
     # HOW: as Free Move (actions/admittance_move.py) with free_move.rail_axis z: only the hand's force
     # along the rail moves the equilibrium, only along the rail, and never past its ends.
@@ -45,7 +45,7 @@
     #
     # GRAVITY: the equilibrium is moved by force, never copied from the arm, so an untouched arm holds
     # its height on the rail (as in Free Move); the floor still applies below.
-    experiment: "move_vertical"  # free_move | move_vertical | move_horizontal: the same node, set by this YAML
+    experiment: "move_vertical"  # Cued Reaches, vertical: the experiment this YAML runs, on the free-move node
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved

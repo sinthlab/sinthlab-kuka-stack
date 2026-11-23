@@ -1586,24 +1586,34 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 (the diagonals especially); then push out along each rail and check the junction at the start is smooth,
 with no snag when committing to a rail.
 
-### Pre-training — Free Move, Move Vertical, Move Horizontal
-Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
-they are under the **Pre-training** tab. All three:
+### Pre-training — Free Move, Restricted Move, Cued Reaches
+Short tasks that get a subject used to the arm before the real experiments. In the dashboard they are
+three cards under the **Pre-training** tab:
+
+| Card | Tabs | Experiments (each its own YAML and launch file) |
+|---|---|---|
+| **Free Move** | Session · Long moves | `free_move` |
+| **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
+| **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Cued end · Left / Down only · Right / Up only | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
+
+A card with a **Rail** row holds two experiments, one per rail, each with its own settings and start
+pose; the rail is fixed during a run, and the card reopens on the rail last used. All of them:
 
 - start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject, with the
-  CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except **Move
-  Vertical**, which starts **5 cm lower**, in the middle of its rail, with its own posture
+  CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except the **vertical**
+  rail, which starts **5 cm lower**, in the middle of its rail, with its own posture
   `config/clik_nullspace_pretrain_vertical.yaml`;
 - run on the CLIK, like the maze;
-- have no threshold. Free Move runs as one **session**, for `session_sec` or until **■ Stop**, then the
-  arm parks; in Move Vertical / Horizontal each trial is one **centre-out reach**.
+- have no threshold. Free Move and Restricted Move run as one **session** per trial, for `session_sec`
+  or until **■ Stop**, then the arm parks; in Cued Reaches each trial is one **centre-out reach**.
 - record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
 | **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere in a box around the start (9 × 40 × 12 cm); it stays where it is let go | the session running its full `session_sec` |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Cued Reaches · Vertical** (`move_vertical`) | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Cued Reaches · Horizontal** (`move_horizontal`) | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Restricted Move · Vertical / Horizontal** | `iiwa7_pretrain_restricted_move_vertical.launch.py` / `…_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it along the rail, as above | the session running its full `session_sec` |
 
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
 (`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.

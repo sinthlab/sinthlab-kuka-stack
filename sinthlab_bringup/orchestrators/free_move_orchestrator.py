@@ -32,8 +32,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
     No threshold. A trial is one free-movement SESSION that runs for session_sec, or, with session_sec
     0, until Stop.
 
-    One node, three tasks, set by the YAML's `experiment`: free_move (in a box around the start), move_vertical and
-    move_horizontal (the same admittance on one rail through the start: free_move.rail_axis).
+    One node, several tasks, set by the YAML's `experiment`: free_move (in a box around the start);
+    restricted_move_horizontal / _vertical (the same admittance on one rail through the start,
+    free_move.rail_axis, a session per trial); move_horizontal / move_vertical (the Cued Reaches card: that
+    rail with one centre-out reach per trial); colour_rule; n_choice.
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
@@ -57,7 +59,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         super().__init__("free_move_orchestrator", automatically_declare_parameters_from_overrides=True)
         AudioCue.warmup(self)
         VisualCue.warmup(self)
-        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal | colour_rule | n_choice
+        self.experiment = str(get_required_param(self, "experiment"))   # see the class doc
 
         geometry = {k: get_required_param(self, k) for k in CHOICE_GEOMETRY if self.has_parameter(k)}
         problem = choice_geometry_problem(geometry)

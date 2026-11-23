@@ -62,6 +62,11 @@ class Experiment:
     # Parameters fixed by the task itself, not shown in the dashboard (the colour rule: centre_out.target is
     # always "rule"). The YAML holds them; the node refuses another value.
     hidden: Tuple[str, ...] = ()
+    # One CARD can hold several experiments, one per variant (Restricted Move and Cued Reaches: a horizontal
+    # and a vertical rail, each its own YAML, launch file and start pose). The card shows a row of variant
+    # tabs above its paradigm tabs. Empty: the experiment is a card of its own.
+    card: str = ""
+    variant: str = ""
 
     def smartpad(self) -> Dict[str, str]:
         """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
@@ -129,6 +134,13 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
 # switch it during a run, from the next trial: one end only -> the other -> cued -> either.
 _CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
+# Cards holding several experiments (Experiment.card): key -> (label, summary).
+CARDS = {
+    "restricted_move": ("Restricted Move", "Free Move held to one rail, horizontal or vertical: the arm goes along "
+                        "it wherever it is pushed. A session per trial, rewarded when it runs its full length. No target."),
+    "cued_reach": ("Cued Reaches", "One reach per trial along a rail, horizontal or vertical, from the centre to an "
+                   "end: either end, a cued end, or one end only (switchable mid-session). The goal end is rewarded."),
+}
 _CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
 _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
 EXPERIMENTS += [
@@ -144,9 +156,46 @@ EXPERIMENTS += [
         paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
+    # Restricted Move: Free Move held to one rail, a session per trial, rewarded at its end. No target.
     Experiment(
-        key="move_vertical", label="Move Vertical", group="pretraining",
-        summary="Free Move on one vertical rail, centre-out: reaches from the centre up or down to an end of the rail are rewarded. No threshold.",
+        key="restricted_move_horizontal", label="Restricted Move · Horizontal", group="pretraining",
+        summary=CARDS["restricted_move"][1], card="restricted_move", variant="Horizontal",
+        launch_file="iiwa7_pretrain_restricted_move_horizontal.launch.py",
+        params_yaml="pretrain_restricted_move_horizontal.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("restricted_move_horizontal"),
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_restricted_move_horizontal",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+    Experiment(
+        key="restricted_move_vertical", label="Restricted Move · Vertical", group="pretraining",
+        summary=CARDS["restricted_move"][1], card="restricted_move", variant="Vertical",
+        launch_file="iiwa7_pretrain_restricted_move_vertical.launch.py",
+        params_yaml="pretrain_restricted_move_vertical.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("restricted_move_vertical"),
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_restricted_move_vertical",
+        # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
+    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, a cued end, or one
+    # end only. The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
+    # their recordings stay comparable with earlier ones.
+    Experiment(
+        key="move_horizontal", label="Cued Reaches · Horizontal", group="pretraining",
+        summary=CARDS["cued_reach"][1], card="cued_reach", variant="Horizontal",
+        launch_file="iiwa7_pretrain_move_horizontal.launch.py",
+        params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("move_horizontal"),
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_pretrain_move_horizontal",
+        paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+    Experiment(
+        key="move_vertical", label="Cued Reaches · Vertical", group="pretraining",
+        summary=CARDS["cued_reach"][1], card="cued_reach", variant="Vertical",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("move_vertical"),
@@ -156,17 +205,6 @@ EXPERIMENTS += [
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
-    ),
-    Experiment(
-        key="move_horizontal", label="Move Horizontal", group="pretraining",
-        summary="Free Move on one horizontal rail, centre-out: reaches from the centre left or right to an end of the rail are rewarded. No threshold.",
-        launch_file="iiwa7_pretrain_move_horizontal.launch.py",
-        params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
-        stiffness_profile=required_profile("move_horizontal"),
-        ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_move_horizontal",
-        paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
-        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]
 # The colour rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail

@@ -19,7 +19,7 @@ const STEPS = {
 };
 // Pre-training. Free Move: each trial is one session, ended by session_sec or Stop. Move Vertical /
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
-STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+STEPS.restricted_move_horizontal = STEPS.restricted_move_vertical = STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
 STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
                   "trial_end", "release_wait", "released"];
@@ -68,6 +68,10 @@ const PHASE_TEXT_BY_EXP = {
               choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
   colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
                  reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
+  restricted_move_horizontal: { armed: "free move on the rail", session_end: "session over — waiting for release",
+                                release_wait: "waiting for release" },
+  restricted_move_vertical: { armed: "free move on the rail", session_end: "session over — waiting for release",
+                              release_wait: "waiting for release" },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
@@ -166,7 +170,7 @@ function paradigmOf(key, upcoming = false) {
 function expLabel(key) {
   const e = exp(key); if (!e) return key ?? "";
   const pr = (e.paradigms || []).find((x) => x.key === paradigmOf(key));
-  return pr ? `${e.label} · ${pr.label}` : e.label;
+  return pr ? `${e.label} · ${pr.label}` : e.label;      // e.label already names a card's variant
 }
 function stepsFor(key) {
   if (key === "apple_pluck" && paradigmOf(key) === "perturb") return STEPS.apple_pluck_perturb;
@@ -175,6 +179,19 @@ function stepsFor(key) {
 }
 
 // ---------------------------------------------------------------- experiments list
+// Cards: an experiment is a card of its own, unless it shares one (Experiment.card: Restricted Move and Cued
+// Reaches each hold a horizontal and a vertical experiment). A card with several shows a variant row (Rail)
+// above the selected experiment's paradigm tabs; the variant last used on a card is remembered.
+function cardsOf(group) {
+  const cards = [];
+  for (const e of S.experiments.filter((x) => x.group === group)) {
+    const key = e.card || e.key;
+    let c = cards.find((x) => x.key === key);
+    if (!c) { c = { key, label: e.card_label || e.label, summary: e.card_summary || e.summary, members: [] }; cards.push(c); }
+    c.members.push(e);
+  }
+  return cards;
+}
 function renderExperiments() {
   const list = $("#exp-list");
   const rk = runningKey();
@@ -188,59 +205,87 @@ function renderExperiments() {
     S.group = t.dataset.group; renderExperiments();
   });
   list.innerHTML = "";
-  for (const e of S.experiments.filter((x) => x.group === S.group)) {
+  for (const c of cardsOf(S.group)) {
+    const sel = c.members.find((m) => m.key === S.selected);
+    const runningMember = c.members.find((m) => m.key === rk);
+    const target = sel || runningMember || c.members.find((m) => m.key === store.get(`variant.${c.key}`)) || c.members[0];
     const b = document.createElement("button");
     b.className = "exp"; b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(e.key === S.selected));
-    const edits = S.app ? S.app.edited[e.key] : 0;
-    b.innerHTML = `<div class="t">${esc(e.label)}
-        ${rk === e.key ? '<span class="tag running">running</span>' : ""}
+    b.setAttribute("aria-checked", String(!!sel));
+    const edits = S.app ? c.members.reduce((n, m) => n + (S.app.edited[m.key] || 0), 0) : 0;
+    b.innerHTML = `<div class="t">${esc(c.label)}
+        ${runningMember ? '<span class="tag running">running</span>' : ""}
         ${edits ? `<span class="tag edited">${edits} edited</span>` : ""}</div>
-      <div class="d">${esc(e.summary)}</div>`;
-    b.onclick = () => select(e.key);
+      <div class="d">${esc(c.summary)}</div>`;
+    b.onclick = () => select(target.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
-    // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
-    // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
-    // trial, and the tab waiting for the next trial is marked.
-    if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
-      const running = rk === e.key, live = running && paradigmIsLive(e.key);
-      const run = running ? runningParadigm(e.key) : { now: null, next: null };
-      const cur = paradigmOf(e.key), locked = running && !live;
-      const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
-      sub.setAttribute("aria-label", `${e.label} paradigm`);
-      for (const pr of e.paradigms) {
+    if (!sel) continue;
+    // The variant row (Rail: Horizontal / Vertical): each is its own experiment (YAML, launch, start pose),
+    // so it is fixed while one of the card's experiments runs.
+    if (c.members.length > 1) {
+      const locked = !!runningMember;
+      const row = document.createElement("div"); row.className = "tabs paradigm-tabs variant-tabs"; row.setAttribute("role", "tablist");
+      row.setAttribute("aria-label", `${c.label} rail`);
+      for (const m of c.members) {
         const t = document.createElement("button");
-        const isNext = pr.key === run.next;
-        t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
-        t.setAttribute("aria-selected", String(pr.key === cur));
-        t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
-        t.disabled = locked && pr.key !== cur;
-        t.title = locked ? "Fixed for this run — stop to change it"
-          : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
-          : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
-        t.onclick = async () => {
-          if (locked) return;
-          if (live) {          // the status update that follows re-renders the tabs
-            if (pr.key === (run.next ?? cur)) return;
-            await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
-                      `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
-            return;
-          }
-          if (pr.key === cur) return;
-          await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
-          await loadParams(e.key, true); renderExperiments(); renderControls();
-        };
-        sub.appendChild(t);
+        const on = m.key === sel.key;
+        t.className = `tab${on ? " active" : ""}`; t.setAttribute("role", "tab"); t.setAttribute("aria-selected", String(on));
+        t.textContent = m.variant || m.label;
+        t.disabled = locked && !on;
+        t.title = locked ? "Fixed for this run — stop to change it" : `${c.label} on the ${(m.variant || "").toLowerCase()} rail`;
+        t.onclick = () => { if (!locked && !on) select(m.key); };
+        row.appendChild(t);
       }
       const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-      lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
-      list.appendChild(lbl); list.appendChild(sub);
+      lbl.textContent = locked ? "Rail (fixed for this run)" : "Rail";
+      list.appendChild(lbl); list.appendChild(row);
     }
+    renderParadigmTabs(sel, list, rk);
+  }
+}
+function renderParadigmTabs(e, list, rk) {
+  // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
+  // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
+  // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
+  // trial, and the tab waiting for the next trial is marked.
+  if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
+    const running = rk === e.key, live = running && paradigmIsLive(e.key);
+    const run = running ? runningParadigm(e.key) : { now: null, next: null };
+    const cur = paradigmOf(e.key), locked = running && !live;
+    const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
+    sub.setAttribute("aria-label", `${e.label} paradigm`);
+    for (const pr of e.paradigms) {
+      const t = document.createElement("button");
+      const isNext = pr.key === run.next;
+      t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
+      t.setAttribute("aria-selected", String(pr.key === cur));
+      t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
+      t.disabled = locked && pr.key !== cur;
+      t.title = locked ? "Fixed for this run — stop to change it"
+        : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
+        : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+      t.onclick = async () => {
+        if (locked) return;
+        if (live) {          // the status update that follows re-renders the tabs
+          if (pr.key === (run.next ?? cur)) return;
+          await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
+                    `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
+          return;
+        }
+        if (pr.key === cur) return;
+        await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
+        await loadParams(e.key, true); renderExperiments(); renderControls();
+      };
+      sub.appendChild(t);
+    }
+    const lbl = document.createElement("div"); lbl.className = "paradigm-label";
+    lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
+    list.appendChild(lbl); list.appendChild(sub);
   }
 }
 async function select(key) {
   S.selected = key; store.set("exp", key);
+  if (exp(key)?.card) store.set(`variant.${exp(key).card}`, key);   // the card reopens on this rail
   if (!runningKey()) { SV.data = SV.hist = null; setTimeout(() => refreshSession(true), 0); }
   S.group = exp(key)?.group ?? S.group;
   renderExperiments(); renderChecklist();

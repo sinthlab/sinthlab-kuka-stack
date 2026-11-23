@@ -126,6 +126,9 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
     "move_vertical": _FREE,
     "move_horizontal": _FREE,
+    # Restricted Move: Free Move on one rail, a session per trial (no centre-out reach).
+    "restricted_move_horizontal": _FREE,
+    "restricted_move_vertical": _FREE,
     # The colour rule: the same node and feel; Rail / No rail (free_move.rail_axis) is per-run, and the
     # centre-out mode is fixed to the rule (so not centre_out.*: only the reach distances are live).
     "colour_rule": [x for x in _FREE if x != "centre_out.*"] + ["centre_out.end_tol_m", "centre_out.free_reach_m"],
