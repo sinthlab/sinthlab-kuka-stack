@@ -186,3 +186,42 @@ def test_subject_ids():
     for bad in ("", "  ", "M 1", "-M1", "x" * 40, "M1;rm"):
         with pytest.raises(ValueError):
             server.check_subject(bad)
+
+
+# ---------------------------------------------------------------- today vs recent sessions (dashboard view E)
+def test_summarize_takes_typed_rows_as_the_demo_builds_them():
+    rows = [ot.trial_row(good_reach(1)), ot.trial_row(good_reach(2, 10))]        # ints, not CSV strings
+    row = ot.summarize("demo_run", rows, {"reward_pulse.pulse_ms": 500, "centre_out.target": "left"},
+                       {"reward_pulse.pulse_ms": 350, "centre_out.target": "left"})
+    assert (row["n_trials"], row["n_success"], row["success_pct"], row["n_rewards"]) == (2, 2, 100.0, 2)
+    assert "reward_pulse.pulse_ms=500" in row["settings"]
+    assert row["changed"] == "reward_pulse.pulse_ms: 500 -> 350"
+    assert ot.summarize("empty", [], {}, {}) is None
+
+
+def test_settings_for_adds_the_common_ones_once():
+    s = ot.settings_for("colour_rule")
+    assert s[0] == "free_move.rail_axis" and "quiet_window_sec" in s and s.count("reward_pulse.pulse_ms") == 1
+    assert "reward_pulse.pulse_ms" in ot.settings_for("maze")                    # no class of its own
+
+
+def test_parse_settings_round_trips():
+    row = ot.summarize("r", [ot.trial_row(good_reach(1))],
+                       {"centre_out.target": "left", "reward_pulse.pulse_ms": 500, "quiet_window_sec": 2.0}, {})
+    assert ot.parse_settings(row["settings"]) == {"centre_out.target": "left", "reward_pulse.pulse_ms": "500",
+                                                  "quiet_window_sec": "2.0"}
+    assert ot.parse_settings("") == {}
+
+
+def test_history_filters_by_experiment_and_subject_oldest_first(tmp_path):
+    path = tmp_path / "sessions.csv"
+    for k, (subj, exp, ms) in enumerate([("M1", "colour_rule", 400), ("M2", "colour_rule", 300),
+                                         ("M1", "n_choice", 200), ("M1", "colour_rule", 450),
+                                         ("M1", "colour_rule", 500), ("M1", "colour_rule", 550)]):
+        ot.upsert_session({"run": f"r{k}", "date": f"2026-11-{10 + k}", "start": "09:00", "subject": subj,
+                           "experiment": exp, "settings": f"reward_pulse.pulse_ms={ms}"}, path)
+    h = ot.history("colour_rule", "M1", 3, path)
+    assert [x["run"] for x in h] == ["r3", "r4", "r5"]
+    assert [x["settings_dict"]["reward_pulse.pulse_ms"] for x in h] == ["450", "500", "550"]
+    assert len(ot.history("colour_rule", "", 0, path)) == 5                    # every subject, every session
+    assert ot.history("maze", "M1", 3, path) == []

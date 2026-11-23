@@ -95,8 +95,21 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 ### The page
 - **Left column:** the experiment list (tabs **Experiments** and **Pre-training**), the **Run** controls, and a **Before you start** checklist
   with the SmartPad selections for the chosen experiment.
-- **Middle column:** the **status**, then the **parameters**. Status shows the trial number, the
-  current phase, the trial's steps, and a list of every event.
+- **Middle column:** the **status**, the **session card**, then the **parameters**. Status shows the
+  trial number, the current phase, the trial's steps, and a list of every event.
+- **Session card**, two tabs, built on the [behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv):
+  - **Run monitor** (shown while a run is going): this run's `trials.csv` as it grows, or the last run
+    between runs. Trials, % success, rewards and valve time; % correct over the last 20 choices; the
+    colour rule's block and mapping; N-choice's recent payoff and % best choices; a strip of every trial's
+    outcome (grouped by block for the colour rule; hover a cell for the trial); outcome counts; choices per
+    block (the colour rule: falling counts mean faster reversals) or per direction (N-choice).
+  - **Today vs recent** (shown between runs): for the selected experiment and subject, each key setting
+    in the last three sessions (`sessions.csv`) beside today's value (● where it differs from last
+    session), and the last session at a glance (trials, success, rewards, duration, the task's own
+    summary, what changed during it). **Same as last session** copies last session's values as per-run
+    edits; clicking an earlier value uses just that one. The settings are the task's own plus the common
+    ones (`outcome_tables.settings_for`).
+  - Demo mode keeps its sessions in a temporary folder, never beside real data.
 - **Log:** on the right on a wide screen, below on a narrow one.
 - **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
   run state. **Post-processing** (top right) archives a session as NWB, and **Diagnostics** opens the

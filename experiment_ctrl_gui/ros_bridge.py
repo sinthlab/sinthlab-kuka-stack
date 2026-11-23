@@ -18,7 +18,7 @@ import random
 import threading
 import time
 from collections import deque
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import experiments as ex
 from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for   # on the path via experiments
@@ -173,9 +173,16 @@ class DemoBridge:
         self._emit = emit
 
     # -- the runner calls these when the (fake) launch starts and ends
-    def launch_started(self, exp: ex.Experiment, params: Dict[str, object]) -> None:
+    def launch_started(self, exp: ex.Experiment, params: Dict[str, object], subject: str = "") -> None:
         with self._lock:
             self._run_id += 1
+            # The behavioural tables, as the recorder would write them: one trials.csv row per trial
+            # (outcome_tables.trial_row on a sidecar-like record), and a sessions.csv row at the end.
+            self._subject = subject
+            self._run = f"demo_{exp.run_name}_{time.strftime('%Y%m%d_%H%M%S')}"
+            self._meta: Optional[dict] = None
+            self._metas: List[dict] = []
+            self.trial_rows: List[dict] = []
             self._exp = exp
             self._params = dict(params)
             self._effective = {k: v for k, v in params.items() if ex.live_params.is_live(exp.key, k)}
@@ -195,6 +202,15 @@ class DemoBridge:
         with self._lock:
             self._run_id += 1
             self._status = None
+            rows, metas, run = list(getattr(self, "trial_rows", [])), list(getattr(self, "_metas", [])), getattr(self, "_run", "")
+        if rows:      # the demo session's sessions.csv row, in the demo data folder
+            row = ex.outcome_tables.summarize(run, rows, metas[0]["params"], metas[-1]["params"])
+            ex.outcome_tables.upsert_session(row, ex.DATA / ex.outcome_tables.SESSIONS_CSV)
+
+    def run_rows(self) -> List[dict]:
+        """This (or the last) demo run's trials.csv rows."""
+        with self._lock:
+            return list(getattr(self, "trial_rows", []))
 
     def _log(self, text: str, level: str = "INFO") -> None:
         if self._emit:
@@ -218,6 +234,12 @@ class DemoBridge:
 
     def _phase_to(self, phase: str, arg=None, log: Optional[str] = None) -> None:
         self._phase, self._phase_arg, self._phase_t = phase, arg, time.time()
+        if phase == "trial_start":
+            self._meta = {"experiment": self._exp.key, "trial_index": arg, "subject": self._subject,
+                          "session_id": self._run, "params": {**self._params, **self._effective},
+                          "events": [], "rewards": [], "git": {"sha": "demo", "dirty": False}}
+        if self._meta is not None:
+            self._meta["events"].append({"event": phase, "arg": arg, "t_wall": self._phase_t})
         if log:
             self._log(log)
         self._publish()
@@ -226,6 +248,8 @@ class DemoBridge:
         """As helpers/experiment_control.py does on a successful outcome (REWARD_EVENTS)."""
         if self._effective.get("reward_pulse.enabled"):
             out, ms = self._effective.get("reward_pulse.output", 4), self._effective.get("reward_pulse.pulse_ms", 500)
+            if self._meta is not None:
+                self._meta["rewards"].append({"output": out, "ms": ms, "event": token})
             self._log(f"Reward: PULSE {out} {ms} (SYNC {out}, valve open {ms} ms) on {token}.")
 
     def _sleep(self, run_id: int, sec: float) -> bool:
@@ -268,6 +292,12 @@ class DemoBridge:
         finally:
             self._in_trial = False
         self._phase_to("trial_end", self._trial, f"--- TRIAL {self._trial} OVER ---")
+        if self._meta is not None:
+            row = ex.outcome_tables.trial_row(self._meta, self._run)
+            with self._lock:
+                self.trial_rows.append(row)
+                self._metas.append(self._meta)
+            self._meta = None
         self._phase_to("recover_start", None, "Parking.")
         return self._sleep(run_id, 1.5)
 
@@ -313,6 +343,8 @@ class DemoBridge:
                                        float(e.get("n_choice.deplete", 0.3)), float(e.get("n_choice.recover", 0.1)))
                 if not self._sleep(run_id, random.uniform(1.0, 2.5)):
                     return False
+                if self._meta is not None:
+                    self._meta["n_choice"] = {"p": self._bandit.probabilities(), "best": self._bandit.best()}
                 weights = [p ** 3 for p in self._bandit.p]
                 name = random.choices(self._bandit.names, weights=weights)[0]
                 p = self._bandit.probabilities()[name]
@@ -339,6 +371,8 @@ class DemoBridge:
                     mapping = self._rule.mapping() if self._rule.take_reversal() else None
                     if mapping:
                         self._phase_to("reversal", mapping, f"(operator only) Colour rule: now {mapping}.")
+                    if self._meta is not None:
+                        self._meta["rule"] = self._rule.state()
                     colour = self._rule.draw_colour()
                     target = self._rule.end_for(colour)
                     self._phase_to("cue_colour", colour, "")

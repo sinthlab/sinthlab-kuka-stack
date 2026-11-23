@@ -322,29 +322,27 @@ def _fmt(v) -> str:
     return json.dumps(v) if isinstance(v, (list, dict)) else str(v)
 
 
-def session_row(run_folder) -> Optional[dict]:
-    """The run's sessions.csv row, from its trials.csv and sidecars; None if it has no trials."""
-    folder = Path(run_folder)
-    rows = read_trials(folder)
-    metas = sidecars(folder)
-    if not rows or not metas:
+def summarize(run: str, rows: List[dict], first_params: dict, last_params: dict) -> Optional[dict]:
+    """A run's sessions.csv row from its trials.csv rows and the parameters at its first and last trial.
+    Used for recorded runs (session_row) and by the dashboard's demo mode alike."""
+    if not rows:
         return None
+    rows = [{k: "" if v is None else str(v) for k, v in r.items()} for r in rows]   # as read from the CSV
     exp = rows[0]["experiment"]
     task = tables_for(exp)
-    starts = [float(r["t_start"]) for r in rows if r["t_start"]]
-    ends = [float(r["t_end"]) for r in rows if r["t_end"]]
+    starts = [float(r["t_start"]) for r in rows if r.get("t_start")]
+    ends = [float(r["t_end"]) for r in rows if r.get("t_end")]
     t0 = min(starts) if starts else None
     with_outcome = [r for r in rows if r["success"] in ("0", "1")]
     n_ok = sum(r["success"] == "1" for r in rows)
     paradigms = list(dict.fromkeys(r["paradigm"] for r in rows if r["paradigm"]))
-    first, last = metas[0].get("params") or {}, metas[-1].get("params") or {}
-    settings = "; ".join(f"{k}={_fmt(first[k])}" for k in task.settings if k in first)
-    # What changed between the first and last trial, among the task's settings and every live parameter
-    # that a session would plausibly tune (all keys that differ).
+    first, last = first_params or {}, last_params or {}
+    settings = "; ".join(f"{k}={_fmt(first[k])}" for k in settings_for(exp) if k in first)
+    # Everything that changed between the first and the last trial (live changes during the run).
     changed = "; ".join(f"{k}: {_fmt(first[k])} -> {_fmt(last[k])}" for k in sorted(first)
                         if k in last and first[k] != last[k])
     row = {
-        "run": folder.name,
+        "run": run,
         "date": dt.datetime.fromtimestamp(t0).strftime("%Y-%m-%d") if t0 else "",
         "start": dt.datetime.fromtimestamp(t0).strftime("%H:%M") if t0 else "",
         "duration_min": round((max(ends) - t0) / 60.0, 1) if t0 and ends else "",
@@ -356,20 +354,36 @@ def session_row(run_folder) -> Optional[dict]:
         "n_rewards": sum(int(r["n_rewards"] or 0) for r in rows),
         "reward_ms": sum(int(r["reward_ms"] or 0) for r in rows),
         "settings": settings, "changed": changed,
-        "git_sha": " | ".join(dict.fromkeys(r["git_sha"] for r in rows if r["git_sha"])),
+        "git_sha": " | ".join(dict.fromkeys(r["git_sha"] for r in rows if r.get("git_sha"))),
     }
     extra = task.session_fields(rows)
     row.update({k: extra.get(k, "") for k in task.session_columns})
     return row
 
 
+def session_row(run_folder) -> Optional[dict]:
+    """The run's sessions.csv row, from its trials.csv and sidecars; None if it has no trials."""
+    folder = Path(run_folder)
+    rows = read_trials(folder)
+    metas = sidecars(folder)
+    if not rows or not metas:
+        return None
+    return summarize(folder.name, rows, metas[0].get("params") or {}, metas[-1].get("params") or {})
+
+
 def update_sessions(run_folder, sessions_csv=None) -> Optional[dict]:
-    """Add (or replace) the run's row in sessions.csv. Small file: rewritten whole, columns = the common
-    ones, then every task's own, in order of first appearance."""
+    """Add (or replace) the run's row in sessions.csv."""
     row = session_row(run_folder)
     if row is None:
         return None
-    path = Path(sessions_csv) if sessions_csv else Path(run_folder).parent / SESSIONS_CSV
+    upsert_session(row, Path(sessions_csv) if sessions_csv else Path(run_folder).parent / SESSIONS_CSV)
+    return row
+
+
+def upsert_session(row: dict, path) -> None:
+    """Add (or replace, by run) one row in sessions.csv. Small file: rewritten whole, columns = the common
+    ones, then every task's own, in order of first appearance."""
+    path = Path(path)
     rows = []
     if path.exists():
         with path.open(newline="") as f:
@@ -385,7 +399,35 @@ def update_sessions(run_folder, sessions_csv=None) -> Optional[dict]:
         w.writeheader()
         w.writerows(rows)
     os.replace(tmp, path)
-    return row
+
+
+# Settings worth comparing across sessions in every task, then each task's own (TaskTables.settings).
+COMMON_SETTINGS = ["reward_pulse.pulse_ms", "response_timeout_sec", "quiet_window_sec", "move_to_park.hold_sec",
+                   "quiet_gate.penalty_sec", "free_move.damping_ns_per_m"]
+
+
+def settings_for(experiment: str) -> List[str]:
+    """The settings sessions.csv keeps for an experiment (and the dashboard compares across sessions)."""
+    return list(dict.fromkeys(tables_for(experiment).settings + COMMON_SETTINGS))
+
+
+def parse_settings(text: str) -> Dict[str, str]:
+    """sessions.csv's `settings` cell -> {name: value as written}."""
+    out = {}
+    for part in str(text or "").split("; "):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def history(experiment: str, subject: str = "", n: int = 3, sessions_csv=None) -> List[dict]:
+    """The last n sessions of an experiment (for one subject, if given), oldest first, each with its
+    settings parsed (`settings_dict`)."""
+    rows = [r for r in read_sessions(sessions_csv) if r.get("experiment") == experiment
+            and (not subject or r.get("subject") == subject)]
+    out = rows[-n:] if n else rows
+    return [{**r, "settings_dict": parse_settings(r.get("settings", ""))} for r in out]
 
 
 def read_sessions(sessions_csv=None) -> List[dict]:

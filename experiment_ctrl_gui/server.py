@@ -24,6 +24,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -46,6 +47,9 @@ CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom hea
 class App:
     def __init__(self, demo: bool, robot_name: str) -> None:
         self._sessions_done: Optional[str] = None   # the last run folder added to sessions.csv
+        if demo:            # demo runs write their sessions.csv rows here, never beside real data
+            import tempfile
+            ex.DATA = Path(tempfile.mkdtemp(prefix="kuka_demo_data_"))
         self.demo = demo
         self.fake_board = cue_board.FakeBoard()      # the Diagnostics page's board, in --demo
         self.fake_cabinet = ttl.FakeCabinet()        # and its TTL outputs
@@ -209,7 +213,7 @@ class App:
             self.runner.emit(f"CLIK posture follows the edited start pose -> "
                              f"{overrides['clik_nullspace_cfg']}", "gui")
         if isinstance(self.bridge, DemoBridge):
-            self.bridge.launch_started(exp, p.current())
+            self.bridge.launch_started(exp, p.current(), subject)
         return {"ok": True}
 
     def _experiment_start_pulse(self, cfg: dict, logged: threading.Event) -> None:
@@ -285,6 +289,48 @@ class App:
             ok, text, ms = self.fake_board.call(cmd, params) if self.demo else cue_board.call(addr, cmd, params)
         return {"ok": ok, "text": text, "ms": round(ms, 1)}
 
+    # ------------------------------------------------------------------ the run monitor and the history
+    def run_trials(self, key: str) -> dict:
+        """The run monitor's data: the running run's trials.csv rows, or, between runs, the latest run of
+        `key` (so the monitor still shows how the last session went)."""
+        exp = self.running_experiment() or ex.BY_KEY.get(key)
+        if exp is None:
+            return {"experiment": key, "run": None, "rows": [], "running": False}
+        running = self.runner.running() and self.runner.experiment == exp.key
+        if isinstance(self.bridge, DemoBridge):
+            rows = self.bridge.run_rows() if getattr(self.bridge, "_exp", None) is exp else []
+            return {"experiment": exp.key, "run": getattr(self.bridge, "_run", None), "rows": rows, "running": running}
+        folder = self.data_folder() if running else None
+        if folder is None:
+            runs = sorted((p for p in ex.DATA.glob(f"expt_{exp.run_name}_*") if p.is_dir()),
+                          key=lambda p: p.stat().st_mtime)
+            folder = str(runs[-1]) if runs else None
+        rows = ex.outcome_tables.read_trials(folder) if folder else []
+        return {"experiment": exp.key, "run": Path(folder).name if folder else None, "rows": rows, "running": running}
+
+    def history(self, key: str, subject: str) -> dict:
+        """Today vs recent sessions: the last sessions of `key` for `subject`, and today's value of every
+        setting sessions.csv keeps for it (dashboard edits included)."""
+        exp = ex.BY_KEY.get(key)
+        if exp is None:
+            raise KeyError(f"unknown experiment {key}")
+        p = self.params[key]
+        current = p.current()
+        described = {d["name"]: d for d in p.describe()}
+        sessions = ex.outcome_tables.history(key, subject, 3, ex.DATA / ex.outcome_tables.SESSIONS_CSV)
+        settings = []
+        for name in ex.outcome_tables.settings_for(key):
+            if name not in current:
+                continue
+            d = described.get(name, {})
+            settings.append({"name": name, "today": current[name], "help": d.get("help", ""),
+                             "tier": d.get("tier", ""), "edited": bool(d.get("edited")),
+                             "history": [sess["settings_dict"].get(name, "") for sess in sessions]})
+        for sess in sessions:
+            sess.pop("settings_dict", None)
+        return {"experiment": key, "subject": subject, "sessions": sessions, "settings": settings,
+                "subjects": recent_subjects()}
+
     def ttl(self, addr: str, cmd: str) -> dict:
         """Diagnostics page: one command to the cabinet's TTL sync outputs (ttl.py). A test pulse
         during an experiment would land in its NSP recording as a trial edge, so only STATUS then."""
@@ -351,6 +397,12 @@ def make_handler(app: App):
                 return self._json(list(app.runner.lines))
             if path == "/api/subjects":           # for the Start dialog: most recent first
                 return self._json(recent_subjects())
+            if path == "/api/run/trials":         # the run monitor: this (or the last) run's trials.csv
+                q = parse_qs(urlparse(self.path).query)
+                return self._json(app.run_trials((q.get("exp") or [""])[0]))
+            if path == "/api/history":            # today vs recent sessions
+                q = parse_qs(urlparse(self.path).query)
+                return self._json(app.history((q.get("exp") or [""])[0], (q.get("subject") or [""])[0]))
             if path == "/api/post/state":
                 return self._json(app.post.state())
             return self._static(path)

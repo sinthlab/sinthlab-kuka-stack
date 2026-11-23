@@ -82,6 +82,16 @@
       </details>
     </div>
 
+    <!-- The run monitor (this run's trials.csv as it grows) and today vs recent sessions (sessions.csv). -->
+    <div class="card session-card">
+      <div class="tabs" role="tablist" aria-label="Session views">
+        <button class="tab" data-view="monitor" role="tab">Run monitor</button>
+        <button class="tab" data-view="history" role="tab">Today vs recent</button>
+        <span class="muted small session-sub" id="session-sub"></span>
+      </div>
+      <div id="session-view"></div>
+    </div>
+
     <div class="card params-card">
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
