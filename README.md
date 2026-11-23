@@ -324,6 +324,7 @@ pre-training launches also accept `clik_nullspace_cfg:=`.
 | `experiment_ctrl_gui/runs/<exp>_<time>.yaml` | the edited parameter copy a Start used (only when something was edited), plus `…_clik_nullspace.yaml` when a CLIK start pose was edited |
 | `experiment_ctrl_gui/logs/<exp>_<time>.log` | the full launch output of each run |
 | `analysis/expt_<run_name>_<time>/` | the trial recordings, written by the orchestrator as always ([§7](#7-data-collected)) |
+| `analysis/sessions.csv` | one row per run, added when the run ends ([behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv)) |
 
 None of these are committed to git.
 
@@ -2605,6 +2606,50 @@ mispairing every subsequent trial.
 (*NSP sync: the cabinet confirms pulses*); a refusal is logged as an error with the cabinet's reason
 (e.g. the outputs are unavailable because the I/O configuration is missing); no answer within a second
 is warned once per address (the experiment app is not running, or `cabinet_ip` is wrong).
+
+### Behavioural tables: trials.csv and sessions.csv
+The recording above holds everything, but not in a form you can open and read. Beside it, every run
+folder gets plain tables of what happened, written as each trial ends:
+
+| File | One row per | Holds |
+|---|---|---|
+| `<run folder>/trials.csv` | trial | the common columns below, then the task's own (centre-out: target, closed end, chosen end, correct) |
+| `<run folder>/movements.csv` | movement | Long moves only: length, straightness, duration, peak speed, rewarded |
+| `<run folder>/tables.md` | | what every column means |
+| `analysis/sessions.csv` | run (Start to Stop) | date, subject, experiment, paradigms, trials, % success, rewards, valve time, the task's key settings at the start and what changed during the run, plus the task's own summary (centre-out: % correct) |
+
+**Common columns:** run, session id, **subject**, experiment, paradigm, trial, times (trial start, go
+cue, outcome, trial end; Unix s on the ROS computer), outcome (`reach`, `reach_wrong`, `snap`, `goal`,
+`response_timeout`, `early_touch`, `safety_trip`, `stop_requested`, …), success (1 / 0 / blank for an
+aborted trial), go-to-outcome latency, reward pulses and total valve-open time (as commanded; the sidecar
+now keeps each pulse under `rewards`), partial, and the code version (git SHA, dirty).
+
+**The sidecar stays the record; the tables are views of it.** They are computed from the sidecars by
+[`helpers/outcome_tables.py`](sinthlab_bringup/sinthlab_bringup/helpers/outcome_tables.py), so they can
+be rebuilt at any time, including for runs recorded before they existed or started from a terminal:
+
+```bash
+python3 analysis/outcome_tables.py                 # every run in the data folder
+python3 analysis/outcome_tables.py <run folder>    # one run
+```
+
+The recorder appends to `trials.csv` as each trial ends; the dashboard adds the run's `sessions.csv`
+row when the run ends.
+
+**The subject.** The dashboard asks for a subject ID at every Start (`test` for a run without an
+animal) and passes it as the launch argument `subject:=<id>`; from a terminal, add `subject:=<id>` to
+the `ros2 launch` line.
+
+**The data folder** is `~/lbr-stack/src/sinthlab-kuka-stack/analysis`, or `$SINTHLAB_DATA_DIR` if set,
+for the recorder and the dashboard alike, so a dashboard started from a test checkout (`~/lbr-test`)
+still finds the runs.
+
+**Adding a task's columns.** Register a `TaskTables` subclass for the experiment in
+`helpers/outcome_tables.py` (the module's docstring has a template; `CentreOutTables` is a worked
+example): the columns and their descriptions, the key settings for `sessions.csv`, and how to read each
+column from the trial's events and parameters. Anything a task wants in its table must be marked as an
+event (`recorder.mark("choice", end)`) or be a parameter. An experiment with no class of its own gets
+the common columns.
 
 ### The sidecar
 

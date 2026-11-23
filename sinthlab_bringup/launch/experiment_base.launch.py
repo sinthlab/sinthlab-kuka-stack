@@ -70,6 +70,13 @@ def generate_launch_description():
         default_value="",
         description="Experiment paradigm, overriding the YAML's `paradigm` (apple pluck: pluck | perturb).",
     )
+    # Who is being run: recorded in every trial's sidecar and in trials.csv / sessions.csv. The
+    # dashboard asks for it at Start. Empty = not recorded.
+    subject = DeclareLaunchArgument(
+        "subject",
+        default_value="",
+        description="Subject ID, recorded with every trial (the dashboard asks for it at Start).",
+    )
     startup_delay = DeclareLaunchArgument(
         "startup_delay",
         default_value="0.0",
@@ -109,7 +116,8 @@ def generate_launch_description():
             LaunchConfiguration("params_file"),
             robot_description,
             {"run_name": LaunchConfiguration("run_name"),
-             "paradigm_override": LaunchConfiguration("paradigm")},
+             "paradigm_override": LaunchConfiguration("paradigm"),
+             "subject": LaunchConfiguration("subject")},
         ],
     )
     # Hold the orchestrator back by `startup_delay` s so the controller is active before it streams.
@@ -129,6 +137,7 @@ params_file,
             extra_inactive_ctrl,
             clik_nullspace_cfg,
             paradigm,
+            subject,
             startup_delay,
             hardware_launch,
             delayed_orchestrator,

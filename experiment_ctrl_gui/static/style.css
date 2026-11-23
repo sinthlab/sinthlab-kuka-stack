@@ -301,3 +301,13 @@ input[type=color] { width: 30px; height: 26px; padding: 0; border: 1px solid var
 .pp-bar span.indeterminate { animation: pp-pulse 1.2s ease-in-out infinite; }
 @keyframes pp-pulse { 50% { opacity: .35; } }
 .pp-attention { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Start dialog: the subject ID */
+.start-dlg { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink);
+  padding: 20px 22px; width: min(420px, calc(100vw - 32px)); }
+.start-dlg::backdrop { background: rgb(0 0 0 / .45); }
+.start-dlg h3 { margin: 0 0 14px; font-size: 16px; }
+.start-dlg label { display: block; font-weight: 600; margin-bottom: 6px; }
+.start-dlg input { width: 100%; box-sizing: border-box; padding: 8px 10px; font: inherit; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); }
+.start-dlg .controls { justify-content: flex-end; margin-top: 14px; }

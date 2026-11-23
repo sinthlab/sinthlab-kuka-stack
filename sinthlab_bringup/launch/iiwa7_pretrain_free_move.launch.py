@@ -31,6 +31,11 @@ def generate_launch_description():
                 default_value="config/clik_nullspace_pretrain.yaml",
                 description="CLIK redundancy posture YAML (must equal move_to_start).",
             ),
+            DeclareLaunchArgument(
+                "subject",
+                default_value="",
+                description="Subject ID, recorded with every trial (the dashboard asks for it at Start).",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -38,6 +43,7 @@ def generate_launch_description():
                     )
                 ),
                 launch_arguments={
+                    "subject": LaunchConfiguration("subject"),
                     "params_file": LaunchConfiguration("params_file"),
                     "run_name": RUN_NAME,
                     "orchestrator": "free_move_orchestrator.py",

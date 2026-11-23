@@ -15,6 +15,7 @@ import argparse
 import json
 import mimetypes
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -44,6 +45,7 @@ CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom hea
 
 class App:
     def __init__(self, demo: bool, robot_name: str) -> None:
+        self._sessions_done: Optional[str] = None   # the last run folder added to sessions.csv
         self.demo = demo
         self.fake_board = cue_board.FakeBoard()      # the Diagnostics page's board, in --demo
         self.fake_cabinet = ttl.FakeCabinet()        # and its TTL outputs
@@ -129,7 +131,7 @@ class App:
         if not r.experiment or not r.started_at:
             return None
         exp = ex.BY_KEY[r.experiment]
-        folders = [p for p in ex.ANALYSIS.glob(f"expt_{exp.run_name}_*")
+        folders = [p for p in ex.DATA.glob(f"expt_{exp.run_name}_*")
                    if p.is_dir() and p.stat().st_mtime >= r.started_at - 5]
         return str(max(folders, key=lambda p: p.stat().st_mtime)) if folders else None
 
@@ -146,6 +148,11 @@ class App:
             self.bridge.launch_ended()
         if not self.runner.running():
             self.stopping = False
+            # The run is over: add its row to sessions.csv (from the trials.csv the recorder wrote).
+            folder = self.data_folder()
+            if folder and folder != self._sessions_done:
+                self._sessions_done = folder
+                threading.Thread(target=_session_row, args=(self, folder), daemon=True).start()
         self.broadcast("state", self.state())
 
     # ------------------------------------------------------------------ actions
@@ -159,8 +166,9 @@ class App:
             return ex.BY_KEY[s["experiment"]]
         return None
 
-    def start(self, key: str) -> dict:
+    def start(self, key: str, subject: str = "") -> dict:
         exp = ex.BY_KEY[key]
+        subject = check_subject(subject)
         if self.runner.running():
             raise RuntimeError(f"{self.runner.experiment} is already running; stop it first")
         s = self.status()
@@ -188,11 +196,13 @@ class App:
         else:
             cmd = ["ros2", "launch", "sinthlab_bringup", exp.launch_file]
             cmd += [f"{k}:={v}" for k, v in overrides.items()]
+            cmd += [f"subject:={subject}"]          # recorded with every trial (TrialRecorder)
         self.stopping = False
         logged = threading.Event()               # the start pulse's result goes into this run's log
         self._experiment_start_pulse(p.current(), logged)
         self.runner.start(key, cmd, params_file)
         logged.set()
+        self.runner.emit(f"Subject: {subject}", "gui")
         if p.edits:
             self.runner.emit(f"Per-run edits: {json.dumps(p.edits)} -> {params_file}", "gui")
         if "clik_nullspace_cfg" in overrides:
@@ -339,6 +349,8 @@ def make_handler(app: App):
                                    "start_height": _start_height(p)})
             if path == "/api/logs":
                 return self._json(list(app.runner.lines))
+            if path == "/api/subjects":           # for the Start dialog: most recent first
+                return self._json(recent_subjects())
             if path == "/api/post/state":
                 return self._json(app.post.state())
             return self._static(path)
@@ -393,7 +405,7 @@ def make_handler(app: App):
 
         def _post(self, path: str, body: dict) -> dict:
             if path == "/api/start":
-                return app.start(body["experiment"])
+                return app.start(body["experiment"], str(body.get("subject", "")))
             if path == "/api/diag/board":
                 return app.board(str(body.get("addr", "")), str(body.get("cmd", "")), dict(body.get("params") or {}),
                                  str(body.get("path", "wifi")), str(body.get("port", "")))
@@ -489,6 +501,37 @@ def _start_height(p) -> dict:
         return {"available": False, "reason": why or "this experiment has no start pose / floor"}
     return {"available": True, "reference": cur["floor.reference"], "floor_m": cur["floor.height_m"],
             "height_m": round(kinematics.height_of(cur[ex.START_POSE], cur["floor.reference"]), 4)}
+
+
+SUBJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+
+
+def check_subject(subject: str) -> str:
+    """The subject ID for a Start: required; letters, digits, _ and -, up to 32 characters (it becomes a
+    launch argument and a file-name part)."""
+    subject = (subject or "").strip()
+    if not subject:
+        raise ValueError("Enter a subject ID to start (use 'test' for a run without an animal)")
+    if not SUBJECT.match(subject):
+        raise ValueError(f"Subject ID {subject!r}: use letters, digits, _ and - only (up to 32)")
+    return subject
+
+
+def recent_subjects() -> List[str]:
+    """Subject IDs in sessions.csv, most recent first."""
+    rows = ex.outcome_tables.read_sessions(ex.DATA / ex.outcome_tables.SESSIONS_CSV)
+    return list(dict.fromkeys(r["subject"] for r in reversed(rows) if r.get("subject")))
+
+
+def _session_row(app: App, folder: str) -> None:
+    try:
+        row = ex.outcome_tables.update_sessions(folder, ex.DATA / ex.outcome_tables.SESSIONS_CSV)
+    except Exception as exc:                       # never let the summary break the dashboard
+        app.runner.emit(f"sessions.csv not updated ({exc}); rebuild with analysis/outcome_tables.py", "warn")
+        return
+    if row:
+        app.runner.emit(f"sessions.csv: {row['run']}: {row['n_trials']} trials, {row['n_success']} successful, "
+                        f"{row['n_rewards']} rewards ({row['reward_ms']} ms valve time)", "gui")
 
 
 def _validate(app: App, folder: str) -> None:

@@ -22,6 +22,11 @@ def generate_launch_description():
                 ),
                 description="Experiment parameter YAML.",
             ),
+            DeclareLaunchArgument(
+                "subject",
+                default_value="",
+                description="Subject ID, recorded with every trial (the dashboard asks for it at Start).",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -29,6 +34,7 @@ def generate_launch_description():
                     )
                 ),
                 launch_arguments={
+                    "subject": LaunchConfiguration("subject"),
                     "params_file": LaunchConfiguration("params_file"),
                     "run_name": RUN_NAME,
                     "orchestrator": "restricted_plane_orchestrator.py",

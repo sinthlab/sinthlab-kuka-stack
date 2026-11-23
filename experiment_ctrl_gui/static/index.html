@@ -120,6 +120,22 @@
   </section>
 </main>
 
+<!-- Start: who is being run. Recorded with every trial (trials.csv, sessions.csv). -->
+<dialog id="start-dlg" class="start-dlg" aria-labelledby="start-dlg-title">
+  <form method="dialog" id="start-form">
+    <h3 id="start-dlg-title">Start <span id="start-dlg-exp"></span></h3>
+    <label for="start-subject">Subject ID</label>
+    <input id="start-subject" list="start-subjects" autocomplete="off" spellcheck="false" required
+           pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,31}" maxlength="32">
+    <datalist id="start-subjects"></datalist>
+    <p class="muted small">Recorded with every trial. Use <code>test</code> for a run without an animal.</p>
+    <div class="controls">
+      <button type="button" class="btn" id="start-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="start-go">▶ Start</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="tip" class="tip" role="tooltip"></div>
 <script src="app.js"></script>

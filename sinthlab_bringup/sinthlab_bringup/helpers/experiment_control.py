@@ -162,17 +162,22 @@ class ExperimentControl:
         self._apply_pending()
         start_fn()
 
-    def on_event(self, token: str, arg=None) -> None:
-        """Every trial event: NSP sync pulse first (timing matters), then status."""
+    def on_event(self, token: str, arg=None) -> Optional[dict]:
+        """Every trial event: NSP sync pulse first (timing matters), then status. Returns what was
+        commanded if the event sent the reward pulse ({"output", "ms"}), else None -- the recorder keeps
+        it in the trial's sidecar (`rewards`), from which trials.csv counts rewards and valve time."""
         if self._nsp_enabled and token in NSP_OUTPUTS:
             self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
+        reward = None
         if self._reward is not None and token in self._reward_events:
             output, ms = self._reward
             self._nsp.pulse(output, ms, f"reward on {token}")
             self._log.info(f"Reward: PULSE {output} {ms} (SYNC {output}, valve open {ms} ms) on {token}.")
+            reward = {"output": output, "ms": ms}
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
+        return reward
 
     # ------------------------------------------------------------------ internals
 

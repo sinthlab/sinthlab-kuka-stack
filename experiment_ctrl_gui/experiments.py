@@ -29,6 +29,12 @@ ANALYSIS = REPO / "analysis"
 # from the source tree whether or not ROS is sourced.
 sys.path.insert(0, str(BRINGUP))
 from sinthlab_bringup.helpers import live_params  # noqa: E402
+from sinthlab_bringup.helpers import outcome_tables  # noqa: E402
+
+# Where the recordings are: the recorder's save folder (outcome_tables.data_dir: $SINTHLAB_DATA_DIR, else
+# ~/lbr-stack/src/sinthlab-kuka-stack/analysis), whichever checkout this dashboard runs from. ANALYSIS
+# above is this checkout's analysis CODE (validate_recording.py, nwb_export.py).
+DATA = outcome_tables.data_dir()
 
 
 

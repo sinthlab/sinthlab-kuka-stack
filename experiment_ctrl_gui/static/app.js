@@ -687,6 +687,28 @@ function connect() {
   es.onerror = () => { $("#pill-run").className = "pill err"; $("#pill-run").textContent = "Dashboard disconnected"; };
 }
 
+// ---------------------------------------------------------------- Start: ask who is being run
+async function openStartDialog() {
+  const dlg = $("#start-dlg"), inp = $("#start-subject");
+  $("#start-dlg-exp").textContent = expLabel(S.selected);
+  inp.value = store.get("subject", "");
+  try {
+    const subjects = await api("/api/subjects");
+    $("#start-subjects").innerHTML = subjects.map((x) => `<option value="${esc(x)}"></option>`).join("");
+  } catch { /* no history yet */ }
+  dlg.showModal();
+  inp.focus(); inp.select();
+}
+$("#start-cancel").onclick = () => $("#start-dlg").close();
+$("#start-form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const subject = $("#start-subject").value.trim();
+  if (!$("#start-subject").checkValidity()) return $("#start-subject").reportValidity();
+  $("#start-dlg").close();
+  store.set("subject", subject);
+  await act(() => api("/api/start", { experiment: S.selected, subject }), `Starting (subject ${subject})`);
+};
+
 async function init() {
   S.experiments = await api("/api/experiments");
   S.groups = await api("/api/groups");
@@ -714,7 +736,7 @@ async function init() {
     }
   }, 300);
 
-  $("#btn-start").onclick = () => act(() => api("/api/start", { experiment: S.selected }), "Starting");
+  $("#btn-start").onclick = openStartDialog;
   $("#btn-stop").onclick = () => {
     const q = S.app && S.app.stopping_now
       ? "Skip parking and stop the launch now? FRI closes wherever the arm is."
