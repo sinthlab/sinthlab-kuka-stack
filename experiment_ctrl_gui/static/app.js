@@ -83,6 +83,9 @@ const PHASE_TEXT_BY_EXP = {
 // training (started large, rolled back). Also in the Monkey view, with the rest of the profile.
 const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
 const REWARD_STEP_MS = 10;
+// Task view group headings.
+const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Colour rule", n_choice: "Choices", long_move: "Movements",
+                      reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward" };
 // mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
 // interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
 function rewardVolume(ms, count = 1, gap = 0) {
@@ -99,7 +102,7 @@ function rewardVolume(ms, count = 1, gap = 0) {
   if (Number(count) > 1 && p.gap_ms && Number(gap) !== p.gap_ms) note = [note, `calibrated with a ${p.gap_ms} ms gap`].filter(Boolean).join("; ");
   return { ml: Math.max(ul, 0) / 1000, status, note };
 }
-function fmtMl(v) { return v == null ? "–" : v >= 100 ? `${Math.round(v)} mL` : `${v.toFixed(v < 10 ? 2 : 1)} mL`; }
+function fmtMl(v) { return v == null ? "–" : v === 0 ? "0 mL" : v >= 100 ? `${Math.round(v)} mL` : `${v.toFixed(v < 10 ? 2 : 1)} mL`; }
 // Set a parameter of the selected experiment: live while it runs (if live), else for the next Start.
 async function setParam(name, value) {
   const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
@@ -144,8 +147,9 @@ const S = {
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
   // The settings view: task (today's few), monkey (the profile's, as this task uses them) or all (Live / Per-run / Fixed).
   pview: new URLSearchParams(location.search).get("view") || store.get("pview", "task"),
-  prof: null, profSig: null,
-  cal: null,                      // /api/reward/calibration: the valve calibration, for mL per reward      // /api/profile: the monkey, its profile, the layout, the change log
+  prof: null, profSig: null,      // /api/profile: the monkey, its profile, the layout, the change log
+  cal: null,                      // /api/reward/calibration: the valve calibration, for mL per reward
+  rewardPop: false, warnCount: 0, curView: "task",
   params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
 };
@@ -239,95 +243,71 @@ function cardsOf(group) {
   return cards;
 }
 function renderExperiments() {
-  const list = $("#exp-list");
-  const rk = runningKey();
-  // Group tabs: Experiments | Pre-training. A dot marks the tab holding the running experiment.
-  $("#exp-groups").innerHTML = S.groups.map((g) => {
-    const running = rk && exp(rk)?.group === g.key;
-    return `<button class="tab${g.key === S.group ? " active" : ""}" data-group="${esc(g.key)}" role="tab"
-      aria-selected="${g.key === S.group}">${esc(g.label)}${running ? ' <span class="dot-run" title="running">●</span>' : ""}</button>`;
-  }).join("");
-  document.querySelectorAll("#exp-groups .tab").forEach((t) => t.onclick = () => {
-    S.group = t.dataset.group; renderExperiments();
-  });
-  list.innerHTML = "";
-  for (const c of cardsOf(S.group)) {
-    const sel = c.members.find((m) => m.key === S.selected);
-    const runningMember = c.members.find((m) => m.key === rk);
-    const target = sel || runningMember || c.members.find((m) => m.key === store.get(`variant.${c.key}`)) || c.members[0];
-    const b = document.createElement("button");
-    b.className = "exp"; b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(!!sel));
-    const edits = S.app ? c.members.reduce((n, m) => n + (S.app.edited[m.key] || 0), 0) : 0;
-    b.innerHTML = `<div class="t">${esc(c.label)}
-        ${runningMember ? '<span class="tag running">running</span>' : ""}
-        ${edits ? `<span class="tag edited">${edits} edited</span>` : ""}</div>
-      <div class="d">${esc(c.summary)}</div>`;
-    b.onclick = () => select(target.key);
-    list.appendChild(b);
-    if (!sel) continue;
-    // The variant row (Rail: Horizontal / Vertical): each is its own experiment (YAML, launch, start pose),
-    // so it is fixed while one of the card's experiments runs.
-    if (c.members.length > 1) {
-      const locked = !!runningMember;
-      const row = document.createElement("div"); row.className = "tabs paradigm-tabs variant-tabs"; row.setAttribute("role", "tablist");
-      row.setAttribute("aria-label", `${c.label} rail`);
-      for (const m of c.members) {
-        const t = document.createElement("button");
-        const on = m.key === sel.key;
-        t.className = `tab${on ? " active" : ""}`; t.setAttribute("role", "tab"); t.setAttribute("aria-selected", String(on));
-        t.textContent = m.variant || m.label;
-        t.disabled = locked && !on;
-        t.title = locked ? "Fixed for this run — stop to change it" : `${c.label} on the ${(m.variant || "").toLowerCase()} rail`;
-        t.onclick = () => { if (!locked && !on) select(m.key); };
-        row.appendChild(t);
-      }
-      const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-      lbl.textContent = locked ? "Rail (fixed for this run)" : "Rail";
-      list.appendChild(lbl); list.appendChild(row);
+  // The run bar's task picker: one drop-down of cards, grouped Experiments / Pre-training, then chips for the
+  // card's variant (Rail: Horizontal / Vertical) and the selected experiment's paradigm.
+  const box = $("#task-picker"), rk = runningKey(), sel = exp(S.selected);
+  const selCard = sel ? (sel.card || sel.key) : null;
+  const cards = S.groups.map((g) => ({ g, cs: cardsOf(g.key) }));
+  box.innerHTML = `<select id="task-select" aria-label="Task">` + cards.map(({ g, cs }) =>
+    `<optgroup label="${esc(g.label)}">` + cs.map((c) => `<option value="${esc(c.key)}"${c.key === selCard ? " selected" : ""}>` +
+      `${esc(c.label)}${c.members.some((m) => m.key === rk) ? " ● running" : ""}</option>`).join("") + `</optgroup>`).join("") + `</select>`;
+  $("#task-select").onchange = (ev) => {
+    const c = cards.flatMap((x) => x.cs).find((x) => x.key === ev.target.value); if (!c) return;
+    const target = c.members.find((m) => m.key === rk) || c.members.find((m) => m.key === store.get(`variant.${c.key}`)) || c.members[0];
+    select(target.key);
+  };
+  const card = cards.flatMap((x) => x.cs).find((x) => x.key === selCard);
+  if (card && card.members.length > 1) {          // each variant is its own experiment: fixed while one of them runs
+    const locked = card.members.some((m) => m.key === rk);
+    const row = document.createElement("span"); row.className = "chips"; row.setAttribute("role", "tablist"); row.setAttribute("aria-label", `${card.label} rail`);
+    for (const m of card.members) {
+      const t = document.createElement("button"); const on = m.key === sel.key;
+      t.className = `chip${on ? " on" : ""}`; t.textContent = m.variant || m.label; t.setAttribute("role", "tab"); t.setAttribute("aria-selected", String(on));
+      t.disabled = locked && !on; t.title = locked ? "Fixed for this run — stop to change it" : `${card.label} on the ${(m.variant || "").toLowerCase()} rail`;
+      t.onclick = () => { if (!t.disabled && !on) select(m.key); };
+      row.appendChild(t);
     }
-    renderParadigmTabs(sel, list, rk);
+    box.appendChild(row);
   }
+  if (sel) renderParadigmTabs(sel, box, rk);
+  const edits = S.app && sel ? (S.app.edited[sel.key] || 0) : 0;
+  $("#task-sub").textContent = card ? `${card.summary}${edits ? ` · ${edits} edit${edits > 1 ? "s" : ""} for the next Start` : ""}` : "";
+  $("#task-sub").title = card ? card.summary : "";
 }
-function renderParadigmTabs(e, list, rk) {
-  // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
-  // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
-  // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
-  // trial, and the tab waiting for the next trial is marked.
-  if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
-    const running = rk === e.key, live = running && paradigmIsLive(e.key);
-    const run = running ? runningParadigm(e.key) : { now: null, next: null };
-    const cur = paradigmOf(e.key), locked = running && !live;
-    const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
-    sub.setAttribute("aria-label", `${e.label} paradigm`);
-    for (const pr of e.paradigms) {
-      const t = document.createElement("button");
-      const isNext = pr.key === run.next;
-      t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
-      t.setAttribute("aria-selected", String(pr.key === cur));
-      t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
-      t.disabled = locked && pr.key !== cur;
-      t.title = locked ? "Fixed for this run — stop to change it"
-        : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
-        : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
-      t.onclick = async () => {
-        if (locked) return;
-        if (live) {          // the status update that follows re-renders the tabs
-          if (pr.key === (run.next ?? cur)) return;
-          await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
-                    `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
-          return;
-        }
-        if (pr.key === cur) return;
-        await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
-        await loadParams(e.key, true); renderExperiments(); renderControls();
-      };
-      sub.appendChild(t);
-    }
-    const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-    lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
-    list.appendChild(lbl); list.appendChild(sub);
+function renderParadigmTabs(e, box, rk) {
+  // The paradigm chips (apple pluck: normal / perturb / ...; the rails: either / cued / one end only). They set the
+  // paradigm parameter for the next Start. While that experiment runs they are locked -- unless the parameter is
+  // live (the rails, the Reach Map's reward): then they switch it from the next trial, and the one waiting is marked.
+  if (!(e.paradigms || []).length || !S.params[e.key]) return;
+  const running = rk === e.key, live = running && paradigmIsLive(e.key);
+  const run = running ? runningParadigm(e.key) : { now: null, next: null };
+  const cur = paradigmOf(e.key), locked = running && !live;
+  if (box.querySelector(".chips")) { const sep = document.createElement("span"); sep.className = "chip-sep"; box.appendChild(sep); }
+  const row = document.createElement("span"); row.className = "chips"; row.setAttribute("role", "tablist"); row.setAttribute("aria-label", `${e.label} paradigm`);
+  for (const pr of e.paradigms) {
+    const t = document.createElement("button");
+    const isNext = pr.key === run.next;
+    t.className = `chip${pr.key === cur ? " on" : ""}${isNext ? " next" : ""}`; t.setAttribute("role", "tab");
+    t.setAttribute("aria-selected", String(pr.key === cur));
+    t.textContent = pr.label + (isNext ? " · next trial" : "");
+    t.disabled = locked && pr.key !== cur;
+    t.title = locked ? "Fixed for this run — stop to change it"
+      : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
+      : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+    t.onclick = async () => {
+      if (locked) return;
+      if (live) {          // the status update that follows re-renders the chips
+        if (pr.key === (run.next ?? cur)) return;
+        await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }), `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
+        return;
+      }
+      if (pr.key === cur) return;
+      await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
+      await loadParams(e.key, true); renderExperiments(); renderControls();
+    };
+    row.appendChild(t);
   }
+  box.appendChild(row);
 }
 async function select(key) {
   S.selected = key; store.set("exp", key);
@@ -342,6 +322,7 @@ async function select(key) {
 function renderChecklist() {
   const e = exp(S.selected); if (!e) return;
   const sp = Object.entries(e.smartpad).map(([k, v]) => `<li>${esc(k)}: <code>${esc(v)}</code></li>`).join("");
+  $("#checklist-sum").textContent = `SmartPad: ${e.smartpad["Cartesian stiffness (K diagonal)"]} · damping 0.7 · elbow 30 · ${e.launch_file}`;
   $("#checklist").innerHTML = `
     <li>On the SmartPad start the app and choose:<ul>${sp}</ul></li>
     <li>The app waits ~60 s for ROS — press <strong>Start</strong> here within that window.</li>
@@ -358,7 +339,12 @@ function renderControls() {
   const rk = runningKey();
 
   $("#btn-start").disabled = mine || stopping || external;
-  $("#btn-start").textContent = rk && rk !== S.selected ? `▶ Start (stop ${expLabel(rk)} first)` : `▶ Start ${expLabel(S.selected)}`;
+  $("#btn-start").textContent = "▶ Start";
+  $("#btn-start").title = rk && rk !== S.selected ? `Stop ${expLabel(rk)} first` : `Start ${expLabel(S.selected)}`;
+  $("#btn-start").classList.toggle("hidden", mine || stopping);
+  $("#btn-stop").classList.toggle("hidden", !(mine || stopping));
+  $("#status-card").classList.toggle("hidden", !(s || r.state !== "idle"));
+  $("#checklist-card").classList.toggle("hidden", !!(s || r.state !== "idle"));
   $("#btn-stop").disabled = !mine;
   $("#btn-stop").textContent = a.stopping_now ? "■ Parking… (press to skip)" : "■ Stop";
   $("#btn-validate").disabled = !a.data_folder;
@@ -398,6 +384,8 @@ function renderControls() {
   if (r.log_path) rows.push(["Log file", r.log_path.split("/").slice(-2).join("/")]);
   if (r.state === "idle" && r.exit_code != null) rows.push(["Exit code", r.exit_code]);
   $("#run-info").innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  $("#run-card").classList.toggle("hidden", !rows.length);
+  renderRewardBar();
   $("#log-path").textContent = r.log_path ? `Full log: ${r.log_path}` : "";
 
   renderStatus();
@@ -407,7 +395,17 @@ function fmtDur(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
+// The run bar while a run goes: how long, and the juice given so far (from the run monitor's trials).
+function renderRunStats() {
+  const a = S.app, el = $("#run-stats"); if (!a || !el) return;
+  const r = a.runner, on = r.state !== "idle" && r.started_at;
+  if (!on) { el.innerHTML = ""; return; }
+  const j = SV.juice;
+  el.innerHTML = `<span class="k">⏱</span>${fmtDur(Date.now() / 1000 - r.started_at)}` +
+    (j && j.ml != null ? ` · <span class="k">juice</span>${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <span class="k">${fmtMl(j.rate)}/h</span>` : ""}` : "");
+}
 function renderStatus() {
+  renderRunStats();
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
   const phaseName = s ? (s.held ? "stopped" : s.phase) : null;
@@ -579,6 +577,7 @@ function renderParams(force = false) {
   $("#all-tabs").classList.toggle("hidden", view !== "all");
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
   $("#tab-help").textContent = TAB_HELP[view === "all" ? S.tab : view][mode];
+  $("#tab-help").classList.toggle("hidden", view === "task");
   $("#btn-reset-edits").disabled = mode === "running" || !data.params.some((p) => p.edited);
   renderProfileBar(view, layered);
 
@@ -586,6 +585,8 @@ function renderParams(force = false) {
   const inView = (p) => view === "all" ? p.tier === S.tab : view === "task" ? p.layer === "task" || isReward(p) : p.layer === "profile";
   const rows = shown.filter((p) => inView(p) && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
   const root = $("#params"); root.innerHTML = ""; TIPS.clear(); hideTip();
+  S.curView = view; root.classList.toggle("compact", view !== "all");
+  renderRewardBar();
   const groups = data.groups || {};
   if (view === "monkey") {
     // Grouped by the profile's sections (feel, reach, pacing, reward), in the profile's order.
@@ -596,19 +597,19 @@ function renderParams(force = false) {
         .sort((a, b) => (order.get(a.profile_field) ?? 99) - (order.get(b.profile_field) ?? 99));
       if (!ps.length) continue;
       const box = document.createElement("div"); box.className = "group";
-      box.innerHTML = `<h3 class="section">${esc(sec.label)}<span class="gdesc"> — ${esc(sec.help)}</span></h3>`;
+      box.innerHTML = `<h3 class="section" title="${esc(sec.help)}">${esc(sec.label)}</h3>`;
       for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
       root.appendChild(box);
     }
   } else {
-    if (view === "task") {          // the reward first, with its own Save to profile
-      const ps = REWARD_ROWS.map((n) => rows.find((p) => p.name === n)).filter(Boolean);
-      const cur = (n) => { const p = ps.find((x) => x.name === n); const lv = liveVals && p && p.tier === "live" ? liveVals[n] : undefined;
-                           return p ? (lv !== undefined ? lv : p.value) : undefined; };
+    if (view === "task") {          // the valve time is in the run bar; the pulses (and their gap) here
+      const ps = REWARD_ROWS.slice(1).map((n) => rows.find((p) => p.name === n)).filter(Boolean);
+      const cnt = ps.find((p) => p.name === "reward_pulse.count");
+      const count = cnt ? Number(liveVals && cnt.name in liveVals ? liveVals[cnt.name] : cnt.value) : 1;
       if (ps.length) {
-        const box = document.createElement("div"); box.className = "group reward-group";
-        box.appendChild(rewardHead(ps, cur));
-        for (const p of ps) if (p.name !== "reward_pulse.gap_ms" || Number(cur("reward_pulse.count")) > 1) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+        const box = document.createElement("div"); box.className = "group";
+        box.innerHTML = `<h3 class="section">Reward</h3>`;
+        for (const p of ps) if (p.name !== "reward_pulse.gap_ms" || count > 1) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
         root.appendChild(box);
       }
     }
@@ -618,7 +619,8 @@ function renderParams(force = false) {
       const box = document.createElement("div"); box.className = "group";
       const gt = groupTip(g, groups[g]);
       const gdesc = groups[g] && groups[g].help;
-      box.innerHTML = `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
+      box.innerHTML = view === "task" ? `<h3 class="section">${esc(GROUP_LABEL[g] || g)}</h3>`
+        : `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
       for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
       root.appendChild(box);
     }
@@ -649,8 +651,9 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const short = p.group !== "general" && p.name.startsWith(p.group + ".") ? p.name.slice(p.group.length + 1) : p.name;
   const who = curSubject();
   const offProfile = p.layer === "profile" && hasProfile() && !p.edited && fmtVal(value) !== fmtVal(p.default);
-  const friendly = p.profile_field && (S.pview === "monkey" || (S.pview === "task" && REWARD_ROWS.includes(p.name)));
-  const label = friendly ? profileLabel(p.profile_field) : short;
+  const compact = S.curView !== "all";     // Task and Monkey views: plain names, no descriptions (the tooltip has them)
+  const friendly = compact && p.profile_field;
+  const label = friendly ? profileLabel(p.profile_field) : compact && p.label ? p.label : short;
   row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Today only: ${esc(who)}'s profile has ${esc(fmtVal(p.default))}` : "Edited for the next Start"}">${p.layer === "profile" && hasProfile() ? "today only" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile has ${esc(fmtVal(p.default))}: Save to profile keeps this value">not in profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
@@ -665,6 +668,21 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
                      (p.linked && p.linked.length ? ` (and ${p.linked.length} linked)` : ""), "ok");
       }
     };
+    // Task and Monkey views: a rail's -Y / down end is shown and typed as a distance (0.15, not -0.15).
+    if (compact && p.name === "free_move.rail_min_m") {
+      const raw = commit;
+      p = { ...p, limits: p.limits ? [-p.limits[1], -p.limits[0]] : null, step: null };
+      buildControl(ctl, p, -Number(value), (v) => raw(-Number(v)), locked);
+      if (!locked && !isLiveRunning && p.edited) {
+        const rv = document.createElement("button"); rv.className = "revert"; rv.textContent = "↺";
+        rv.title = `Back to ${hasProfile() ? `${curSubject()}'s profile` : "the default"} (${fmtVal(-Number(p.default))})`;
+        rv.onclick = () => raw(p.default); ctl.appendChild(rv);
+      }
+      if (p.limits) { const d = document.createElement("span"); d.className = "default"; d.textContent = `${p.limits[0]}–${p.limits[1]}`; ctl.appendChild(d); }
+      row.appendChild(ctl);
+      if (p.profile_note) { const h = document.createElement("div"); h.className = "help pnote"; h.textContent = `ⓘ ${p.profile_note}`; row.appendChild(h); }
+      return row;
+    }
     // The felt stiffness can go up to the stiffness the SmartPad app reports running, not the YAML base.
     const rep = isLiveRunning && p.name === "resistance.stiffness_n_per_m" && p.limits ? reportedStiffness() : null;
     if (rep) p = { ...p, limits: [p.limits[0], Math.min(rep, 5000)] };
@@ -686,9 +704,9 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
     if (p.limits) { const d = document.createElement("span"); d.className = "default"; d.textContent = `${p.limits[0]}–${p.limits[1]}`; ctl.appendChild(d); }
   }
   row.appendChild(ctl);
-  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = friendly ? `${short}: ${p.help}` : p.help; row.appendChild(h); }
+  if (p.help && !compact) { const h = document.createElement("div"); h.className = "help"; h.textContent = p.help; row.appendChild(h); }
   if (p.profile_note) { const h = document.createElement("div"); h.className = "help pnote"; h.textContent = `ⓘ ${p.profile_note}`; row.appendChild(h); }
-  if (p.caution) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
+  if (p.caution && !compact) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
   if (p.linked && p.linked.length) {
     const h = document.createElement("div"); h.className = "help linked";
     h.textContent = `🔗 Editing this also sets: ${p.linked.join(", ")}`; row.appendChild(h);
@@ -697,37 +715,47 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   return row;
 }
 
-// The Reward section's heading: the reward now (per reward: pulses x valve time), the profile's, and Save.
-function rewardHead(ps, cur) {
-  const h = document.createElement("div"); h.className = "reward-head";
-  const ms = cur("reward_pulse.pulse_ms"), n = Number(cur("reward_pulse.count") || 1);
-  const prof = (S.prof && S.prof.profile) || null, who = curSubject();
+// The run bar's reward: the valve time (and pulses) in effect, mL per reward, -10 / +10 ms, and a popover to set
+// it by volume or save it to the monkey's profile. Live while the experiment runs (from the next trial).
+function renderRewardBar() {
+  const box = $("#reward-bar"), d = S.params[S.selected];
+  const par = (n) => d && d.params.find((x) => x.name === n);
+  if (!par("reward_pulse.pulse_ms")) { box.className = "rb-reward none"; box.innerHTML = ""; return; }
+  if (box.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;   // typing in the popover
+  box.className = "rb-reward";
+  const running = isRunningSelected(), s = statusLive();
+  const val = (n) => { const q = par(n); if (!q) return undefined; return running && s && s.live && n in s.live ? s.live[n] : q.value; };
+  const next = (n) => (running && s && s.pending && n in s.pending ? s.pending[n] : undefined);
+  const ms = Number(val("reward_pulse.pulse_ms")), n = Number(val("reward_pulse.count") ?? 1), gap = val("reward_pulse.gap_ms");
+  const nx = next("reward_pulse.pulse_ms"), vol = rewardVolume(ms, n, gap);
+  const fmt = (m, k) => (k > 1 ? `${k} × ${m} ms` : `${m} ms`);
+  const prof = (S.prof && S.prof.profile) || null, who = curSubject(), layered = d.params.some((x) => x.layer !== "other");
   const own = prof && (prof.reward_by_task || {})[S.selected];
-  const pv = prof ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
-  const fmt = (m, k) => k > 1 ? `${k} × ${m} ms` : `${m} ms`;
-  const off = pv && (Number(pv.ms) !== Number(ms) || Number(pv.n) !== n);
-  const gap = cur("reward_pulse.gap_ms"), vol = rewardVolume(ms, n, gap);
-  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">no volume (${esc(vol.note)})</span>`
-    : `<span class="reward-ml ${vol.status}" title="${esc(`${vol.status}${vol.note ? `: ${vol.note}` : ""}${S.cal ? ` · calibration ${S.cal.set}` : ""}`)}">≈ ${fmtMl(vol.ml)}${vol.status === "extrapolated" || vol.note ? " ⚠" : ""}</span>`;
-  h.innerHTML = `<h3 class="section">Reward</h3><span class="reward-now">${esc(fmt(ms, n))}</span>${volTxt}` +
-    (pv ? `<span class="muted small">${esc(who)}'s profile${own ? ` (${esc(exp(S.selected)?.label || "")} only)` : ""}: ${esc(fmt(pv.ms, pv.n))}</span>` : "") +
-    (off ? `<button class="btn small" id="reward-save" title="Keep this reward in ${esc(who)}'s profile">Save to profile…</button>` : "");
-  const b = h.querySelector("#reward-save");
-  if (b) b.onclick = () => openSaveDialog(true);
-  // Set the reward by volume: the valve time for that many mL, at this pulse count.
-  if (S.cal && S.cal.profiles.length) {
-    const row = document.createElement("div"); row.className = "reward-byvol small";
-    row.innerHTML = `<label>Set by volume <input type="number" step="0.05" min="0.3" max="5" value="${vol.ml != null ? vol.ml.toFixed(2) : ""}" aria-label="mL per reward"> mL per reward</label> <button class="btn small">Set</button>` +
-      (vol.note ? ` <span class="warn">⚠ ${esc(vol.note)}</span>` : "") + ` <span class="muted">calibration ${esc(S.cal.set)}</span>`;
-    const inp = row.querySelector("input");
-    row.querySelector("button").onclick = async () => {
-      let w; try { w = await api(`/api/reward/width?ml=${encodeURIComponent(inp.value)}&count=${n}`); } catch (e) { toast(e.message, "err"); return; }
-      const r = await setParam("reward_pulse.pulse_ms", w.ms);
-      if (r) toast(`${fmtMl(w.ml)} per reward = ${n > 1 ? `${n} × ` : ""}${w.ms} ms${w.status === "extrapolated" ? " (extrapolated)" : ""}`, "ok");
-    };
-    h.appendChild(row);
-  }
-  return h;
+  const pv = prof && layered ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
+  const off = pv && (Number(pv.ms) !== Number(nx ?? ms) || Number(pv.n) !== n);
+  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">no mL</span>`
+    : `<span class="ml ${vol.status}" title="${esc(`${vol.status}${vol.note ? `: ${vol.note}` : ""}${S.cal ? ` · calibration ${S.cal.set}` : ""}`)}">≈ ${fmtMl(vol.ml)}${vol.status === "extrapolated" || vol.note ? " ⚠" : ""}</span>`;
+  box.innerHTML = `<div class="rb-lab">Reward${running ? " · live" : ""}</div>
+    <div class="rw"><span class="big">${esc(fmt(ms, n))}</span>${volTxt}${nx !== undefined ? `<span class="nxt">→ ${esc(nx)} ms next trial</span>` : ""}
+      <button class="btn small step" data-d="-${REWARD_STEP_MS}" title="Less juice: −${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next Start"}">−${REWARD_STEP_MS}</button>
+      <button class="btn small step" data-d="${REWARD_STEP_MS}" title="More juice: +${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next Start"}">+${REWARD_STEP_MS}</button>
+      <button class="btn small" id="rw-more" title="Set by volume; save to the profile">mL…</button></div>
+    <div class="rb-sub">${pv ? `${esc(who)}'s profile${own ? ` (this task)` : ""}: ${esc(fmt(pv.ms, pv.n))}${off ? " · differs" : ""}` : layered && who && who !== "test" ? "no profile" : "&nbsp;"}</div>` +
+    (S.rewardPop ? `<div class="pop">
+      ${S.cal && S.cal.profiles.length ? `<div class="row"><label>Set by volume <input type="number" id="rw-ml" step="0.05" min="0.3" max="5" value="${vol.ml != null ? vol.ml.toFixed(2) : ""}"> mL per reward</label><button class="btn small" id="rw-set">Set</button></div>
+        ${vol.note ? `<div class="row warn-text">⚠ ${esc(vol.note)}</div>` : ""}<div class="row muted">Calibration ${esc(S.cal.set)} (±10 %)</div>` : `<div class="row muted">No reward calibration found.</div>`}
+      ${off ? `<div class="row"><button class="btn small" id="rw-save">Save to ${esc(who)}'s profile…</button></div>` : ""}
+      <div class="row muted">Pulses and the gap: the Task tab.</div></div>` : "");
+  box.querySelectorAll(".step").forEach((b) => b.onclick = () => setParam("reward_pulse.pulse_ms", Math.max(10, Number(nx ?? ms) + Number(b.dataset.d))));
+  $("#rw-more").onclick = () => { S.rewardPop = !S.rewardPop; renderRewardBar(); if (S.rewardPop) $("#rw-ml")?.focus(); };
+  const set = $("#rw-set");
+  if (set) set.onclick = async () => {
+    let w; try { w = await api(`/api/reward/width?ml=${encodeURIComponent($("#rw-ml").value)}&count=${n}`); } catch (e) { toast(e.message, "err"); return; }
+    const r = await setParam("reward_pulse.pulse_ms", w.ms);
+    if (r) { toast(`${fmtMl(w.ml)} per reward = ${n > 1 ? `${n} × ` : ""}${w.ms} ms${w.status === "extrapolated" ? " (extrapolated)" : ""}`, "ok"); S.rewardPop = false; renderRewardBar(); }
+  };
+  const sv = $("#rw-save");
+  if (sv) sv.onclick = () => { S.rewardPop = false; renderRewardBar(); openSaveDialog(true); };
 }
 
 // The start pose from a height above the ground: the floor's reference point (apple bottom or base edge)
@@ -832,11 +860,13 @@ function renderMonkey() {
   sel.title = sel.disabled ? "Fixed while an experiment runs" : "";
   const info = $("#monkey-info");
   const p = pr.profile;
-  if (!cur) info.textContent = "Choose the monkey: its profile sets the feel, reach, pacing and reward of the pre-training tasks, the Colour Rule and N-Choice.";
-  else if (cur === "test") info.textContent = "test: a run without an animal. The tasks use their own defaults.";
-  else if (p) info.innerHTML = `Profile v${p.version}, saved ${esc(p.updated)}. Applied to the pre-training tasks, the Colour Rule and N-Choice; Navin's experiments keep their own settings.`;
+  info.title = "";
+  if (!cur) info.textContent = "choose the monkey first";
+  else if (cur === "test") info.textContent = "no animal: task defaults";
+  else if (p) { info.textContent = `profile v${p.version} · ${p.updated.slice(0, 16)}`;
+    info.title = "Applied to the pre-training tasks, the Colour Rule and N-Choice; Navin's experiments keep their own settings."; }
   else {
-    info.innerHTML = `${esc(cur)} has no profile yet: the tasks use their own defaults. <button class="btn small" id="btn-profile-create">Create from ${esc(exp(S.selected)?.label || "this task")}</button>`;
+    info.innerHTML = `no profile <button class="btn small" id="btn-profile-create" title="Create ${esc(cur)}'s profile from ${esc(exp(S.selected)?.label || "this task")}'s settings">Create</button>`;
     $("#btn-profile-create").onclick = () => createProfileFromTask();
   }
   $("#btn-profile").disabled = !cur || cur === "test";
@@ -977,10 +1007,27 @@ function logEl(e) {
   return div;
 }
 function logMatches(e) { return levelShown(e.level) && (!S.logFilter || e.text.toLowerCase().includes(S.logFilter.toLowerCase())); }
+function logStrip(e) {
+  const last = $("#log-last"); if (!last) return;
+  last.className = `log-last ${e.level}`;
+  last.textContent = `${new Date(e.t * 1000).toLocaleTimeString([], { hour12: false })}  ${e.text}`;
+  if ((e.level === "warn" || e.level === "error") && $("#log-drawer").classList.contains("hidden")) {
+    S.warnCount++;
+  }
+  const w = $("#log-warns"); w.textContent = `Warnings ${S.warnCount}`; w.classList.toggle("has", S.warnCount > 0);
+}
+function openLog(open = true, level = null) {
+  const d = $("#log-drawer");
+  d.classList.toggle("hidden", !open);
+  $("#log-toggle").textContent = open ? "Close log ▾" : "Open log ▴";
+  if (level) document.querySelector(`#log-levels button[data-level="${level}"]`)?.click();
+  if (open) { S.warnCount = 0; $("#log-warns").textContent = "Warnings 0"; $("#log-warns").classList.remove("has"); const b = $("#log"); b.scrollTop = b.scrollHeight; }
+}
 function appendLog(e) {
   if (e.seq <= S.lastSeq) return;
   S.lastSeq = e.seq;
   S.logs.push(e); if (S.logs.length > 5000) S.logs.shift();
+  logStrip(e);
   if (!logMatches(e)) return;
   const box = $("#log");
   box.appendChild(logEl(e));
@@ -1072,11 +1119,15 @@ async function refreshSession(force = false) {
   if (!force && now - SV.lastFetch < 1500) return;
   SV.busy = true; SV.lastFetch = now;
   try {
+    const rk = runningKey();
+    if (rk && !(SV.view === "monitor" && key !== "reach_map")) SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(rk)}`);
     if (SV.view === "monitor" && key === "reach_map") SV.map = await api("/api/reach_map");
     else if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
     else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(curSubject() || store.get("subject", ""))}`);
   } catch (e) { /* shown as empty */ }
   finally { SV.busy = false; }
+  SV.juice = runningKey() && SV.data ? juiceOf(SV.data) : null;
+  renderRunStats();
   renderSession();
 }
 
@@ -1172,6 +1223,23 @@ function renderReachMap() {
   };
 }
 
+// Juice: each trial's rewards at their mean width and pulse count, through the valve calibration.
+function juiceOf(d) {
+  const rows = (d && d.rows) || [];
+  if (!(S.cal && S.cal.profiles.length) || !rows.length) return { ml: null };
+  let ml = 0, unsure = false;
+  for (const r of rows) {
+    const nr = num(r.n_rewards) || 0, pulses = num(r.reward_pulses) || nr, ms = num(r.reward_ms) || 0;
+    if (!nr) continue;
+    const v = rewardVolume(ms / pulses, Math.round(pulses / nr), 100);
+    if (v.ml == null) { unsure = true; continue; }
+    if (v.status !== "calibrated") unsure = true;
+    ml += nr * v.ml;
+  }
+  const t0 = num(rows[0].t_start), t1 = d.running ? Date.now() / 1000 : num(rows[rows.length - 1].t_end);
+  const hours = (t1 - t0) / 3600;
+  return { ml, unsure, rate: hours > 0.05 ? ml / hours : null };
+}
 function renderMonitor() {
   const box = $("#session-view"), d = SV.data;
   const rows = (d && d.rows) || [];
@@ -1187,21 +1255,8 @@ function renderMonitor() {
   const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
   const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
                  ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
-  // Juice: each trial's rewards at their mean width and pulse count, through the valve calibration.
-  let juice = 0, unsure = false;
-  for (const r of rows) {
-    const nr = num(r.n_rewards) || 0, pulses = num(r.reward_pulses) || nr, ms = num(r.reward_ms) || 0;
-    if (!nr) continue;
-    const v = rewardVolume(ms / pulses, Math.round(pulses / nr), 100);
-    if (v.ml == null) { unsure = true; continue; }
-    if (v.status !== "calibrated") unsure = true;
-    juice += nr * v.ml;
-  }
-  if (S.cal && S.cal.profiles.length && rewards) {
-    const t0 = num(rows[0].t_start), t1 = d.running ? Date.now() / 1000 : num(last.t_end);
-    const hours = (t1 - t0) / 3600;
-    tiles.push(["Juice", `${unsure ? "≈ " : ""}${fmtMl(juice)}${hours > 0.05 ? ` <small>${fmtMl(juice / hours)}/h</small>` : ""}`]);
-  }
+  const j = juiceOf(d);
+  if (j.ml != null && rewards) tiles.push(["Juice", `${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <small>${fmtMl(j.rate)}/h</small>` : ""}`]);
   const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
   if (chosen.length) {
     const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
@@ -1425,6 +1480,11 @@ async function init() {
   });
   $("#log-filter").oninput = (e) => { S.logFilter = e.target.value; rerenderLog(); };
   $("#btn-log-clear").onclick = () => { $("#log").innerHTML = ""; };
+  $("#log-toggle").onclick = () => openLog($("#log-drawer").classList.contains("hidden"));
+  $("#log-warns").onclick = () => openLog(true, "warn");
+  $("#btn-log-tall").onclick = () => $("#log-drawer").classList.toggle("tall");
+  // Close the reward popover with a click elsewhere.
+  document.addEventListener("click", (ev) => { if (S.rewardPop && !$("#reward-bar").contains(ev.target)) { S.rewardPop = false; renderRewardBar(); } });
   setInterval(() => { if (S.app) renderStatus(); }, 1000);
 }
 init().catch((e) => toast(`Dashboard failed to load: ${e.message}`, "err"));

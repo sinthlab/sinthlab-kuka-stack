@@ -183,9 +183,15 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
   kept the same as the number of choices grows) and so does Free Move's box; the dashboard notes where
   one goes past the monkey's reach.
 - **Reward per task:** a profile can hold a different reward for one task (`reward_by_task`).
-- **The page:** the Monkey card (top left) picks the monkey for the whole dashboard; the settings card
-  has three views: **Task** (today's few), **Monkey** (the profile's settings as this task uses them,
-  with *Save to profile*) and **All settings** (the Live / Per-run / Fixed tabs, unchanged).
+- **The page** (two columns under a run bar): the **run bar**, always in view, holds the monkey, the task
+  (one drop-down grouped Experiments / Pre-training, then chips for the rail and the paradigm), the reward
+  (valve time, mL, −10 / +10 ms, set by volume, save to the profile), Start / Stop with the session timer and
+  the juice given, and the status pills. Left column: the session (trial and phase while running; the Run
+  monitor or Today vs recent; the SmartPad checklist folded to one line before a run). Right column: the
+  settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
+  settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
+  **All settings** (the Live / Per-run / Fixed tabs, unchanged). The log is a one-line strip at the bottom
+  (the latest message, a warnings count) that opens into the full log.
 - **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
   live and waiting for the next trial included, wherever they differ from the profile; the reach comes
   back from a horizontal or vertical rail's ends. Tick what to keep; a reward can go to this task only.

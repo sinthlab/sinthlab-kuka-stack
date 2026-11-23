@@ -320,6 +320,36 @@ CAUTION: Dict[str, str] = {
                                 "The flange tilts more as r grows -- up to ~22 deg at the frontal cap."),
 }
 
+# Plain names for the settings on the tasks' front page (the Task view); All settings keeps the YAML names.
+LABELS: Dict[str, str] = {
+    "session_sec": "Session length [s]",
+    "long_move.min_m": "Shortest rewarded move [m]",
+    "long_move.min_straightness": "Min straightness (0 = off)",
+    "long_move.min_gap_sec": "Min time between rewards [s]",
+    "centre_out.max_repeats": "Max same end in a row",
+    "centre_out.block_other_end": "Close the other half",
+    "centre_out.end_tol_m": "End tolerance [m]",
+    "centre_out.free_reach_m": "No-rail choice distance [m]",
+    "rule.red_end": "Red means (block 1)",
+    "rule.window": "Criterion window [choices]",
+    "rule.criterion_pct": "Criterion [% correct]",
+    "rule.min_trials": "Min choices per block",
+    "rule.max_repeats": "Max same colour in a row",
+    "n_choice.p_max": "Highest reward probability",
+    "n_choice.p_min": "Lowest reward probability",
+    "n_choice.deplete": "Depletion per choice",
+    "n_choice.recover": "Recovery per trial",
+    "n_choice.start": "Probabilities at the start",
+    "n_choice.end_tol_m": "End tolerance [m]",
+    "free_move.ray_length_m": "Rail length [m]",
+    "reach_map.margin_m": "New best by at least [m]",
+    "reach_map.min_m": "Ignore reaches under [m]",
+    "reach_map.percentile": "Comfortable reach percentile",
+    "reward_pulse.pulse_ms": "Valve open [ms]",
+    "reward_pulse.count": "Pulses per reward",
+    "reward_pulse.gap_ms": "Gap between pulses [ms]",
+}
+
 # The start pose: for the CLIK experiments the CLIK redundancy posture follows it (see params.py).
 START_POSE = "move_to_start.target_joint_position"
 
