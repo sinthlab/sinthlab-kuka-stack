@@ -2527,6 +2527,28 @@ block of every experiment YAML, all live:
 | `reward_pulse.output` | `4` | EL2124 output (front jack SYNC 1–4) cabled to the reward box's NSP jack; must differ from the `nsp_sync` outputs |
 | `reward_pulse.pulse_ms` | `500` | how long the valve stays open, 10–5000 ms |
 
+**Calibrating the reward: milliseconds to microlitres.** `pulse_ms` is a time, not a volume.
+[`analysis/reward_calibration.py`](analysis/reward_calibration.py) measures the conversion. It sends the
+same `PULSE 4 <ms>` command in batches (50 openings each by default, shuffled widths, 3 batches per width,
+plus blank batches with no pulse); you weigh each batch. Then it fits volume per pulse against width and
+gives the width for a volume:
+
+```bash
+python3 analysis/reward_calibration.py sweep --widths 20 40 60 100 150 200 300 --out reward_calib/2026-11-24.csv
+python3 analysis/reward_calibration.py fit reward_calib/2026-11-24.csv --density 1.0 --out reward_calib/profile.json
+python3 analysis/reward_calibration.py ms --profile reward_calib/profile.json 100 250   # -> reward_pulse.pulse_ms
+python3 analysis/reward_calibration.py check --profile reward_calib/profile.json --width 133   # before a session
+```
+
+Run it with the arm parked under **PulseTestServer** (it never moves the arm), with no experiment running,
+the session's fluid, reservoir fill, tubing and spout, the line primed, FLUSH off and the pedal and hand
+switch unplugged. A sweep can be stopped and resumed (the same command continues it). A pulse the cabinet
+does not confirm stops the batch, which is redone; it is never repeated blindly. Pulses must be at least
+0.3 s apart with the valve closed (`TtlPulser` extends a pulse that is still high, so overlapping pulses
+would merge into one long opening). Widths whose batches vary by more than 10 % are left out of the
+calibrated range, and a volume outside that range is refused. `--demo` runs the whole procedure against
+a simulated cabinet. Recalibrate after changing the valve, tubing, spout, fluid or reservoir.
+
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event
 has its own line, so a dropped pulse shows up as a missing edge on that line instead of silently
