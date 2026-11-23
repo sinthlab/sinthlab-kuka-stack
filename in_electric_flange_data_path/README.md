@@ -227,31 +227,36 @@ Once per computer:
    ```bash
    sudo apt install python3-serial
    ```
-3. **Serial-port permission** (WSL), then restart WSL from PowerShell with `wsl --shutdown`:
+3. **Serial-port permission** (WSL):
    ```bash
    sudo usermod -aG dialout $USER
    ```
-
-After every replug, reboot or `wsl --shutdown`:
-
-1. **Attach the adapter to WSL** (PowerShell as administrator; `bind` is needed only the first time):
+4. **Share the adapter** (PowerShell **as administrator**, once; it survives reboots):
    ```powershell
-   usbipd list                          # the StarTech shows as an FTDI / USB Serial Converter; note its BUSID
-   usbipd bind --busid <busid>
-   usbipd attach --wsl --busid <busid>
+   usbipd list                          # the StarTech shows as an FTDI / USB Serial Converter, VID:PID 0403:6001
+   usbipd bind --hardware-id 0403:6001
    ```
-2. **Check it in WSL:** `ls /dev/ttyUSB*` shows `/dev/ttyUSB0`.
-3. **Latency timer to 1 ms** (the FTDI default of 16 ms delays every reply):
+5. **Latency timer to 1 ms on every attach** (the FTDI default of 16 ms delays every reply), as a udev
+   rule (WSL):
    ```bash
-   echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
+   echo 'ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"' \
+     | sudo tee /etc/udev/rules.d/99-ftdi-latency.rules
    ```
-   The experiments' serial sender warns at startup when it is not 1.
+   Then restart WSL from PowerShell with `wsl --shutdown`.
+
+**Attaching is automatic.** `experiment_ctrl_gui/run_gui.sh` starts
+`usbipd.exe attach --wsl --hardware-id 0403:6001 --auto-attach` in the background (no administrator
+needed once the adapter is shared). It attaches the adapter at once and again after every replug for as
+long as WSL runs, and starting the dashboard after a WSL restart or reboot attaches it again. The
+dashboard's start-up prints `USB serial adapter attached: /dev/ttyUSB0`, or a note pointing at
+`experiment_ctrl_gui/logs/usbipd_attach.log`. A different adapter: set `USB_SERIAL_HWID=<VID:PID>`
+before `run_gui.sh`. The experiments' serial sender warns at startup when the latency timer is not 1.
 
 ### Re-attach after WSL restarts or crashes
 
-The adapter leaves WSL whenever WSL stops: `wsl --shutdown`, a WSL crash, a Windows reboot, or the
-adapter being unplugged. `/dev/ttyUSB0` is then gone, and experiments with `trigger: "serial"` log
-`serial port … cannot be opened`. Re-attach it (PowerShell **as administrator**):
+The adapter leaves WSL whenever WSL stops: `wsl --shutdown`, a WSL crash or a Windows reboot.
+`/dev/ttyUSB0` is then gone, and experiments with `trigger: "serial"` log `serial port … cannot be
+opened`. Restarting the dashboard (`run_gui.sh`) attaches it again. By hand, in PowerShell:
 
 ```powershell
 usbipd list                              # find the StarTech (FTDI / USB Serial Converter) and its BUSID
@@ -268,8 +273,7 @@ usbipd bind --busid <busid>
 usbipd attach --wsl --busid <busid>
 ```
 
-Then in WSL: `ls /dev/ttyUSB*` shows the port, set the latency timer again (it resets on every
-attach), and **Check board** from Diagnostics → Visual cue with the path set to **Serial**. A running experiment's serial sender
+Then in WSL: `ls /dev/ttyUSB*` shows the port (the udev rule sets the latency timer), and **Check board** from Diagnostics → Visual cue with the path set to **Serial**. A running experiment's serial sender
 reopens the port by itself once it is back; no restart is needed.
 
 ```bash

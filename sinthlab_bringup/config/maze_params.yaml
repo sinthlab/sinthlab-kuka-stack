@@ -238,6 +238,7 @@
       # Speed is measured between the arm's tf updates (their own timestamps); require this many
       # consecutive over-threshold samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort.
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 

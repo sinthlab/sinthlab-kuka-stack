@@ -400,7 +400,12 @@ class AdmittanceMoveAction:
         f_mag = float(np.linalg.norm(self._f_used))
         u = self._f_used / f_mag if f_mag > 0.0 else None
         if u is not None and float(self._v_arm @ u) > TRAIL_MPS:
-            behind = float((self._p_meas + self._rest_offset - eq) @ u) - self._trail
+            # Measured from where the arm would rest ON the rail and ABOVE the floor: a push down at the
+            # floor sinks the arm itself below it, and trailing that point pulled the equilibrium down along
+            # the push -- the floor then took back only the drop, and the push's forward part was left as a
+            # jump ahead (2.6 cm in 60 ms in the 10 Nov Free Move run).
+            rest = self._floor.clamp_xyz(self._on_rail(self._p_meas + self._rest_offset), self._anchor[0:3, 0:3])
+            behind = float((rest - eq) @ u) - self._trail
             if behind > 0.0:
                 eq = eq + u * behind
         # The rail, then the floor: clamp the integrated equilibrium itself, so a push past a rail end or

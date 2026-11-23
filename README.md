@@ -341,9 +341,10 @@ None of these are committed to git.
 - **The cue ring does not light.** Open **Diagnostics → Visual cue**: *Check board*, then *Fire cue* over
   Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics--hardware-checks).
 - **The serial cue link stopped answering after WSL restarted or crashed** (log: `serial port …
-  cannot be opened`, or Diagnostics → Visual cue, path Serial, *Check board* fails). The adapter left WSL with it. In
-  PowerShell as administrator: `usbipd attach --wsl --busid <busid>`; if that fails, `usbipd detach`,
-  `unbind`, `bind`, then `attach` again. Then set the latency timer. Full steps:
+  cannot be opened`, or Diagnostics → Visual cue, path Serial, *Check board* fails). The adapter left WSL with it.
+  Restart the dashboard (`run_gui.sh` attaches it again). If that fails, in PowerShell:
+  `usbipd attach --wsl --busid <busid>`; if that fails too, `usbipd detach`, `unbind`, `bind` (as
+  administrator), then `attach` again. Full steps:
   [Re-attach after WSL restarts or crashes](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes).
 - **"Dashboard disconnected".** The dashboard server stopped. Restart it. If it was running an
   experiment, that experiment was stopped cleanly when the server stopped.
@@ -1378,7 +1379,8 @@ Work up the ladder and stop at the first rung that feels wrong.
 > first — a wrong `loadData` makes the sink larger and biases every vertical leg.
 >
 > **Safety-stop (backstop, not a substitute).** `SafetyStopMonitor` (`maze_safety` in the params) trips if
-> the EE leaves the start pose by > 0.30 m or exceeds 1.5 m/s (for 5 consecutive samples), and **aborts immediately** —
+> the EE leaves the start pose by > 0.30 m or exceeds 1.5 m/s (for 5 consecutive samples), or the robot state stops
+> arriving for 0.5 s, and **aborts immediately** —
 > stops the fixture and drives back to the start posture, no release wait. This exists because the FRI
 > velocity guard only *neutralises the command*, it does not halt the trial. It catches a runaway; it does
 > not remove the need for correct gravity compensation.
@@ -1499,7 +1501,8 @@ does the IK; ROS only moves the target point.
     arm back: a jerk at the end of a fast move, then a spring-back. While the hand moves the arm
     faster than 0.1 m/s, the equilibrium stays at most this far behind it along the push, so the
     spring resists a fast drag by at most 1000 N/m × 5 mm = 5 N and has almost nothing to spring
-    back with.
+    back with. "Behind it" is measured from where the arm would rest **on the rail and above the
+    floor**, so a fast push down at the floor never pulls the equilibrium forward along the push.
   - `low_force_n` (default **10 N**) and `low_force_damping_ns_per_m` (default **100**): a hand
     resting on the apple makes the same hand loop bob up and down (~1.6 Hz in Z). Below
     `low_force_n` the damping rises toward `low_force_damping_ns_per_m` at the threshold, which halves
@@ -1790,7 +1793,7 @@ flowchart LR
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
   | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary, or one rail (Move Vertical / Horizontal) |
-  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`) |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`). In every experiment it also trips when the robot state (`lbr_state`) stops arriving for `state_timeout_sec` (0.5 s) |
   | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task parks |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
@@ -2208,7 +2211,7 @@ visual_cue:
 
 | | `serial` | `wifi` |
 |---|---|---|
-| Needs | the StarTech attached to WSL (`usbipd attach --wsl --busid <id>`) | this computer joined to the board's **`KUKA_NEOPIXEL`** network (its Ethernet link to the robot is separate) |
+| Needs | the StarTech attached to WSL (automatic with `run_gui.sh`; by hand `usbipd attach --wsl --busid <id>`) | this computer joined to the board's **`KUKA_NEOPIXEL`** network (its Ethernet link to the robot is separate) |
 | Check it | Diagnostics → Visual cue, path **Serial**: **Check board** | Diagnostics, path **Wi-Fi**: **Check board**, or `curl http://192.168.4.1/status` |
 | A cue | `CUE` or `CUE r g b w` | `GET /cue`, after `/config?r=..&g=..&b=..&w=..` for a colour |
 | A ring state (pre-training) | `SEG f colors` / `OFF` | `/segments?factor=f&colors=…` / `/off` |
@@ -2826,8 +2829,8 @@ are all in [`reward_and_sync_box/README.md`](reward_and_sync_box/README.md#sync-
   3. **Started too early** — before the app reached *Creating FRI connection to …* (still moving to
      zero / ready). Stop, wait for that line on the SmartPad, Start again.
 - **Visual cues over the serial link stop after WSL restarts or crashes.** The StarTech adapter is
-  detached from WSL whenever WSL stops. Re-attach it with usbipd (detach → unbind → bind → attach if
-  a plain `attach` fails) and reset the latency timer:
+  detached from WSL whenever WSL stops. Restart the dashboard (`run_gui.sh` attaches it again), or
+  re-attach it with usbipd (detach → unbind → bind → attach if a plain `attach` fails):
   [Re-attach after WSL restarts or crashes](in_electric_flange_data_path/README.md#re-attach-after-wsl-restarts-or-crashes).
 - **The arm stops with a safety error and will not move** — the smartPAD shows *axis range
   monitoring, instance N* (or a *motion paused* message) after a hard or fast pull. A joint reached
