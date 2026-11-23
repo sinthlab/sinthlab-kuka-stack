@@ -49,6 +49,7 @@ const PHASE_TEXT = {
   grasp_timeout: "no grasp — resetting",
   stop_requested: "STOP — ending the trial, parking",
   closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
+  cue_colour: null, reversal: null,   // the colour rule's cue and reversal marks, just before `target`
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {

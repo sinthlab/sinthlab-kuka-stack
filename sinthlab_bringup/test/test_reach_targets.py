@@ -34,8 +34,8 @@ def longest_run(seq):
 
 # ---------------------------------------------------------------- modes
 def test_modes_per_rail():
-    assert modes_for(H) == ("either", "cued", "left", "right")
-    assert modes_for(V) == ("either", "cued", "down", "up")
+    assert modes_for(H) == ("either", "cued", "left", "right", "rule")
+    assert modes_for(V) == ("either", "cued", "down", "up", "rule")
     assert check_mode("left", H) is None
     assert check_mode("left", V) is not None        # no left end on the vertical rail
     assert check_mode("sideways", H) is not None

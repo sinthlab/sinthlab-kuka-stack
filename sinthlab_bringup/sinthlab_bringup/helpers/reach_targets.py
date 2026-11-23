@@ -8,6 +8,8 @@ rail_min_m end. centre_out.target picks the trial's goal:
     cued     one end per trial, drawn at random, never more than   (interleaved one-direction trials)
              max_repeats of the same end in a row
     <end>    that end on every trial: left / right, down / up      (one-direction trials, one side only)
+    rule     the colour rule: a red or blue ring means one end or  (helpers/rule_schedule.py; the whole
+             the other, and the mapping reverses unsignaled          rail stays open, it is a choice)
 
 Changed between trials (it is live), so a session can go left only -> right only -> cued -> either.
 
@@ -22,11 +24,12 @@ import random
 from typing import Optional, Sequence, Tuple
 
 BOTH = ("either", "cued")
+RULE = "rule"      # the colour rule (helpers/rule_schedule.py): drawn by the ReversalSchedule, not here
 
 
 def modes_for(ends: Sequence[str]) -> Tuple[str, ...]:
     """Every centre_out.target value valid on a rail with these two ends."""
-    return BOTH + tuple(ends)
+    return BOTH + tuple(ends) + (RULE,)
 
 
 def check_mode(mode: str, ends: Sequence[str]) -> Optional[str]:
@@ -65,6 +68,8 @@ class TargetPicker:
             return "either"
         if self.mode in self.ends:
             return self.mode
+        if self.mode == RULE:
+            raise ValueError("the colour rule draws its own goals (helpers/rule_schedule.py)")
         end = self._rng.choice(self.ends)       # cued
         if self.max_repeats and end == self._run_end and self._run_len >= self.max_repeats:
             end = self.other(end)
@@ -83,7 +88,7 @@ def open_span(target: str, ends: Sequence[str], rail_ends_m: Tuple[float, float]
     With block_other_end and one goal end, the rail runs from the centre (the start, 0 m) to that end
     only. "either" always leaves the whole rail open."""
     if not block_other_end or target not in ends:
-        return None
+        return None        # (the colour rule is a choice: its monitor never asks to close anything)
     lo, hi = rail_ends_m
     centre = min(max(0.0, lo), hi)
     return (lo, centre) if target == ends[0] else (centre, hi)

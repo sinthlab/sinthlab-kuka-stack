@@ -253,6 +253,13 @@ def validate(path) -> bool:
         r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
         tgt = [a for _, t, a in seq if t == "target"]
         ends = [a for _, t, a in seq if t in ("reach", "reach_wrong")]
+        if "cue_colour" in got:
+            # The colour rule: one cue colour per trial, red or blue, before the target; and no closed end.
+            cues = [a for _, t, a in seq if t == "cue_colour"]
+            r.check(len(cues) == 1 and cues[0] in ("red", "blue"), f"one cue colour, red or blue (found {cues})")
+            r.check("closed_end" not in got, "the colour rule keeps the whole rail open")
+            if "reversal" in got:
+                r.note(f"colour rule: reversal before this trial -> {[a for _, t, a in seq if t == 'reversal'][0]}")
         closed = [a for _, t, a in seq if t == "closed_end"]
         if closed:
             # One-direction trial with the other half of the rail closed: the closed end is not the goal,

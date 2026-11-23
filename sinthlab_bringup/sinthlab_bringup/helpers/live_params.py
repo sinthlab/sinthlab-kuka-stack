@@ -74,6 +74,7 @@ _RESIST = ["resistance.stiffness_n_per_m"]
 _FREE = _COMMON + _REWARD + _SPEED + _RING + [
     # Move Vertical / Horizontal: the centre-out reach (actions/centre_out.py). Free Move has none.
     "centre_out.*",
+    "rule.*",                      # the colour rule (helpers/rule_schedule.py)
     # Free Move: the long-movement reward (actions/long_move.py). The rails have none.
     "long_move.*",
     "session_sec",
@@ -169,6 +170,11 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "centre_out.end_tol_m": (0.005, 0.03),
     # Cued: at most this many trials in a row to the same end (0 = no cap).
     "centre_out.max_repeats": (0, 20),
+    # The colour rule (helpers/rule_schedule.py).
+    "rule.window": (1, 100),
+    "rule.criterion_pct": (50.0, 100.0),
+    "rule.min_trials": (1, 200),
+    "rule.max_repeats": (0, 20),
     # Long moves (actions/long_move.py).
     "long_move.min_m": (0.02, 0.40),
     "long_move.min_straightness": (0.0, 1.0),
@@ -230,6 +236,7 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     # Move Vertical / Horizontal, whose paradigm is centre_out.target.
     "centre_out.max_repeats": ("cued",),
     "centre_out.block_other_end": ("cued", "left", "right", "down", "up"),
+    "rule.*": ("rule",),
     # Free Move, whose paradigm is long_move.reward.
     "long_move.*": ("each_move",),
 }
@@ -285,7 +292,8 @@ CHOICES: Dict[str, List[str]] = {
     "reward_pulse.output": ["1", "2", "3", "4"],
     # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
     # does not have (left / right on the vertical rail, down / up on the horizontal one).
-    "centre_out.target": ["either", "cued", "left", "right", "down", "up"],
+    "centre_out.target": ["either", "cued", "left", "right", "down", "up", "rule"],
+    "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move"],            # actions/long_move.MODES
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS

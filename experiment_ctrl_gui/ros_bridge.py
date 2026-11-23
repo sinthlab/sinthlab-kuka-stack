@@ -21,7 +21,8 @@ from collections import deque
 from typing import Callable, Dict, Optional, Tuple
 
 import experiments as ex
-from sinthlab_bringup.helpers.reach_targets import TargetPicker, modes_for   # on the path via experiments
+from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for   # on the path via experiments
+from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -183,6 +184,7 @@ class DemoBridge:
             self._in_trial = False
             self._trial = 0
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
+            self._rule: Optional[ReversalSchedule] = None   # the colour rule, built on entering it
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -306,17 +308,42 @@ class DemoBridge:
                 ends = ("down", "up") if self._exp.key == "move_vertical" else ("left", "right")
                 if self._picker is None:
                     self._picker = TargetPicker(ends)
-                self._picker.set_mode(mode if mode in modes_for(ends) else "either",
-                                      int(self._effective.get("centre_out.max_repeats", 0) or 0))
-                target = self._picker.pick()
-                closed = (self._picker.other(target) if target in ends
-                          and self._effective.get("centre_out.block_other_end") else None)
-                if closed:
-                    self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
-                self._phase_to("target", target, f"Centre-out: the goal is {target}.")
-                if not self._sleep(run_id, random.uniform(1.0, 3.0)):
-                    return False
-                end = target if closed else random.choice(ends)
+                if mode == RULE:
+                    # The colour rule: a simulated learner, right more often the longer the block runs, so
+                    # the criterion is met and the mapping reverses (unsignaled) every few dozen trials.
+                    e = self._effective
+                    if self._rule is None:
+                        self._rule = ReversalSchedule(ends, str(e.get("rule.red_end", ends[1])))
+                    self._rule.configure(int(e.get("rule.window", 20)), float(e.get("rule.criterion_pct", 80)),
+                                         int(e.get("rule.min_trials", 20)), int(e.get("rule.max_repeats", 3)))
+                    mapping = self._rule.mapping() if self._rule.take_reversal() else None
+                    if mapping:
+                        self._phase_to("reversal", mapping, f"(operator only) Colour rule: now {mapping}.")
+                    colour = self._rule.draw_colour()
+                    target = self._rule.end_for(colour)
+                    self._phase_to("cue_colour", colour, "")
+                    self._phase_to("target", target, f"Colour rule: {colour} -- the goal is {target}.")
+                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                        return False
+                    p_right = min(0.95, 0.35 + 0.04 * self._rule.choices_in_block)
+                    end = target if random.random() < p_right else [x for x in ends if x != target][0]
+                    if self._rule.record(end == target):
+                        self._log(f"Colour rule: criterion met -- reverses, unsignaled, from the next trial: "
+                                  f"{self._rule.mapping()} (block {self._rule.block}).")
+                    closed = None
+                else:
+                    self._rule = None
+                    self._picker.set_mode(mode if mode in modes_for(ends) and mode != RULE else "either",
+                                          int(self._effective.get("centre_out.max_repeats", 0) or 0))
+                    target = self._picker.pick()
+                    closed = (self._picker.other(target) if target in ends
+                              and self._effective.get("centre_out.block_other_end") else None)
+                    if closed:
+                        self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
+                    self._phase_to("target", target, f"Centre-out: the goal is {target}.")
+                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                        return False
+                    end = target if closed else random.choice(ends)
                 if target in ("either", end):
                     self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
                     self._reward("reach")

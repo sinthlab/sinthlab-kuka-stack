@@ -15,6 +15,11 @@ end the arm reaches:
                                  same end in a row); only its quarter lights and only it is rewarded
                        <end>  -- that end on every trial (left / right, down / up): one-direction
                                  trials. Live, so a session can go left only -> right only -> cued.
+                       rule   -- the colour rule (helpers/rule_schedule.py): the whole ring lights red
+                                 or blue, each colour means one end, the whole rail is open, and the
+                                 mapping reverses without any signal to the animal once he reaches
+                                 criterion (the rule block: red_end, window, criterion_pct, min_trials,
+                                 max_repeats). Entering it starts at block 1 with red = rule.red_end.
 
 ONE DIRECTION PER TRIAL. With centre_out.block_other_end, a trial with one goal end (cued or <end>) closes
 the other half of the rail (AdmittanceMoveAction.set_open_span): the arm moves only between the centre and
@@ -43,7 +48,8 @@ from typing import Callable, List, Optional, Tuple
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.helpers.node_utils import get_required_param
-from sinthlab_bringup.helpers.reach_targets import TargetPicker, check_mode, open_span as rail_open_span
+from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, check_mode, open_span as rail_open_span
+from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 
 # The (rail_min_m, rail_max_m) ends' names, by the rail's base axis (an x rail: "min" / "max").
 END_NAMES = {"z": ("down", "up"), "y": ("left", "right")}
@@ -60,6 +66,11 @@ class CentreOutMonitor:
         axis = admittance.rail_axis()
         self._ends = END_NAMES.get(axis, ("min", "max"))   # (rail_min_m end, rail_max_m end)
         self._picker = TargetPicker(self._ends)
+        self._colour: Optional[str] = None
+        # The colour rule (centre_out.target "rule"): built from the rule block; restarted on entering it.
+        self._rule: Optional[ReversalSchedule] = None
+        if node.has_parameter("rule.red_end"):
+            self._rule = ReversalSchedule(self._ends, str(get_required_param(node, "rule.red_end")).strip().lower())
         self._first_load = True
         self.reload()
         node.create_timer(1.0 / RATE_HZ, self._tick)
@@ -70,7 +81,10 @@ class CentreOutMonitor:
         mode = str(get_required_param(n, p + "target")).strip().lower()
         self._block = bool(get_required_param(n, p + "block_other_end"))
         max_repeats = int(get_required_param(n, p + "max_repeats"))
+        was = None if self._first_load else self._picker.mode
         try:
+            if mode == RULE and self._rule is None:
+                raise ValueError("centre_out.target rule needs the rule block in this experiment's YAML")
             self._picker.set_mode(mode, max_repeats)
         except ValueError as exc:
             if self._first_load:
@@ -79,31 +93,70 @@ class CentreOutMonitor:
             n.get_logger().error(f"Centre-out: {exc}; keeping {self._picker.mode}.")
             self._picker.set_mode(self._picker.mode, max_repeats)
         self._first_load = False
+        if self._rule is not None:
+            self._rule.configure(int(get_required_param(n, "rule.window")),
+                                 float(get_required_param(n, "rule.criterion_pct")),
+                                 int(get_required_param(n, "rule.min_trials")),
+                                 int(get_required_param(n, "rule.max_repeats")))
+            if self._picker.mode == RULE and was != RULE:     # entering the rule: block 1, rule.red_end
+                self._rule.restart(str(get_required_param(n, "rule.red_end")).strip().lower())
         self._end_tol = float(get_required_param(n, p + "end_tol_m"))
         self._quarter = {end: int(get_required_param(n, p + "quarter_" + end)) for end in self._ends}
         if self.enabled:
             lo, hi = self._adm.rail_ends()
             mode = self._picker.mode
+            r = self._rule
             how = (f"{mode} only" if mode in self._ends else
                    f"cued (at most {self._picker.max_repeats} in a row)" if mode == "cued" and self._picker.max_repeats
-                   else mode)
+                   else f"colour rule, {r.mapping()} (block {r.block}; reverses unsignaled at "
+                        f"{r.criterion_pct:g}% of the last {r.window} choices, after at least {r.min_trials})"
+                   if mode == RULE else mode)
             n.get_logger().info(
                 f"Centre-out: one reach per trial, {how}"
-                + (", the other half of the rail closed" if self._block and mode != "either" else "")
+                + (", the other half of the rail closed" if self._block and mode not in ("either", RULE) else "")
                 + f"; an end counts within {self._end_tol * 1000:.0f} mm of the {self._ends[0]} ({lo:+.3f} m) / "
                 f"{self._ends[1]} ({hi:+.3f} m) end.")
 
     def check_live(self, name: str, value, context: dict) -> Optional[str]:
         """ExperimentControl validator: refuse a centre_out.target this rail does not have (e.g. "left" on
         Move Vertical's rail) before it is accepted, instead of at the next trial."""
+        if name == "rule.red_end":
+            v = str(value).strip().lower()
+            return None if v in self._ends else f"rule.red_end must be one of {list(self._ends)} on this rail, got {v!r}"
         if name != self._p + "target":
             return None
-        return check_mode(str(value).strip().lower(), self._ends)
+        mode = str(value).strip().lower()
+        if mode == RULE and self._rule is None:
+            return "this experiment's YAML has no rule block"
+        return check_mode(mode, self._ends)
+
+    # ------------------------------------------------------------------ the colour rule
+    def rule_on(self) -> bool:
+        return self._picker.mode == RULE
+
+    def cue_colour(self) -> Optional[str]:
+        """This trial's cue colour (the colour rule), else None."""
+        return self._colour
+
+    def rule_state(self) -> Optional[dict]:
+        """The rule's state for the trial's sidecar (`rule`), before the trial's choice."""
+        return self._rule.state() if self.rule_on() else None
+
+    def take_reversal(self) -> Optional[str]:
+        """The new mapping, once, on the first trial after a reversal; else None."""
+        return self._rule.mapping() if self.rule_on() and self._rule.take_reversal() else None
+
+    def ring_cue(self) -> Tuple[str, List[int]]:
+        """What the ring shows at the go cue: (ring state, quarters). The colour rule lights the whole ring
+        in the cue colour (ring_cue.colours.rule_red / rule_blue); otherwise the goal's quarters, green."""
+        if self.rule_on() and self._colour:
+            return f"rule_{self._colour}", [0, 1, 2, 3]
+        return "go", self.quarters()
 
     def open_span(self) -> Optional[Tuple[float, float]]:
         """This trial's open part of the rail (lo, hi) [m from the start], or None for the whole rail."""
-        if self._target is None or self._adm.rail_ends() is None:
-            return None
+        if self._target is None or self._adm.rail_ends() is None or self.rule_on():
+            return None             # the colour rule is a choice: the whole rail stays open
         return rail_open_span(self._target, self._ends, self._adm.rail_ends(), self._block)
 
     def closed_end(self) -> Optional[str]:
@@ -112,8 +165,13 @@ class CentreOutMonitor:
 
     def pick_target(self) -> str:
         """The goal for this trial: an end's name (cued, drawn at random; or the one end of a one-direction
-        mode) or "either"."""
-        self._target = self._picker.pick()
+        mode; or the end the cue colour means under the colour rule) or "either"."""
+        if self.rule_on():
+            self._colour = self._rule.draw_colour()
+            self._target = self._rule.end_for(self._colour)
+        else:
+            self._colour = None
+            self._target = self._picker.pick()
         return self._target
 
     def quarters(self) -> List[int]:
@@ -131,6 +189,7 @@ class CentreOutMonitor:
     def stop(self) -> None:
         self._on_end = None
         self._target = None
+        self._colour = None
 
     def _tick(self) -> None:
         if self._on_end is None:
@@ -148,4 +207,9 @@ class CentreOutMonitor:
         self._node.get_logger().info(
             f"Centre-out: reached the {end} end" + (" -- reward." if rewarded else
                                                     f", the target was {self._target} -- no reward."))
+        if self.rule_on() and self._rule.record(rewarded):
+            # Logged for the operator only: nothing reaches the animal.
+            self._node.get_logger().info(
+                f"Colour rule: criterion met -- the mapping reverses, unsignaled, from the next trial: "
+                f"{self._rule.mapping()} (block {self._rule.block}).")
         on_end(end, rewarded)

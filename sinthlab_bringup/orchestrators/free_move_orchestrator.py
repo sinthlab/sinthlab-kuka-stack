@@ -161,8 +161,16 @@ class FreeMoveOrchestratorNode(rclpyNode):
             closed = self.centre_out.closed_end()
             if closed is not None:
                 self.recorder.mark("closed_end", closed)
+            if self.centre_out.rule_on():
+                # The colour rule: the state the trial runs under (mapping, block, criterion) goes into its
+                # record; a reversal is marked on the first trial after it. Nothing of it reaches the animal.
+                self.recorder.annotate(rule=self.centre_out.rule_state())
+                mapping = self.centre_out.take_reversal()
+                if mapping is not None:
+                    self.recorder.mark("reversal", mapping)
+                self.recorder.mark("cue_colour", self.centre_out.cue_colour())
             self.recorder.mark("target", target)
-            self.ring.show("go", self.centre_out.quarters())
+            self.ring.show(*self.centre_out.ring_cue())
         else:
             self.ring.show("go")
         self.go_cue.start()
@@ -271,6 +279,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip", arg)
         lit = self.centre_out.quarters() if self.centre_out is not None else None
+        # The colour rule shows no red "reached" ring: red is one of its cues. Only the outcome tells.
+        rule = self.centre_out is not None and self.centre_out.rule_on()
         if self.centre_out is not None:
             self.centre_out.stop()
         if self.long_move is not None:
@@ -279,7 +289,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.response_timeout.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
-        if reason in ("reach", "reach_wrong"):
+        if reason in ("reach", "reach_wrong") and not rule:
             self.ring.show("reached", lit)   # the lit quarters turn red until the hand lets go
         else:
             self.ring.show("off")

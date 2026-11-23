@@ -136,8 +136,9 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
 # switch it during a run, from the next trial: one end only -> the other -> cued -> either.
 _CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
-_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
-_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
+_RULE = [("rule", "Colour rule")]        # red / blue means one end or the other; reverses unsignaled
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")] + _RULE
+_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")] + _RULE
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
