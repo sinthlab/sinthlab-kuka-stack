@@ -62,12 +62,15 @@ def height_of(start_deg, reference: str) -> Optional[float]:
 FLOOR_RELEVANT = ("floor.", "move_to_start.target_joint_position", "move_to_park.target_joint_position",
                   "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", "paradigm",
                   "random_start.", "perturb_start.polar_", "virtual_fixture", "free_move.rail_",
-                  "free_move.box.")
+                  "free_move.box.", "free_move.ray_")
 
 
 def floor_problem(current: dict) -> Optional[str]:
     """None if the configuration leaves the floor clear of the task (helpers/floor.setup_problem), else
     the reason. None also when there is no robot model (no ROS): the run still checks at start-up."""
+    problem = ex.live_params.choice_geometry_problem(current)
+    if problem:
+        return problem
     _load()
     if _MODEL is None or "floor.height_m" not in current:
         return None

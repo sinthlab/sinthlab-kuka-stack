@@ -77,18 +77,13 @@ def on_rays(offset: np.ndarray, dirs: np.ndarray, length: float) -> Tuple[np.nda
 
 
 def rays_problem(grid, start_deg, degs: Sequence[float], length: float) -> Optional[str]:
-    """None if the arm can hold the start's orientation along every rail of the asterisk -- its end and its
-    middle, solved by `grid` (helpers/start_grid.StartGrid: reach, elbow, joint limits, singular poses),
-    else the reason. The node refuses an asterisk that fails it at start-up, and the dashboard before Start,
-    as for Free Move's box."""
-    offsets = {}
+    """Check every ray with the same sampled posture guard as a straight rail."""
+    if not np.isfinite(length) or length <= 0:
+        return "rail length must be positive and finite"
     for a in degs:
-        d = frontal_dir(a)
-        for frac, where in ((1.0, "end"), (0.5, "middle")):
-            offsets[f"the {direction_name(a)} rail's {where}"] = [float(d[1]) * length * frac, float(d[2]) * length * frac]
-    for name, (_, why) in grid.solve(start_deg, "frontal", offsets).items():   # frontal: a = +Y, b = +Z
-        if why:
-            return f"{name} ({length * 100:.0f} cm rails) is {why}"
+        problem = grid.directed_rail_problem(start_deg, frontal_dir(a), 0.0, length)
+        if problem:
+            return f"{direction_name(a)}: {problem}"
     return None
 
 

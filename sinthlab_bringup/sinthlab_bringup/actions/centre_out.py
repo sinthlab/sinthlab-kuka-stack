@@ -47,7 +47,7 @@ from typing import Callable, List, Optional, Tuple
 
 from rclpy.node import Node as rclpyNode
 
-from sinthlab_bringup.helpers.node_utils import get_required_param
+from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
 from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, check_mode, open_span as rail_open_span
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 
@@ -86,8 +86,8 @@ class CentreOutMonitor:
             self._free_ends = (-d, d)
         self.enabled = bool(get_required_param(n, p + "enabled")) and self._ends_m() is not None
         mode = str(get_required_param(n, p + "target")).strip().lower()
-        self._block = bool(get_required_param(n, p + "block_other_end"))
-        max_repeats = int(get_required_param(n, p + "max_repeats"))
+        self._block = bool(get_launch_param(n, p + "block_other_end", False))
+        max_repeats = int(get_launch_param(n, p + "max_repeats", 0))
         was = None if self._first_load else self._picker.mode
         try:
             if mode == RULE and self._rule is None:
