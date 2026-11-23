@@ -33,6 +33,7 @@ import numpy as np
 import experiments as ex  # noqa: F401  (puts sinthlab_bringup on sys.path)
 import kinematics
 from sinthlab_bringup.helpers.floor import reference_drop
+from sinthlab_bringup.helpers.free_move_box import box_bounds
 
 # Without a robot model (demo without ROS): the pre-training start, tool along +X.
 NOMINAL_START = np.array([0.38, 0.006, 1.029])
@@ -242,8 +243,10 @@ class LiveView:
     def _free_move(self, p, a, add) -> None:
         axis = str(p.get("free_move.rail_axis", "none"))
         if axis == "none":
-            lo = np.asarray(p.get("free_move.box_min_m", [0, 0, 0]), dtype=float)
-            hi = np.asarray(p.get("free_move.box_max_m", [0, 0, 0]), dtype=float)
+            try:
+                lo, hi = box_bounds(p.__getitem__, "free_move.box.")
+            except (KeyError, ValueError):
+                return
             add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "box"})
             return
         u = np.eye(3)[AXES[axis]]

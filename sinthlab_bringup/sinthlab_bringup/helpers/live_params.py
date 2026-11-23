@@ -263,6 +263,7 @@ CHOICES: Dict[str, List[str]] = {
     "free_move.rail_axis": ["none", "x", "y", "z"],
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
+    "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
     "centre_out.target": ["either", "cued"],                  # actions/centre_out.TARGETS
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS

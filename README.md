@@ -115,7 +115,7 @@ arm) and a **top** view (X toward the subject downward). It only reads: the arm'
 | Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
 | Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
 | Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
-| Free Move | the box (`free_move.box_min_m` / `box_max_m`) |
+| Free Move | the box, as `free_move.box.preset` sets it (a preset, or the custom x/y/z min and max from the start) |
 | Move Vertical / Horizontal | the rail and its end zones (`centre_out.end_tol_m`); the goal end filled green once lit (both for `either`), red once reached |
 
 Start-relative bounds are placed where the arm was when the trial was armed, so they can sit a few mm
@@ -1581,24 +1581,35 @@ does the IK; ROS only moves the target point.
     (`max_displacement_m`: 8 cm past the box's farthest corner, against the spring). That is about twice the fastest hand push recorded (0.79 m/s sustained), so a strong push
     passes and a runaway does not. The speed is measured between the arm's tf updates, using their own
     timestamps.
-- **The box** (`free_move.box_min_m` / `box_max_m`, per run): the equilibrium never leaves it, a soft
-  wall like the floor — pushing past a face only stretches the cabinet spring (10 N per cm at Uniform
-  1000), and the arm comes away from it at once. Offsets from the start, base frame:
+- **The box** (per run, Free Move only): the equilibrium never leaves it, a soft wall like the floor —
+  pushing past a face only stretches the cabinet spring (10 N per cm at Uniform 1000), and the arm
+  comes away from it at once. **Its origin is the start position** (the end effector at the start
+  pose): every bound is an offset from the start, in the base frame — X toward the subject, Y
+  sideways, Z up. Pick a preset with `free_move.box.preset`, or `custom` and type the six bounds:
 
-  | Axis | Min | Max |
-  |---|---|---|
-  | X (toward the subject) | −0.05 m | +0.04 m |
-  | Y (sideways) | −0.20 m | +0.20 m |
-  | Z (up) | −0.12 m | 0.00 m |
+  | `box.preset` | X min / max | Y min / max | Z min / max | Size |
+  |---|---|---|---|---|
+  | `standard` (default) | −0.05 / +0.03 | −0.18 / +0.18 | −0.12 / +0.01 | 8 × 36 × 13 cm |
+  | `more_x` | −0.08 / +0.06 | −0.14 / +0.14 | −0.08 / +0.01 | 14 × 28 × 9 cm |
+  | `most_x` | −0.10 / +0.08 | −0.10 / +0.10 | −0.04 / 0.00 | 18 × 20 × 4 cm |
+  | `centred` | −0.04 / +0.04 | −0.12 / +0.12 | −0.02 / +0.02 | 8 × 24 × 4 cm, the start in the middle |
+  | `custom` | `box.x_min_m` / `x_max_m` | `box.y_min_m` / `y_max_m` | `box.z_min_m` / `z_max_m` | each min ≤ 0 ≤ max [m] |
 
-  It is the largest box in which every corner, edge middle and face centre keeps the elbow (A4) at
-  least **30°** bent, every joint at least 10° from its limit and the arm away from singular postures
+  The arm reaches only about 3 cm **up** from this start but 12 cm down, so most of the box sits below
+  the start, and a corner combines directions — forward with sideways straightens the elbow, back with
+  down takes A6 to its limit — so a longer X costs Y or Z, and every cm up costs forward reach or
+  width. Every preset keeps, at every corner, edge middle and face centre, the elbow (A4) at least
+  **30°** bent, every joint at least 10° from its limit and the arm away from singular postures
   (σ_min ≥ 0.08), holding the start's orientation. Its limits: up is the arm's reach (the elbow
   straightens 3 cm above the start), sideways and forward the elbow, back and down A6's limit. Outside
   it the elbow straightens: moved 0.4 m sideways and 10 cm up, the elbow passed 0° (a straight arm,
   singular) with a jerk, flipped to the other elbow posture, and the arm ran on in it until the stack
-  stopped. The dashboard checks the box against the start pose at every edit and at Start and refuses
-  one that is not safe, naming the point. Keep the area around the box clear: the table, the chair.
+  stopped. The dashboard checks the box, preset or custom, against the start pose at every edit and at
+  Start and refuses one that is not safe, naming the point. **The experiment checks it again at
+  start-up** and does not run with an unsafe box, however it was started (a terminal `ros2 launch`
+  included): the launch ends with the reason. Along one axis alone the arm reaches about X −0.15 / +0.10,
+  Y ±0.21 and Z −0.29 / +0.03 m from this start; in a box, the corners combine directions, so a longer
+  X costs Y or Z. Keep the area around the box clear: the table, the chair.
 - **What is still felt:** the arm's own inertia and joint friction (as in apple pluck), the damping,
   and the threshold before it starts. The estimate of the hand's force also drifts a little with
   posture, so far from the start some directions can feel slightly assisted or held back.

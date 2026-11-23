@@ -82,8 +82,9 @@ the start. Only the hand's force ALONG the rail counts, the equilibrium only mov
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
 holds the arm on the rail. rail_axis none = free in every direction (Free Move).
 
-THE BOX (Free Move, rail_axis none): the equilibrium never leaves a box around the start -- box_min_m to
-box_max_m from the start, per base axis [x, y, z] -- a soft wall like the floor: pushing past a face only
+THE BOX (Free Move, rail_axis none): the equilibrium never leaves a box whose ORIGIN IS THE START -- a
+named preset, or custom x/y/z min and max offsets from the start (box.*, helpers/free_move_box.py) -- a
+soft wall like the floor: pushing past a face only
 stretches the cabinet spring. It keeps the arm where its posture is safe: in the 23 Nov test a hand
 took the arm 0.4 m sideways and 10 cm up, the elbow (A4) straightened past 0 deg -- the jerk -- and
 the arm ran on in the other elbow posture until the stack died. On a rail the rail's ends bound it
@@ -120,7 +121,9 @@ import optas
 
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
 from sinthlab_bringup.helpers.floor import Floor
+from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
+from sinthlab_bringup.helpers.start_grid import StartGrid
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
 HOLD_SEC = 0.3          # ...for at most this long at a time below deadband_n
@@ -160,14 +163,19 @@ class AdmittanceMoveAction:
             np.eye(3)["xyz".index(axis)],
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
-        self._box = None                        # Free Move: (box_min_m, box_max_m) from the start [x, y, z]
-        if self._rail is None:
-            lo = np.asarray(get_required_param(node, self._p + "box_min_m"), dtype=float)
-            hi = np.asarray(get_required_param(node, self._p + "box_max_m"), dtype=float)
-            if lo.shape != (3,) or hi.shape != (3,) or np.any(lo > 0.0) or np.any(hi < 0.0):
-                raise ValueError(f"{self._p}box_min_m / box_max_m must be [x, y, z] with min <= 0 <= max "
-                                 f"(the start inside the box), got {lo.tolist()} / {hi.tolist()}")
-            self._box = (lo, hi)
+        self._box = None                        # Free Move: (min, max) offsets from the start [x, y, z]
+        if self._rail is None:                  # helpers/free_move_box.py: min/max offsets, or a size
+            self._box = box_bounds(lambda name: get_required_param(node, name), self._p + "box.")
+            # The hard bound: the same posture check the dashboard runs, here too, so a box that is not safe
+            # at this start never runs -- however the experiment was started (a terminal launch included).
+            start = get_required_param(node, "move_to_start.target_joint_position")
+            problem = StartGrid(model, self.ee_link).box_problem(start, *self._box)
+            if problem:
+                raise ValueError(f"Free Move's box is not safe at this start pose, so the experiment does not "
+                                 f"run: {problem}. Pick a smaller one ({self._p}box.preset, or custom and its "
+                                 f"x/y/z_min_m / _max_m; README, Free Move, \"The box\").")
+            node.get_logger().info(f"Free Move box {self._box[0].tolist()} to {self._box[1].tolist()} m from the "
+                                   "start: checked safe at the start pose.")
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
         self._dbg = DebugTicker(float(get_required_param(node, self._p + "debug_log_rate_hz")))

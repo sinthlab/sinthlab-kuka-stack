@@ -263,7 +263,7 @@ downward). Read-only, and entirely on the dashboard's side: the experiments do n
 | Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
 | Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
 | Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
-| Free Move | the box (`free_move.box_min_m` / `box_max_m`) |
+| Free Move | the box, as `free_move.box.preset` sets it (a preset, or the custom x/y/z min and max from the start) |
 | Move Vertical / Horizontal | the rail and its end zones (`centre_out.end_tol_m`); the goal end filled green once lit (both for `either`), red once reached |
 
 It updates 15 times a second on the event stream (`live` events) and fetches `/api/live_view` again

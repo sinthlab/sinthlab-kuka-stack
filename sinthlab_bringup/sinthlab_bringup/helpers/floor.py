@@ -148,12 +148,17 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         name, z = min(starts.items(), key=lambda kv: kv[1])
         return room(z - float(threshold), f"a {float(threshold) * 100:.0f} cm pull straight down from {name}")
 
-    box_min, box_max = params.get("free_move.box_min_m"), params.get("free_move.box_max_m")
-    if (box_min is not None and box_max is not None and grid is not None
+    if (grid is not None and "free_move.box.preset" in params
             and str(params.get("free_move.rail_axis", "none")) == "none"):      # Free Move: the box
+        from sinthlab_bringup.helpers.free_move_box import box_bounds
+        what = f"free_move.box.preset {params['free_move.box.preset']}"
+        try:
+            box_min, box_max = box_bounds(params.__getitem__)
+        except (KeyError, ValueError) as exc:
+            return f"Free Move's box: {exc}"
         problem = grid.box_problem(start, box_min, box_max)
         if problem:
-            return f"Free Move's box (free_move.box_min_m / box_max_m): {problem}"
+            return f"Free Move's box ({what}): {problem}"
     if str(params.get("free_move.rail_axis", "none")) == "z":      # Move Vertical: the rail's bottom end
         return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
     profile = params.get("virtual_fixture_profile")                # maze
