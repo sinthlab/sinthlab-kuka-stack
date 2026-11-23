@@ -300,8 +300,7 @@ class DemoBridge:
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
                 self._reward("goal")
-            elif self._exp.group == "pretraining" and self._effective.get(
-                    "centre_out.enabled", self._params.get("centre_out.enabled")):
+            elif self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled")):
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
                 # (none with the other half of the rail closed: actions/centre_out.py).
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))

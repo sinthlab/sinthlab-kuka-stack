@@ -416,48 +416,74 @@ class CentreOutTables(TaskTables):
         "chosen_end": "the end the arm reached, blank if none",
         "correct": "1 = reached a goal end, 0 = the other end, blank = no reach",
         "end_tol_m": "how close to an end counted as reaching it [m]",
-        # The colour rule (paradigm `rule`, helpers/rule_schedule.py); blank in the other paradigms.
-        "cue_colour": "colour rule: the cue colour (red / blue)",
-        "mapping": "colour rule: the mapping in force this trial (red=<end>,blue=<end>)",
-        "block": "colour rule: block number (1 = before the first reversal)",
-        "choices_in_block": "colour rule: choices already made in this block, before this trial",
-        "window_pct": "colour rule: % correct over the criterion window, before this trial",
-        "reversal": "colour rule: 1 = first trial after a reversal (the mapping just flipped, unsignaled)",
     }
     settings = ["centre_out.target", "centre_out.block_other_end", "centre_out.max_repeats",
-                "centre_out.end_tol_m", "rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials",
-                "reward_pulse.pulse_ms"]
+                "centre_out.end_tol_m", "reward_pulse.pulse_ms"]
     session_columns = {"n_reaches": "trials ending in a reach (either end)",
-                       "pct_correct": "reaches to a goal end over all reaches [%]",
-                       "n_reversals": "colour rule: reversals reached",
-                       "choices_to_criterion": "colour rule: mean choices per completed block (to criterion)"}
+                       "pct_correct": "reaches to a goal end over all reaches [%]"}
 
     def trial_fields(self, tr):
         chosen = tr.arg("reach") if tr.has("reach") else tr.arg("reach_wrong")
-        rule = tr.meta.get("rule") or {}
         return {"target": tr.arg("target") or "", "closed_end": tr.arg("closed_end") or "",
                 "chosen_end": chosen or "",
                 "correct": 1 if tr.has("reach") else 0 if tr.has("reach_wrong") else "",
-                "end_tol_m": tr.param("centre_out.end_tol_m", ""),
-                "cue_colour": tr.arg("cue_colour") or "",
-                "mapping": rule.get("mapping", ""), "block": rule.get("block", ""),
-                "choices_in_block": rule.get("choices_in_block", ""),
-                "window_pct": "" if rule.get("window_pct") is None else rule["window_pct"],
-                "reversal": (1 if tr.has("reversal") else 0) if rule else ""}
+                "end_tol_m": tr.param("centre_out.end_tol_m", "")}
 
     def session_fields(self, trials):
         reached = [r for r in trials if r.get("correct") in ("0", "1")]
         ok = sum(r["correct"] == "1" for r in reached)
-        # The colour rule: a block is complete once a later block starts; its length is its choices.
+        return {"n_reaches": len(reached),
+                "pct_correct": round(100.0 * ok / len(reached), 1) if reached else ""}
+
+
+@register("colour_rule")
+class ColourRuleTables(CentreOutTables):
+    """The colour rule with unsignaled reversals (helpers/rule_schedule.py): the choice, plus the rule."""
+    paradigm_param = "free_move.rail_axis"
+    trial_columns = {
+        "target": "the end the cue colour means (the correct end)",
+        "chosen_end": "the end chosen, blank if none",
+        "correct": "1 = the end the colour means, 0 = the other end, blank = no choice",
+        "cue_colour": "the cue colour (red / blue)",
+        "mapping": "the mapping in force this trial (red=<end>,blue=<end>)",
+        "block": "block number (1 = before the first reversal)",
+        "choices_in_block": "choices already made in this block, before this trial",
+        "window_pct": "% correct over the criterion window, before this trial",
+        "reversal": "1 = first trial after a reversal (the mapping just flipped, unsignaled)",
+    }
+    settings = ["free_move.rail_axis", "rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials",
+                "rule.max_repeats", "centre_out.free_reach_m", "reward_pulse.pulse_ms"]
+    session_columns = {"n_choices": "trials ending in a choice",
+                       "pct_correct": "correct choices over all choices [%]",
+                       "n_reversals": "reversals reached",
+                       "choices_to_criterion": "mean choices per completed block (to criterion)"}
+
+    def paradigm(self, tr):
+        return {"y": "rail", "frontal": "no rail"}.get(str(tr.param("free_move.rail_axis", "")), "")
+
+    def trial_fields(self, tr):
+        out = super().trial_fields(tr)
+        rule = tr.meta.get("rule") or {}
+        out.update({"cue_colour": tr.arg("cue_colour") or "",
+                    "mapping": rule.get("mapping", ""), "block": rule.get("block", ""),
+                    "choices_in_block": rule.get("choices_in_block", ""),
+                    "window_pct": "" if rule.get("window_pct") is None else rule["window_pct"],
+                    "reversal": 1 if tr.has("reversal") else 0})
+        return out
+
+    def session_fields(self, trials):
+        chosen = [r for r in trials if r.get("correct") in ("0", "1")]
+        ok = sum(r["correct"] == "1" for r in chosen)
+        # A block is complete once a later block starts; its length is its choices.
         blocks: Dict[str, int] = {}
-        for r in trials:
-            if r.get("block") and r.get("correct") in ("0", "1"):
+        for r in chosen:
+            if r.get("block"):
                 blocks[r["block"]] = blocks.get(r["block"], 0) + 1
         last = max((int(r["block"]) for r in trials if r.get("block")), default=0)
         done = [n for b, n in blocks.items() if int(b) < last]
-        return {"n_reaches": len(reached),
-                "pct_correct": round(100.0 * ok / len(reached), 1) if reached else "",
-                "n_reversals": sum(r.get("reversal") == "1" for r in trials) if any(r.get("block") for r in trials) else "",
+        return {"n_choices": len(chosen),
+                "pct_correct": round(100.0 * ok / len(chosen), 1) if chosen else "",
+                "n_reversals": sum(r.get("reversal") == "1" for r in trials),
                 "choices_to_criterion": round(sum(done) / len(done), 1) if done else ""}
 
 

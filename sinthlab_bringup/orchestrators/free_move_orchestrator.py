@@ -54,7 +54,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         super().__init__("free_move_orchestrator", automatically_declare_parameters_from_overrides=True)
         AudioCue.warmup(self)
         VisualCue.warmup(self)
-        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal
+        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal | colour_rule
 
         self.trial_count = 0
         self._trial_ending = False
@@ -98,6 +98,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
             self.control.add_validator(self.centre_out.check_live)   # e.g. no "left" on the vertical rail
+            if self.experiment == "colour_rule" and not self.centre_out.rule_on():   # its own task: the rule
+                raise ValueError("colour_rule.yaml must have centre_out.target: rule (the Colour Rule task "
+                                 "always runs the colour rule)")
         # The long-movement reward (Free Move only: the rails have no long_move block).
         if self.has_parameter("long_move.reward"):
             self.long_move = LongMoveMonitor(self, self.admittance)

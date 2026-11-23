@@ -21,7 +21,7 @@ const STEPS = {
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
 STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
-STEPS.move_vertical = STEPS.move_horizontal =
+STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
 const STEP_LABEL = {
@@ -62,6 +62,8 @@ const PHASE_TEXT_BY_EXP = {
                    release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
   move_horizontal: { session_end: "session over — waiting for release",
                      release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
+  colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
+                 reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };

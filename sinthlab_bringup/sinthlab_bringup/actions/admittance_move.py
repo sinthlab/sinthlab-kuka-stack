@@ -80,7 +80,9 @@ deliberate pushes above low_force_n feel exactly as before.
 ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal): the same, along one base axis through
 the start. Only the hand's force ALONG the rail counts, the equilibrium only moves along it, between
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
-holds the arm on the rail. rail_axis none = free in every direction (Free Move). set_open_span() narrows
+holds the arm on the rail. rail_axis none = free in every direction (Free Move); frontal = free in the
+plane facing the monkey (the colour rule's No rail); rays = an asterisk of rails from the start in that
+plane (the N-choice task) -- helpers/rail_shapes.py. set_open_span() narrows
 the rail for one trial (the centre-out reach's one-direction trials, actions/centre_out.py): the
 equilibrium is then clamped to that part, so the closed side feels like a rail end.
 
@@ -104,7 +106,7 @@ bent by at most 6 deg -- a constant small bend for a pose, never a snap between 
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 from geometry_msgs.msg import PoseStamped
@@ -115,6 +117,7 @@ import optas
 
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
 from sinthlab_bringup.helpers.floor import Floor
+from sinthlab_bringup.helpers import rail_shapes
 from sinthlab_bringup.helpers.hand_force import HandForce
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
@@ -149,12 +152,21 @@ class AdmittanceMoveAction:
 
         self._leash = float(get_required_param(node, self._p + "leash_m"))
         axis = str(get_required_param(node, self._p + "rail_axis")).strip().lower()
-        if axis not in ("none", "x", "y", "z"):
-            raise ValueError(f"{self._p}rail_axis must be none, x, y or z, got {axis!r}")
-        self._rail = None if axis == "none" else (
+        if axis not in rail_shapes.SHAPES:
+            raise ValueError(f"{self._p}rail_axis must be one of {rail_shapes.SHAPES}, got {axis!r}")
+        self._shape = axis
+        self._rail = None if axis not in ("x", "y", "z") else (
             np.eye(3)["xyz".index(axis)],
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
+        # The frontal plane (colour rule, "No rail") and the asterisk (N-choice) both lock the arm to the
+        # plane facing the monkey (helpers/rail_shapes.py).
+        self._plane_n = rail_shapes.FRONTAL_NORMAL if axis in ("frontal", "rays") else None
+        self._ray_degs, self._rays, self._ray_len = [], None, 0.0
+        if axis == "rays":
+            self._ray_degs = [float(a) for a in get_required_param(node, self._p + "rays_deg")]
+            self._rays = rail_shapes.ray_dirs(self._ray_degs)
+            self._ray_len = float(get_required_param(node, self._p + "ray_length_m"))
         self._open: Optional[tuple] = None      # this trial's open part of the rail (lo, hi), None = all of it
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)
         self._tare_max = float(get_required_param(node, self._p + "tare_max_n"))
@@ -184,7 +196,11 @@ class AdmittanceMoveAction:
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
-        log.info(f"Admittance free move: {'no boundary' if self._rail is None else f'on a {axis} rail, {self._rail[1]:+.2f} to {self._rail[2]:+.2f} m'}, leash {self._leash} m, force from the joint torques "
+        where = ("no boundary" if axis == "none" else "free in the frontal plane" if axis == "frontal" else
+                 f"on an asterisk of {len(self._ray_degs)} rails ({', '.join(f'{a:g}' for a in self._ray_degs)} deg), "
+                 f"{self._ray_len:.2f} m long" if axis == "rays" else
+                 f"on a {axis} rail, {self._rail[1]:+.2f} to {self._rail[2]:+.2f} m")
+        log.info(f"Admittance free move: {where}, leash {self._leash} m, force from the joint torques "
                  f"(Jacobian damping {self._jac_damping:g})")
 
     # ------------------------------------------------------------------ parameters
@@ -278,6 +294,28 @@ class AdmittanceMoveAction:
         set_open_span() has closed part of it."""
         return None if self._rail is None else (self._rail[1], self._rail[2])
 
+    def shape(self) -> str:
+        """free_move.rail_axis: none | x | y | z | frontal | rays (helpers/rail_shapes.py)."""
+        return self._shape
+
+    def rays(self) -> Tuple[list, float]:
+        """The asterisk's ray angles [deg] and length [m] (rail_axis rays), else ([], 0)."""
+        return list(self._ray_degs), self._ray_len
+
+    def ray_position(self) -> Optional[Tuple[int, float]]:
+        """Which ray the arm is on and how far along it [m], where it would rest; None off the asterisk."""
+        p = self.rest_offset_from_anchor()
+        if p is None or self._rays is None:
+            return None
+        _, i, t = rail_shapes.on_rays(rail_shapes.on_plane(p, self._plane_n), self._rays, self._ray_len)
+        return i, t
+
+    def rest_offset_from_anchor(self) -> Optional[np.ndarray]:
+        """Where the arm would rest (measured + the resting sag found at the tare), from the start [m]."""
+        if not self._active or self._anchor is None or self._p_meas is None:
+            return None
+        return self._p_meas + self._rest_offset - self._anchor[0:3, 3]
+
     def rail_axis(self) -> Optional[str]:
         """The rail's base axis ("x" | "y" | "z"), or None off a rail (Free Move)."""
         return None if self._rail is None else "xyz"[int(np.argmax(self._rail[0]))]
@@ -368,6 +406,8 @@ class AdmittanceMoveAction:
         f = f_base - self._tare
         if self._rail is not None:                        # on a rail only the force along it counts
             f = self._rail[0] * float(f @ self._rail[0])
+        elif self._plane_n is not None:                   # frontal plane / asterisk: only the force in the plane
+            f = rail_shapes.on_plane(f, self._plane_n)
         k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
         self._f_filt += k * (f - self._f_filt)
         low = self._pushing and float(np.linalg.norm(self._f_filt)) < self._deadband
@@ -456,7 +496,13 @@ class AdmittanceMoveAction:
         """xyz moved onto the rail -- the nearest point of the line through the start, within its ends (or
         within this trial's open span)."""
         if self._rail is None:
-            return xyz
+            if self._plane_n is None:
+                return xyz
+            a = self._anchor[0:3, 3]
+            d = rail_shapes.on_plane(np.asarray(xyz, dtype=float) - a, self._plane_n)
+            if self._rays is not None:
+                d = rail_shapes.on_rays(d, self._rays, self._ray_len)[0]
+            return a + d
         u, lo, hi = self._rail
         if self._open is not None:
             lo, hi = self._open

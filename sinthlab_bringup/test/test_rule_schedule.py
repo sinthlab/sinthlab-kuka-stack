@@ -167,9 +167,74 @@ def test_rule_needs_its_block():
 
 def test_live_registry():
     assert live_params.check_value("centre_out.target", "rule") is None
-    assert live_params.is_live("move_horizontal", "rule.window")
+    assert live_params.is_live("colour_rule", "rule.window")
     assert live_params.check_value("rule.criterion_pct", 40) is not None
-    assert live_params.paradigm_of("rule.window") == ("rule",)
+    assert live_params.paradigm_of("rule.window") is None             # Rail and No rail alike
+    assert live_params.paradigm_of("centre_out.free_reach_m") == ("frontal",)
+    assert live_params.check_value("free_move.rail_axis", "frontal") is None
+
+
+def test_colour_rule_is_its_own_task():
+    experiments = pytest.importorskip("experiments")
+    e = experiments.BY_KEY["colour_rule"]
+    assert e.group == "experiments" and e.paradigm_param == "free_move.rail_axis"
+    assert [k for k, _ in e.paradigms] == ["y", "frontal"]
+    for key in ("move_horizontal", "move_vertical"):            # no longer a training tab
+        assert "rule" not in [k for k, _ in experiments.BY_KEY[key].paradigms]
+    assert "centre_out.target" in e.hidden                    # fixed to the rule, not shown
+    assert not live_params.is_live("colour_rule", "centre_out.target")
+    assert live_params.is_live("colour_rule", "centre_out.free_reach_m")
+    assert live_params.is_live("colour_rule", "rule.criterion_pct")
+
+
+def test_colour_rule_config_and_training_configs():
+    import yaml
+    cfg = ROOT / "sinthlab_bringup" / "config"
+    d = yaml.safe_load((cfg / "colour_rule.yaml").read_text())["/**"]["ros__parameters"]
+    assert d["experiment"] == "colour_rule" and d["centre_out"]["target"] == "rule"
+    assert set(d["rule"]) == {"red_end", "window", "criterion_pct", "min_trials", "max_repeats"}
+    assert {"rule_red", "rule_blue"} <= set(d["ring_cue"]["colours"])
+    for f in ("pretrain_move_horizontal.yaml", "pretrain_move_vertical.yaml"):
+        assert "rule" not in yaml.safe_load((cfg / f).read_text())["/**"]["ros__parameters"]
+
+
+# ---------------------------------------------------------------- No rail: a choice in the frontal plane
+class FreeArm:
+    """The admittance with rail_axis frontal, as the monitor sees it."""
+    def __init__(self):
+        self.p = [0.0, 0.0, 0.0]
+
+    def shape(self):
+        return "frontal"
+
+    def rail_axis(self):
+        return None
+
+    def rail_ends(self):
+        return None
+
+    def rest_offset_from_anchor(self):
+        import numpy as np
+        return np.array(self.p)
+
+
+def test_no_rail_choice_is_reaching_far_enough_left_or_right(rule_params):
+    node, _, _ = rule_params(target="rule")
+    node.params["centre_out.free_reach_m"] = 0.12
+    arm = FreeArm()
+    mon = stubs.CentreOutMonitor(node, arm)
+    assert mon.enabled and mon.open_span() is None
+    target = mon.pick_target()
+    got = []
+    mon.start(lambda end, ok: got.append((end, ok)))
+    arm.p = [0.0, 0.10, -0.05]                             # right and down, not far enough
+    for tick in node.timers:
+        tick()
+    assert got == []
+    arm.p = [0.0, 0.125, 0.03]                             # past 0.12 m to the right
+    for tick in node.timers:
+        tick()
+    assert got == [("right", target == "right")]
 
 
 # ---------------------------------------------------------------- trials.csv / sessions.csv
@@ -181,8 +246,8 @@ def rule_trial(k, colour, mapping, block, chose, target, reversal=False, choices
                {"event": "target", "arg": target, "t_wall": 1e9 + 10 * k + 3},
                {"event": "reach" if chose == target else "reach_wrong", "arg": chose, "t_wall": 1e9 + 10 * k + 4},
                {"event": "trial_end", "arg": k, "t_wall": 1e9 + 10 * k + 4}]
-    return {"experiment": "move_horizontal", "trial_index": k, "subject": "M1",
-            "params": {"centre_out.target": "rule"}, "events": events,
+    return {"experiment": "colour_rule", "trial_index": k, "subject": "M1",
+            "params": {"centre_out.target": "rule", "free_move.rail_axis": "frontal"}, "events": events,
             "rule": {"mapping": mapping, "block": block, "choices_in_block": choices, "window_pct": None}}
 
 
@@ -192,6 +257,7 @@ def test_rule_columns_and_session_summary(tmp_path):
              rule_trial(3, "red", b, 2, "right", "left", reversal=True), rule_trial(4, "red", b, 2, "left", "left", choices=1)]
     row = ot.trial_row(metas[2])
     assert (row["cue_colour"], row["mapping"], row["block"], row["reversal"], row["correct"]) == ("red", b, 2, 1, 0)
+    assert row["paradigm"] == "no rail"
     assert ot.trial_row(metas[0])["reversal"] == 0
     run = tmp_path / "expt_x"
     run.mkdir()
@@ -200,3 +266,4 @@ def test_rule_columns_and_session_summary(tmp_path):
         ot.append_trial(run, m)
     sess = ot.session_row(run)
     assert (sess["n_reversals"], sess["choices_to_criterion"], sess["pct_correct"]) == (1, 2.0, 75.0)
+    assert sess["n_choices"] == 4

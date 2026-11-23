@@ -74,7 +74,7 @@ _RESIST = ["resistance.stiffness_n_per_m"]
 _FREE = _COMMON + _REWARD + _SPEED + _RING + [
     # Move Vertical / Horizontal: the centre-out reach (actions/centre_out.py). Free Move has none.
     "centre_out.*",
-    "rule.*",                      # the colour rule (helpers/rule_schedule.py)
+    "rule.*",                      # the colour rule (helpers/rule_schedule.py; colour_rule.yaml only)
     # Free Move: the long-movement reward (actions/long_move.py). The rails have none.
     "long_move.*",
     "session_sec",
@@ -125,6 +125,9 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
     "move_vertical": _FREE,
     "move_horizontal": _FREE,
+    # The colour rule: the same node and feel; Rail / No rail (free_move.rail_axis) is per-run, and the
+    # centre-out mode is fixed to the rule (so not centre_out.*: only the reach distances are live).
+    "colour_rule": [x for x in _FREE if x != "centre_out.*"] + ["centre_out.end_tol_m", "centre_out.free_reach_m"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -168,6 +171,8 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "reward_pulse.pulse_ms": (10, 5000),
     # Centre-out: how close to a rail end counts as reaching it.
     "centre_out.end_tol_m": (0.005, 0.03),
+    # The colour rule, No rail: how far left or right is a choice.
+    "centre_out.free_reach_m": (0.03, 0.2),
     # Cued: at most this many trials in a row to the same end (0 = no cap).
     "centre_out.max_repeats": (0, 20),
     # The colour rule (helpers/rule_schedule.py).
@@ -236,7 +241,9 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     # Move Vertical / Horizontal, whose paradigm is centre_out.target.
     "centre_out.max_repeats": ("cued",),
     "centre_out.block_other_end": ("cued", "left", "right", "down", "up"),
-    "rule.*": ("rule",),
+    # The colour rule, whose paradigm is Rail / No rail (free_move.rail_axis).
+    "centre_out.free_reach_m": ("frontal",),
+    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "left", "right", "down", "up"),
     # Free Move, whose paradigm is long_move.reward.
     "long_move.*": ("each_move",),
 }
@@ -287,7 +294,7 @@ CHOICES: Dict[str, List[str]] = {
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
-    "free_move.rail_axis": ["none", "x", "y", "z"],
+    "free_move.rail_axis": ["none", "x", "y", "z", "frontal", "rays"],   # helpers/rail_shapes.SHAPES
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
     # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail

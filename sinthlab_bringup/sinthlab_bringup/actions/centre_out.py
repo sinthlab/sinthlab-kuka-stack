@@ -63,8 +63,12 @@ class CentreOutMonitor:
         self._p = param_prefix + "."
         self._on_end: Optional[Callable[[str, bool], None]] = None
         self._target: Optional[str] = None
-        axis = admittance.rail_axis()
+        # No rail (free_move.rail_axis frontal, the colour rule's "No rail"): the arm is free in the plane
+        # facing the monkey, and a choice is reaching centre_out.free_reach_m to the left or right.
+        self._free = getattr(admittance, "shape", lambda: None)() == "frontal"
+        axis = "y" if self._free else admittance.rail_axis()
         self._ends = END_NAMES.get(axis, ("min", "max"))   # (rail_min_m end, rail_max_m end)
+        self._free_ends: Optional[Tuple[float, float]] = None
         self._picker = TargetPicker(self._ends)
         self._colour: Optional[str] = None
         # The colour rule (centre_out.target "rule"): built from the rule block; restarted on entering it.
@@ -77,7 +81,10 @@ class CentreOutMonitor:
 
     def reload(self) -> None:
         n, p = self._node, self._p
-        self.enabled = bool(get_required_param(n, p + "enabled")) and self._adm.rail_ends() is not None
+        if self._free:
+            d = float(get_required_param(n, p + "free_reach_m"))
+            self._free_ends = (-d, d)
+        self.enabled = bool(get_required_param(n, p + "enabled")) and self._ends_m() is not None
         mode = str(get_required_param(n, p + "target")).strip().lower()
         self._block = bool(get_required_param(n, p + "block_other_end"))
         max_repeats = int(get_required_param(n, p + "max_repeats"))
@@ -103,7 +110,7 @@ class CentreOutMonitor:
         self._end_tol = float(get_required_param(n, p + "end_tol_m"))
         self._quarter = {end: int(get_required_param(n, p + "quarter_" + end)) for end in self._ends}
         if self.enabled:
-            lo, hi = self._adm.rail_ends()
+            lo, hi = self._ends_m()
             mode = self._picker.mode
             r = self._rule
             how = (f"{mode} only" if mode in self._ends else
@@ -114,8 +121,21 @@ class CentreOutMonitor:
             n.get_logger().info(
                 f"Centre-out: one reach per trial, {how}"
                 + (", the other half of the rail closed" if self._block and mode not in ("either", RULE) else "")
-                + f"; an end counts within {self._end_tol * 1000:.0f} mm of the {self._ends[0]} ({lo:+.3f} m) / "
-                f"{self._ends[1]} ({hi:+.3f} m) end.")
+                + ("; no rail (free in the frontal plane): a choice is reaching" if self._free else
+                   "; an end counts within {:.0f} mm of".format(self._end_tol * 1000))
+                + f" the {self._ends[0]} ({lo:+.3f} m) / {self._ends[1]} ({hi:+.3f} m) end.")
+
+    def _ends_m(self) -> Optional[Tuple[float, float]]:
+        """Where the two ends are along the choice axis [m from the start]: the rail's, or with no rail
+        (+-free_reach_m), the distance left or right that counts as a choice."""
+        return self._free_ends if self._free else self._adm.rail_ends()
+
+    def _position(self) -> Optional[float]:
+        """Where the arm is along the choice axis (where it would rest) [m from the start]."""
+        if not self._free:
+            return self._adm.rail_position()
+        p = self._adm.rest_offset_from_anchor()
+        return None if p is None else float(p[1])          # base +Y: the monkey's right
 
     def check_live(self, name: str, value, context: dict) -> Optional[str]:
         """ExperimentControl validator: refuse a centre_out.target this rail does not have (e.g. "left" on
@@ -155,8 +175,8 @@ class CentreOutMonitor:
 
     def open_span(self) -> Optional[Tuple[float, float]]:
         """This trial's open part of the rail (lo, hi) [m from the start], or None for the whole rail."""
-        if self._target is None or self._adm.rail_ends() is None or self.rule_on():
-            return None             # the colour rule is a choice: the whole rail stays open
+        if self._target is None or self._adm.rail_ends() is None or self.rule_on() or self._free:
+            return None             # the colour rule is a choice, and no rail has nothing to close
         return rail_open_span(self._target, self._ends, self._adm.rail_ends(), self._block)
 
     def closed_end(self) -> Optional[str]:
@@ -194,12 +214,13 @@ class CentreOutMonitor:
     def _tick(self) -> None:
         if self._on_end is None:
             return
-        x = self._adm.rail_position()
+        x = self._position()
         if x is None:
             return
-        lo, hi = self._adm.rail_ends()
-        end = (self._ends[0] if x <= lo + self._end_tol else
-               self._ends[1] if x >= hi - self._end_tol else None)
+        lo, hi = self._ends_m()
+        tol = 0.0 if self._free else self._end_tol      # no rail: reaching the distance is the choice
+        end = (self._ends[0] if x <= lo + tol else
+               self._ends[1] if x >= hi - tol else None)
         if end is None:
             return
         rewarded = self._target == "either" or end == self._target

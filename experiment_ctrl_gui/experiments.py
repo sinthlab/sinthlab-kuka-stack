@@ -69,6 +69,9 @@ class Experiment:
     # paradigm only (live_params.PARADIGM_ONLY) are shown only under it.
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
     paradigm_param: str = "paradigm"
+    # Parameters fixed by the task itself, not shown in the dashboard (the colour rule: centre_out.target is
+    # always "rule"). The YAML holds them; the node refuses another value.
+    hidden: Tuple[str, ...] = ()
 
     def smartpad(self) -> Dict[str, str]:
         """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
@@ -136,9 +139,8 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
 # switch it during a run, from the next trial: one end only -> the other -> cued -> either.
 _CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
-_RULE = [("rule", "Colour rule")]        # red / blue means one end or the other; reverses unsignaled
-_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")] + _RULE
-_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")] + _RULE
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
+_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
@@ -174,6 +176,23 @@ EXPERIMENTS += [
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
         paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+]
+# The colour rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
+EXPERIMENTS += [
+    Experiment(
+        key="colour_rule", label="Colour Rule", group="experiments",
+        summary="Red or blue ring: each colour means left or right; the mapping reverses, unsignaled, at criterion. On a rail or free in the frontal plane.",
+        launch_file="iiwa7_colour_rule.launch.py",
+        params_yaml="colour_rule.yaml", node="free_move_orchestrator",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_colour_rule",
+        paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
+        hidden=("centre_out.enabled", "centre_out.target", "centre_out.block_other_end",
+                "centre_out.max_repeats", "centre_out.quarter_left", "centre_out.quarter_right"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]

@@ -137,5 +137,6 @@ def test_live_registry_accepts_the_new_settings():
 def test_dashboard_tabs_match_each_rail():
     experiments = pytest.importorskip("experiments")
     tabs = {k: [m for m, _ in experiments.BY_KEY[k].paradigms] for k in ("move_horizontal", "move_vertical")}
-    assert tuple(tabs["move_horizontal"]) == modes_for(H)
-    assert tuple(tabs["move_vertical"]) == modes_for(V)
+    # Every mode but the colour rule, which is its own task (the Colour Rule card).
+    assert tuple(tabs["move_horizontal"]) == tuple(m for m in modes_for(H) if m != "rule")
+    assert tuple(tabs["move_vertical"]) == tuple(m for m in modes_for(V) if m != "rule")

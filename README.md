@@ -673,6 +673,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 3c | Apple Pluck, perturb bump paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb_bump` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 5 | Colour Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1445,6 +1446,60 @@ Work up the ladder and stop at the first rung that feels wrong.
 > box with free area inside it again. Segments must **touch** to form a junction; START (0,0) must lie on
 > one; the checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
 
+### Scenario 5 — Colour Rule (unsignaled reversals)
+A task of its own (the **Colour Rule** card under Experiments), not part of pre-training: some days it
+is all that runs. It runs on the free-move node with the centre-out reach fixed to its `rule` mode
+([`colour_rule.yaml`](sinthlab_bringup/config/colour_rule.yaml),
+[`helpers/rule_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/rule_schedule.py)).
+
+1. **The cue.** At the go cue the **whole ring** lights **red** or **blue** (`ring_cue.colours.rule_red` /
+   `rule_blue`), drawn at random, never more than `rule.max_repeats` of one colour in a row.
+2. **The choice.** Each colour means one end: in block 1, red means `rule.red_end` (right) and blue the
+   other. The end the colour means gives the reward and the end tone; the other end gives nothing. The
+   ring goes dark at the choice (no red "reached" ring: red is a cue here).
+3. **The reversal.** Once the last `rule.window` choices of the block are at least
+   `rule.criterion_pct` % correct, and the block has run at least `rule.min_trials` choices, the
+   mapping flips from the next trial: **the contingency flips without any signal to the animal**. No
+   tone, no light, nothing on the ring changes; only the outcomes tell him. A session runs as many
+   blocks as he reaches criterion for.
+
+**Rail or No rail** (the card's tabs, per run: `free_move.rail_axis`), with the same criterion:
+
+| Option | `rail_axis` | The arm | A choice is |
+|---|---|---|---|
+| **Rail** | `y` | held to one horizontal rail through the start, ±0.15 m (as Move Horizontal) | reaching an end (within `centre_out.end_tol_m`) |
+| **No rail** | `frontal` | free in the plane facing the monkey: left, right, up, down, but never toward or away from him | reaching `centre_out.free_reach_m` (0.12 m) to the left or right of the start |
+
+With no rail, up is the arm's limit from this start (it nears a singular pose above +0.02 m, where it
+simply stops), so keep `free_reach_m` modest. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7,
+elbow 30, as Move Horizontal.
+
+Only choices count: a trial with no choice (time-out, early touch, safety stop) neither helps nor hurts
+the criterion. Every run starts at block 1 with red = `rule.red_end`; the criterion settings are live and
+apply from the next choice without resetting the block. The centre-out mode is fixed to the rule: the
+node refuses to start this task in any other mode.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `rule.red_end` | `right` | the end red means in block 1 |
+| `rule.window` | `20` | the criterion looks at the last this many choices of the block |
+| `rule.criterion_pct` | `80` | ...and reverses once at least this % of them are correct |
+| `rule.min_trials` | `20` | ...and the block has run at least this many choices |
+| `rule.max_repeats` | `3` | at most this many trials in a row with the same cue colour |
+| `centre_out.free_reach_m` | `0.12` | No rail: how far left or right is a choice [m] |
+
+Events: `reversal` (the new mapping; on the first trial of a new block, for the record only),
+`cue_colour` (red / blue), then `target` (the end the colour means) and `reach` / `reach_wrong`. Each
+trial's sidecar has `rule`: the mapping, block, choices so far in the block and the window's % correct,
+before the choice. `trials.csv` gets the choice, correct, cue colour, mapping, block, choices in block,
+window % and reversal, and the paradigm (rail / no rail); `sessions.csv` gets the number of choices, %
+correct, reversals and the mean choices to criterion.
+
+**On the rig, before a subject:** check that the red and blue whole-ring cues are clearly different from
+where the monkey sits (quarter 3 is dark on the current ring, so three quarters light), that a reversal
+leaves no trace he could perceive, and, for No rail, that the plane feels free and the reach distance
+is comfortable.
+
 ### Pre-training — Free Move, Move Vertical, Move Horizontal
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
 they are under the **Pre-training** tab. All three:
@@ -1696,45 +1751,6 @@ cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
 end, the reward) or `reach_wrong` (the other end), each with the end's name as its argument — or
 `response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's
 target and outcome.
-
-#### Colour rule — unsignaled reversals
-The **Colour rule** tab (`centre_out.target: rule`) on Move Horizontal (and Move Vertical) turns the
-centre-out reach into a rule-reversal task
-([`helpers/rule_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/rule_schedule.py)):
-
-1. **The cue.** At the go cue the **whole ring** lights **red** or **blue** (`ring_cue.colours.rule_red` /
-   `rule_blue`), drawn at random, never more than `rule.max_repeats` of one colour in a row.
-2. **The rule.** Each colour means one end: in block 1, red means `rule.red_end` (right on Move
-   Horizontal) and blue the other. The **whole rail is open** (no closed half): the trial is a choice.
-   The end the colour means gives the reward and the end tone; the other end gives nothing. The ring
-   goes dark at the outcome (no red "reached" ring: red is a cue here).
-3. **The reversal.** Once the last `rule.window` choices of the block are at least
-   `rule.criterion_pct` % correct, and the block has run at least `rule.min_trials` choices, the
-   mapping flips from the next trial: **the contingency flips without any signal to the animal**. No
-   tone, no light, nothing on the ring changes; only the outcomes tell him. A session runs as many
-   blocks as he reaches criterion for.
-
-Only choices count: a trial with no reach (time-out, early touch, safety stop) neither helps nor hurts
-the criterion. Selecting the tab (before Start or mid-run) starts at block 1 with red = `rule.red_end`;
-the criterion settings are live and apply from the next choice without resetting the block.
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `rule.red_end` | `right` (Move Vertical: `down`) | the end red means in block 1 |
-| `rule.window` | `20` | the criterion looks at the last this many choices of the block |
-| `rule.criterion_pct` | `80` | ...and reverses once at least this % of them are correct |
-| `rule.min_trials` | `20` | ...and the block has run at least this many choices |
-| `rule.max_repeats` | `3` | at most this many trials in a row with the same cue colour |
-
-Events: `reversal` (the new mapping; on the first trial of a new block, for the record only),
-`cue_colour` (red / blue), then `target` (the end the colour means) and `reach` / `reach_wrong`. Each
-trial's sidecar has `rule`: the mapping, block, choices so far in the block and the window's % correct,
-before the choice. `trials.csv` gets the columns cue colour, mapping, block, choices in block, window %
-and reversal; `sessions.csv` gets the number of reversals and the mean choices to criterion.
-
-**On the rig, before a subject:** check that the red and blue whole-ring cues are clearly different from
-where the monkey sits (quarter 3 is dark on the current ring, so three quarters light), and that a
-reversal leaves no trace he could perceive.
 
 #### Before the first session with a subject
 1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`

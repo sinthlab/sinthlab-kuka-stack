@@ -230,7 +230,7 @@ class ExperimentParams:
                 "immediate": ex.live_params.is_immediate(name),  # live and applied at once (next move), not next trial
                 # Paradigm experiments (apple pluck, the rails' centre-out target): the paradigm is chosen with the card's nested tabs,
                 # and parameters of one paradigm only are shown only under it.
-                "hidden": bool(self.exp.paradigms) and name == self.exp.paradigm_param,
+                "hidden": (bool(self.exp.paradigms) and name == self.exp.paradigm_param) or name in self.exp.hidden,
                 "paradigm_only": ex.live_params.paradigm_of(name) if self.exp.paradigms else None,
             })
         return rows

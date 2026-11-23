@@ -53,23 +53,12 @@
     centre_out:  # one rewarded reach per trial, from the centre to an end of the rail
       enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
       # One-direction work-up, switchable mid-session (the card's tabs): left only -> right only -> cued -> either.
-      target: "either"  # either = both ends are goals and both light | cued = one end drawn at random per trial, only it lights and only it is rewarded | left / right = that end on every trial (left / right only) | rule = the colour rule (the rule block below)
+      target: "either"  # either = both ends are goals and both light | cued = one end drawn at random per trial, only it lights and only it is rewarded | left / right = that end on every trial (left / right only)
       block_other_end: true  # a trial with one goal end (cued, left, right) closes the other half of the rail, so the arm only moves toward the goal; false = the whole rail is open and the other end is reach_wrong
       max_repeats: 3  # cued: at most this many trials in a row to the same end (0 = no cap)
       end_tol_m: 0.02  # this close to an end counts as reaching it [m]
       quarter_left: 3  # ring quarter (0-3) lit for the left end (rail_min_m, -Y) (README, "The ring")
       quarter_right: 1  # ring quarter (0-3) lit for the right end (rail_max_m, +Y)
-    # THE COLOUR RULE (centre_out.target rule, the card's "Colour rule" tab; helpers/rule_schedule.py): the
-    # whole ring lights red or blue at the go cue, each colour means one end, and the whole rail is open
-    # (a choice). Once the last `window` choices are at least criterion_pct % correct, after at least
-    # min_trials choices in the block, the mapping reverses from the next trial WITHOUT ANY SIGNAL TO THE
-    # ANIMAL. Only choices count; a trial with no reach is ignored. Selecting the tab starts block 1.
-    rule:  # colour rule with unsignaled reversals
-      red_end: "right"  # the end red means in block 1 (left or right); blue means the other. Read when the Colour rule tab is selected
-      window: 20  # the criterion looks at the last this many choices of the block
-      criterion_pct: 80.0  # ...and reverses once at least this % of them are correct [%]
-      min_trials: 20  # ...and the block has run at least this many choices
-      max_repeats: 3  # at most this many trials in a row with the same cue colour (0 = no cap)
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
@@ -210,5 +199,3 @@
       colours:  # RGBW, each 0-255
         go: [0, 255, 0, 0]  # free to move -- green
         reached: [255, 0, 0, 0]  # centre-out: an end reached -- red, until the hand lets go
-        rule_red: [255, 0, 0, 0]  # colour rule: the red cue, the whole ring
-        rule_blue: [0, 0, 255, 0]  # colour rule: the blue cue, the whole ring
