@@ -112,8 +112,27 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
   - Demo mode keeps its sessions in a temporary folder, never beside real data.
 - **Log:** on the right on a wide screen, below on a narrow one.
 - **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
-  run state. **Post-processing** (top right) archives a session as NWB, and **Diagnostics** opens the
-  hardware checks — see below.
+  run state. **Live view** (top right) shows the running experiment's bounds and the arm in them,
+  **Post-processing** archives a session as NWB, and **Diagnostics** opens the hardware checks — see
+  below.
+
+### Live view — the bounds and the arm
+The **Live view** button at the top right opens `/live.html` in its own tab: the running experiment's
+bounds and the arm in them, live, in a **front** view (Y to the right, Z up, as the subject sees the
+arm) and a **top** view (X toward the subject downward). It only reads: the arm's position from
+`lbr_state`, the pull point from the CLIK, and the bounds from the run's parameters.
+
+| Experiment | Bounds shown |
+|---|---|
+| every one | the start; the floor (`floor.height_m`, for the flange at the start's orientation) and its safety trip line; the safety distance (`*_safety.max_displacement_m`) where it is on |
+| Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
+| Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
+| Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
+| Free Move | the box, as `free_move.box.preset` sets it (a preset, or the custom x/y/z min and max from the start) |
+| Move Vertical / Horizontal | the rail and its end zones (`centre_out.end_tol_m`); the goal end filled green once lit (both for `either`), red once reached |
+
+Start-relative bounds are placed where the arm was when the trial was armed, so they can sit a few mm
+off the experiment's own anchor. Details: `experiment_ctrl_gui/README.md`.
 
 ### Diagnostics — hardware checks
 The **Diagnostics** button at the top right opens a separate page (`/diagnostics.html`) of hardware
@@ -1484,8 +1503,10 @@ is all that runs. It runs on the free-move node with the centre-out reach fixed 
 | **Rail** | `y` | held to one horizontal rail through the start, ±0.15 m (as Move Horizontal) | reaching an end (within `centre_out.end_tol_m`) |
 | **No rail** | `frontal` | free in the plane facing the monkey: left, right, up, down, but never toward or away from him | reaching `centre_out.free_reach_m` (0.12 m) to the left or right of the start |
 
-With no rail, up is the arm's limit from this start (it nears a singular pose above +0.02 m, where it
-simply stops), so keep `free_reach_m` modest. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7,
+With no rail, the arm also stays inside Free Move's box (`free_move.box.*`, default `standard`: up to
+1 cm above the start, ±18 cm sideways, 12 cm down), checked safe at the start pose by the dashboard and
+again at start-up. That keeps an upward push away from the singular pose above +0.02 m. Keep
+`free_reach_m` inside the box's sideways reach. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7,
 elbow 30, as Move Horizontal.
 
 Only choices count: a trial with no choice (time-out, early touch, safety stop) neither helps nor hurts
@@ -1578,15 +1599,16 @@ they are under the **Pre-training** tab. All three:
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
-| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere; it stays where it is let go | the session running its full `session_sec` |
+| **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere in a box around the start (9 × 40 × 12 cm); it stays where it is let go | the session running its full `session_sec` |
 | **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
 | **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
 
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
 (`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.
 
-#### Free Move — admittance, no goal, no boundary
-The arm goes wherever it is pushed and stays wherever it is let go. There is no goal and no wall; the
+#### Free Move — admittance in a box, no goal
+The arm goes wherever it is pushed, within a box around the start, and stays wherever it is let go.
+There is no goal; the
 reward is the session running its full `session_sec`. It runs as one free-movement **session**: for `session_sec` (live), then the end tone, the
 wait for the hand to let go, park, and the next session; or, with `session_sec` 0 (the default),
 until **■ Stop** on the dashboard, which ends it at once -- no end tone, no wait for the hand to let
@@ -1675,14 +1697,40 @@ does the IK; ROS only moves the target point.
     bad force reading can never pull harder than 30 N.
   - **A tare:** the force at rest, about 5 N from the gravity residual, is measured each session
     before the go cue and subtracted.
-  - **The runaway monitor** (`free_move_safety`), **speed only** (`max_displacement_m: 0` = no distance
-    limit): it aborts to the start if the arm moves faster than **1.5 m/s** for 5 new position samples
-    in a row. That is about twice the fastest hand push recorded (0.79 m/s sustained), so a strong push
+  - **The runaway monitor** (`free_move_safety`): it aborts to park if the arm moves faster than
+    **1.5 m/s** for 5 new position samples in a row, or is dragged **0.32 m** from the start
+    (`max_displacement_m`: 8 cm past the box's farthest corner, against the spring). That is about twice the fastest hand push recorded (0.79 m/s sustained), so a strong push
     passes and a runaway does not. The speed is measured between the arm's tf updates, using their own
     timestamps.
-- **No boundary means** the arm can be pushed to the edge of its reach, a joint limit or a singular
-  pose — where the CLIK stops and the arm simply stops moving — and into anything near it: the table,
-  the chair, its own base. Keep the area clear.
+- **The box** (per run, Free Move only): the equilibrium never leaves it, a soft wall like the floor —
+  pushing past a face only stretches the cabinet spring (10 N per cm at Uniform 1000), and the arm
+  comes away from it at once. **Its origin is the start position** (the end effector at the start
+  pose): every bound is an offset from the start, in the base frame — X toward the subject, Y
+  sideways, Z up. Pick a preset with `free_move.box.preset`, or `custom` and type the six bounds:
+
+  | `box.preset` | X min / max | Y min / max | Z min / max | Size |
+  |---|---|---|---|---|
+  | `standard` (default) | −0.05 / +0.03 | −0.18 / +0.18 | −0.12 / +0.01 | 8 × 36 × 13 cm |
+  | `more_x` | −0.08 / +0.06 | −0.14 / +0.14 | −0.08 / +0.01 | 14 × 28 × 9 cm |
+  | `most_x` | −0.10 / +0.08 | −0.10 / +0.10 | −0.04 / 0.00 | 18 × 20 × 4 cm |
+  | `centred` | −0.04 / +0.04 | −0.12 / +0.12 | −0.02 / +0.02 | 8 × 24 × 4 cm, the start in the middle |
+  | `custom` | `box.x_min_m` / `x_max_m` | `box.y_min_m` / `y_max_m` | `box.z_min_m` / `z_max_m` | each min ≤ 0 ≤ max [m] |
+
+  The arm reaches only about 3 cm **up** from this start but 12 cm down, so most of the box sits below
+  the start, and a corner combines directions — forward with sideways straightens the elbow, back with
+  down takes A6 to its limit — so a longer X costs Y or Z, and every cm up costs forward reach or
+  width. Every preset keeps, at every corner, edge middle and face centre, the elbow (A4) at least
+  **30°** bent, every joint at least 10° from its limit and the arm away from singular postures
+  (σ_min ≥ 0.08), holding the start's orientation. Its limits: up is the arm's reach (the elbow
+  straightens 3 cm above the start), sideways and forward the elbow, back and down A6's limit. Outside
+  it the elbow straightens: moved 0.4 m sideways and 10 cm up, the elbow passed 0° (a straight arm,
+  singular) with a jerk, flipped to the other elbow posture, and the arm ran on in it until the stack
+  stopped. The dashboard checks the box, preset or custom, against the start pose at every edit and at
+  Start and refuses one that is not safe, naming the point. **The experiment checks it again at
+  start-up** and does not run with an unsafe box, however it was started (a terminal `ros2 launch`
+  included): the launch ends with the reason. Along one axis alone the arm reaches about X −0.15 / +0.10,
+  Y ±0.21 and Z −0.29 / +0.03 m from this start; in a box, the corners combine directions, so a longer
+  X costs Y or Z. Keep the area around the box clear: the table, the chair.
 - **What is still felt:** the arm's own inertia and joint friction (as in apple pluck), the damping,
   and the threshold before it starts. The estimate of the hand's force also drifts a little with
   posture, so far from the start some directions can feel slightly assisted or held back.
@@ -1955,8 +2003,8 @@ flowchart LR
   | `MoveRestrictedOnAPlaneAction` / `MoveInMazeAction` | stream the fixture‑constrained equilibrium to `kuka_clik_controller` |
   | `CartesianImpedanceDisplacementMonitor` | baseline → displacement threshold → snap → hold for the dwell → complete |
   | `CheckpointMonitor` | maze checkpoints (reward once each, any order) and the goal |
-  | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; no boundary, or one rail (Move Vertical / Horizontal) |
-  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move runs it speed-only (`max_displacement_m: 0`). In every experiment it also trips when the robot state (`lbr_state`) stops arriving for `state_timeout_sec` (0.5 s) |
+  | `AdmittanceMoveAction` | Free Move: moves the equilibrium at force ÷ damping, leashed to the arm; within a box around the start, or on one rail (Move Vertical / Horizontal) |
+  | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move's distance trip is 0.32 m, past its box. In every experiment it also trips when the robot state (`lbr_state`) stops arriving for `state_timeout_sec` (0.5 s) |
   | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task parks |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
   | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |

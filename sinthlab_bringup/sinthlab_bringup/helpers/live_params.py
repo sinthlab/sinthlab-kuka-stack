@@ -306,6 +306,7 @@ CHOICES: Dict[str, List[str]] = {
     "free_move.rail_axis": ["none", "x", "y", "z", "frontal", "rays"],   # helpers/rail_shapes.SHAPES
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
+    "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
     # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
     # does not have (left / right on the vertical rail, down / up on the horizontal one).
     "centre_out.target": ["either", "cued", "left", "right", "down", "up", "rule"],

@@ -95,3 +95,20 @@ def test_floor_check_covers_the_asterisks_lowest_end():
     assert problem and "the lowest rail's end" in problem
     params["free_move.ray_layout"] = "2"                                    # left / right: nothing goes down
     assert floor.setup_problem(params, fk) is None
+
+
+def test_no_rail_is_the_frontal_plane_inside_the_box():
+    adm = _admittance("frontal")
+    adm._box = (np.array([-0.05, -0.18, -0.12]), np.array([0.03, 0.18, 0.01]))     # Navin's standard box
+    adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
+    a = adm._anchor[0:3, 3]
+    out = adm._bound(a + [0.02, 0.25, 0.06])          # toward him, too far right, too far up
+    assert np.allclose(out, a + [0.0, 0.18, 0.01])    # in the plane, held at the box's right and top faces
+
+
+def test_the_asterisk_has_no_box():
+    adm = _admittance("rays", ASTERISK, 0.07)
+    adm._box = None
+    adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
+    a = adm._anchor[0:3, 3]
+    assert np.allclose(adm._bound(a + [0, 0, 0.2]), a + [0, 0, 0.07])

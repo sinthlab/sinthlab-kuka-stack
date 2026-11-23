@@ -61,7 +61,8 @@ def height_of(start_deg, reference: str) -> Optional[float]:
 # Edits that can move something relative to the floor: the dashboard re-checks the setup after them.
 FLOOR_RELEVANT = ("floor.", "move_to_start.target_joint_position", "move_to_park.target_joint_position",
                   "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", "paradigm",
-                  "random_start.", "perturb_start.polar_", "virtual_fixture", "free_move.rail_")
+                  "random_start.", "perturb_start.polar_", "virtual_fixture", "free_move.rail_",
+                  "free_move.box.")
 
 
 def floor_problem(current: dict) -> Optional[str]:
@@ -97,3 +98,11 @@ def start_for_height(height_m: float, current: dict) -> Tuple[list, str]:
     return q, (f"{floor.reference.replace('_', ' ')} at {reference_z(T, floor.reference):.3f} m "
                f"(was {now:.3f} m); flange at ({T[0, 3]:.3f}, {T[1, 3]:.3f}, {T[2, 3]:.3f}) m, "
                f"{grid.margin_deg(np.radians(q)):.0f} deg from the nearest joint limit")
+
+
+def ee_pose(q_rad) -> Optional[np.ndarray]:
+    """The flange pose (4x4, base frame) for joint angles in radians, or None without a model."""
+    _load()
+    if _MODEL is None:
+        return None
+    return np.asarray(_MODEL[0](np.asarray(q_rad, dtype=float)), dtype=float)

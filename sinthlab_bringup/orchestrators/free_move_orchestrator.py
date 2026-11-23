@@ -30,7 +30,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     No threshold. A trial is one free-movement SESSION that runs for session_sec, or, with session_sec
     0, until Stop.
 
-    One node, three tasks, set by the YAML's `experiment`: free_move (no boundary), move_vertical and
+    One node, three tasks, set by the YAML's `experiment`: free_move (in a box around the start), move_vertical and
     move_horizontal (the same admittance on one rail through the start: free_move.rail_axis).
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with

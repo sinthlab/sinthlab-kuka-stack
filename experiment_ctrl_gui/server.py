@@ -34,12 +34,14 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+from live_view import LiveView  # noqa: E402
 import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
 from runner import LaunchRunner  # noqa: E402
 
 STATIC = HERE / "static"
 STATUS_STALE_SEC = 3.0         # the orchestrator heartbeats every 1 s
+LIVE_VIEW_HZ = 15.0            # the live view's position updates
 STOP_PARK_TIMEOUT_SEC = 60.0   # Stop: end the launch anyway if the arm has not parked by then
 CSRF_HEADER = "X-Experiment-Ctrl"   # a cross-site page cannot send a custom header without CORS
 
@@ -66,7 +68,9 @@ class App:
         if not self.bridge.available:
             self.runner.emit(f"ROS not available: {self.bridge.reason}", "warn")
         self.post = PostProcessor(self.broadcast, self.runner.emit, self._busy)
+        self.live_view = LiveView(self.bridge)
         threading.Thread(target=self._ticker, daemon=True).start()
+        threading.Thread(target=self._live_ticker, daemon=True).start()
 
     # ------------------------------------------------------------------ events out
 
@@ -94,6 +98,29 @@ class App:
         while True:
             time.sleep(1.0)
             self.broadcast("state", self.state())
+
+    def live_update(self) -> None:
+        """Point the live view at the running experiment, with the parameters it runs with."""
+        exp = self.running_experiment()
+        status = self.status()
+        self.live_view.update(exp.key if exp else None,
+                              self.params[exp.key].current() if exp else {},
+                              status if status and not status["stale"] else None)
+
+    def _live_ticker(self) -> None:
+        while True:
+            time.sleep(1.0 / LIVE_VIEW_HZ)
+            with self._clients_lock:
+                listening = bool(self._clients)
+            if not listening:
+                continue
+            try:
+                self.live_update()
+                s = self.status()
+                self.broadcast("live", self.live_view.live(s if s and not s["stale"] else None))
+            except Exception as exc:       # the view must never take the dashboard down
+                self.runner.emit(f"live view: {exc}", "warn")
+                time.sleep(2.0)
 
     # ------------------------------------------------------------------ state
 
@@ -140,6 +167,11 @@ class App:
         return str(max(folders, key=lambda p: p.stat().st_mtime)) if folders else None
 
     def _on_status(self, status: dict) -> None:
+        try:
+            if hasattr(self, "live_view"):
+                self.live_update()      # at once, so the live view anchors at the moment of "armed"
+        except Exception as exc:
+            self.runner.emit(f"live view: {exc}", "warn")
         self.broadcast("state", self.state())
         # Stop: the orchestrator ends the trial at once and parks; once it reports holding there, the
         # launch ends.
@@ -384,6 +416,11 @@ def make_handler(app: App):
                 } for e in ex.EXPERIMENTS])
             if path == "/api/groups":
                 return self._json([{"key": k, "label": v} for k, v in ex.GROUPS])
+            if path == "/api/live_view":
+                app.live_update()
+                s = app.status()
+                return self._json({"geometry": app.live_view.geometry(),
+                                   "live": app.live_view.live(s if s and not s["stale"] else None)})
             if path.startswith("/api/params/"):
                 key = path.rsplit("/", 1)[1]
                 if key not in app.params:

@@ -23,9 +23,9 @@
       penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
-    # is let go. No goal, no boundary -- for getting used to holding and moving the arm. It runs as one
-    # free-movement SESSION, for session_sec or (0) until Stop. The reward: the session's end, or each
-    # long movement (long_move below).
+    # is let go, within a box around the start (free_move.box_*). No goal -- for getting used to holding and moving the arm. It
+    # runs as one free-movement SESSION, for session_sec or (0) until Stop. The reward: the session's end,
+    # or each long movement (long_move below).
     # At its end the arm holds, waits to be let go, parks, and the next session starts; Stop parks at once.
     #
     # HOW: ROS moves the cabinet spring's equilibrium at a speed proportional to the hand's force
@@ -147,15 +147,28 @@
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: none  # none = free in every direction; x | y | z = only along that base axis through the start (Move Vertical / Horizontal)
+      # THE BOX: the equilibrium stays inside it -- a soft wall, like the floor. ITS ORIGIN IS THE START POSITION (the end effector at the start pose):
+      # every bound is an offset from the start, base frame -- X toward the subject, Y sideways, Z up. The dashboard and the experiment at start-up refuse a box
+      # whose corners, edge middles or face centres would bend the elbow (A4) under 30 deg, come within 10 deg of a joint limit or near a singular posture (README, Free Move, "The box").
+      box:  # the box the equilibrium stays in; origin = the start position
+        # standard = X -0.05/+0.03, Y +-0.18, Z -0.12/+0.01 | more_x = X -0.08/+0.06, Y +-0.14, Z -0.08/+0.01 | most_x = X -0.10/+0.08, Y +-0.10, Z -0.04/0
+        # | centred = X +-0.04, Y +-0.12, Z +-0.02 | custom = the six values below. The arm reaches only ~3 cm up from this start but 12 cm down, and a longer X costs Y or Z.
+        preset: "standard"  # standard | more_x | most_x | centred | custom (the six values below)
+        x_min_m: -0.05  # (custom) back: how far toward -X from the start [m], <= 0
+        x_max_m: 0.03  # (custom) forward: how far toward +X, toward the subject, from the start [m], >= 0
+        y_min_m: -0.18  # (custom) how far toward -Y from the start [m], <= 0
+        y_max_m: 0.18  # (custom) how far toward +Y from the start [m], >= 0
+        z_min_m: -0.12  # (custom) down: how far below the start [m], <= 0
+        z_max_m: 0.01  # (custom) up: how far above the start [m], >= 0
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
-    # Runaway stop -- SPEED ONLY: free move has no boundary, so the distance check is off.
+    # Runaway stop: the speed, and a distance well past the box's farthest corner (0.24 m from the start).
     free_move_safety:  # runaway stop
       update_rate: 100  # loop rate of this action [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
-      max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
+      max_displacement_m: 0.32  # abort if the EE is dragged this far from the start: 8 cm past the box's farthest corner, against the spring (~80 N at 1000 N/m) [m]
       max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
       state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off

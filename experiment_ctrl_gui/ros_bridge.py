@@ -1,7 +1,10 @@
 """The dashboard's ROS side: listens to the orchestrator and robot, sets live parameters, stops.
 
     <ns>/experiment_status   std_msgs/String (JSON)    published by helpers/experiment_control.py
-    <ns>/lbr_state           lbr_fri_idl/LBRState      FRI session state and stream rate
+    <ns>/lbr_state           lbr_fri_idl/LBRState      FRI session state and stream rate; the measured
+                                                       joints, for the live view
+    <ns>/kuka_clik_controller/target_frame             the CLIK's target (the spring's pull point), for
+                             geometry_msgs/PoseStamped  the live view
     <ns>/<node>/set_parameters                         live parameters (the node rejects the rest)
     <ns>/<node>/stop         std_srvs/Trigger          end the trial now, park, and hold
 
@@ -44,6 +47,10 @@ class RosBridge:
         self._status: Optional[dict] = None
         self._state_times: deque = deque(maxlen=200)
         self._session_state: Optional[int] = None
+        self._q: Optional[list] = None          # measured joints [rad], the latest lbr_state
+        self._q_t = 0.0
+        self._pull: Optional[list] = None       # the CLIK target position [m], base frame
+        self._pull_t = 0.0
 
         rclpy.init()
         self._rclpy = rclpy
@@ -57,6 +64,12 @@ class RosBridge:
                                            qos_profile_sensor_data)
         except ImportError:
             pass     # robot panel shows "unknown"; everything else works
+        try:
+            from geometry_msgs.msg import PoseStamped
+            self._node.create_subscription(PoseStamped, f"{self._ns}/kuka_clik_controller/target_frame",
+                                           self._on_pull, 1)
+        except ImportError:
+            pass
         self._clients: Dict[Tuple[str, str], object] = {}
         self._executor = MultiThreadedExecutor(num_threads=2)
         self._executor.add_node(self._node)
@@ -75,6 +88,15 @@ class RosBridge:
     def _on_state(self, msg) -> None:
         self._state_times.append(time.monotonic())
         self._session_state = int(msg.session_state)
+        self._q, self._q_t = list(msg.measured_joint_position), time.time()
+
+    def _on_pull(self, msg) -> None:
+        p = msg.pose.position
+        self._pull, self._pull_t = [p.x, p.y, p.z], time.time()
+
+    def live(self) -> dict:
+        """For the live view: the latest measured joints and CLIK target, with their arrival times."""
+        return {"q": self._q, "q_t": self._q_t, "pull": self._pull, "pull_t": self._pull_t}
 
     def status(self) -> Optional[dict]:
         return self._status
@@ -145,6 +167,9 @@ class UnavailableBridge:
 
     def robot(self) -> dict:
         return {"lbr_state_hz": None, "session_state": None}
+
+    def live(self) -> dict:
+        return {"q": None, "q_t": 0.0, "pull": None, "pull_t": 0.0}
 
     def set_params(self, exp, values):
         return False, f"ROS is not available here: {self.reason}"
@@ -444,6 +469,25 @@ class DemoBridge:
         running = self._status is not None
         return {"lbr_state_hz": 100 if running else 0,
                 "session_state": "COMMANDING_ACTIVE" if running else None}
+
+    def live(self) -> dict:
+        """A simulated arm for the live view: an offset from the start [m] -- it wanders while the
+        trial is armed (along the rail on a rail task), and is at the start otherwise."""
+        if self._status is None:
+            return {"q": None, "q_t": 0.0, "pull": None, "pull_t": 0.0}
+        moving = self._phase in ("armed", "target", "cue_audio_end", "checkpoint")
+        t = time.time() - self._phase_t if moving else 0.0
+        import math
+        axis = str(self._params.get("free_move.rail_axis", "none"))
+        if self._exp.group == "pretraining" and axis in ("y", "z"):
+            lo, hi = float(self._params.get("free_move.rail_min_m", -0.1)), float(self._params.get("free_move.rail_max_m", 0.1))
+            v = (hi if math.sin(0.8 * t) >= 0 else -lo) * math.sin(0.8 * t)
+            off = [0.0, v, 0.0] if axis == "y" else [0.0, 0.0, v]
+        else:
+            r = min(1.0, t / 3.0)
+            off = [0.02 * r * math.sin(0.5 * t), 0.12 * r * math.sin(0.9 * t), 0.06 * r * math.sin(1.3 * t) - 0.03 * r]
+        lead = [o * 1.05 for o in off]
+        return {"offset": off, "pull_offset": lead if self._exp.key != "apple_pluck" else None, "t": time.time()}
 
     def set_params(self, exp: ex.Experiment, values: Dict[str, object]) -> Tuple[bool, str]:
         if self._status is None:

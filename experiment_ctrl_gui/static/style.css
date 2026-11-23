@@ -357,3 +357,19 @@ table.hist button.use { all: unset; cursor: pointer; font-family: var(--mono, ui
 table.hist button.use:focus-visible { outline: 2px solid var(--accent); }
 table.hist tr.changed td.today { color: var(--warn); font-weight: 600; }
 .empty { color: var(--muted); font-size: 13px; margin: 10px 0; }
+/* ---------- live view ---------- */
+.live-main { padding: 14px 18px; max-width: 1400px; margin: 0 auto; }
+.live-views { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.live-canvas { width: 100%; height: min(62vh, 560px); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; display: block; }
+.live-status { font-weight: 600; margin: 10px 0 4px; }
+.live-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.live-legend .key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.live-legend .key.ring { background: none; border: 2px solid; }
+.live-legend .key.line { width: 16px; height: 3px; border-radius: 0; }
+.live-legend .key.line.dash { height: 0; background: none; border-top: 2px dashed; }
+@media (max-width: 800px) {
+  .live-main { padding: 12px 16px; }
+  .live-views { grid-template-columns: 1fr; }
+  .live-canvas { height: 46vh; }
+}

@@ -18,6 +18,7 @@ diagnostics/solve_start_grid.py and check_park.py.
 """
 from __future__ import annotations
 
+import itertools
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -25,6 +26,11 @@ from scipy.spatial.transform import Rotation
 
 PLANES = {"frontal": (1, 2), "horizontal": (0, 1), "sagittal": (0, 2)}   # base axes of (a, b)
 MIN_MARGIN_DEG, MIN_SINGULAR = 10.0, 0.10
+# Free Move's box (box_problem): every corner, edge middle and face centre must keep the elbow at least
+# BOX_MIN_ELBOW_DEG bent -- the jerk of 23 Nov began at A4 ~23 deg, on the way to a straight elbow -- with
+# the same joint margin, and stay this far from singular (a box reaches nearer the edge of the
+# workspace than a few random-start positions: the default box's tightest corner is at 0.088).
+BOX_MIN_ELBOW_DEG, BOX_MIN_SINGULAR = 30.0, 0.08
 
 
 class StartGrid:
@@ -63,6 +69,28 @@ class StartGrid:
 
     def sigma_min(self, q) -> float:
         return float(np.linalg.svd(np.asarray(self._jac(q), dtype=float), compute_uv=False)[-1])
+
+    def box_problem(self, start_deg, box_min, box_max) -> Optional[str]:
+        """None if the arm can hold the start's orientation everywhere in the box (offsets from the start's
+        end effector, base frame [x, y, z]) with the elbow bent, away from the joint limits and singular
+        postures -- checked at its corners, edge middles and face centres -- else the reason."""
+        q0 = np.radians(np.asarray(start_deg, dtype=float))
+        T0 = self._fk(q0)
+        lo, hi = np.asarray(box_min, dtype=float), np.asarray(box_max, dtype=float)
+        levels = [sorted({float(l), 0.0, float(h)}) for l, h in zip(lo, hi)]
+        for off in (np.array(p) for p in itertools.product(*levels)):
+            q, err = self.ik(q0, T0[:3, 3] + off, T0[:3, :3])
+            where = f"the box point {np.round(off, 3).tolist()} m from the start"
+            if err > 1e-4:
+                return f"{where} is out of reach"
+            if (q[3] > 0) != (q0[3] > 0) or abs(np.degrees(q[3])) < BOX_MIN_ELBOW_DEG:
+                return (f"{where} straightens the elbow to A4 {np.degrees(q[3]):.0f} deg "
+                        f"(needs {BOX_MIN_ELBOW_DEG:g} deg or more)")
+            if self.margin_deg(q) < MIN_MARGIN_DEG:
+                return f"{where} is {self.margin_deg(q):.1f} deg from a joint limit (needs {MIN_MARGIN_DEG:g})"
+            if self.sigma_min(q) < BOX_MIN_SINGULAR:
+                return f"{where} is nearly singular (sigma_min {self.sigma_min(q):.3f} < {BOX_MIN_SINGULAR})"
+        return None
 
     def solve(self, start_deg, plane: str, offsets: Dict[str, List[float]]
               ) -> Dict[str, Tuple[List[float], Optional[str]]]:
