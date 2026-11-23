@@ -37,7 +37,7 @@
     <span class="pill" id="pill-ros" title="ROS connection">ROS …</span>
     <span class="pill" id="pill-robot" title="FRI session state and lbr_state rate">Robot …</span>
     <span class="pill" id="pill-run" title="Experiment state">Idle</span>
-    <a class="pill link" href="/live.html" target="_blank" title="The running experiment's bounds and the arm in them, live">Live view ↗</a>
+    <button class="pill link" id="pill-live" title="Show or hide the live view: the running experiment's bounds and the arm in them">Live view</button>
     <a class="pill link" href="/postprocess.html" title="Archive a session as NWB and upload it to the server">Post-processing</a>
     <a class="pill link" href="/diagnostics.html" title="Hardware checks: the end-effector cue ring, TTL outputs">Diagnostics</a>
   </div>
@@ -63,6 +63,27 @@
         <ol id="events" class="event-list"></ol>
       </details>
     </div>
+
+    <!-- The live view (live_view.js, as on /live.html): the running experiment's bounds and the arm in them.
+         Toggled from the run bar's "Live view" pill or its own heading; remembered per browser. -->
+    <details class="card live-card" id="live-card">
+      <summary><strong>Live view</strong> <span class="muted small" id="live-sub">the arm in the experiment's bounds</span>
+        <a class="small live-pop" href="/live.html" target="_blank" title="Open it on its own page (bigger)">pop out ↗</a></summary>
+      <div class="live-views">
+        <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
+        <canvas id="cv-top" class="live-canvas" aria-label="Top view: Y to the right, X toward the subject down"></canvas>
+      </div>
+      <p class="live-status" id="live-status"></p>
+      <p class="live-legend muted small">
+        <span><span class="key" style="background:var(--ink)"></span>arm (last 8 s)</span>
+        <span><span class="key ring" style="border-color:var(--accent)"></span>pull point</span>
+        <span><span class="key line" style="background:var(--info)"></span>rail</span>
+        <span><span class="key line" style="background:var(--warn)"></span>wall / box</span>
+        <span><span class="key line dash" style="border-color:var(--err)"></span>floor</span>
+        <span><span class="key ring" style="border-color:var(--ok)"></span>goal / rail end</span>
+        <span>Front: Y right, Z up · Top: Y right, X toward the subject down</span>
+      </p>
+    </details>
 
     <!-- The run monitor (this run's trials.csv as it grows; the Reach Map's map) and today vs recent sessions. -->
     <div class="card session-card">
@@ -189,6 +210,7 @@
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="tip" class="tip" role="tooltip"></div>
+<script src="live_view.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

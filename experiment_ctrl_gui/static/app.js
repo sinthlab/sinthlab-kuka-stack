@@ -1042,6 +1042,34 @@ function rerenderLog() {
   if ($("#log-follow").checked) box.scrollTop = box.scrollHeight;
 }
 
+// ---------------------------------------------------------------- the live view card
+// The same drawing as /live.html (live_view.js), in the left column. Made the first time it is opened; fed by
+// the event stream's "live" messages (15 Hz), or polled with ?nostream. Its open / closed state is remembered.
+const LV = { view: null, version: null, poll: null };
+async function liveLoad() {
+  if (!LV.view) return;
+  try {
+    const m = await api("/api/live_view");
+    LV.view.setGeometry(m.geometry); LV.version = m.geometry ? m.geometry.version : null;
+    LV.view.setLive(m.live);
+    $("#live-sub").textContent = m.geometry ? `${m.geometry.experiment.replace(/_/g, " ")}: the arm in its bounds, live` : "no experiment running";
+  } catch { /* the next message retries */ }
+}
+function onLive(l) {
+  if (!LV.view || !$("#live-card").open) return;
+  if ((l.version ?? null) !== LV.version || (l.experiment && !LV.view.geom) || (!l.experiment && LV.view.geom)) liveLoad();
+  else LV.view.setLive(l);
+}
+function liveToggled() {
+  const open = $("#live-card").open;
+  store.set("liveOpen", open);
+  $("#pill-live").classList.toggle("pill-on", open);
+  if (open && !LV.view) LV.view = new LiveView({ front: $("#cv-front"), top: $("#cv-top") }, $("#live-status"));
+  if (open) liveLoad();
+  clearInterval(LV.poll); LV.poll = null;
+  if (open && new URLSearchParams(location.search).has("nostream")) LV.poll = setInterval(liveLoad, 500);
+}
+
 // ---------------------------------------------------------------- wiring
 function onState(a) {
   const prevKey = runningKey();
@@ -1081,6 +1109,7 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.type === "log") appendLog(m.data);
     else if (m.type === "state") onState(m.data);
+    else if (m.type === "live") onLive(m.data);
   };
   es.onerror = () => { $("#pill-run").className = "pill err"; $("#pill-run").textContent = "Dashboard disconnected"; };
 }
@@ -1481,6 +1510,12 @@ async function init() {
   $("#log-filter").oninput = (e) => { S.logFilter = e.target.value; rerenderLog(); };
   $("#btn-log-clear").onclick = () => { $("#log").innerHTML = ""; };
   $("#log-toggle").onclick = () => openLog($("#log-drawer").classList.contains("hidden"));
+  $("#live-card").addEventListener("toggle", liveToggled);
+  $("#pill-live").onclick = () => {
+    const c = $("#live-card"); c.open = !c.open;
+    if (c.open) c.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  if (store.get("liveOpen", false) || new URLSearchParams(location.search).has("live")) $("#live-card").open = true;
   $("#log-warns").onclick = () => openLog(true, "warn");
   $("#btn-log-tall").onclick = () => $("#log-drawer").classList.toggle("tall");
   // Close the reward popover with a click elsewhere.

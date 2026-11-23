@@ -191,7 +191,9 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
   settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
   settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
   **All settings** (the Live / Per-run / Fixed tabs, unchanged). The log is a one-line strip at the bottom
-  (the latest message, a warnings count) that opens into the full log.
+  (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is a card in the left
+  column, opened and closed from the run bar's *Live view* pill (remembered per browser); *pop out ↗* still
+  opens it on its own page (`/live.html`).
 - **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
   live and waiting for the next trial included, wherever they differ from the profile; the reach comes
   back from a horizontal or vertical rail's ends. Tick what to keep; a reward can go to this task only.
