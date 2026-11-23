@@ -411,3 +411,9 @@ table.hist tr.changed td.today { color: var(--warn); font-weight: 600; }
 .save-rows select { font: inherit; font-size: 12px; }
 .by-task { font-size: 12.5px; margin-top: 10px; }
 .by-task ul { margin: 4px 0 0; padding-left: 18px; }
+.reward-group { border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 8px; padding: 8px 10px; }
+.reward-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.reward-head h3 { margin: 0; }
+.reward-head .reward-now { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.reward-head .btn { margin-left: auto; }
+.param .ctl .btn.step { padding: 3px 7px; font-family: var(--mono); flex: none; }

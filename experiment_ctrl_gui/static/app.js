@@ -75,10 +75,14 @@ const PHASE_TEXT_BY_EXP = {
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
+// The reward: on every task's front page (Task view), first, since it is the setting changed most over
+// training (started large, rolled back). Also in the Monkey view, with the rest of the profile.
+const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
+const REWARD_STEP_MS = 10;
 const TAB_HELP = {
   task: {
-    running: "Today's settings for this task. Live ones change from the next trial; the rest are locked for this run. The monkey's own settings are under Monkey, everything else under All settings.",
-    idle: "The few settings this task needs today. The monkey's own settings (feel, reach, pacing, reward) are under Monkey; everything else under All settings. Edits apply to the next Start.",
+    running: "The reward and today's settings for this task. The reward and other live settings change from the next trial; the rest are locked for this run. The monkey's other settings are under Monkey, everything else under All settings.",
+    idle: "The reward, then the few settings this task needs today. The monkey's other settings (feel, reach, pacing) are under Monkey; everything else under All settings. Edits apply to the next Start.",
   },
   monkey: {
     running: "The monkey's profile, as this task uses it. Tune the feel live (from the next move or trial); when it feels right, Save to profile and every task gets it from its next Start.",
@@ -530,7 +534,8 @@ function renderParams(force = false) {
   const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
   const counts = { live: 0, run: 0, task: 0, profile: 0 };
-  shown.forEach((p) => { counts[p.tier]++; if (p.layer !== "other") counts[p.layer]++; });
+  const isReward = (p) => layered && REWARD_ROWS.includes(p.name);
+  shown.forEach((p) => { counts[p.tier]++; if (p.layer !== "other") counts[p.layer]++; if (isReward(p)) counts.task++; });
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
   $("#n-task").textContent = layered ? counts.task : ""; $("#n-monkey").textContent = layered ? counts.profile : "";
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
@@ -547,7 +552,7 @@ function renderParams(force = false) {
   renderProfileBar(view, layered);
 
   const f = S.paramFilter.toLowerCase();
-  const inView = (p) => view === "all" ? p.tier === S.tab : view === "task" ? p.layer === "task" : p.layer === "profile";
+  const inView = (p) => view === "all" ? p.tier === S.tab : view === "task" ? p.layer === "task" || isReward(p) : p.layer === "profile";
   const rows = shown.filter((p) => inView(p) && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
   const root = $("#params"); root.innerHTML = ""; TIPS.clear(); hideTip();
   const groups = data.groups || {};
@@ -565,8 +570,19 @@ function renderParams(force = false) {
       root.appendChild(box);
     }
   } else {
+    if (view === "task") {          // the reward first, with its own Save to profile
+      const ps = REWARD_ROWS.map((n) => rows.find((p) => p.name === n)).filter(Boolean);
+      const cur = (n) => { const p = ps.find((x) => x.name === n); const lv = liveVals && p && p.tier === "live" ? liveVals[n] : undefined;
+                           return p ? (lv !== undefined ? lv : p.value) : undefined; };
+      if (ps.length) {
+        const box = document.createElement("div"); box.className = "group reward-group";
+        box.appendChild(rewardHead(ps, cur));
+        for (const p of ps) if (p.name !== "reward_pulse.gap_ms" || Number(cur("reward_pulse.count")) > 1) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+        root.appendChild(box);
+      }
+    }
     const byGroup = new Map();
-    for (const p of rows) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
+    for (const p of rows.filter((x) => !(view === "task" && isReward(x)))) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
     for (const [g, ps] of byGroup) {
       const box = document.createElement("div"); box.className = "group";
       const gt = groupTip(g, groups[g]);
@@ -602,7 +618,8 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const short = p.group !== "general" && p.name.startsWith(p.group + ".") ? p.name.slice(p.group.length + 1) : p.name;
   const who = curSubject();
   const offProfile = p.layer === "profile" && hasProfile() && !p.edited && fmtVal(value) !== fmtVal(p.default);
-  const label = S.pview === "monkey" && p.profile_field ? profileLabel(p.profile_field) : short;
+  const friendly = p.profile_field && (S.pview === "monkey" || (S.pview === "task" && REWARD_ROWS.includes(p.name)));
+  const label = friendly ? profileLabel(p.profile_field) : short;
   row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Today only: ${esc(who)}'s profile has ${esc(fmtVal(p.default))}` : "Edited for the next Start"}">${p.layer === "profile" && hasProfile() ? "today only" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile has ${esc(fmtVal(p.default))}: Save to profile keeps this value">not in profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
@@ -626,10 +643,19 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
       rv.title = p.layer === "profile" && hasProfile() ? `Back to ${curSubject()}'s profile (${fmtVal(p.default)})` : `Back to the default (${fmtVal(p.default)})`;
       rv.textContent = "↺"; rv.onclick = () => commit(p.default); ctl.appendChild(rv);
     }
+    if (p.name === "reward_pulse.pulse_ms" && !locked) {        // roll the reward back (or up) in small steps
+      for (const dv of [-REWARD_STEP_MS, REWARD_STEP_MS]) {
+        const sb = document.createElement("button"); sb.className = "btn small step";
+        sb.textContent = dv < 0 ? `−${REWARD_STEP_MS}` : `+${REWARD_STEP_MS}`;
+        sb.title = `${dv < 0 ? "Less" : "More"} juice: ${dv < 0 ? "−" : "+"}${REWARD_STEP_MS} ms valve time${isLiveRunning ? ", from the next trial" : ", for the next Start"}`;
+        sb.onclick = () => commit(Math.max(p.limits ? p.limits[0] : 10, Number(value) + dv));
+        ctl.appendChild(sb);
+      }
+    }
     if (p.limits) { const d = document.createElement("span"); d.className = "default"; d.textContent = `${p.limits[0]}–${p.limits[1]}`; ctl.appendChild(d); }
   }
   row.appendChild(ctl);
-  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = S.pview === "monkey" && p.profile_field ? `${short}: ${p.help}` : p.help; row.appendChild(h); }
+  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = friendly ? `${short}: ${p.help}` : p.help; row.appendChild(h); }
   if (p.profile_note) { const h = document.createElement("div"); h.className = "help pnote"; h.textContent = `ⓘ ${p.profile_note}`; row.appendChild(h); }
   if (p.caution) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
   if (p.linked && p.linked.length) {
@@ -638,6 +664,23 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   }
   if (p.name === "move_to_start.target_joint_position" && !locked && !isLiveRunning) row.appendChild(startHeightRow());
   return row;
+}
+
+// The Reward section's heading: the reward now (per reward: pulses x valve time), the profile's, and Save.
+function rewardHead(ps, cur) {
+  const h = document.createElement("div"); h.className = "reward-head";
+  const ms = cur("reward_pulse.pulse_ms"), n = Number(cur("reward_pulse.count") || 1);
+  const prof = (S.prof && S.prof.profile) || null, who = curSubject();
+  const own = prof && (prof.reward_by_task || {})[S.selected];
+  const pv = prof ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
+  const fmt = (m, k) => k > 1 ? `${k} × ${m} ms` : `${m} ms`;
+  const off = pv && (Number(pv.ms) !== Number(ms) || Number(pv.n) !== n);
+  h.innerHTML = `<h3 class="section">Reward</h3><span class="reward-now">${esc(fmt(ms, n))}</span>` +
+    (pv ? `<span class="muted small">${esc(who)}'s profile${own ? ` (${esc(exp(S.selected)?.label || "")} only)` : ""}: ${esc(fmt(pv.ms, pv.n))}</span>` : "") +
+    (off ? `<button class="btn small" id="reward-save" title="Keep this reward in ${esc(who)}'s profile">Save to profile…</button>` : "");
+  const b = h.querySelector("#reward-save");
+  if (b) b.onclick = () => openSaveDialog(true);
+  return h;
 }
 
 // The start pose from a height above the ground: the floor's reference point (apple bottom or base edge)
@@ -785,10 +828,11 @@ function renderProfileBar(view, layered) {
     `<button class="btn small" id="pb-save" title="Keep the values tuned here (live or for the next Start) in ${esc(cur)}'s profile">Save to ${esc(cur)}'s profile…</button>`;
   $("#pb-save").onclick = () => openSaveDialog();
 }
-async function openSaveDialog() {
+async function openSaveDialog(rewardOnly = false) {
   const key = runningKey() === S.selected ? runningKey() : S.selected, e = exp(key);
   let d;
   try { d = await api(`/api/profile/diff?exp=${encodeURIComponent(key)}`); } catch (err) { toast(err.message, "err"); return; }
+  if (rewardOnly) d.rows = d.rows.filter((r) => r.reward);
   if (!d.rows.length) { toast(`Nothing to save: ${e.label} matches ${d.subject}'s profile`, "ok"); return; }
   $("#save-dlg-subject").textContent = d.subject;
   $("#save-dlg-sub").textContent = `From ${e.label}${runningKey() === key ? " (live values)" : ""}: these differ from the profile. The ticked ones are saved, and every task uses them from its next Start.`;

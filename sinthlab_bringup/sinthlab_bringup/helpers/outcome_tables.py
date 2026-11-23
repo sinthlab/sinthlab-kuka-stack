@@ -405,7 +405,7 @@ def upsert_session(row: dict, path) -> None:
 
 
 # Settings worth comparing across sessions in every task, then each task's own (TaskTables.settings).
-COMMON_SETTINGS = ["reward_pulse.pulse_ms", "response_timeout_sec", "quiet_window_sec", "move_to_park.hold_sec",
+COMMON_SETTINGS = ["reward_pulse.pulse_ms", "reward_pulse.count", "response_timeout_sec", "quiet_window_sec", "move_to_park.hold_sec",
                    "quiet_gate.penalty_sec", "free_move.damping_ns_per_m"]
 
 
