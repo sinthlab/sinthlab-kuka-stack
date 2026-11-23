@@ -674,6 +674,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 5 | Colour Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1499,6 +1500,51 @@ correct, reversals and the mean choices to criterion.
 where the monkey sits (quarter 3 is dark on the current ring, so three quarters light), that a reversal
 leaves no trace he could perceive, and, for No rail, that the plane feels free and the reach distance
 is comfortable.
+
+### Scenario 6 — N-Choice (depleting rewards on an asterisk of rails)
+A task of its own (the **N-Choice** card under Experiments), on the free-move node
+([`n_choice.yaml`](sinthlab_bringup/config/n_choice.yaml),
+[`actions/n_choice.py`](sinthlab_bringup/sinthlab_bringup/actions/n_choice.py),
+[`helpers/bandit_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/bandit_schedule.py)).
+
+**The asterisk.** Straight rails from the start in the plane facing the monkey, in the directions
+`free_move.rays_deg` (default the 8 compass directions: 0 = right, 90 = up, 180 = left, 270 = down),
+each `free_move.ray_length_m` long (0.07 m). Near the start a push slides the arm out along the rail
+closest to its direction; once out on a rail it stays on it (a sideways push only slides it back toward
+the start). Nothing moves toward or away from him. The geometry is per-run
+([`helpers/rail_shapes.py`](sinthlab_bringup/sinthlab_bringup/helpers/rail_shapes.py)).
+
+**The start** is Move Vertical's, 5 cm below the maze start, in the middle of the arm's vertical span
+(up is the limit from the maze start), so rails can go up as well as down; the dashboard's floor check
+covers the lowest rail's end. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30.
+
+**One choice per trial.** At the go cue the whole ring lights green: no cue, nothing says which
+direction is best. The trial ends when the arm reaches the end of a rail (within `n_choice.end_tol_m`).
+That direction pays with its current probability p (`choice`: the reward and the end tone; or
+`choice_unrewarded`: nothing). Then the probabilities change:
+
+- the direction chosen **depletes**: p → p − `deplete` × (p − `p_min`);
+- every other direction **recovers**: p → p + `recover` × (`p_max` − p).
+
+So a direction he keeps choosing gets worse, and one he leaves alone gets better again. He has to track
+which directions are paying from his own rewards.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `n_choice.p_max` / `p_min` | `0.9` / `0.1` | the range the probabilities move in |
+| `n_choice.deplete` | `0.3` | how much of the way to `p_min` the chosen direction falls, per choice |
+| `n_choice.recover` | `0.1` | how much of the way to `p_max` every other direction rises, per trial |
+| `n_choice.start` | `full` | `full`: every direction starts at `p_max` · `random`: each starts between `p_min` and `p_max` |
+| `n_choice.end_tol_m` | `0.015` | this close to a rail's end counts as choosing it [m] |
+
+All live, from the next trial (the probabilities are kept, clipped to a new range). Each trial's sidecar
+has `n_choice`: every direction's probability before the choice and the best direction(s).
+`trials.csv` gets the choice, rewarded, the chosen direction's p, the best direction(s), chose-best and
+every p; `sessions.csv` gets the reward rate, % chose best, % switches and the choices per direction.
+
+**On the rig, before a subject:** with the diagnostics scripts, solve every rail's end from this start
+(the diagonals especially); then push out along each rail and check the junction at the start is smooth,
+with no snag when committing to a rail.
 
 ### Pre-training — Free Move, Move Vertical, Move Horizontal
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard

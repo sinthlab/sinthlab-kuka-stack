@@ -196,6 +196,21 @@ EXPERIMENTS += [
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
 ]
+# N-choice with depleting rewards on an asterisk of rails: a task of its own, on the free-move node. It
+# starts where Move Vertical does (the middle of the arm's vertical span), so rails can go up and down.
+EXPERIMENTS += [
+    Experiment(
+        key="n_choice", label="N-Choice", group="experiments",
+        summary="An asterisk of rails from the centre: each direction pays with a probability that falls while chosen and recovers while left alone.",
+        launch_file="iiwa7_n_choice.launch.py",
+        params_yaml="n_choice.yaml", node="free_move_orchestrator",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_n_choice",
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
+]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
 for _e in EXPERIMENTS:
     assert _e.stiffness_profile in SMARTPAD_PROFILES, f"{_e.key}: unknown SmartPad profile {_e.stiffness_profile!r}"

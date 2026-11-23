@@ -23,6 +23,8 @@ from typing import Callable, Dict, Optional, Tuple
 import experiments as ex
 from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for   # on the path via experiments
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
+from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
+from sinthlab_bringup.helpers.rail_shapes import direction_name
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -185,6 +187,7 @@ class DemoBridge:
             self._trial = 0
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
             self._rule: Optional[ReversalSchedule] = None   # the colour rule, built on entering it
+            self._bandit: Optional[DepletingBandit] = None  # N-choice, built at the first trial
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -300,6 +303,24 @@ class DemoBridge:
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
                 self._reward("goal")
+            elif "n_choice.p_max" in self._effective:
+                # N-choice: a simulated chooser that prefers directions that have been paying.
+                e = self._effective
+                if self._bandit is None:
+                    names = [direction_name(a) for a in self._params.get("free_move.rays_deg", [0, 90, 180, 270])]
+                    self._bandit = DepletingBandit(names, start=str(e.get("n_choice.start", "full")))
+                self._bandit.configure(float(e["n_choice.p_max"]), float(e.get("n_choice.p_min", 0.1)),
+                                       float(e.get("n_choice.deplete", 0.3)), float(e.get("n_choice.recover", 0.1)))
+                if not self._sleep(run_id, random.uniform(1.0, 2.5)):
+                    return False
+                weights = [p ** 3 for p in self._bandit.p]
+                name = random.choices(self._bandit.names, weights=weights)[0]
+                p = self._bandit.probabilities()[name]
+                if self._bandit.choose(name):
+                    self._phase_to("choice", name, f"N-choice: {name} (p = {p:.2f}) -- reward.")
+                    self._reward("choice")
+                else:
+                    self._phase_to("choice_unrewarded", name, f"N-choice: {name} (p = {p:.2f}) -- no reward.")
             elif self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled")):
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
                 # (none with the other half of the rail closed: actions/centre_out.py).

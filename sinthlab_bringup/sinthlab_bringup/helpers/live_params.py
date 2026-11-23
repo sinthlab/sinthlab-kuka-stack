@@ -128,6 +128,8 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # The colour rule: the same node and feel; Rail / No rail (free_move.rail_axis) is per-run, and the
     # centre-out mode is fixed to the rule (so not centre_out.*: only the reach distances are live).
     "colour_rule": [x for x in _FREE if x != "centre_out.*"] + ["centre_out.end_tol_m", "centre_out.free_reach_m"],
+    # N-choice: the same node and feel; the asterisk (free_move.rail_axis, rays_deg, ray_length_m) is per-run.
+    "n_choice": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")] + ["n_choice.*"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -180,6 +182,14 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "rule.criterion_pct": (50.0, 100.0),
     "rule.min_trials": (1, 200),
     "rule.max_repeats": (0, 20),
+    # N-choice (actions/n_choice.py, helpers/bandit_schedule.py).
+    "n_choice.end_tol_m": (0.005, 0.03),
+    "n_choice.p_max": (0.0, 1.0),
+    "n_choice.p_min": (0.0, 1.0),
+    "n_choice.deplete": (0.0, 1.0),
+    "n_choice.recover": (0.0, 1.0),
+    "free_move.ray_length_m": (0.02, 0.15),
+    "free_move.rays_deg": (-360.0, 360.0),
     # Long moves (actions/long_move.py).
     "long_move.min_m": (0.02, 0.40),
     "long_move.min_straightness": (0.0, 1.0),
@@ -303,6 +313,7 @@ CHOICES: Dict[str, List[str]] = {
     "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move"],            # actions/long_move.MODES
+    "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
 }
 

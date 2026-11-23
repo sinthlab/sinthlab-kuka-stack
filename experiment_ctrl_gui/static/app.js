@@ -21,6 +21,8 @@ const STEPS = {
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
 STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
+STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
+                  "trial_end", "release_wait", "released"];
 STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
@@ -29,7 +31,7 @@ const STEP_LABEL = {
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
-  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach",
+  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach", choice: "choice",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "at park — then to the start pose", at_start: "quiet window", quiet_end: "go cue",
@@ -62,6 +64,8 @@ const PHASE_TEXT_BY_EXP = {
                    release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
   move_horizontal: { session_end: "session over — waiting for release",
                      release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
+  n_choice: { release_wait: "waiting for release", armed: "reach out along a rail",
+              choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
   colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
                  reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
@@ -324,6 +328,7 @@ function renderStatus() {
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip" || (cur === "response_timeout" && key === "maze")) cur = "goal";
   if (cur === "reach_wrong") cur = "reach";
+  if (cur === "choice_unrewarded") cur = "choice";
   if (cur === "early_touch" || cur === "response_timeout") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";

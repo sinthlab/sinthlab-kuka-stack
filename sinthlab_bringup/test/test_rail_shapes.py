@@ -75,3 +75,23 @@ def test_admittance_clamps_to_the_asterisk():
     out = adm._on_rail(a + [0.03, 0.0, -0.2])                # down, too far, and toward the monkey
     assert np.allclose(out, a + [0, 0, -0.07])
     assert adm.rays() == (ASTERISK, 0.07)
+
+
+# ---------------------------------------------------------------- the floor check before the asterisk starts
+def test_floor_check_covers_the_asterisks_lowest_end():
+    from sinthlab_bringup.helpers import floor
+
+    def fk(q):                                             # stand-in: the reference point at 1.00 m
+        T = np.eye(4)
+        T[2, 3] = 1.0 - floor.reference_drop(np.eye(3), "apple_bottom")
+        return T
+
+    params = {"floor.height_m": 0.88, "floor.reference": "apple_bottom", "floor.trip_margin_m": 0.03,
+              "move_to_start.target_joint_position": [0, 0, 0, 0, 0, 0, 0],
+              "free_move.rail_axis": "rays", "free_move.rays_deg": ASTERISK, "free_move.ray_length_m": 0.07}
+    assert floor.setup_problem(params, fk) is None                         # lowest end at 0.93 m
+    params["free_move.ray_length_m"] = 0.2
+    problem = floor.setup_problem(params, fk)                              # ...at 0.80 m: below the floor
+    assert problem and "the lowest rail's end" in problem
+    params["free_move.rays_deg"] = [0, 90, 180]                             # no downward ray
+    assert floor.setup_problem(params, fk) is None

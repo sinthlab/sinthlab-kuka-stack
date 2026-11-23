@@ -73,9 +73,10 @@ TRIALS_CSV = "trials.csv"
 SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
-OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "session_end", "response_timeout",
-            "early_touch", "safety_trip", "smartpad_mismatch", "stop_requested")
-SUCCESS = ("snap", "goal", "reach", "session_end")
+OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
+            "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "stop_requested")
+# A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
+SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
 FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
 # safety_trip, smartpad_mismatch, stop_requested: aborted -- neither (success left blank)
 
@@ -485,6 +486,51 @@ class ColourRuleTables(CentreOutTables):
                 "pct_correct": round(100.0 * ok / len(chosen), 1) if chosen else "",
                 "n_reversals": sum(r.get("reversal") == "1" for r in trials),
                 "choices_to_criterion": round(sum(done) / len(done), 1) if done else ""}
+
+
+@register("n_choice")
+class NChoiceTables(TaskTables):
+    """N-choice with depleting rewards (actions/n_choice.py, helpers/bandit_schedule.py)."""
+    trial_columns = {
+        "choice": "the direction chosen (the rail whose end was reached), blank if none",
+        "rewarded": "1 = the choice paid, 0 = it did not, blank = no choice",
+        "p_chosen": "the chosen direction's reward probability, before the choice",
+        "best": "the direction(s) with the highest probability before the choice (| between ties)",
+        "chose_best": "1 = chose a best direction, 0 = not, blank = no choice",
+        "p_values": "every direction's probability before the choice (direction=p; ...)",
+    }
+    settings = ["free_move.rays_deg", "free_move.ray_length_m", "n_choice.p_max", "n_choice.p_min",
+                "n_choice.deplete", "n_choice.recover", "n_choice.start", "reward_pulse.pulse_ms"]
+    session_columns = {"n_choices": "trials ending in a choice",
+                       "reward_rate": "choices that paid over all choices [%]",
+                       "pct_chose_best": "choices of a best direction [%]",
+                       "pct_switch": "choices of a different direction from the previous choice [%]",
+                       "choice_counts": "choices per direction (direction=n; ...)"}
+
+    def trial_fields(self, tr):
+        state = tr.meta.get("n_choice") or {}
+        p = state.get("p") or {}
+        best = state.get("best") or []
+        chosen = tr.arg("choice") if tr.has("choice") else tr.arg("choice_unrewarded")
+        return {"choice": chosen or "",
+                "rewarded": 1 if tr.has("choice") else 0 if tr.has("choice_unrewarded") else "",
+                "p_chosen": p.get(chosen, "") if chosen else "",
+                "best": " | ".join(best), "chose_best": (1 if chosen in best else 0) if chosen else "",
+                "p_values": "; ".join(f"{k}={v}" for k, v in p.items())}
+
+    def session_fields(self, trials):
+        chosen = [r for r in trials if r.get("choice")]
+        if not chosen:
+            return {"n_choices": 0}
+        pct = lambda n: round(100.0 * n / len(chosen), 1)   # noqa: E731
+        switches = sum(a["choice"] != b["choice"] for a, b in zip(chosen, chosen[1:]))
+        counts: Dict[str, int] = {}
+        for r in chosen:
+            counts[r["choice"]] = counts.get(r["choice"], 0) + 1
+        return {"n_choices": len(chosen), "reward_rate": pct(sum(r["rewarded"] == "1" for r in chosen)),
+                "pct_chose_best": pct(sum(r["chose_best"] == "1" for r in chosen)),
+                "pct_switch": round(100.0 * switches / (len(chosen) - 1), 1) if len(chosen) > 1 else "",
+                "choice_counts": "; ".join(f"{k}={v}" for k, v in sorted(counts.items()))}
 
 
 @register("free_move")

@@ -14,6 +14,7 @@ from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
 from sinthlab_bringup.actions.long_move import LongMoveMonitor
+from sinthlab_bringup.actions.n_choice import NChoiceMonitor
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -54,7 +55,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         super().__init__("free_move_orchestrator", automatically_declare_parameters_from_overrides=True)
         AudioCue.warmup(self)
         VisualCue.warmup(self)
-        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal | colour_rule
+        self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal | colour_rule | n_choice
 
         self.trial_count = 0
         self._trial_ending = False
@@ -74,6 +75,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # go cue ends the session (no end cue, park). Once it has been moved, the session runs on.
         self.centre_out = None             # Move Vertical / Horizontal: the centre-out reach, created below
         self.long_move = None              # Free Move: the long-movement reward, created below
+        self.n_choice = None               # N-Choice: one choice per trial on the asterisk, created below
         self.response_timeout = WaitAction(
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
@@ -106,6 +108,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move = LongMoveMonitor(self, self.admittance)
             self.control.add_validator(self.long_move.check_live)
             self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
+        # The N-choice task (actions/n_choice.py): the asterisk of rails, depleting rewards.
+        if self.has_parameter("n_choice.p_max"):
+            self.n_choice = NChoiceMonitor(self, self.admittance)
+            self.control.add_validator(self.n_choice.check_live)
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -175,11 +181,24 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.recorder.mark("target", target)
             self.ring.show(*self.centre_out.ring_cue())
         else:
+            if self._n_choice_on():        # every direction's reward probability, before the choice
+                self.recorder.annotate(n_choice=self.n_choice.state())
             self.ring.show("go")
         self.go_cue.start()
 
     def _centre_out_on(self) -> bool:
         return self.centre_out is not None and self.centre_out.enabled
+
+    def _n_choice_on(self) -> bool:
+        return self.n_choice is not None
+
+    def _choice_on(self) -> bool:
+        """One choice per trial (centre-out, the colour rule, N-choice), rather than a free session."""
+        return self._centre_out_on() or self._n_choice_on()
+
+    def on_choice(self, direction: str, rewarded: bool):
+        """N-choice: the arm reached the end of a ray -- the trial's outcome. `choice` sends the reward."""
+        self._end_trial("choice" if rewarded else "choice_unrewarded", direction)
 
     def _long_move_on(self) -> bool:
         return self.long_move is not None and self.long_move.enabled
@@ -188,6 +207,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         """Centre-out on: the reach to a goal end gives the reward, not the session's end. Long moves on:
         each long movement does."""
         self.control.set_reward_events(("reach",) if self._centre_out_on() else
+                                       ("choice",) if self._n_choice_on() else
                                        ("long_move",) if self._long_move_on() else REWARD_EVENTS)
 
     def _on_long_move(self, token: str, arg=None):
@@ -211,6 +231,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self._centre_out_on():
             self.centre_out.start(self.on_reach)
             self.get_logger().info("Centre-out: reach to the lit end of the rail.")
+        elif self._n_choice_on():
+            self.n_choice.start(self.on_choice)
+            self.get_logger().info("N-choice: reach out along one of the rails.")
         elif self._session_sec > 0:
             self.session.start()
             self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
@@ -253,7 +276,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         where the response is the reach itself: no reach by then ends the trial."""
         if self._trial_ending or self._stopping:
             return
-        if self._centre_out_on():
+        if self._choice_on():
             self.get_logger().warn(f"NO REACH within {self.response_timeout.duration_sec():g} s: parking.")
             self._end_trial("response_timeout")
             return
@@ -288,6 +311,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.centre_out.stop()
         if self.long_move is not None:
             self.long_move.stop()
+        if self.n_choice is not None:
+            self.n_choice.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -304,7 +329,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
         self.get_logger().info("Session over. The arm holds; waiting for release before reset."
                                if reason == "session_end" else "The arm holds; waiting for release before reset.")
-        if reason != "reach_wrong":
+        if reason not in ("reach_wrong", "choice_unrewarded"):
             self.end_cue.start()
         self.recorder.mark("release_wait")
         self.force_release.start()
@@ -318,7 +343,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.start()
 
     def on_park_complete(self):
-        self.get_logger().info(f"--- {'TRIAL' if self._centre_out_on() else 'SESSION'} {self.trial_count} COMPLETE ---")
+        self.get_logger().info(f"--- {'TRIAL' if self._choice_on() else 'SESSION'} {self.trial_count} COMPLETE ---")
         self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
         self.control.begin_trial(self._next_trial)   # holds at park instead once stopped
@@ -332,7 +357,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.trial_count += 1
         self.recorder.start(trial_index=self.trial_count)
         self.recorder.mark("trial_start", self.trial_count)
-        self.get_logger().info(f"--- STARTING {'TRIAL' if self._centre_out_on() else 'SESSION'} {self.trial_count} ---")
+        self.get_logger().info(f"--- STARTING {'TRIAL' if self._choice_on() else 'SESSION'} {self.trial_count} ---")
         self.move_park.wait_then(self.start_trial)    # wait move_to_park.hold_sec at park, then move to start
 
     def _trial_over(self, why: str, arg=None):
@@ -367,6 +392,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.centre_out.stop()
         if self.long_move is not None:
             self.long_move.stop()
+        if self.n_choice is not None:
+            self.n_choice.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -398,6 +425,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.long_move is not None:
             self.long_move.reload()
             self.reward_cue.reload()
+        if self.n_choice is not None:
+            self.n_choice.reload()
         self._set_reward_events()
 
 

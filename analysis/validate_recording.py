@@ -247,6 +247,13 @@ def validate(path) -> bool:
         r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t == "long_move"),
                 "each long_move reward comes right after its move_end")
         r.note(f"long moves: {ends} movement(s), {paid} rewarded")
+    if exp == "n_choice" and "early_touch" not in got:
+        # N-choice (actions/n_choice.py): one choice per trial, paid or not, or none.
+        outcome = [t for t in got if t in ("choice", "choice_unrewarded", "response_timeout", "safety_trip")]
+        r.check(len(outcome) <= 1, f"at most one outcome (choice / choice_unrewarded / response_timeout / safety_trip); found {outcome}")
+        r.check(meta is None or "n_choice" in meta, "the sidecar has every direction's probability (n_choice)")
+        arg = [a for _, t, a in seq if t in ("choice", "choice_unrewarded")]
+        r.note(f"n-choice: {outcome[0] if outcome else 'no outcome'}" + (f" ({arg[0]})" if arg else ""))
     if exp in ("move_vertical", "move_horizontal", "colour_rule") and "target" in got:
         # Centre-out (actions/centre_out.py): one reach per trial -- to the goal, to the other end, or none.
         outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
