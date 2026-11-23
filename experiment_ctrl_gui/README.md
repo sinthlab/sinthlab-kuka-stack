@@ -303,7 +303,7 @@ edge); *Check outputs* still works. The browser cannot send UDP, so the server r
 
 ## Live view
 
-`/live.html` — the **Live view** button at the top right of the dashboard, in its own tab. The running
+A card in the dashboard's left column (the run bar's **Live view** pill opens it), and `/live.html` on its own (the card's *pop out ↗*). The running
 experiment's bounds and the arm in them, in two views of the robot's base frame: **front** (Y to the
 right, Z up: as seen from the subject's side) and **top** (Y to the right, X toward the subject
 downward). Read-only, and entirely on the dashboard's side: the experiments do not change for it.
