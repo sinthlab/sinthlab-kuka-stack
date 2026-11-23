@@ -441,3 +441,8 @@ table.hist tr.changed td.today { color: var(--warn); font-weight: 600; }
 .rm-table td.warn { color: var(--warn); }
 .rm-sectors { margin-top: 8px; }
 .rm-sectors summary { cursor: pointer; }
+.reward-head .reward-ml { font-weight: 600; color: var(--info); }
+.reward-head .reward-ml.extrapolated { color: var(--warn); }
+.reward-byvol { flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); }
+.reward-byvol input { width: 70px; font-family: var(--mono); padding: 3px 6px; }
+.reward-byvol .warn { color: var(--warn); }

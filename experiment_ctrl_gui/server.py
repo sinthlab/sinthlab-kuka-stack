@@ -36,6 +36,7 @@ import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
+import reward_volume  # noqa: E402
 from live_view import LiveView  # noqa: E402
 import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
@@ -570,6 +571,15 @@ def make_handler(app: App):
             if path == "/api/run/trials":         # the run monitor: this (or the last) run's trials.csv
                 q = parse_qs(urlparse(self.path).query)
                 return self._json(app.run_trials((q.get("exp") or [""])[0]))
+            if path == "/api/reward/calibration":   # the valve calibration: mL per reward (reward_volume.py)
+                return self._json(reward_volume.calibration() or {"set": None, "profiles": []})
+            if path == "/api/reward/width":       # the valve time for a volume per reward
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    return self._json(reward_volume.width_for_ml(reward_volume.calibration(), float((q.get("ml") or ["0"])[0]),
+                                                                 int((q.get("count") or ["1"])[0])))
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)}, HTTPStatus.CONFLICT)
             if path == "/api/reach_map":          # the Reach Map view
                 q = parse_qs(urlparse(self.path).query)
                 try:

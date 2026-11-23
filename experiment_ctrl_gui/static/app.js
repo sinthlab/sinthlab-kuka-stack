@@ -83,6 +83,32 @@ const PHASE_TEXT_BY_EXP = {
 // training (started large, rolled back). Also in the Monkey view, with the rest of the profile.
 const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
 const REWARD_STEP_MS = 10;
+// mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
+// interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
+function rewardVolume(ms, count = 1, gap = 0) {
+  const p = ((S.cal && S.cal.profiles) || []).find((x) => x.burst === Number(count));
+  if (!p) return { ml: null, status: "none", note: S.cal && S.cal.set ? `no calibration for ${count} pulse(s)` : "no reward calibration" };
+  const [lo, hi] = p.valid_width_ms; ms = Number(ms);
+  let ul, status = "calibrated", note = "";
+  if (ms >= lo && ms <= hi) {
+    const pts = p.points; let i = 0;
+    while (i < pts.length - 2 && ms > pts[i + 1][0]) i++;
+    const [w0, v0] = pts[i], [w1, v1] = pts[i + 1];
+    ul = v0 + (v1 - v0) * (ms - w0) / (w1 - w0);
+  } else { ul = p.slope_ul_per_ms * ms + p.intercept_ul; status = "extrapolated"; note = `calibrated ${lo}–${hi} ms`; }
+  if (Number(count) > 1 && p.gap_ms && Number(gap) !== p.gap_ms) note = [note, `calibrated with a ${p.gap_ms} ms gap`].filter(Boolean).join("; ");
+  return { ml: Math.max(ul, 0) / 1000, status, note };
+}
+function fmtMl(v) { return v == null ? "–" : v >= 100 ? `${Math.round(v)} mL` : `${v.toFixed(v < 10 ? 2 : 1)} mL`; }
+// Set a parameter of the selected experiment: live while it runs (if live), else for the next Start.
+async function setParam(name, value) {
+  const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
+  const live = isRunningSelected() && p && p.tier === "live";
+  const r = await act(() => live ? api("/api/live", { name, value }) : api(`/api/params/${S.selected}`, { name, value }),
+                      `${name} = ${value}${live ? " from the next trial" : " for the next Start"}`);
+  if (!live) await loadParams(S.selected, true);
+  return r;
+}
 const TAB_HELP = {
   task: {
     running: "The reward and today's settings for this task. The reward and other live settings change from the next trial; the rest are locked for this run. The monkey's other settings are under Monkey, everything else under All settings.",
@@ -118,7 +144,8 @@ const S = {
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
   // The settings view: task (today's few), monkey (the profile's, as this task uses them) or all (Live / Per-run / Fixed).
   pview: new URLSearchParams(location.search).get("view") || store.get("pview", "task"),
-  prof: null, profSig: null,      // /api/profile: the monkey, its profile, the layout, the change log
+  prof: null, profSig: null,
+  cal: null,                      // /api/reward/calibration: the valve calibration, for mL per reward      // /api/profile: the monkey, its profile, the layout, the change log
   params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
 };
@@ -679,11 +706,27 @@ function rewardHead(ps, cur) {
   const pv = prof ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
   const fmt = (m, k) => k > 1 ? `${k} × ${m} ms` : `${m} ms`;
   const off = pv && (Number(pv.ms) !== Number(ms) || Number(pv.n) !== n);
-  h.innerHTML = `<h3 class="section">Reward</h3><span class="reward-now">${esc(fmt(ms, n))}</span>` +
+  const gap = cur("reward_pulse.gap_ms"), vol = rewardVolume(ms, n, gap);
+  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">no volume (${esc(vol.note)})</span>`
+    : `<span class="reward-ml ${vol.status}" title="${esc(`${vol.status}${vol.note ? `: ${vol.note}` : ""}${S.cal ? ` · calibration ${S.cal.set}` : ""}`)}">≈ ${fmtMl(vol.ml)}${vol.status === "extrapolated" || vol.note ? " ⚠" : ""}</span>`;
+  h.innerHTML = `<h3 class="section">Reward</h3><span class="reward-now">${esc(fmt(ms, n))}</span>${volTxt}` +
     (pv ? `<span class="muted small">${esc(who)}'s profile${own ? ` (${esc(exp(S.selected)?.label || "")} only)` : ""}: ${esc(fmt(pv.ms, pv.n))}</span>` : "") +
     (off ? `<button class="btn small" id="reward-save" title="Keep this reward in ${esc(who)}'s profile">Save to profile…</button>` : "");
   const b = h.querySelector("#reward-save");
   if (b) b.onclick = () => openSaveDialog(true);
+  // Set the reward by volume: the valve time for that many mL, at this pulse count.
+  if (S.cal && S.cal.profiles.length) {
+    const row = document.createElement("div"); row.className = "reward-byvol small";
+    row.innerHTML = `<label>Set by volume <input type="number" step="0.05" min="0.3" max="5" value="${vol.ml != null ? vol.ml.toFixed(2) : ""}" aria-label="mL per reward"> mL per reward</label> <button class="btn small">Set</button>` +
+      (vol.note ? ` <span class="warn">⚠ ${esc(vol.note)}</span>` : "") + ` <span class="muted">calibration ${esc(S.cal.set)}</span>`;
+    const inp = row.querySelector("input");
+    row.querySelector("button").onclick = async () => {
+      let w; try { w = await api(`/api/reward/width?ml=${encodeURIComponent(inp.value)}&count=${n}`); } catch (e) { toast(e.message, "err"); return; }
+      const r = await setParam("reward_pulse.pulse_ms", w.ms);
+      if (r) toast(`${fmtMl(w.ml)} per reward = ${n > 1 ? `${n} × ` : ""}${w.ms} ms${w.status === "extrapolated" ? " (extrapolated)" : ""}`, "ok");
+    };
+    h.appendChild(row);
+  }
   return h;
 }
 
@@ -1144,6 +1187,21 @@ function renderMonitor() {
   const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
   const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
                  ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
+  // Juice: each trial's rewards at their mean width and pulse count, through the valve calibration.
+  let juice = 0, unsure = false;
+  for (const r of rows) {
+    const nr = num(r.n_rewards) || 0, pulses = num(r.reward_pulses) || nr, ms = num(r.reward_ms) || 0;
+    if (!nr) continue;
+    const v = rewardVolume(ms / pulses, Math.round(pulses / nr), 100);
+    if (v.ml == null) { unsure = true; continue; }
+    if (v.status !== "calibrated") unsure = true;
+    juice += nr * v.ml;
+  }
+  if (S.cal && S.cal.profiles.length && rewards) {
+    const t0 = num(rows[0].t_start), t1 = d.running ? Date.now() / 1000 : num(last.t_end);
+    const hours = (t1 - t0) / 3600;
+    tiles.push(["Juice", `${unsure ? "≈ " : ""}${fmtMl(juice)}${hours > 0.05 ? ` <small>${fmtMl(juice / hours)}/h</small>` : ""}`]);
+  }
   const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
   if (chosen.length) {
     const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
@@ -1322,6 +1380,7 @@ async function init() {
   }
   S.profSig = `${S.app.subject}|${S.app.profile ? S.app.profile.version : ""}`;
   await loadProfile();
+  try { S.cal = await api("/api/reward/calibration"); } catch { S.cal = null; }
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
   renderExperiments(); renderChecklist();
   await loadParams(S.selected);

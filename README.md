@@ -2828,6 +2828,15 @@ pulses. The fit is then microlitres per reward against each pulse's width, and `
 `count`, `gap_ms` and `pulse_ms` to set. Keep each burst setting in its own sweep file. `trials.csv`
 counts every opening (`reward_pulses`) and the total valve time.
 
+**The calibration the dashboard uses.** Commit each calibration's files (the sweep CSVs, plans and the
+`fit --model interp` profiles, one per burst setting) to `analysis/reward_calibrations/<date>_<setup>/`, with
+a README saying what was measured. The dashboard (`experiment_ctrl_gui/reward_volume.py`) reads the newest
+folder: every task's Reward section shows mL per reward (⚠ outside the calibrated widths, or for a burst
+whose gap differs from its calibration), can set the valve time from a volume, and the Run monitor shows the
+juice given and the rate per hour. Current: `2026-11-23_gravity_reservoir`, provisional (the gravity-fed
+reservoir's flow falls as it empties, ±10 %): about 0.78–1.69 mL for one pulse of 100–400 ms, and every
+opening costs ~0.45 mL before its width counts. Redo it once the pressure system is in.
+
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event
 has its own line, so a dropped pulse shows up as a missing edge on that line instead of silently

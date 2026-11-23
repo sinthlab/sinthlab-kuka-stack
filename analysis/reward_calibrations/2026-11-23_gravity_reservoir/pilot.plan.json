@@ -1,0 +1,53 @@
+{
+ "settings": {
+  "widths": [
+   30,
+   100,
+   500
+  ],
+  "reps": 3,
+  "blanks": 0,
+  "pulses": 20,
+  "spacing": 1.0,
+  "seed": 1,
+  "output": 4
+ },
+ "plan": [
+  {
+   "batch": 1,
+   "width_ms": 100
+  },
+  {
+   "batch": 2,
+   "width_ms": 500
+  },
+  {
+   "batch": 3,
+   "width_ms": 500
+  },
+  {
+   "batch": 4,
+   "width_ms": 100
+  },
+  {
+   "batch": 5,
+   "width_ms": 100
+  },
+  {
+   "batch": 6,
+   "width_ms": 30
+  },
+  {
+   "batch": 7,
+   "width_ms": 500
+  },
+  {
+   "batch": 8,
+   "width_ms": 30
+  },
+  {
+   "batch": 9,
+   "width_ms": 30
+  }
+ ]
+}
