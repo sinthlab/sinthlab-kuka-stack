@@ -1507,11 +1507,15 @@ A task of its own (the **N-Choice** card under Experiments), on the free-move no
 [`actions/n_choice.py`](sinthlab_bringup/sinthlab_bringup/actions/n_choice.py),
 [`helpers/bandit_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/bandit_schedule.py)).
 
-**The asterisk.** Straight rails from the start in the plane facing the monkey, in the directions
-`free_move.rays_deg` (default the 8 compass directions: 0 = right, 90 = up, 180 = left, 270 = down),
-each `free_move.ray_length_m` long (0.07 m). Near the start a push slides the arm out along the rail
+**The asterisk.** Straight rails from the start in the plane facing the monkey, each
+`free_move.ray_length_m` long (0.07 m). **How many** is the run's choice (the card's tabs,
+`free_move.ray_layout`, 2-8; default 2): start with 2 and add choices over sessions. They are always
+**evenly spaced**, 360/n degrees apart, so no two choices are closer than any others, and mirror-symmetric
+left to right: an even number starts at right (2 = left / right, 4 = the cross, 8 = every compass
+direction), an odd number straight down (3 = down, up-right, up-left at 120 degrees). Directions are
+named right, up-right, up, ... for the compass angles, otherwise by angle (`30deg`; 0 = right, 90 = up). Near the start a push slides the arm out along the rail
 closest to its direction; once out on a rail it stays on it (a sideways push only slides it back toward
-the start). Nothing moves toward or away from him. The geometry is per-run
+the start). Nothing moves toward or away from him. The number and length are per-run
 ([`helpers/rail_shapes.py`](sinthlab_bringup/sinthlab_bringup/helpers/rail_shapes.py)).
 
 **The start** is Move Vertical's, 5 cm below the maze start, in the middle of the arm's vertical span

@@ -164,7 +164,7 @@ class AdmittanceMoveAction:
         self._plane_n = rail_shapes.FRONTAL_NORMAL if axis in ("frontal", "rays") else None
         self._ray_degs, self._rays, self._ray_len = [], None, 0.0
         if axis == "rays":
-            self._ray_degs = [float(a) for a in get_required_param(node, self._p + "rays_deg")]
+            self._ray_degs = rail_shapes.layout_degs(get_required_param(node, self._p + "ray_layout"))
             self._rays = rail_shapes.ray_dirs(self._ray_degs)
             self._ray_len = float(get_required_param(node, self._p + "ray_length_m"))
         self._open: Optional[tuple] = None      # this trial's open part of the rail (lo, hi), None = all of it

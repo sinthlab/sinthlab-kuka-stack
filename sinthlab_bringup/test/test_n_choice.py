@@ -158,7 +158,37 @@ def test_card_config_and_registry():
     import yaml
     d = yaml.safe_load((ROOT / "sinthlab_bringup/config/n_choice.yaml").read_text())["/**"]["ros__parameters"]
     assert d["experiment"] == "n_choice" and d["free_move"]["rail_axis"] == "rays"
-    assert len(d["free_move"]["rays_deg"]) == 8 and "centre_out" not in d
+    assert d["free_move"]["ray_layout"] == "2" and "centre_out" not in d     # start with 2 choices
+    assert e.paradigm_param == "free_move.ray_layout"
+    assert [k for k, _ in e.paradigms] == ["2", "3", "4", "5", "6", "7", "8"]
+    assert not live_params.is_live("n_choice", "free_move.ray_layout")      # per session
     assert live_params.is_live("n_choice", "n_choice.deplete")
-    assert not live_params.is_live("n_choice", "free_move.rays_deg")         # the asterisk is per-run
+    assert not live_params.is_live("n_choice", "free_move.ray_length_m")     # the asterisk is per-run
     assert live_params.check_value("n_choice.start", "random") is None
+
+
+def test_layouts_are_evenly_spaced_and_symmetric():
+    from sinthlab_bringup.helpers.rail_shapes import LAYOUT_COUNTS, direction_name, layout_degs
+    import numpy as np
+    for n in LAYOUT_COUNTS:
+        degs = layout_degs(n)
+        gaps = np.diff(sorted(degs) + [sorted(degs)[0] + 360])
+        assert len(degs) == n and np.allclose(gaps, 360 / n)          # no two closer than any others
+        mirrored = sorted(round((180 - a) % 360, 3) for a in degs)  # left-right mirror image
+        assert np.allclose(mirrored, sorted(round(a, 3) for a in degs))
+    names = lambda n: [direction_name(a) for a in layout_degs(n)]   # noqa: E731
+    assert names(2) == ["right", "left"]
+    assert names(3) == ["down", "30deg", "150deg"]                  # down, up-right, up-left
+    assert names(4) == ["right", "up", "left", "down"]
+    assert len(set(names(8))) == 8
+    assert layout_degs("3") == layout_degs(3)                       # a run file may carry it unquoted
+    for bad in (1, 9, "custom"):
+        with pytest.raises(ValueError):
+            layout_degs(bad)
+
+
+def test_monitor_names_follow_the_layout():
+    node = stubs.FakeNode({"n_choice.end_tol_m": 0.01, "n_choice.p_max": 0.9, "n_choice.p_min": 0.1,
+                           "n_choice.deplete": 0.3, "n_choice.recover": 0.1, "n_choice.start": "full"})
+    mon = NChoiceMonitor(node, Asterisk(degs=[180, 270, 0]))
+    assert mon.names == ["left", "down", "right"] and set(mon.state()["p"]) == {"left", "down", "right"}

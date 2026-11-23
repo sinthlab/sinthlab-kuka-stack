@@ -23,7 +23,9 @@
       penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # N-CHOICE WITH DEPLETING REWARDS. An ASTERISK of straight rails from the start, in the plane facing the
-    # monkey: right, up-right, up, up-left, left, down-left, down, down-right (free_move.rays_deg). ONE
+    # monkey, HOW MANY picked per run on the card (free_move.ray_layout, 2-8), always EVENLY SPACED (360/n
+    # apart) so no two choices are closer than any others: 2 = left, right; 3 = down, up-right, up-left;
+    # 4 = the cross; 8 = every compass direction. Start with 2 and add choices over sessions. ONE
     # CHOICE PER TRIAL: at the go cue the whole ring lights (nothing says which direction is best); the
     # trial ends when the arm reaches the end of a rail. That direction pays with its current probability,
     # which then falls, while every other direction's recovers (the n_choice block; helpers/bandit_schedule.py).
@@ -144,7 +146,7 @@
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
       rail_axis: "rays"  # the asterisk: straight rails from the start in the frontal plane (helpers/rail_shapes.py). Per-run
-      rays_deg: [0, 45, 90, 135, 180, 225, 270, 315]  # the rails' directions in the plane facing the monkey [deg]: 0 = right, 90 = up, 180 = left, 270 = down. Per-run
+      ray_layout: "2"  # how many choices (the card's tabs), 2-8, evenly spaced: even numbers start at right, odd ones straight down (helpers/rail_shapes.layout_degs). Quoted: a string. Per-run
       ray_length_m: 0.07  # every rail's length from the start [m]: the lowest end keeps the apple bottom at 0.90 m. Per-run
       debug_log_enabled: false  # print force, speed and position twice a second while moving
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]

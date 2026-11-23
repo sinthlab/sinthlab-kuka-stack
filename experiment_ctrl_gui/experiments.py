@@ -207,6 +207,9 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_n_choice",
+        # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.
+        paradigms=[("2", "2 choices"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8")],
+        paradigm_param="free_move.ray_layout",
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),

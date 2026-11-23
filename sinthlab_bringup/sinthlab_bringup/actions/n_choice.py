@@ -2,7 +2,8 @@
 """N-choice with depleting rewards, on an asterisk of rails (the N-Choice task).
 
 The arm is held to an asterisk of straight rails from the start, in the plane facing the monkey
-(free_move.rail_axis rays, free_move.rays_deg, free_move.ray_length_m; helpers/rail_shapes.py). ONE CHOICE
+(free_move.rail_axis rays; free_move.ray_layout rails, 2-8, evenly spaced; free_move.ray_length_m;
+helpers/rail_shapes.py). ONE CHOICE
 PER TRIAL: at the go cue the whole ring lights (no cue: nothing says which direction is best), and the
 trial ends when the arm reaches the end of a ray (within n_choice.end_tol_m). That direction pays with its
 current probability; then it depletes and the others recover (helpers/bandit_schedule.py).

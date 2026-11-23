@@ -491,7 +491,9 @@ class ColourRuleTables(CentreOutTables):
 @register("n_choice")
 class NChoiceTables(TaskTables):
     """N-choice with depleting rewards (actions/n_choice.py, helpers/bandit_schedule.py)."""
+    paradigm_param = "free_move.ray_layout"
     trial_columns = {
+        "n_options": "how many directions there were to choose from",
         "choice": "the direction chosen (the rail whose end was reached), blank if none",
         "rewarded": "1 = the choice paid, 0 = it did not, blank = no choice",
         "p_chosen": "the chosen direction's reward probability, before the choice",
@@ -499,7 +501,7 @@ class NChoiceTables(TaskTables):
         "chose_best": "1 = chose a best direction, 0 = not, blank = no choice",
         "p_values": "every direction's probability before the choice (direction=p; ...)",
     }
-    settings = ["free_move.rays_deg", "free_move.ray_length_m", "n_choice.p_max", "n_choice.p_min",
+    settings = ["free_move.ray_layout", "free_move.ray_length_m", "n_choice.p_max", "n_choice.p_min",
                 "n_choice.deplete", "n_choice.recover", "n_choice.start", "reward_pulse.pulse_ms"]
     session_columns = {"n_choices": "trials ending in a choice",
                        "reward_rate": "choices that paid over all choices [%]",
@@ -512,7 +514,7 @@ class NChoiceTables(TaskTables):
         p = state.get("p") or {}
         best = state.get("best") or []
         chosen = tr.arg("choice") if tr.has("choice") else tr.arg("choice_unrewarded")
-        return {"choice": chosen or "",
+        return {"n_options": len(p) or "", "choice": chosen or "",
                 "rewarded": 1 if tr.has("choice") else 0 if tr.has("choice_unrewarded") else "",
                 "p_chosen": p.get(chosen, "") if chosen else "",
                 "best": " | ".join(best), "chose_best": (1 if chosen in best else 0) if chosen else "",

@@ -23,7 +23,7 @@ ASTERISK = [0, 45, 90, 135, 180, 225, 270, 315]
 def test_frontal_directions():
     assert np.allclose(rs.frontal_dir(0), [0, 1, 0])        # right = +Y
     assert np.allclose(rs.frontal_dir(90), [0, 0, 1])       # up = +Z
-    assert rs.direction_name(225) == "down-left" and rs.direction_name(30) == "deg30"
+    assert rs.direction_name(225) == "down-left" and rs.direction_name(30) == "30deg"
 
 
 def test_rays_too_close_are_refused():
@@ -88,10 +88,10 @@ def test_floor_check_covers_the_asterisks_lowest_end():
 
     params = {"floor.height_m": 0.88, "floor.reference": "apple_bottom", "floor.trip_margin_m": 0.03,
               "move_to_start.target_joint_position": [0, 0, 0, 0, 0, 0, 0],
-              "free_move.rail_axis": "rays", "free_move.rays_deg": ASTERISK, "free_move.ray_length_m": 0.07}
+              "free_move.rail_axis": "rays", "free_move.ray_layout": "8", "free_move.ray_length_m": 0.07}
     assert floor.setup_problem(params, fk) is None                         # lowest end at 0.93 m
     params["free_move.ray_length_m"] = 0.2
     problem = floor.setup_problem(params, fk)                              # ...at 0.80 m: below the floor
     assert problem and "the lowest rail's end" in problem
-    params["free_move.rays_deg"] = [0, 90, 180]                             # no downward ray
+    params["free_move.ray_layout"] = "2"                                    # left / right: nothing goes down
     assert floor.setup_problem(params, fk) is None

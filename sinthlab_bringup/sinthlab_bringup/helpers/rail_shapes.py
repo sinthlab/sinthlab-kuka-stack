@@ -7,8 +7,9 @@ the shape set by free_move.rail_axis:
     x | y | z   one straight rail along that base axis through the start (Move Horizontal: y)
     frontal     free in the FRONTAL plane through the start -- base Y (right) and Z (up), the plane facing
                 the monkey; no movement toward or away from him. The colour rule's "No rail" option.
-    rays        an ASTERISK of straight rails from the start, in the frontal plane: free_move.rays_deg
-                (0 = right, 90 = up, 180 = left, 270 = down) and free_move.ray_length_m. The N-choice task.
+    rays        an ASTERISK of straight rails from the start, in the frontal plane, free_move.ray_length_m
+                long: free_move.ray_layout of them (2-8), EVENLY SPACED, so no two choices are closer than
+                any others (layout_degs below). The N-choice task.
 
 Offsets here are from the start (the anchor), in the base frame, in metres.
 """
@@ -20,6 +21,23 @@ import numpy as np
 
 SHAPES = ("none", "x", "y", "z", "frontal", "rays")
 FRONTAL_NORMAL = np.array([1.0, 0.0, 0.0])     # base X: toward the monkey
+
+# How many choices: the N-Choice card's tabs (free_move.ray_layout, per run), to work up from 2 over sessions.
+LAYOUT_COUNTS = (2, 3, 4, 5, 6, 7, 8)
+
+
+def layout_degs(n) -> list:
+    """The directions [deg] of n EVENLY SPACED rails, 360/n apart, so no two choices are closer than any
+    others. Always mirror-symmetric left to right: an even number starts at right (2 = left/right, 4 = the
+    cross, 8 = every compass direction), an odd number starts straight down (3 = down, up-right, up-left)."""
+    try:
+        n = int(str(n).strip())
+    except ValueError:
+        n = 0
+    if n not in LAYOUT_COUNTS:
+        raise ValueError(f"free_move.ray_layout must be one of {list(LAYOUT_COUNTS)} (how many choices), got {n!r}")
+    first = 0.0 if n % 2 == 0 else 270.0
+    return [round((first + k * 360.0 / n) % 360.0, 6) for k in range(n)]
 
 
 def frontal_dir(deg: float) -> np.ndarray:
@@ -59,8 +77,8 @@ def on_rays(offset: np.ndarray, dirs: np.ndarray, length: float) -> Tuple[np.nda
 
 
 def direction_name(deg: float) -> str:
-    """right, up-right, up, ... for the 8 compass angles; else e.g. "deg30"."""
+    """right, up-right, up, ... for the 8 compass angles; else the angle, e.g. "30deg" (0 = right, 90 = up)."""
     names = {0: "right", 45: "up-right", 90: "up", 135: "up-left", 180: "left", 225: "down-left",
              270: "down", 315: "down-right"}
     a = int(round(float(deg))) % 360
-    return names.get(a, f"deg{a}")
+    return names.get(a, f"{a}deg")

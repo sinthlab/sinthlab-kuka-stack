@@ -24,7 +24,7 @@ import experiments as ex
 from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for   # on the path via experiments
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
-from sinthlab_bringup.helpers.rail_shapes import direction_name
+from sinthlab_bringup.helpers.rail_shapes import direction_name, layout_degs
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -307,7 +307,7 @@ class DemoBridge:
                 # N-choice: a simulated chooser that prefers directions that have been paying.
                 e = self._effective
                 if self._bandit is None:
-                    names = [direction_name(a) for a in self._params.get("free_move.rays_deg", [0, 90, 180, 270])]
+                    names = [direction_name(a) for a in layout_degs(self._params.get("free_move.ray_layout", "4"))]
                     self._bandit = DepletingBandit(names, start=str(e.get("n_choice.start", "full")))
                 self._bandit.configure(float(e["n_choice.p_max"]), float(e.get("n_choice.p_min", 0.1)),
                                        float(e.get("n_choice.deplete", 0.3)), float(e.get("n_choice.recover", 0.1)))
