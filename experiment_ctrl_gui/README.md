@@ -191,8 +191,8 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
   settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
   settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
   **All settings** (the Live / Per-run / Fixed tabs, unchanged). The log is a one-line strip at the bottom
-  (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is a card in the left
-  column, opened and closed from the run bar's *Live view* pill (remembered per browser); *pop out ↗* still
+  (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is the trial card's *Arm*
+  section, shown while a run goes, open unless folded with its heading (remembered per browser); *pop out ↗*
   opens it on its own page (`/live.html`).
 - **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
   live and waiting for the next trial included, wherever they differ from the profile; the reach comes
@@ -303,7 +303,7 @@ edge); *Check outputs* still works. The browser cannot send UDP, so the server r
 
 ## Live view
 
-A card in the dashboard's left column (the run bar's **Live view** pill opens it), and `/live.html` on its own (the card's *pop out ↗*). The running
+The trial card's **Arm** section on the dashboard while a run goes, and `/live.html` on its own (*pop out ↗*). The running
 experiment's bounds and the arm in them, in two views of the robot's base frame: **front** (Y to the
 right, Z up: as seen from the subject's side) and **top** (Y to the right, X toward the subject
 downward). Read-only, and entirely on the dashboard's side: the experiments do not change for it.

@@ -343,7 +343,11 @@ function renderControls() {
   $("#btn-start").title = rk && rk !== S.selected ? `Stop ${expLabel(rk)} first` : `Start ${expLabel(S.selected)}`;
   $("#btn-start").classList.toggle("hidden", mine || stopping);
   $("#btn-stop").classList.toggle("hidden", !(mine || stopping));
-  $("#status-card").classList.toggle("hidden", !(s || r.state !== "idle"));
+  const showStatus = !!(s || r.state !== "idle");
+  if (showStatus === $("#status-card").classList.contains("hidden")) {
+    $("#status-card").classList.toggle("hidden", !showStatus);
+    liveToggled(false);
+  }
   $("#checklist-card").classList.toggle("hidden", !!(s || r.state !== "idle"));
   $("#btn-stop").disabled = !mine;
   $("#btn-stop").textContent = a.stopping_now ? "■ Parking… (press to skip)" : "■ Stop";
@@ -1043,8 +1047,9 @@ function rerenderLog() {
 }
 
 // ---------------------------------------------------------------- the live view card
-// The same drawing as /live.html (live_view.js), in the left column. Made the first time it is opened; fed by
-// the event stream's "live" messages (15 Hz), or polled with ?nostream. Its open / closed state is remembered.
+// The same drawing as /live.html (live_view.js), in the trial card (shown while a run goes), open unless folded
+// with its heading (remembered). Made when first shown; fed by the event stream's "live" messages (15 Hz),
+// or polled with ?nostream.
 const LV = { view: null, version: null, poll: null };
 async function liveLoad() {
   if (!LV.view) return;
@@ -1052,18 +1057,18 @@ async function liveLoad() {
     const m = await api("/api/live_view");
     LV.view.setGeometry(m.geometry); LV.version = m.geometry ? m.geometry.version : null;
     LV.view.setLive(m.live);
-    $("#live-sub").textContent = m.geometry ? `${m.geometry.experiment.replace(/_/g, " ")}: the arm in its bounds, live` : "no experiment running";
+    $("#live-sub").textContent = m.geometry ? "in the experiment's bounds, live" : "no experiment running";
   } catch { /* the next message retries */ }
 }
+function liveShown() { return $("#live-card").open && !$("#status-card").classList.contains("hidden"); }
 function onLive(l) {
-  if (!LV.view || !$("#live-card").open) return;
+  if (!LV.view || !liveShown()) return;
   if ((l.version ?? null) !== LV.version || (l.experiment && !LV.view.geom) || (!l.experiment && LV.view.geom)) liveLoad();
   else LV.view.setLive(l);
 }
-function liveToggled() {
-  const open = $("#live-card").open;
-  store.set("liveOpen", open);
-  $("#pill-live").classList.toggle("pill-on", open);
+function liveToggled(remember = true) {
+  if (remember) store.set("liveOpen", $("#live-card").open);
+  const open = liveShown();
   if (open && !LV.view) LV.view = new LiveView({ front: $("#cv-front"), top: $("#cv-top") }, $("#live-status"));
   if (open) liveLoad();
   clearInterval(LV.poll); LV.poll = null;
@@ -1510,12 +1515,8 @@ async function init() {
   $("#log-filter").oninput = (e) => { S.logFilter = e.target.value; rerenderLog(); };
   $("#btn-log-clear").onclick = () => { $("#log").innerHTML = ""; };
   $("#log-toggle").onclick = () => openLog($("#log-drawer").classList.contains("hidden"));
-  $("#live-card").addEventListener("toggle", liveToggled);
-  $("#pill-live").onclick = () => {
-    const c = $("#live-card"); c.open = !c.open;
-    if (c.open) c.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  };
-  if (store.get("liveOpen", false) || new URLSearchParams(location.search).has("live")) $("#live-card").open = true;
+  $("#live-card").open = store.get("liveOpen", true);
+  $("#live-card").addEventListener("toggle", () => liveToggled());
   $("#log-warns").onclick = () => openLog(true, "warn");
   $("#btn-log-tall").onclick = () => $("#log-drawer").classList.toggle("tall");
   // Close the reward popover with a click elsewhere.
