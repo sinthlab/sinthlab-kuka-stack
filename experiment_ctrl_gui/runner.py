@@ -59,6 +59,8 @@ class LaunchRunner:
     def _procs() -> List[Tuple[int, int, str]]:
         """(pid, process group, command line) of every process we can see, except this one."""
         out = []
+        if not Path("/proc").is_dir():         # macOS (the dashboard's --demo on a laptop): nothing to scan
+            return out
         for d in Path("/proc").iterdir():
             if not d.name.isdigit() or int(d.name) == os.getpid():
                 continue

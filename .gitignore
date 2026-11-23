@@ -4,6 +4,8 @@ __pycache__/
 analysis/*.csv
 analysis/*.meta.json
 analysis/expt_*/
+# Monkey profiles (experiment_ctrl_gui/profiles.py): one per subject, beside the recordings, with their change logs.
+analysis/subjects/
 docs/
 # Dashboard (experiment_ctrl_gui): per-run parameter copies and launch logs, one per Start.
 experiment_ctrl_gui/runs/

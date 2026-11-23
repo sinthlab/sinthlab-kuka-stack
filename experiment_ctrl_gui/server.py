@@ -34,6 +34,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+import profiles  # noqa: E402
 from live_view import LiveView  # noqa: E402
 import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
@@ -57,6 +58,10 @@ class App:
         self.fake_cabinet = ttl.FakeCabinet()        # and its TTL outputs
         self.robot_name = robot_name
         self.params: Dict[str, ExperimentParams] = {e.key: ExperimentParams(e) for e in ex.EXPERIMENTS}
+        # The monkey chosen on the dashboard and its profile (profiles.py), applied to every free-move task.
+        self.subject = ""
+        self.profile: Optional[dict] = None
+        self._run_profile: Optional[dict] = None    # the profile the current run started with
         self._clients: List[queue.Queue] = []
         self._clients_lock = threading.Lock()
         self.stopping = False   # Stop pressed: the arm is parking, then the launch stops
@@ -148,7 +153,84 @@ class App:
             "stopping_now": self.stopping,
             "data_folder": self.data_folder(),
             "edited": {k: len(p.edits) for k, p in self.params.items()},
+            "subject": self.subject,
+            "profile": ({"version": self.profile["version"], "updated": self.profile["updated"]}
+                        if self.profile else None),
         }
+
+    # ------------------------------------------------------------------ the monkey and its profile
+    def select_subject(self, subject: str) -> dict:
+        """Choose the monkey: its profile (if it has one) now applies to every free-move task."""
+        subject = check_subject(subject)
+        busy = self.runner.running() and self.runner.experiment
+        if busy and subject != self.subject:
+            raise RuntimeError(f"{busy} is running for {self.subject or 'another subject'}: stop it before changing the monkey")
+        self.subject = subject
+        self.profile = None if subject == profiles.SUBJECT_TEST else profiles.load(subject)
+        self._apply_profile()
+        tag = f"profile v{self.profile['version']}" if self.profile else (
+            "no profile: the task YAMLs" if subject != profiles.SUBJECT_TEST else "test: the task YAMLs")
+        self.runner.emit(f"Monkey: {subject} ({tag})", "gui")
+        self.broadcast("state", self.state())
+        return {"ok": True, "subject": subject, "profile": self.profile}
+
+    def _apply_profile(self) -> None:
+        """Apply the profile to every experiment but a running one (it keeps the profile it started with,
+        and gets the new one when it ends). Today's edits that now equal the profile are no longer edits."""
+        running = self.runner.experiment if self.runner.running() else None
+        for key, p in self.params.items():
+            if key == running:
+                continue
+            p.profile = self.profile
+            base = p.base()
+            for name in [n for n, v in p.edits.items() if base.get(n) == v]:
+                p.edits.pop(name)
+
+    def profile_info(self) -> dict:
+        return {"subject": self.subject, "profile": self.profile, "layout": profiles.describe(),
+                "names": profiles.names(), "recent": recent_subjects(),
+                "changes": profiles.changes(self.subject) if self.subject else []}
+
+    def _values_in_effect(self, key: str) -> Dict[str, object]:
+        """A task's values: while it runs, with the live values the node reports -- and those accepted
+        for the next trial, so a change just made can be saved before it takes effect."""
+        p = self.params[key]
+        vals = p.current()
+        st = self.status() or {}
+        if self.running_experiment() and self.running_experiment().key == key and not st.get("stale"):
+            vals.update(st.get("live") or {})
+            vals.update(st.get("pending") or {})
+        return vals
+
+    def profile_diff(self, key: str) -> List[dict]:
+        if not self.subject or self.subject == profiles.SUBJECT_TEST:
+            return []
+        return profiles.diff(self.profile, ex.BY_KEY[key], self._values_in_effect(key))
+
+    def save_profile(self, body: dict) -> dict:
+        """Save to the monkey's profile: `values` {field: value} for every task, `task_only` {field: value}
+        (the reward) for the task `exp` only (None removes that task's own value)."""
+        if not self.subject:
+            raise ValueError("Choose a monkey first")
+        if self.subject == profiles.SUBJECT_TEST:
+            raise ValueError("'test' is for runs without an animal: it has no profile")
+        key = str(body.get("exp") or "")
+        task_only = dict(body.get("task_only") or {})
+        if task_only and key not in ex.BY_KEY:
+            raise KeyError(f"unknown experiment {key}")
+        by = ex.BY_KEY[key].label if key in ex.BY_KEY else "profile editor"
+        values = dict(body.get("values") or {})
+        if body.get("from_task"):        # a new profile from what this task runs with now
+            if key not in ex.BY_KEY:
+                raise KeyError(f"unknown experiment {key}")
+            values = {**profiles.from_task(ex.BY_KEY[key], self._values_in_effect(key)), **values}
+        prof = profiles.save(self.subject, values, by,
+                             {key: task_only} if task_only else None, str(body.get("note") or ""))
+        self.profile = prof
+        self._apply_profile()
+        self.runner.emit(f"{self.subject}'s profile saved: v{prof['version']} (from {by})", "gui")
+        self.broadcast("state", self.state())
+        return {"ok": True, "profile": prof}
 
     def _busy(self) -> Optional[str]:
         """The experiment running now (here or in a terminal), if any."""
@@ -188,7 +270,11 @@ class App:
             folder = self.data_folder()
             if folder and folder != self._sessions_done:
                 self._sessions_done = folder
+                if self._run_profile:
+                    _profile_copy(self, folder, self._run_profile)
                 threading.Thread(target=_session_row, args=(self, folder), daemon=True).start()
+            self._run_profile = None
+            self._apply_profile()        # a profile saved during the run reaches this task now
         self.broadcast("state", self.state())
 
     # ------------------------------------------------------------------ actions
@@ -204,7 +290,12 @@ class App:
 
     def start(self, key: str, subject: str = "") -> dict:
         exp = ex.BY_KEY[key]
-        subject = check_subject(subject)
+        subject = check_subject(subject or self.subject)
+        if subject != self.subject:
+            self.select_subject(subject)
+            if profiles.applies_to(exp):
+                raise RuntimeError(f"Monkey set to {subject}: {'its profile is' if self.profile else 'the task defaults are'} "
+                                   f"now applied. Check the settings, then press Start again.")
         if self.runner.running():
             raise RuntimeError(f"{self.runner.experiment} is already running; stop it first")
         s = self.status()
@@ -238,7 +329,8 @@ class App:
         self._experiment_start_pulse(p.current(), logged)
         self.runner.start(key, cmd, params_file)
         logged.set()
-        self.runner.emit(f"Subject: {subject}", "gui")
+        self.runner.emit(f"Subject: {subject}" + (f" (profile {p.profile_tag()})" if p.profile_tag() else ""), "gui")
+        self._run_profile = dict(self.profile) if p.profile_tag() else None
         if p.edits:
             self.runner.emit(f"Per-run edits: {json.dumps(p.edits)} -> {params_file}", "gui")
         if "clik_nullspace_cfg" in overrides:
@@ -437,6 +529,14 @@ def make_handler(app: App):
                 return self._json(list(app.runner.lines))
             if path == "/api/subjects":           # for the Start dialog: most recent first
                 return self._json(recent_subjects())
+            if path == "/api/profile":            # the monkey, its profile, the layout, the change log
+                return self._json(app.profile_info())
+            if path == "/api/profile/diff":       # Save to profile: where this task differs from it
+                q = parse_qs(urlparse(self.path).query)
+                key = (q.get("exp") or [""])[0]
+                if key not in ex.BY_KEY:
+                    return self._json({"error": "unknown experiment"}, HTTPStatus.NOT_FOUND)
+                return self._json({"subject": app.subject, "rows": app.profile_diff(key)})
             if path == "/api/run/trials":         # the run monitor: this (or the last) run's trials.csv
                 q = parse_qs(urlparse(self.path).query)
                 return self._json(app.run_trials((q.get("exp") or [""])[0]))
@@ -505,6 +605,10 @@ def make_handler(app: App):
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":
                 return app.stop()
+            if path == "/api/subject":
+                return app.select_subject(str(body.get("subject", "")))
+            if path == "/api/profile/save":
+                return app.save_profile(body)
             if path == "/api/live":
                 exp = app.running_experiment()
                 if exp is None:
@@ -624,6 +728,18 @@ def _session_row(app: App, folder: str) -> None:
     if row:
         app.runner.emit(f"sessions.csv: {row['run']}: {row['n_trials']} trials, {row['n_success']} successful, "
                         f"{row['n_rewards']} rewards ({row['reward_ms']} ms valve time)", "gui")
+
+
+def _profile_copy(app: App, folder: str, prof: dict) -> None:
+    """The profile the run started with, beside its recording (the run's parameters are in the sidecar)."""
+    try:
+        import yaml
+        (Path(folder) / "subject_profile.yaml").write_text(
+            f"# {prof['subject']}'s profile v{prof['version']} ({prof['updated']}), as this run started with it\n"
+            + yaml.safe_dump({k: prof[k] for k in ("subject", "version", "updated", "values", "reward_by_task")},
+                             sort_keys=False))
+    except Exception as exc:
+        app.runner.emit(f"profile copy not written to {folder}: {exc}", "warn")
 
 
 def _validate(app: App, folder: str) -> None:

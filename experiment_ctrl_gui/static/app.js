@@ -76,6 +76,14 @@ const PHASE_TEXT_BY_EXP = {
   restricted_plane: { release_wait: "waiting for release" },
 };
 const TAB_HELP = {
+  task: {
+    running: "Today's settings for this task. Live ones change from the next trial; the rest are locked for this run. The monkey's own settings are under Monkey, everything else under All settings.",
+    idle: "The few settings this task needs today. The monkey's own settings (feel, reach, pacing, reward) are under Monkey; everything else under All settings. Edits apply to the next Start.",
+  },
+  monkey: {
+    running: "The monkey's profile, as this task uses it. Tune the feel live (from the next move or trial); when it feels right, Save to profile and every task gets it from its next Start.",
+    idle: "The monkey's profile, as this task uses it: the feel, the reach (as this task's rail ends), the pacing and the reward. A change here is for the next Start only, until you Save to profile.",
+  },
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
     idle: "These can also be changed while the experiment runs. Edits made now set the values it starts with.",
@@ -100,6 +108,9 @@ const store = {
 const S = {
   experiments: [], groups: [], group: "experiments", selected: new URLSearchParams(location.search).get("exp") || store.get("exp", "apple_pluck"),
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
+  // The settings view: task (today's few), monkey (the profile's, as this task uses them) or all (Live / Per-run / Fixed).
+  pview: new URLSearchParams(location.search).get("view") || store.get("pview", "task"),
+  prof: null, profSig: null,      // /api/profile: the monkey, its profile, the layout, the change log
   params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
 };
@@ -505,7 +516,9 @@ function renderParams(force = false) {
   const data = S.params[S.selected]; if (!data) return;
   const mode = paramMode(), s = statusLive();
   const liveVals = mode === "running" && s ? s.live : null, pending = mode === "running" && s ? s.pending : null;
-  const sig = JSON.stringify([S.selected, S.tab, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
+  const layered = data.params.some((p) => p.layer !== "other");      // Navin's experiments: All settings only
+  const view = layered ? S.pview : "all";
+  const sig = JSON.stringify([S.selected, S.tab, view, S.profSig, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
   if (!force && sig === S.renderSig) return;
   if (!force && $("#params").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON") {
     S.renderDeferred = true; return;           // do not yank an input out from under the cursor
@@ -516,29 +529,54 @@ function renderParams(force = false) {
   // live paradigm switch waits, those of the paradigm coming next, so they can be set before it starts.
   const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
-  const counts = { live: 0, run: 0 };
-  shown.forEach((p) => counts[p.tier]++);
+  const counts = { live: 0, run: 0, task: 0, profile: 0 };
+  shown.forEach((p) => { counts[p.tier]++; if (p.layer !== "other") counts[p.layer]++; });
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
+  $("#n-task").textContent = layered ? counts.task : ""; $("#n-monkey").textContent = layered ? counts.profile : "";
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
+  document.querySelectorAll(".tab[data-pview]").forEach((t) => {
+    const on = t.dataset.pview === view;
+    t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
+    t.disabled = !layered && t.dataset.pview !== "all";
+    t.title = t.disabled ? "This experiment keeps all its settings in its own YAML: see All settings" : "";
+  });
+  $("#all-tabs").classList.toggle("hidden", view !== "all");
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
-  $("#tab-help").textContent = TAB_HELP[S.tab][mode];
+  $("#tab-help").textContent = TAB_HELP[view === "all" ? S.tab : view][mode];
   $("#btn-reset-edits").disabled = mode === "running" || !data.params.some((p) => p.edited);
+  renderProfileBar(view, layered);
 
   const f = S.paramFilter.toLowerCase();
-  const rows = shown.filter((p) => p.tier === S.tab && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
+  const inView = (p) => view === "all" ? p.tier === S.tab : view === "task" ? p.layer === "task" : p.layer === "profile";
+  const rows = shown.filter((p) => inView(p) && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
   const root = $("#params"); root.innerHTML = ""; TIPS.clear(); hideTip();
   const groups = data.groups || {};
-  const byGroup = new Map();
-  for (const p of rows) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
-  for (const [g, ps] of byGroup) {
-    const box = document.createElement("div"); box.className = "group";
-    const gt = groupTip(g, groups[g]);
-    const gdesc = groups[g] && groups[g].help;
-    box.innerHTML = `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
-    for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
-    root.appendChild(box);
+  if (view === "monkey") {
+    // Grouped by the profile's sections (feel, reach, pacing, reward), in the profile's order.
+    const sections = (S.prof && S.prof.layout.sections) || [];
+    const order = new Map(sections.flatMap((sec) => sec.fields.map((fl, i) => [fl.name, i])));
+    for (const sec of sections) {
+      const ps = rows.filter((p) => (p.profile_field || "").startsWith(sec.key + "."))
+        .sort((a, b) => (order.get(a.profile_field) ?? 99) - (order.get(b.profile_field) ?? 99));
+      if (!ps.length) continue;
+      const box = document.createElement("div"); box.className = "group";
+      box.innerHTML = `<h3 class="section">${esc(sec.label)}<span class="gdesc"> — ${esc(sec.help)}</span></h3>`;
+      for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+      root.appendChild(box);
+    }
+  } else {
+    const byGroup = new Map();
+    for (const p of rows) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
+    for (const [g, ps] of byGroup) {
+      const box = document.createElement("div"); box.className = "group";
+      const gt = groupTip(g, groups[g]);
+      const gdesc = groups[g] && groups[g].help;
+      box.innerHTML = `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
+      for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+      root.appendChild(box);
+    }
   }
-  if (S.tab === "fixed") {
+  if (view === "all" && S.tab === "fixed") {
     for (const sec of data.fixed) {
       const rowsF = sec.rows.filter((r) => !f || r.name.toLowerCase().includes(f));
       if (!rowsF.length) continue;
@@ -549,7 +587,7 @@ function renderParams(force = false) {
       root.appendChild(box);
     }
   }
-  if (!root.children.length) root.innerHTML = `<p class="muted">No parameters${f ? " match the filter" : ""}.</p>`;
+  if (!root.children.length) root.innerHTML = `<p class="muted">${view === "task" && !f ? "This task has no settings of its own beyond its tabs above." : `No settings${f ? " match the filter" : ""}.`}</p>`;
 }
 function fmtVal(v) { return Array.isArray(v) ? `[${v.join(", ")}]` : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v); }
 
@@ -562,7 +600,10 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const pend = isLiveRunning && pending && p.name in pending;
   // The group heading already carries the prefix; show the rest (full name on hover).
   const short = p.group !== "general" && p.name.startsWith(p.group + ".") ? p.name.slice(p.group.length + 1) : p.name;
-  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(short)}${p.edited ? '<span class="badge edited">edited</span>' : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
+  const who = curSubject();
+  const offProfile = p.layer === "profile" && hasProfile() && !p.edited && fmtVal(value) !== fmtVal(p.default);
+  const label = S.pview === "monkey" && p.profile_field ? profileLabel(p.profile_field) : short;
+  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Today only: ${esc(who)}'s profile has ${esc(fmtVal(p.default))}` : "Edited for the next Start"}">${p.layer === "profile" && hasProfile() ? "today only" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile has ${esc(fmtVal(p.default))}: Save to profile keeps this value">not in profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
     const commit = async (v) => {
@@ -581,13 +622,15 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
     if (rep) p = { ...p, limits: [p.limits[0], Math.min(rep, 5000)] };
     buildControl(ctl, p, value, commit, locked);
     if (!locked && !isLiveRunning && p.edited) {
-      const rv = document.createElement("button"); rv.className = "revert"; rv.title = `Back to the YAML value (${fmtVal(p.default)})`;
+      const rv = document.createElement("button"); rv.className = "revert";
+      rv.title = p.layer === "profile" && hasProfile() ? `Back to ${curSubject()}'s profile (${fmtVal(p.default)})` : `Back to the default (${fmtVal(p.default)})`;
       rv.textContent = "↺"; rv.onclick = () => commit(p.default); ctl.appendChild(rv);
     }
     if (p.limits) { const d = document.createElement("span"); d.className = "default"; d.textContent = `${p.limits[0]}–${p.limits[1]}`; ctl.appendChild(d); }
   }
   row.appendChild(ctl);
-  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = p.help; row.appendChild(h); }
+  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = S.pview === "monkey" && p.profile_field ? `${short}: ${p.help}` : p.help; row.appendChild(h); }
+  if (p.profile_note) { const h = document.createElement("div"); h.className = "help pnote"; h.textContent = `ⓘ ${p.profile_note}`; row.appendChild(h); }
   if (p.caution) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
   if (p.linked && p.linked.length) {
     const h = document.createElement("div"); h.className = "help linked";
@@ -668,6 +711,160 @@ function buildControl(ctl, p, value, commit, disabled) {
   ctl.appendChild(inp);
 }
 
+// ---------------------------------------------------------------- the monkey and its profile
+// One monkey at a time (the server holds it). Its profile sets the feel, reach, pacing and reward of every
+// free-move task; a task's own few settings are its Task view; Save to profile keeps what was tuned today.
+function curSubject() { return (S.app && S.app.subject) || ""; }
+function hasProfile() { return !!(S.app && S.app.profile); }
+function profileLabel(field) {
+  for (const sec of (S.prof && S.prof.layout.sections) || []) {
+    const f = sec.fields.find((x) => x.name === field);
+    if (f) return f.label;
+  }
+  return field;
+}
+async function loadProfile() {
+  try { S.prof = await api("/api/profile"); } catch (e) { toast(`Could not load the profile: ${e.message}`, "err"); }
+  renderMonkey();
+}
+function renderMonkey() {
+  const sel = $("#monkey"), pr = S.prof; if (!pr) return;
+  const cur = curSubject();
+  const names = new Set(pr.names);
+  const opts = [`<option value="">Choose the monkey…</option>`];
+  if (pr.names.length) opts.push(`<optgroup label="Profiles">${pr.names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`);
+  const others = pr.recent.filter((n) => !names.has(n) && n !== "test");
+  if (others.length) opts.push(`<optgroup label="No profile yet">${others.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`);
+  opts.push(`<option value="test">test (no animal)</option>`, `<option value="__new">New monkey…</option>`);
+  if (cur && !names.has(cur) && !others.includes(cur) && cur !== "test") opts.splice(1, 0, `<option value="${esc(cur)}">${esc(cur)}</option>`);
+  sel.innerHTML = opts.join(""); sel.value = cur;
+  sel.disabled = !!(S.app && S.app.runner.state !== "idle");
+  sel.title = sel.disabled ? "Fixed while an experiment runs" : "";
+  const info = $("#monkey-info");
+  const p = pr.profile;
+  if (!cur) info.textContent = "Choose the monkey: its profile sets the feel, reach, pacing and reward of the pre-training tasks, the Colour Rule and N-Choice.";
+  else if (cur === "test") info.textContent = "test: a run without an animal. The tasks use their own defaults.";
+  else if (p) info.innerHTML = `Profile v${p.version}, saved ${esc(p.updated)}. Applied to the pre-training tasks, the Colour Rule and N-Choice; Navin's experiments keep their own settings.`;
+  else {
+    info.innerHTML = `${esc(cur)} has no profile yet: the tasks use their own defaults. <button class="btn small" id="btn-profile-create">Create from ${esc(exp(S.selected)?.label || "this task")}</button>`;
+    $("#btn-profile-create").onclick = () => createProfileFromTask();
+  }
+  $("#btn-profile").disabled = !cur || cur === "test";
+}
+async function selectSubject(subject) {
+  if (subject === "__new") {
+    const id = (prompt("New monkey's ID (letters, digits, _ and -):") || "").trim();
+    if (!id) { renderMonkey(); return; }
+    const r = await act(() => api("/api/subject", { subject: id }));
+    if (r && !r.profile) await act(() => api("/api/profile/save", { values: {}, note: "created" }), `${id}'s profile created from the defaults`);
+    store.set("subject", id);
+    return;
+  }
+  const r = await act(() => api("/api/subject", { subject }), subject ? `Monkey: ${subject}` : "");
+  if (r) store.set("subject", subject); else renderMonkey();
+}
+async function createProfileFromTask() {
+  const e = exp(S.selected);
+  if (!confirm(`Create ${curSubject()}'s profile from ${e.label}'s settings as they are now (feel, reach, pacing, reward)?`)) return;
+  await act(() => api("/api/profile/save", { exp: S.selected, from_task: true, note: `created from ${e.label}` }), `${curSubject()}'s profile created`);
+}
+// The bar above the Monkey view: whose profile, and Save to profile.
+function renderProfileBar(view, layered) {
+  const bar = $("#profile-bar");
+  if (view !== "monkey" || !layered) { bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+  const cur = curSubject(), e = exp(S.selected);
+  if (!cur) { bar.innerHTML = `<span class="grow">No monkey chosen: these are ${esc(e.label)}'s defaults. Choose the monkey at the top left.</span>`; return; }
+  if (cur === "test") { bar.innerHTML = `<span class="grow">test: ${esc(e.label)}'s defaults, no profile.</span>`; return; }
+  if (!hasProfile()) {
+    bar.innerHTML = `<span class="grow">${esc(cur)} has no profile yet: ${esc(e.label)}'s defaults.</span><button class="btn small" id="pb-create">Create ${esc(cur)}'s profile from these</button>`;
+    $("#pb-create").onclick = () => createProfileFromTask();
+    return;
+  }
+  bar.innerHTML = `<span class="grow"><strong>${esc(cur)}</strong>'s profile v${S.app.profile.version}, as ${esc(e.label)} uses it.</span>` +
+    `<button class="btn small" id="pb-save" title="Keep the values tuned here (live or for the next Start) in ${esc(cur)}'s profile">Save to ${esc(cur)}'s profile…</button>`;
+  $("#pb-save").onclick = () => openSaveDialog();
+}
+async function openSaveDialog() {
+  const key = runningKey() === S.selected ? runningKey() : S.selected, e = exp(key);
+  let d;
+  try { d = await api(`/api/profile/diff?exp=${encodeURIComponent(key)}`); } catch (err) { toast(err.message, "err"); return; }
+  if (!d.rows.length) { toast(`Nothing to save: ${e.label} matches ${d.subject}'s profile`, "ok"); return; }
+  $("#save-dlg-subject").textContent = d.subject;
+  $("#save-dlg-sub").textContent = `From ${e.label}${runningKey() === key ? " (live values)" : ""}: these differ from the profile. The ticked ones are saved, and every task uses them from its next Start.`;
+  $("#save-rows").innerHTML = `<tr><th></th><th>Setting</th><th>Profile</th><th>Now</th><th>For</th></tr>` + d.rows.map((r, i) =>
+    `<tr><td><input type="checkbox" id="sv${i}" checked aria-label="Save ${esc(r.label)}"></td><td><label for="sv${i}">${esc(r.label)}</label></td>` +
+    `<td class="v">${esc(fmtVal(r.profile))}</td><td class="v">${esc(fmtVal(r.task))}</td><td>` +
+    (r.reward ? `<select id="svs${i}" aria-label="Scope"><option value="all"${r.task_only_now ? "" : " selected"}>every task</option><option value="task"${r.task_only_now ? " selected" : ""}>${esc(e.label)} only</option></select>` : "every task") +
+    `</td></tr>`).join("");
+  $("#save-note").value = "";
+  $("#save-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const values = {}, taskOnly = {};
+    d.rows.forEach((r, i) => {
+      if (!$(`#sv${i}`).checked) return;
+      if (r.reward && $(`#svs${i}`).value === "task") taskOnly[r.field] = r.task; else values[r.field] = r.task;
+    });
+    if (!Object.keys(values).length && !Object.keys(taskOnly).length) { $("#save-dlg").close(); return; }
+    $("#save-dlg").close();
+    await act(() => api("/api/profile/save", { exp: key, values, task_only: taskOnly, note: $("#save-note").value.trim() }),
+              `Saved to ${d.subject}'s profile`);
+  };
+  $("#save-dlg").showModal();
+}
+async function openProfileDialog() {
+  await loadProfile();
+  const pr = S.prof, cur = curSubject(); if (!pr || !cur || cur === "test") return;
+  const vals = (pr.profile && pr.profile.values) || {};
+  $("#profile-dlg-subject").textContent = cur;
+  $("#profile-dlg-sub").textContent = pr.profile
+    ? `Version ${pr.profile.version}, saved ${pr.profile.updated}. Saving applies it to every free-move task from its next Start (a running one keeps its values until it ends).`
+    : "No profile yet: these are the defaults. Saving creates the profile.";
+  $("#profile-fields").innerHTML = pr.layout.sections.map((sec) => `<fieldset><legend>${esc(sec.label)}</legend><p class="pf-help">${esc(sec.help)}</p>` +
+    sec.fields.map((f) => {
+      const v = vals[f.name], id = `pf-${f.name.replace(".", "-")}`;
+      const ctl = typeof v === "boolean"
+        ? `<input type="checkbox" id="${id}" data-field="${esc(f.name)}" ${v ? "checked" : ""}>`
+        : `<input type="number" id="${id}" data-field="${esc(f.name)}" step="any" value="${esc(v ?? "")}"${f.limits.length ? ` min="${f.limits[0]}" max="${f.limits[1]}"` : ""}>`;
+      return `<div class="pf"><label for="${id}">${esc(f.label)}</label>${ctl}<div class="pf-sub">${esc(f.help)}${f.limits.length ? ` (${f.limits[0]}–${f.limits[1]})` : ""}</div></div>`;
+    }).join("") + `</fieldset>`).join("");
+  document.querySelectorAll("#profile-fields [data-field]").forEach((inp) => inp.oninput = inp.onchange = () => {
+    const v = vals[inp.dataset.field];
+    const now = inp.type === "checkbox" ? inp.checked : Number(inp.value);
+    inp.closest(".pf").classList.toggle("changed", inp.type === "checkbox" ? now !== v : Number(v) !== now);
+  });
+  const byTask = (pr.profile && pr.profile.reward_by_task) || {};
+  const bt = Object.entries(byTask);
+  $("#profile-by-task").innerHTML = bt.length ? `<div class="by-task"><strong>Rewards for one task only</strong><ul>` + bt.map(([t, d]) =>
+    `<li>${esc(exp(t)?.label || t)}: ${Object.entries(d).map(([n, v]) => `${esc(profileLabel(n))} ${esc(fmtVal(v))}`).join(", ")} ` +
+    `<button type="button" class="btn small" data-clear="${esc(t)}">Use the profile's</button></li>`).join("") + `</ul></div>` : "";
+  document.querySelectorAll("#profile-by-task [data-clear]").forEach((b) => b.onclick = async () => {
+    const t = b.dataset.clear;
+    await act(() => api("/api/profile/save", { exp: t, task_only: Object.fromEntries(Object.keys(byTask[t]).map((n) => [n, null])),
+                                                note: `${exp(t)?.label || t}: back to the profile's reward` }), "Saved");
+    openProfileDialog();
+  });
+  $("#profile-changes").innerHTML = pr.changes.length ? pr.changes.map((c) => {
+    const parts = Object.entries(c.changes || {}).map(([n, [a, b]]) => `${profileLabel(n)} ${fmtVal(a)} → ${fmtVal(b)}`);
+    for (const [t, ch] of Object.entries(c.reward_by_task || {}))
+      parts.push(...Object.entries(ch).map(([n, [a, b]]) => `${exp(t)?.label || t}: ${profileLabel(n)} ${a == null ? "profile's" : fmtVal(a)} → ${b == null ? "profile's" : fmtVal(b)}`));
+    return `<li><strong>v${c.version}</strong> ${esc(c.time)}, from ${esc(c.by)}${c.note ? ` (${esc(c.note)})` : ""}: ${esc(parts.join("; ") || "created")}</li>`;
+  }).join("") : `<li class="muted">No changes yet.</li>`;
+  $("#profile-note").value = "";
+  $("#profile-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const values = {};
+    document.querySelectorAll("#profile-fields [data-field]").forEach((inp) => {
+      const v = vals[inp.dataset.field], now = inp.type === "checkbox" ? inp.checked : Number(inp.value);
+      if (inp.type === "checkbox" ? now !== v : Number(v) !== now) values[inp.dataset.field] = now;
+    });
+    if (!Object.keys(values).length && pr.profile) { $("#profile-dlg").close(); return; }
+    const r = await act(() => api("/api/profile/save", { values, note: $("#profile-note").value.trim() }), `${cur}'s profile saved`);
+    if (r) $("#profile-dlg").close();
+  };
+  $("#profile-dlg").showModal();
+}
+
 // ---------------------------------------------------------------- log
 function levelShown(l) {
   if (S.logLevel === "all") return true;
@@ -710,8 +907,16 @@ function rerenderLog() {
 // ---------------------------------------------------------------- wiring
 function onState(a) {
   const prevKey = runningKey();
+  const wasIdle = !S.app || S.app.runner.state === "idle";
   S.app = a;
   noteEvent(statusLive());
+  const psig = `${a.subject}|${a.profile ? a.profile.version : ""}`;
+  if (psig !== S.profSig || wasIdle !== (a.runner.state === "idle")) {   // the monkey, its profile, or a run starting / ending
+    const changed = psig !== S.profSig;
+    S.profSig = psig;
+    if (changed) { S.params = {}; loadProfile(); loadParams(S.selected, true).then(() => { renderExperiments(); }); refreshSession(true); }
+    else { renderMonkey(); if (a.runner.state === "idle") { S.params = {}; loadParams(S.selected, true); } }
+  }
   const key = runningKey();
   // When an experiment starts (here or in a terminal), show it: its Live tab is what you need.
   if (key && key !== prevKey && key !== S.selected) { select(key); return; }
@@ -777,7 +982,7 @@ async function refreshSession(force = false) {
   SV.busy = true; SV.lastFetch = now;
   try {
     if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
-    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(store.get("subject", ""))}`);
+    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(curSubject() || store.get("subject", ""))}`);
   } catch (e) { /* shown as empty */ }
   finally { SV.busy = false; }
   renderSession();
@@ -882,7 +1087,7 @@ function parseVal(t) {
 function renderHistory() {
   const box = $("#session-view"), h = SV.hist;
   const key = sessionKey(), label = exp(key)?.label || key;
-  const subject = store.get("subject", "");
+  const subject = curSubject() || store.get("subject", "");
   const running = !!runningKey();
   $("#session-sub").textContent = h ? `${label}${subject ? ` · ${subject}` : ""}` : "";
   const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Subject</label>
@@ -927,7 +1132,7 @@ function renderHistory() {
 
 function wireHistory() {
   const inp = $("#hist-subject");
-  if (inp) inp.onchange = () => { store.set("subject", inp.value.trim()); refreshSession(true); };
+  if (inp) inp.onchange = () => selectSubject(inp.value.trim());     // the same monkey everywhere on the page
   const h = SV.hist;
   const apply = async (pairs) => {
     for (const [name, val] of pairs) await act(() => api(`/api/params/${sessionKey()}`, { name, value: parseVal(val) }));
@@ -954,7 +1159,11 @@ document.querySelectorAll(".session-card .tab").forEach((t) => t.onclick = () =>
 async function openStartDialog() {
   const dlg = $("#start-dlg"), inp = $("#start-subject");
   $("#start-dlg-exp").textContent = expLabel(S.selected);
-  inp.value = store.get("subject", "");
+  inp.value = curSubject() || store.get("subject", "");
+  const e = exp(S.selected);
+  $("#start-dlg-profile").innerHTML = !curSubject() ? "Recorded with every trial. Use <code>test</code> for a run without an animal."
+    : hasProfile() && e && e.node === "free_move_orchestrator" ? `With ${esc(curSubject())}'s profile v${S.app.profile.version}, and today's settings. A different ID loads that monkey first, for you to check.`
+    : "Recorded with every trial. A different ID loads that monkey first, for you to check.";
   try {
     const subjects = await api("/api/subjects");
     $("#start-subjects").innerHTML = subjects.map((x) => `<option value="${esc(x)}"></option>`).join("");
@@ -979,6 +1188,12 @@ async function init() {
   S.group = exp(S.selected).group;
   (await api("/api/logs")).forEach(appendLog);
   S.app = await api("/api/state");
+  // The monkey this browser last chose, unless the dashboard already has one (another tab, or a run).
+  if (!S.app.subject && store.get("subject", "") && S.app.runner.state === "idle") {
+    try { await api("/api/subject", { subject: store.get("subject", "") }); S.app = await api("/api/state"); } catch { /* an old ID */ }
+  }
+  S.profSig = `${S.app.subject}|${S.app.profile ? S.app.profile.version : ""}`;
+  await loadProfile();
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
   renderExperiments(); renderChecklist();
   await loadParams(S.selected);
@@ -991,7 +1206,7 @@ async function init() {
   const hv = new URLSearchParams(location.search).get("hover");
   if (hv) setTimeout(() => {
     const p = S.params[S.selected]?.params.find((x) => x.name === hv);
-    if (p) { S.tab = p.tier; renderParams(true); }
+    if (p) { S.tab = p.tier; S.pview = "all"; renderParams(true); }
     const el = [...document.querySelectorAll("#params .name[data-tip]")].find((n) => TIPS.get(n.dataset.tip)?.includes(`>${esc(hv)}<`));
     if (el) {
       const r = el.getBoundingClientRect();
@@ -1010,6 +1225,11 @@ async function init() {
   $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating — see the log");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });
+  document.querySelectorAll(".tab[data-pview]").forEach((t) => t.onclick = () => { S.pview = t.dataset.pview; store.set("pview", S.pview); renderParams(true); });
+  $("#monkey").onchange = (e) => selectSubject(e.target.value);
+  $("#btn-profile").onclick = () => openProfileDialog();
+  $("#profile-cancel").onclick = () => $("#profile-dlg").close();
+  $("#save-cancel").onclick = () => $("#save-dlg").close();
   $("#param-filter").oninput = (e) => { S.paramFilter = e.target.value; renderParams(true); };
   document.querySelectorAll("#log-levels button").forEach((b) => b.onclick = () => {
     S.logLevel = b.dataset.level;

@@ -12,6 +12,7 @@ classified, where the parameter help comes from, and how to extend it.
 - [Components](#components)
 - [Robot side: ExperimentControl](#robot-side-experimentcontrol)
 - [Parameter model](#parameter-model)
+- [Monkey profiles](#monkey-profiles)
 - [Parameter documentation](#parameter-documentation)
 - [Diagnostics page](#diagnostics-page)
 - [Live view](#live-view)
@@ -157,6 +158,46 @@ recover pose is live in apple pluck only (`_POSE`), re-read at the trial boundar
 - If a CLIK experiment's start pose was edited, a matching `runs/<exp>_<time>_clik_nullspace.yaml` is
   passed as `clik_nullspace_cfg:=`. `iiwa7_hardware.launch.py` joins that argument onto the package
   directory, and an absolute path replaces the package part, so the generated file is used as is.
+
+---
+
+## Monkey profiles
+
+The settings that belong to the animal, not to the task, live in one profile per monkey
+([`profiles.py`](profiles.py)) and apply to every free-move task (Free Move, Restricted Move, Cued Reaches,
+the Colour Rule, N-Choice). Navin's experiments (apple pluck, restricted plane, maze) keep their YAMLs.
+
+| Layer | What | Where it is set |
+|---|---|---|
+| **Rig** | outputs, cue board, controllers, floor, safety, park pose, ... | the experiment YAMLs, as before (All settings) |
+| **Profile** | **feel** (damping, force threshold, top speed, acceleration, light-push range and damping), **reach** (left, right, down, up from the start), **pacing** (quiet window and its guard, time to respond), **reward** (valve time, pulses, gap) | `<data dir>/subjects/<ID>.yaml`, one per monkey |
+| **Today** | the task's own few settings (`Experiment.task_settings`), and any one-off edit | the dashboard, for the next Start |
+
+Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `current()`).
+
+- **Mapping** (`profiles.FIELDS`): each feel, pacing and reward field sets one parameter of the same meaning
+  in every task. The **reach** sets the rail ends (`free_move.rail_min_m` / `rail_max_m`): left and right on a
+  horizontal rail (also the Colour Rule's Rail), down and up on a vertical one; a value past the task's
+  `LIMITS` is capped there with a note. Choice distances that are part of a task's design stay task
+  settings (the Colour Rule's No-rail `centre_out.free_reach_m`, the N-Choice `free_move.ray_length_m`,
+  kept the same as the number of choices grows) and so does Free Move's box; the dashboard notes where
+  one goes past the monkey's reach.
+- **Reward per task:** a profile can hold a different reward for one task (`reward_by_task`).
+- **The page:** the Monkey card (top left) picks the monkey for the whole dashboard; the settings card
+  has three views: **Task** (today's few), **Monkey** (the profile's settings as this task uses them,
+  with *Save to profile*) and **All settings** (the Live / Per-run / Fixed tabs, unchanged).
+- **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
+  live and waiting for the next trial included, wherever they differ from the profile; the reach comes
+  back from a horizontal or vertical rail's ends. Tick what to keep; a reward can go to this task only.
+  Every save bumps the version and appends to `<ID>.changes.jsonl` (time, version, from which task,
+  note, old and new values). A running task keeps the profile it started with until it ends.
+- **Records:** the run file (`runs/<exp>_<time>.yaml`) names the profile and version in its header and
+  holds its values; the recording folder gets `subject_profile.yaml`, the profile as the run started.
+- **New monkey:** *New monkey...* in the picker creates a profile from the defaults (the same values every
+  task's YAML has, so nothing changes until it is tuned); for a subject with recordings but no profile,
+  *Create from <task>* takes the selected task's current values. `test` never has a profile.
+- **Start** uses the monkey chosen on the page. Typing another ID in the Start dialog selects that monkey
+  first and asks you to check its settings before starting.
 
 ---
 
@@ -336,6 +377,10 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/events` | Server-Sent Events: `{"type": "log" \| "state" \| "post", "data": …}` |
 | POST | `/api/params/<exp>` `{name, value}` | per-run edit; refused while that experiment runs |
 | POST | `/api/params/<exp>/reset` | drop all edits |
+| GET | `/api/profile` | the chosen monkey, its profile, the profile layout, profile names, recent subjects, its change log |
+| GET | `/api/profile/diff?exp=<exp>` | Save to profile: the profile fields where that task's values in effect differ |
+| POST | `/api/subject` `{subject}` | choose the monkey; its profile applies to every free-move task (refused while a run for another subject is going) |
+| POST | `/api/profile/save` `{values, task_only, exp, note, from_task}` | write the chosen monkey's profile (a new version); `task_only` = rewards for `exp` only (null = back to the profile's); `from_task` = start from `exp`'s values |
 | POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal. With `nsp_sync.enabled`, first sends the cabinet the experiment start pulse (`PULSE <nsp_sync.experiment_start_output> <width>`) and logs when it was sent and the answer |
 | POST | `/api/stop` | the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking) |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |

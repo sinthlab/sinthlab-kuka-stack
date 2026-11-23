@@ -67,6 +67,10 @@ class Experiment:
     # tabs above its paradigm tabs. Empty: the experiment is a card of its own.
     card: str = ""
     variant: str = ""
+    # TODAY'S settings: the few the task itself needs, shown on the dashboard's front page (Task tab). The
+    # monkey's own settings (feel, reach, pacing, reward) come from its profile (profiles.py); everything
+    # else is under All settings. Empty (Navin's experiments): the card opens on All settings.
+    task_settings: Tuple[str, ...] = ()
 
     def smartpad(self) -> Dict[str, str]:
         """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
@@ -141,6 +145,7 @@ CARDS = {
     "cued_reach": ("Cued Reaches", "One reach per trial along a rail, horizontal or vertical, from the centre to an "
                    "end: either end, a cued end, or one end only (switchable mid-session). The goal end is rewarded."),
 }
+_CUED_TASK = ("centre_out.max_repeats", "centre_out.block_other_end", "centre_out.end_tol_m")
 _CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
 _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
 EXPERIMENTS += [
@@ -154,6 +159,7 @@ EXPERIMENTS += [
         run_name="iiwa7_pretrain_free_move",
         # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
         paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
+        task_settings=("session_sec", "long_move.min_m", "long_move.min_straightness", "long_move.min_gap_sec"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     # Restricted Move: Free Move held to one rail, a session per trial, rewarded at its end. No target.
@@ -165,6 +171,7 @@ EXPERIMENTS += [
         stiffness_profile=required_profile("restricted_move_horizontal"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_restricted_move_horizontal",
+        task_settings=("session_sec",),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
@@ -175,6 +182,7 @@ EXPERIMENTS += [
         stiffness_profile=required_profile("restricted_move_vertical"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_restricted_move_vertical",
+        task_settings=("session_sec",),
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
@@ -191,6 +199,7 @@ EXPERIMENTS += [
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
         paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
+        task_settings=_CUED_TASK,
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
@@ -202,6 +211,7 @@ EXPERIMENTS += [
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
         paradigms=list(_CENTRE_OUT_VERTICAL), paradigm_param="centre_out.target",
+        task_settings=_CUED_TASK,
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
@@ -219,6 +229,8 @@ EXPERIMENTS += [
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_colour_rule",
         paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
+        task_settings=("rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials", "rule.max_repeats",
+                       "centre_out.end_tol_m", "centre_out.free_reach_m"),
         hidden=("centre_out.enabled", "centre_out.target", "centre_out.block_other_end",
                 "centre_out.max_repeats", "centre_out.quarter_left", "centre_out.quarter_right"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
@@ -238,6 +250,8 @@ EXPERIMENTS += [
         # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.
         paradigms=[("2", "2 choices"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8")],
         paradigm_param="free_move.ray_layout",
+        task_settings=("n_choice.p_max", "n_choice.p_min", "n_choice.deplete", "n_choice.recover", "n_choice.start",
+                       "n_choice.end_tol_m", "free_move.ray_length_m"),
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
@@ -271,7 +285,8 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
-    "free_move.rail_*": "The rail through the start (Move Vertical: z, -0.12 to +0.02 m, the arm's reach above; Move Horizontal: y). none = Free Move.",
+    "free_move.rail_axis": "The rail through the start: y = horizontal, z = vertical; none = Free Move's box, frontal = the No-rail plane, rays = the N-Choice asterisk.",
+    "free_move.rail_m??_m": "The rail's end, from the start. With a monkey chosen it comes from the profile's reach (left / right on a horizontal rail, down / up on a vertical one); up is the arm's tight direction.",
     "resistance.base_stiffness_n_per_m": ("Used only until the SmartPad app reports its profile; from then on the base "
                                           "is the reported stiffness (Uniform 100 = 100, Uniform 400 = 400), and the "
                                           "felt-stiffness slider runs up to it once the run has started."),

@@ -30,6 +30,16 @@
 <main class="layout">
   <!-- ============ left: choose + control ============ -->
   <section class="col col-left">
+    <!-- The monkey: its profile (feel, reach, pacing, reward) applies to every free-move task. -->
+    <div class="card monkey-card">
+      <h2>Monkey</h2>
+      <div class="monkey-row">
+        <select id="monkey" aria-label="Monkey"></select>
+        <button id="btn-profile" class="btn small" title="See and edit this monkey's profile">Profile…</button>
+      </div>
+      <p class="muted small monkey-info" id="monkey-info"></p>
+    </div>
+
     <div class="card">
       <h2>Experiment</h2>
       <div id="exp-groups" class="tabs exp-groups" role="tablist" aria-label="Experiment group"></div>
@@ -94,16 +104,23 @@
     </div>
 
     <div class="card params-card">
-      <div class="tabs" role="tablist">
+      <!-- Task: today's few settings. Monkey: the profile's, as this task uses them. All settings: everything. -->
+      <div class="tabs" role="tablist" aria-label="Settings">
+        <button class="tab" data-pview="task" role="tab">Task <span class="count" id="n-task"></span></button>
+        <button class="tab" data-pview="monkey" role="tab">Monkey <span class="count" id="n-monkey"></span></button>
+        <button class="tab" data-pview="all" role="tab">All settings</button>
+        <div class="tab-tools">
+          <input id="param-filter" type="search" placeholder="Filter settings" aria-label="Filter settings">
+          <button id="btn-reset-edits" class="btn small" title="Clear today's edits: back to the profile and the task defaults">Reset edits</button>
+        </div>
+      </div>
+      <div class="tabs subtabs" id="all-tabs" role="tablist" aria-label="All settings">
         <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
         <button class="tab" data-tab="run" role="tab">Per-run <span class="count" id="n-run"></span></button>
         <button class="tab" data-tab="fixed" role="tab">Fixed <span class="count" id="n-fixed"></span></button>
-        <div class="tab-tools">
-          <input id="param-filter" type="search" placeholder="Filter parameters" aria-label="Filter parameters">
-          <button id="btn-reset-edits" class="btn small">Reset edits</button>
-        </div>
       </div>
       <p class="tab-help" id="tab-help"></p>
+      <div class="profile-bar hidden" id="profile-bar"></div>
       <div id="params" class="params"></div>
     </div>
   </section>
@@ -139,10 +156,42 @@
     <input id="start-subject" list="start-subjects" autocomplete="off" spellcheck="false" required
            pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,31}" maxlength="32">
     <datalist id="start-subjects"></datalist>
-    <p class="muted small">Recorded with every trial. Use <code>test</code> for a run without an animal.</p>
+    <p class="muted small" id="start-dlg-profile">Recorded with every trial. Use <code>test</code> for a run without an animal.</p>
     <div class="controls">
       <button type="button" class="btn" id="start-cancel">Cancel</button>
       <button type="submit" class="btn primary" id="start-go">▶ Start</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- The monkey's profile: every field, its per-task rewards, and the change log. -->
+<dialog id="profile-dlg" class="start-dlg wide-dlg" aria-labelledby="profile-dlg-title">
+  <form method="dialog" id="profile-form">
+    <h3 id="profile-dlg-title"><span id="profile-dlg-subject"></span>'s profile</h3>
+    <p class="muted small" id="profile-dlg-sub"></p>
+    <div id="profile-fields" class="profile-fields"></div>
+    <div id="profile-by-task"></div>
+    <label for="profile-note">Note for the change log <span class="muted small">(optional)</span></label>
+    <input id="profile-note" autocomplete="off" maxlength="200">
+    <details class="profile-log"><summary>Change log</summary><ol id="profile-changes"></ol></details>
+    <div class="controls">
+      <button type="button" class="btn" id="profile-cancel">Close</button>
+      <button type="submit" class="btn primary" id="profile-go">Save profile</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Save to profile: the settings where the selected task differs from the monkey's profile. -->
+<dialog id="save-dlg" class="start-dlg wide-dlg" aria-labelledby="save-dlg-title">
+  <form method="dialog" id="save-form">
+    <h3 id="save-dlg-title">Save to <span id="save-dlg-subject"></span>'s profile</h3>
+    <p class="muted small" id="save-dlg-sub"></p>
+    <table class="save-rows" id="save-rows"></table>
+    <label for="save-note">Note for the change log <span class="muted small">(optional)</span></label>
+    <input id="save-note" autocomplete="off" maxlength="200">
+    <div class="controls">
+      <button type="button" class="btn" id="save-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="save-go">Save</button>
     </div>
   </form>
 </dialog>
