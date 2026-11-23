@@ -1617,11 +1617,14 @@ from its limit.
 In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
 two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
 
-1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), or one
-   end drawn at random (`target: cued`).
+1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), one
+   end drawn at random (`target: cued`), or the same end every trial (`target: left` / `right` on Move
+   Horizontal, `down` / `up` on Move Vertical). With `block_other_end` (the default), a trial with one
+   goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
+   each trial allows one direction.
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the **reward pulse** and the end tone;
-   - the **other end** (cued): no reward, no tone.
+   - the **other end** (cued or one end only, with `block_other_end` off): no reward, no tone.
 
    Either way the lit quarters turn **red** (`ring_cue.colours.reached`) and stay red until the hand
    lets go.
@@ -1636,7 +1639,9 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 | Parameter | Default | Meaning |
 |---|---|---|
 | `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
-| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded |
+| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded · `left` / `right` (Move Horizontal), `down` / `up` (Move Vertical): that end on every trial |
+| `centre_out.block_other_end` | `true` | a trial with one goal end (`cued` or one end only) closes the other half of the rail, so the arm can only move toward the goal; `false`: the whole rail is open and the other end is `reach_wrong` |
+| `centre_out.max_repeats` | `3` | `cued`: at most this many trials in a row to the same end (0 = no cap); switching mode restarts the count |
 | `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |
 | `centre_out.quarter_down` / `quarter_up` | `2` / `0` | Move Vertical: the ring quarter lit for the down end (`rail_min_m`) and for the up end (`rail_max_m`) |
 | `centre_out.quarter_left` / `quarter_right` | `3` / `1` | Move Horizontal: the ring quarter lit for the left end (`rail_min_m`) and for the right end (`rail_max_m`) |
@@ -1644,7 +1649,16 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 The ends are named by where they are, seen from the front of the arm: **down** / **up** on Move
 Vertical's rail, **left** / **right** on Move Horizontal's.
 
-Events: `target` at the go cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
+**Switching within a session.** `centre_out.target` is live, and the paradigm tabs on the Move Vertical
+/ Move Horizontal card stay clickable while it runs: a click switches the mode from the next trial (the
+tab shows *next trial* until then), so one session can work up from one direction to both, for example
+**Left only → Right only → Cued end (one-way trials, interleaved) → Cued end with `block_other_end` off
+(a cued choice) → Either end**. The node refuses an end its rail does not have (`up` on Move
+Horizontal). The goal logic is [`helpers/reach_targets.py`](sinthlab_bringup/sinthlab_bringup/helpers/reach_targets.py),
+unit-tested without ROS: `python3 -m pytest sinthlab_bringup/test`.
+
+Events: `closed_end` (the closed end's name, only when half the rail is closed) and `target` at the go
+cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
 end, the reward) or `reach_wrong` (the other end), each with the end's name as its argument — or
 `response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's
 target and outcome.

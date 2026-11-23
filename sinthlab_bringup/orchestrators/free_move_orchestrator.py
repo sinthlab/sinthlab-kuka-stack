@@ -35,7 +35,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
     goal end(s) of the rail; the first end the arm reaches ends the trial: a goal end gives the reward
     (`reach`), the other end none (`reach_wrong`); then the release wait and park, as any trial. No
-    reach within response_timeout_sec ends it too; session_sec does not apply.
+    reach within response_timeout_sec ends it too; session_sec does not apply. One-direction trials
+    (centre_out.target an end's name, or cued) can close the other half of the rail
+    (centre_out.block_other_end), so the arm only moves toward the goal.
 
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
@@ -91,6 +93,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
+            self.control.add_validator(self.centre_out.check_live)   # e.g. no "left" on the vertical rail
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -142,7 +145,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
             return
         self.recorder.mark("cue_go")
         if self._centre_out_on():          # this trial's goal: drawn now, lit with the go cue
-            self.recorder.mark("target", self.centre_out.pick_target())
+            target = self.centre_out.pick_target()
+            # One-direction trial: close the other half of the rail before the arm may move. Marked
+            # before `target`, so the dashboard's phase reads "the goal lit".
+            self.admittance.set_open_span(self.centre_out.open_span())
+            closed = self.centre_out.closed_end()
+            if closed is not None:
+                self.recorder.mark("closed_end", closed)
+            self.recorder.mark("target", target)
             self.ring.show("go", self.centre_out.quarters())
         else:
             self.ring.show("go")

@@ -21,6 +21,7 @@ from collections import deque
 from typing import Callable, Dict, Optional, Tuple
 
 import experiments as ex
+from sinthlab_bringup.helpers.reach_targets import TargetPicker, modes_for   # on the path via experiments
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -181,6 +182,7 @@ class DemoBridge:
             self._stop_now = False
             self._in_trial = False
             self._trial = 0
+            self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -298,14 +300,23 @@ class DemoBridge:
                 self._reward("goal")
             elif self._exp.group == "pretraining" and self._effective.get(
                     "centre_out.enabled", self._params.get("centre_out.enabled")):
-                # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other.
+                # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
+                # (none with the other half of the rail closed: actions/centre_out.py).
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
                 ends = ("down", "up") if self._exp.key == "move_vertical" else ("left", "right")
-                target = random.choice(ends) if mode == "cued" else "either"
+                if self._picker is None:
+                    self._picker = TargetPicker(ends)
+                self._picker.set_mode(mode if mode in modes_for(ends) else "either",
+                                      int(self._effective.get("centre_out.max_repeats", 0) or 0))
+                target = self._picker.pick()
+                closed = (self._picker.other(target) if target in ends
+                          and self._effective.get("centre_out.block_other_end") else None)
+                if closed:
+                    self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
                 self._phase_to("target", target, f"Centre-out: the goal is {target}.")
                 if not self._sleep(run_id, random.uniform(1.0, 3.0)):
                     return False
-                end = random.choice(ends)
+                end = target if closed else random.choice(ends)
                 if target in ("either", end):
                     self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
                     self._reward("reach")
@@ -345,6 +356,9 @@ class DemoBridge:
             if not ex.live_params.is_live(exp.key, name):
                 return False, f"'{name}' is a per-run parameter: it was read once at start-up."
             problem = ex.live_params.check_value(name, value, context)
+            if not problem and name == exp.paradigm_param and exp.paradigms and \
+                    str(value) not in [k for k, _ in exp.paradigms]:   # e.g. "left" on the vertical rail
+                problem = f"{name} must be one of {[k for k, _ in exp.paradigms]} in {exp.label}, got {value!r}"
             if problem:
                 return False, problem
         with self._lock:

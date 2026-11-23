@@ -48,6 +48,7 @@ const PHASE_TEXT = {
   grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
   grasp_timeout: "no grasp — resetting",
   stop_requested: "STOP — ending the trial, parking",
+  closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
@@ -132,7 +133,23 @@ function exp(key) { return S.experiments.find((e) => e.key === key); }
 // Paradigm experiments (apple pluck; Move Vertical / Horizontal): the run's paradigm is the
 // experiment's paradigm_param (`paradigm`, or `centre_out.target`).
 function paradigmParam(key) { return exp(key)?.paradigm_param || "paradigm"; }
-function paradigmOf(key) {
+// A live paradigm parameter (the rails' centre_out.target) can be switched during the run, from the next trial.
+function paradigmIsLive(key) {
+  const d = S.params[key], name = paradigmParam(key); const p = d && d.params.find((x) => x.name === name);
+  return !!p && p.tier === "live";
+}
+// While `key` runs: the paradigm the current trial runs (`now`) and one waiting for the next trial (`next`).
+function runningParadigm(key) {
+  const s = statusLive(), name = paradigmParam(key);
+  if (!s || runningKey() !== key || s.experiment !== key) return { now: null, next: null };
+  const now = s.live && name in s.live ? String(s.live[name]) : null;
+  const next = s.pending && name in s.pending ? String(s.pending[name]) : null;
+  return { now, next: next === now ? null : next };
+}
+// The paradigm in effect: while running, the current trial's; with upcoming, the next trial's.
+function paradigmOf(key, upcoming = false) {
+  const run = runningParadigm(key);
+  if (run.now !== null) return upcoming && run.next !== null ? run.next : run.now;
   const d = S.params[key], name = paradigmParam(key); const p = d && d.params.find((x) => x.name === name);
   return p ? String(p.value) : null;
 }
@@ -172,26 +189,42 @@ function renderExperiments() {
       <div class="d">${esc(e.summary)}</div>`;
     b.onclick = () => select(e.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued end), on
-    // the selected card. They set the paradigm parameter for the next Start; locked while that experiment runs.
+    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
+    // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
+    // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
+    // trial, and the tab waiting for the next trial is marked.
     if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
-      const cur = paradigmOf(e.key), locked = rk === e.key;
+      const running = rk === e.key, live = running && paradigmIsLive(e.key);
+      const run = running ? runningParadigm(e.key) : { now: null, next: null };
+      const cur = paradigmOf(e.key), locked = running && !live;
       const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
       sub.setAttribute("aria-label", `${e.label} paradigm`);
       for (const pr of e.paradigms) {
         const t = document.createElement("button");
+        const isNext = pr.key === run.next;
         t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
-        t.setAttribute("aria-selected", String(pr.key === cur)); t.textContent = pr.label; t.disabled = locked && pr.key !== cur;
-        t.title = locked ? "Fixed for this run — stop to change it" : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+        t.setAttribute("aria-selected", String(pr.key === cur));
+        t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
+        t.disabled = locked && pr.key !== cur;
+        t.title = locked ? "Fixed for this run — stop to change it"
+          : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
+          : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
         t.onclick = async () => {
-          if (locked || pr.key === cur) return;
+          if (locked) return;
+          if (live) {          // the status update that follows re-renders the tabs
+            if (pr.key === (run.next ?? cur)) return;
+            await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
+                      `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
+            return;
+          }
+          if (pr.key === cur) return;
           await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
           await loadParams(e.key, true); renderExperiments(); renderControls();
         };
         sub.appendChild(t);
       }
       const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-      lbl.textContent = locked ? "Paradigm (fixed for this run)" : "Paradigm";
+      lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
       list.appendChild(lbl); list.appendChild(sub);
     }
   }
@@ -422,8 +455,9 @@ function renderParams(force = false) {
   }
   S.renderSig = sig; S.renderDeferred = false;
 
-  // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm.
-  const para = paradigmOf(S.selected);
+  // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm -- while a
+  // live paradigm switch waits, those of the paradigm coming next, so they can be set before it starts.
+  const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
   const counts = { live: 0, run: 0 };
   shown.forEach((p) => counts[p.tier]++);
@@ -625,7 +659,10 @@ function onState(a) {
   // When an experiment starts (here or in a terminal), show it: its Live tab is what you need.
   if (key && key !== prevKey && key !== S.selected) { select(key); return; }
   renderControls();
-  if (key !== prevKey) renderExperiments();
+  // The paradigm tabs follow a live switch (the rails): re-render when the running or waiting one changes.
+  const para = key ? JSON.stringify(runningParadigm(key)) : null;
+  if (key !== prevKey || para !== S.paradigmSig) renderExperiments();
+  S.paradigmSig = para;
   renderParams();
 }
 function connect() {
