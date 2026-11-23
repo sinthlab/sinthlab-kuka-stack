@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import socket
 import threading
 from typing import Optional
@@ -46,6 +47,7 @@ class SmartPadLink:
         self._log = logger
         self._lock = threading.Lock()
         self._settings: Optional[dict] = None
+        self._last_report = 0.0
         self._sender: Optional[str] = None
         self._error: Optional[str] = None
         self._out: Optional[str] = None     # the run's smartpad_params.json (write_to)
@@ -67,7 +69,10 @@ class SmartPadLink:
                 settings = json.loads(data.decode("utf-8"))
             except (OSError, ValueError, UnicodeDecodeError):
                 continue
+            if not isinstance(settings, dict):
+                continue
             with self._lock:
+                self._last_report = time.monotonic()
                 changed = settings != self._settings
                 self._settings, self._sender = settings, host
             if first or changed:
@@ -98,6 +103,19 @@ class SmartPadLink:
             if self._settings is None:
                 return {"received": False, "reason": self._error or "no report from the SmartPad app yet"}
             return {"received": True, "from": self._sender, "settings": dict(self._settings)}
+
+    def stiffness_problem(self, expected):
+        """The cabinet reports every second. Require a recent, complete diagonal."""
+        with self._lock:
+            if self._settings is None or time.monotonic() - self._last_report > 3.0:
+                return "no current SmartPad settings report"
+            values = self._settings.get("stiffness")
+        if not isinstance(values, list) or len(values) != len(expected):
+            return "incomplete SmartPad stiffness report"
+        if not all(isinstance(v, (int, float)) and abs(v - want) <= 1.0
+                   for v, want in zip(values, expected)):
+            return f"reported stiffness {values}, expected {expected}"
+        return None
 
     def translational_stiffness(self) -> Optional[float]:
         """The running profile's X stiffness [N/m] if a report has it, else None."""

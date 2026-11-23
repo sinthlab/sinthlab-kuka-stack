@@ -138,7 +138,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
-      smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
+      smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
       rail_axis: "y"  # quoted: a bare y is read as true. The rail: the base Y axis through the start (none = free in every direction, as Free Move)
       rail_min_m: -0.15  # the rail's -Y end, from the start [m]: the equilibrium stops there
       rail_max_m: 0.15  # the rail's +Y end, from the start [m]
@@ -166,7 +166,7 @@
 
     # ---- cues (live) ----
     quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
-    response_timeout_sec: 30.0  # the arm not moved more than quiet_gate.move_m within this long after the go cue -> the session ends (event response_timeout), park [s]
+    response_timeout_sec: 30.0  # maximum choice time from armed [s]; timeout holds for release before park; in plain rail sessions this is the initial movement deadline
     audio_cue:  # switch for every beep
       enabled: true  # false = no beeps at all; the trial sequence is unchanged
     audio_cue_play:  # go cue: free movement starts

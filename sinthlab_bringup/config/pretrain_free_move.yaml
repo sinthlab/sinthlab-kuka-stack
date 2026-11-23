@@ -145,7 +145,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
-      smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
+      smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
       rail_axis: none  # none = free in every direction; x | y | z = only along that base axis through the start (Move Vertical / Horizontal)
       # THE BOX: the equilibrium stays inside it -- a soft wall, like the floor. ITS ORIGIN IS THE START POSITION (the end effector at the start pose):
       # every bound is an offset from the start, base frame -- X toward the subject, Y sideways, Z up. The dashboard and the experiment at start-up refuse a box

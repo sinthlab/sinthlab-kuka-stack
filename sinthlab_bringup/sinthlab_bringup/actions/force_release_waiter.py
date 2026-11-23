@@ -8,6 +8,7 @@ start only once the operator has let go, so the recovery move doesn't fight the 
 """
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional
 import numpy as np
 
@@ -33,8 +34,8 @@ class ForceReleaseWaiter:
         self._debug_log_enabled = bool(get_required_param(node, self._param_prefix + "debug_log_enabled"))
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
 
-        self._latest_force: Optional[float] = None
-        self._below_elapsed = 0.0
+        self._low_since: Optional[float] = None
+        self._last_sample: Optional[float] = None
         self._done = False
 
         # The estimated external wrench (chained off estimated_wrench_interface) — relative topic
@@ -42,13 +43,12 @@ class ForceReleaseWaiter:
         self._sub = node.create_subscription(
             WrenchStamped, "force_torque_broadcaster/wrench", self._on_wrench, 1
         )
-        self._timer = node.create_timer(self._dt, self._step)
 
     def start(self) -> None:
         if self._ready:
             self._node.get_logger().warn("ForceReleaseWaiter is already running.")
             return
-        self._below_elapsed = 0.0
+        self._low_since = self._last_sample = None
         self._done = False
         self._ready = True
         self._node.get_logger().info(
@@ -61,27 +61,24 @@ class ForceReleaseWaiter:
         self._ready = False
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
-        f = msg.wrench.force
-        self._latest_force = float(np.sqrt(f.x * f.x + f.y * f.y + f.z * f.z))
-
-    def _step(self) -> None:
         if not self._ready or self._done:
             return
-        if self._latest_force is None:
-            return  # no wrench yet
-
-        if self._latest_force < self._force_threshold:
-            self._below_elapsed += self._dt
-        else:
-            self._below_elapsed = 0.0
-
-        if self._debug_log_enabled and self._dbg.tick(self._dt):
-            self._node.get_logger().info(
-                f"|force|={self._latest_force:.2f} N (thr {self._force_threshold:.1f}); "
-                f"released {self._below_elapsed:.2f}/{self._release_duration:.1f}s"
-            )
-
-        if self._below_elapsed >= self._release_duration:
+        now = time.monotonic()
+        if self._last_sample is None or now - self._last_sample > max(0.05, 3 * self._dt):
+            self._low_since = None
+        elapsed = 0.0 if self._last_sample is None else now - self._last_sample
+        self._last_sample = now
+        f = msg.wrench.force
+        force = float(np.linalg.norm([f.x, f.y, f.z]))
+        if not force < self._force_threshold:
+            self._low_since = None
+            return
+        if self._low_since is None:
+            self._low_since = now
+        duration = now - self._low_since
+        if self._debug_log_enabled and self._dbg.tick(elapsed):
+            self._node.get_logger().info(f"Release force {force:.2f} N for {duration:.2f}s")
+        if duration >= self._release_duration:
             self._done = True
             self._ready = False
             self._node.get_logger().info("Arm released — proceeding to park.")

@@ -42,7 +42,8 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # The free-move node's tasks: the admittance's equilibrium offset and hand force
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
-EXTRA.update({k: _ADMITTANCE for k in ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")})
+ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")
+EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
 # maze endings, restricted plane's snap or safety_trip) is optional or repeatable.
@@ -94,6 +95,37 @@ def col(head, body, name, cast=float):
         except (ValueError, IndexError):
             out.append(None)
     return out
+
+
+def check_admittance_events(report, exp, got, meta):
+    """Validate a saved trial that reached park. A pre-cue abort has a shorter sequence."""
+    pre_cue = ("early_touch", "smartpad_mismatch")
+    endings = pre_cue + ("session_end", "response_timeout", "safety_trip", "reach", "reach_wrong",
+                         "choice", "choice_unrewarded")
+    outcomes = [event for event in got if event in endings]
+    report.check(len(outcomes) == 1, f"one trial outcome (found {outcomes})")
+    task_outcomes = {"free_move": ("session_end",), "n_choice": ("choice", "choice_unrewarded"),
+                     "colour_rule": ("reach", "reach_wrong")}
+    allowed = pre_cue + ("response_timeout", "safety_trip") + task_outcomes.get(
+        exp, ("session_end", "reach", "reach_wrong"))
+    report.check(all(event in allowed for event in outcomes), f"outcome is valid for {exp}")
+    required = ["trial_start", "at_start", "fixture_active"]
+    if not any(event in pre_cue for event in outcomes):
+        required.append("cue_go")
+        if exp == "colour_rule":
+            required.extend(["cue_colour", "target"])
+        required.append("armed")
+        if exp == "n_choice":
+            state = (meta or {}).get("n_choice")
+            probabilities = state.get("p") if isinstance(state, dict) else None
+            report.check(isinstance(probabilities, dict) and bool(probabilities),
+                         "pre-choice reward probabilities recorded")
+    required.extend(outcomes)
+    required.append("trial_end")
+    for event in required:
+        report.check(got.count(event) == 1, f"{event} occurs exactly once")
+    positions = [got.index(event) for event in required if event in got]
+    report.check(positions == sorted(positions), "trial events are in order")
 
 
 def validate(path) -> bool:
@@ -198,6 +230,9 @@ def validate(path) -> bool:
         if meta.get("partial"):
             r.note("TRIAL INCOMPLETE (sidecar says partial) -- it stopped after the last event above.")
         else:
+            if exp in ADMITTANCE_TASKS:
+                for event in ("trial_start", "trial_end"):
+                    r.check(got_p.count(event) == 1, f"saved stopped trial has one {event}")
             r.note("TRIAL STOPPED (Stop) at stop_requested -- the arm then parked and the trial was saved.")
         r.note("Everything before that point is valid; event-sequence checks are skipped.")
         print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
@@ -224,6 +259,8 @@ def validate(path) -> bool:
             r.note(f"the CSV column is missing {len(dropped)}: {', '.join(dropped)}")
             r.note("  -> written by a recorder that kept only ONE event per sample. The sidecar is")
             r.note("     complete, so the trial is fine; newer files join them with '|' in the cell.")
+    if exp in ADMITTANCE_TASKS:
+        check_admittance_events(r, exp, got, meta)
     order = ORDER.get(exp, [])
     if "early_touch" in got:
         # The quiet window was broken (actions/quiet_gate.py): the trial ends there, without reward.
@@ -255,7 +292,6 @@ def validate(path) -> bool:
         # N-choice (actions/n_choice.py): one choice per trial, paid or not, or none.
         outcome = [t for t in got if t in ("choice", "choice_unrewarded", "response_timeout", "safety_trip")]
         r.check(len(outcome) <= 1, f"at most one outcome (choice / choice_unrewarded / response_timeout / safety_trip); found {outcome}")
-        r.check(meta is None or "n_choice" in meta, "the sidecar has every direction's probability (n_choice)")
         arg = [a for _, t, a in seq if t in ("choice", "choice_unrewarded")]
         r.note(f"n-choice: {outcome[0] if outcome else 'no outcome'}" + (f" ({arg[0]})" if arg else ""))
     if exp in ("move_vertical", "move_horizontal", "colour_rule") and "target" in got:

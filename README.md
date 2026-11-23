@@ -767,8 +767,9 @@ Every experiment ends a trial in which the animal does not respond in time, with
 
 1. the trial **ends without reward** — event `response_timeout`, then `trial_end` (the NSP pulse);
 2. the arm **parks**, and the next trial follows as usual. In the maze the timeout cue plays and the
-   arm waits for release first, since the hand may still be on it; everywhere else no cue plays and
-   it parks at once.
+   arm waits for release first. Centre-out, Colour Rule and N-Choice also wait for release, in silence.
+   Their choice window starts at `armed`. Partial movement does not extend it. After timeout the fixture
+   holds until fresh low-force samples span the release duration, then the arm parks.
 
 | Experiment | Counts from | A response is |
 |---|---|---|
@@ -776,6 +777,7 @@ Every experiment ends a trial in which the animal does not respond in time, with
 | Apple pluck, perturb bump | the go cue (`grasp_wait`), then again from `armed` | the grasp; then the pull reaching the threshold |
 | Restricted plane | `armed` | the pull reaching the threshold (`snap`) |
 | Maze | `maze_armed` (the go cue) | reaching the goal |
+| Centre-out, Colour Rule, N-Choice | `armed` | reaching a choice threshold |
 | Free Move | `armed` (the go cue) | the arm moved more than `quiet_gate.move_m` (3 cm) from where it was at the go cue; after that the session runs on to `session_sec` or Stop |
 | Move Vertical, Move Horizontal | `armed` (the go cue) | the [centre-out reach](#centre-out-reach): the arm at an end of the rail (with `centre_out.enabled` off: as Free Move) |
 
@@ -1699,8 +1701,8 @@ does the IK; ROS only moves the target point.
   run-on moves it much further. So **free move checks the profile the SmartPad app reports**
   (`free_move.smartpad_stiffness_n_per_m`, 1000) before the go cue: with any other stiffness there is
   no go cue, the log says why, and the arm parks and holds there. Stop, restart
-  LbrImpedanceControlServer with Uniform 1000, and start again. If no report has arrived, it warns
-  and runs.
+  LbrImpedanceControlServer with Uniform 1000, and start again. With the check enabled, a missing or stale report also closes the trial before the go cue.
+  The complete six-axis diagonal must match the task profile.
 - **The equilibrium is integrated from force, never copied from the arm.** An equilibrium set to
   the measured pose gives zero spring force, and the arm sinks under the gravity residual. That is
   the collapse the threshold give-in once caused. Upstream `lbr_ros2_control/AdmittanceController`
@@ -2370,7 +2372,8 @@ stateDiagram-v2
     Free --> SwitchToJoint : Stop -- no end tone, no release wait [stop_requested, trial_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip, trial_end]
-    Free --> SwitchToJoint : not moved quiet_gate.move_m (rail tasks: no reach) within response_timeout_sec (30 s) of the go cue [response_timeout, trial_end]
+    Free --> ReleaseWait : choice deadline with no reach [response_timeout, trial_end]
+    Free --> SwitchToJoint : free session without movement of quiet_gate.move_m within response_timeout_sec (30 s) of the go cue [response_timeout, trial_end]
     SwitchToJoint --> Park
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next session (after Stop: holds, the launch ends)
