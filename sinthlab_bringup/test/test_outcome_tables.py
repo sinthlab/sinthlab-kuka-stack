@@ -225,3 +225,13 @@ def test_history_filters_by_experiment_and_subject_oldest_first(tmp_path):
     assert [x["settings_dict"]["reward_pulse.pulse_ms"] for x in h] == ["450", "500", "550"]
     assert len(ot.history("colour_rule", "", 0, path)) == 5                    # every subject, every session
     assert ot.history("maze", "M1", 3, path) == []
+
+
+def test_validate_recording_knows_every_experiment():
+    """The dashboard's Validate recording checks each experiment's columns: none may be unknown."""
+    sys.path.insert(0, str(ROOT / "analysis"))
+    import validate_recording as vr
+    experiments = pytest.importorskip("experiments")
+    for key in experiments.BY_KEY:
+        assert key in vr.EXTRA, f"validate_recording.py has no column layout for {key}"
+    assert vr.EXTRA["n_choice"] == ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]

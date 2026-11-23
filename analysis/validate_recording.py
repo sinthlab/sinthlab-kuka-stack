@@ -39,6 +39,10 @@ CORE = (["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
 # "perturb" = apple pluck in the perturb paradigm (see validate()).
 EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["disp_m"], "restricted_plane": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
+# The free-move node's tasks: the admittance's equilibrium offset and hand force
+# (AdmittanceMoveAction.record_extra_header).
+_ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
+EXTRA.update({k: _ADMITTANCE for k in ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
 # maze endings, restricted plane's snap or safety_trip) is optional or repeatable.
