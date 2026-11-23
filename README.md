@@ -1485,6 +1485,24 @@ they are under the **Pre-training** tab. All three:
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
 (`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.
 
+#### Guards
+Every guard on the three pre-training tasks, from the setup to the trial:
+
+| Guard | Free Move | Move Vertical / Horizontal | Where it acts | What happens |
+|---|---|---|---|---|
+| **Posture check of the workspace** | the box (`free_move.box.*`): every corner, edge middle and face centre | the rail (`free_move.rail_min_m` / `rail_max_m`): 15 points along it | the dashboard, on every edit and at Start; **and the experiment at start-up**, however it was started | refused, naming the point: the experiment does not run. It must keep, with the start's orientation held, the elbow (A4) **≥ 30°** bent (the 23 Nov jerk began at ~23°, on the way to a straight elbow), every joint **≥ 10°** from its limit, and the arm away from singular postures (σ_min ≥ 0.08) |
+| **The workspace wall** | the box | the rail's ends | every tick of the trial | the equilibrium never passes it; pushing further only stretches the cabinet spring (a soft wall) |
+| **The floor** | ✓ | ✓ | the setup check (start, park, the move between, Move Vertical's bottom end), then every tick | a soft wall for the equilibrium; the arm `floor.trip_margin_m` (3 cm) below it trips the safety stop ([The floor](#the-floor--a-height-the-end-effector-never-goes-below)) |
+| **The leash** (`leash_m`, 3 cm) | ✓ | ✓ | every tick | the equilibrium never runs more than 3 cm ahead of the arm, so a bad force reading pulls at most 30 N |
+| **Speed trip** (`free_move_safety.max_speed_mps`) | 1.5 m/s for 5 samples | 1.5 m/s for 5 samples | the trial, from the go cue | safety stop: the trial ends (`safety_trip`) and the arm parks |
+| **Distance trip** (`free_move_safety.max_displacement_m`) | 0.32 m from the start (8 cm past the box's farthest corner) | off: the rail bounds them | the trial, from the go cue | safety stop |
+| **Robot state watchdog** (`free_move_safety.state_timeout_sec`) | 0.5 s | 0.5 s | the trial, from the go cue | no `lbr_state` for that long: safety stop, logged "the arm stopped reporting" |
+| **SmartPad stiffness** (`free_move.smartpad_stiffness_n_per_m`) | ✓ | ✓ | before the go cue | another profile than the task's: no go cue; the arm parks and holds |
+
+The posture checks use the same robot model and limits on the dashboard and in the experiment
+(`helpers/start_grid.py`: `box_problem`, `rail_problem`; a too-long rail fails like this: `the rail point +0.268 m from the start straightens the elbow to A4 29 deg`). They check the workspace against the **start
+pose**, so changing the start (the start-height field, `move_to_start.target_joint_position`) re-checks it.
+
 #### Free Move — admittance in a box, no goal
 The arm goes wherever it is pushed, within a box around the start, and stays wherever it is let go.
 There is no goal; the

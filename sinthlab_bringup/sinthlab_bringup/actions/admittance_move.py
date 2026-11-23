@@ -164,16 +164,25 @@ class AdmittanceMoveAction:
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
         self._box = None                        # Free Move: (min, max) offsets from the start [x, y, z]
-        if self._rail is None:                  # helpers/free_move_box.py: min/max offsets, or a size
+        start_pose = get_required_param(node, "move_to_start.target_joint_position")
+        if self._rail is not None:
+            # The hard bound on a rail: the posture check along the whole rail, as the dashboard runs it.
+            problem = StartGrid(model, self.ee_link).rail_problem(start_pose, axis, self._rail[1], self._rail[2])
+            if problem:
+                raise ValueError(f"The {axis} rail is not safe at this start pose, so the experiment does not "
+                                 f"run: {problem}. Shorten it ({self._p}rail_min_m / rail_max_m; README, "
+                                 f"Pre-training, \"Guards\").")
+            node.get_logger().info(f"The {axis} rail {self._rail[1]:+.3f} to {self._rail[2]:+.3f} m from the start: "
+                                   "checked safe at the start pose.")
+        else:                                   # Free Move: helpers/free_move_box.py, a preset or custom
             self._box = box_bounds(lambda name: get_required_param(node, name), self._p + "box.")
             # The hard bound: the same posture check the dashboard runs, here too, so a box that is not safe
             # at this start never runs -- however the experiment was started (a terminal launch included).
-            start = get_required_param(node, "move_to_start.target_joint_position")
-            problem = StartGrid(model, self.ee_link).box_problem(start, *self._box)
+            problem = StartGrid(model, self.ee_link).box_problem(start_pose, *self._box)
             if problem:
                 raise ValueError(f"Free Move's box is not safe at this start pose, so the experiment does not "
                                  f"run: {problem}. Pick a smaller one ({self._p}box.preset, or custom and its "
-                                 f"x/y/z_min_m / _max_m; README, Free Move, \"The box\").")
+                                 f"x/y/z_min_m / _max_m; README, Pre-training, \"Guards\").")
             node.get_logger().info(f"Free Move box {self._box[0].tolist()} to {self._box[1].tolist()} m from the "
                                    "start: checked safe at the start pose.")
         self._floor = Floor.from_node(node)     # the equilibrium never goes below it (a soft wall)

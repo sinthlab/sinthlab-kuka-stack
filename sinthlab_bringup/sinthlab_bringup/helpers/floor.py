@@ -104,7 +104,8 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         (needs `grid`, a StartGrid) and the perturbed start, must stay ROOM_M above the floor -- the
         floor must never be what ends a pull;
       * maze and Move Vertical: the lowest rail point must be ROOM_M above the floor;
-      * Free Move (needs `grid`): its box must keep the arm's posture safe (StartGrid.box_problem)."""
+      * Free Move (needs `grid`): its box must keep the arm's posture safe (StartGrid.box_problem);
+      * Move Vertical / Horizontal (needs `grid`): so must the whole rail (StartGrid.rail_problem)."""
     floor = Floor(params["floor.height_m"], params["floor.reference"], params.get("floor.trip_margin_m", 0.03))
     what = floor.reference.replace("_", " ")
     start, park = params.get(_START), params.get(_PARK)
@@ -159,7 +160,12 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         problem = grid.box_problem(start, box_min, box_max)
         if problem:
             return f"Free Move's box ({what}): {problem}"
-    if str(params.get("free_move.rail_axis", "none")) == "z":      # Move Vertical: the rail's bottom end
+    axis = str(params.get("free_move.rail_axis", "none"))
+    if grid is not None and axis in ("x", "y", "z") and "free_move.rail_min_m" in params:   # Move Vertical / Horizontal
+        problem = grid.rail_problem(start, axis, params["free_move.rail_min_m"], params["free_move.rail_max_m"])
+        if problem:
+            return f"the rail (free_move.rail_min_m / rail_max_m): {problem}"
+    if axis == "z":                                                # Move Vertical: the rail's bottom end
         return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
     profile = params.get("virtual_fixture_profile")                # maze
     if profile is not None:
