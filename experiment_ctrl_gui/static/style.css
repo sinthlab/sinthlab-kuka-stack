@@ -532,13 +532,9 @@ details.card > summary { cursor: pointer; list-style: revert; }
 }
 
 /* The arm (live view) inside the trial card, folded like Trial events. */
-.live-in > summary { cursor: pointer; margin-top: 10px; font-weight: 600; font-size: 13px; display: flex; align-items: baseline; gap: 8px; }
-.live-in .live-pop { margin-left: auto; color: var(--muted); font-weight: 500; }
+.live-in > summary { cursor: pointer; margin-top: 10px; font-weight: 600; font-size: 13px; }   /* the browser's own triangle, as Trial events */
+.live-in .live-pop { float: right; color: var(--muted); font-weight: 500; }
 .live-in .live-views { margin-top: 8px; }
 .live-in .live-canvas { height: min(32vh, 300px); }
 .live-in .live-status { font-size: 12.5px; margin: 6px 0 2px; }
 .live-in .live-legend { margin: 0; }
-.live-in > summary { list-style: none; }
-.live-in > summary::-webkit-details-marker { display: none; }
-.live-in > summary::before { content: "▶"; font-size: 10px; margin-right: 2px; }
-.live-in[open] > summary::before { content: "▼"; }
