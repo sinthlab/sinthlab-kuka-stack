@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
+from sinthlab_bringup.actions.long_move import LongMoveMonitor
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -37,7 +38,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
     (`reach`), the other end none (`reach_wrong`); then the release wait and park, as any trial. No
     reach within response_timeout_sec ends it too; session_sec does not apply. One-direction trials
     (centre_out.target an end's name, or cued) can close the other half of the rail
-    (centre_out.block_other_end), so the arm only moves toward the goal.
+    (centre_out.block_other_end), so the arm only moves toward the goal. Free Move with long_move.reward
+    each_move (actions/long_move.py): every movement of at least long_move.min_m is rewarded as it ends,
+    with the reward tone, and the session's end pays nothing.
 
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
@@ -70,6 +73,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # No response: the arm not moved more than quiet_gate.move_m within response_timeout_sec of the
         # go cue ends the session (no end cue, park). Once it has been moved, the session runs on.
         self.centre_out = None             # Move Vertical / Horizontal: the centre-out reach, created below
+        self.long_move = None              # Free Move: the long-movement reward, created below
         self.response_timeout = WaitAction(
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
@@ -94,6 +98,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
             self.control.add_validator(self.centre_out.check_live)   # e.g. no "left" on the vertical rail
+        # The long-movement reward (Free Move only: the rails have no long_move block).
+        if self.has_parameter("long_move.reward"):
+            self.long_move = LongMoveMonitor(self, self.admittance)
+            self.control.add_validator(self.long_move.check_live)
+            self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -161,9 +170,20 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _centre_out_on(self) -> bool:
         return self.centre_out is not None and self.centre_out.enabled
 
+    def _long_move_on(self) -> bool:
+        return self.long_move is not None and self.long_move.enabled
+
     def _set_reward_events(self):
-        """Centre-out on: the reach to a goal end gives the reward, not the session's end."""
-        self.control.set_reward_events(("reach",) if self._centre_out_on() else REWARD_EVENTS)
+        """Centre-out on: the reach to a goal end gives the reward, not the session's end. Long moves on:
+        each long movement does."""
+        self.control.set_reward_events(("reach",) if self._centre_out_on() else
+                                       ("long_move",) if self._long_move_on() else REWARD_EVENTS)
+
+    def _on_long_move(self, token: str, arg=None):
+        """Long moves: a movement started / ended / earned the reward (the pulse follows the mark)."""
+        self.recorder.mark(token, arg)
+        if token == "long_move":
+            self.reward_cue.start()
 
     def on_reach(self, end: str, rewarded: bool):
         """Centre-out: the arm reached an end of the rail -- the trial's outcome."""
@@ -185,6 +205,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
         else:
             self.get_logger().info("Free move: the arm follows the hand until Stop.")
+        if self._long_move_on():
+            self.long_move.start(self._on_long_move)
 
     def _smartpad_ok(self) -> bool:
         """Free move needs the SmartPad's firm spring (free_move.smartpad_stiffness_n_per_m, Uniform 1000):
@@ -251,6 +273,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         lit = self.centre_out.quarters() if self.centre_out is not None else None
         if self.centre_out is not None:
             self.centre_out.stop()
+        if self.long_move is not None:
+            self.long_move.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -328,6 +352,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.quiet_window.stop()
         if self.centre_out is not None:
             self.centre_out.stop()
+        if self.long_move is not None:
+            self.long_move.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -356,6 +382,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.admittance.reload()
         if self.centre_out is not None:
             self.centre_out.reload()
+        if self.long_move is not None:
+            self.long_move.reload()
+            self.reward_cue.reload()
         self._set_reward_events()
 
 

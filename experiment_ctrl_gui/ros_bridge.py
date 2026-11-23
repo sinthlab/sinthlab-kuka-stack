@@ -323,14 +323,30 @@ class DemoBridge:
                 else:
                     self._phase_to("reach_wrong", end, f"Centre-out: reached the {end} end, the target was {target} -- no reward.")
             elif self._exp.group == "pretraining":
-                # Runs for session_sec, or (0) until Stop.
+                # Runs for session_sec, or (0) until Stop. Long moves (Free Move): a movement every few
+                # seconds, rewarded if at least long_move.min_m (actions/long_move.py).
                 limit = float(self._effective.get("session_sec", 0.0) or 0.0)
-                t0 = time.time()
+                each_move = self._effective.get("long_move.reward") == "each_move"
+                t0, next_move = time.time(), time.time() + random.uniform(1.0, 3.0)
                 while not (limit > 0 and time.time() - t0 >= limit):
                     if not self._sleep(run_id, 0.2):
                         return False
+                    if each_move and time.time() >= next_move:
+                        self._phase_to("move_start", None, "")
+                        if not self._sleep(run_id, random.uniform(0.5, 1.2)):
+                            return False
+                        length = random.uniform(0.03, 0.2)
+                        self._phase_to("move_end", f"length={length:.3f}", "")
+                        if length >= float(self._effective.get("long_move.min_m", 0.1)):
+                            self._phase_to("long_move", round(length, 3),
+                                           f"Long move: {length * 100:.1f} cm -- reward.")
+                            self._reward("long_move")
+                        else:
+                            self._log(f"Movement {length * 100:.1f} cm: too short, no reward.")
+                        next_move = time.time() + random.uniform(1.5, 4.0)
                 self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
-                self._reward("session_end")
+                if not each_move:
+                    self._reward("session_end")
             else:
                 thr = self._effective.get(
                     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", 0.1)

@@ -135,12 +135,14 @@ _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right 
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
-        summary="Admittance: the arm goes wherever it is pushed and holds where it is let go. No goal, no boundary.",
+        summary="Admittance: the arm goes wherever it is pushed and holds where it is let go. No boundary. Rewards the session's end, or each long movement.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_free_move",
+        # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
+        paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(

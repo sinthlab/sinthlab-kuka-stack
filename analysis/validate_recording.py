@@ -240,6 +240,13 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
+    if exp == "free_move" and "move_end" in got:
+        # Long moves (actions/long_move.py): every reward follows the end of a movement.
+        ends, paid = got.count("move_end"), got.count("long_move")
+        r.check(paid <= ends, f"no more long_move rewards ({paid}) than finished movements ({ends})")
+        r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t == "long_move"),
+                "each long_move reward comes right after its move_end")
+        r.note(f"long moves: {ends} movement(s), {paid} rewarded")
     if exp in ("move_vertical", "move_horizontal") and "target" in got:
         # Centre-out (actions/centre_out.py): one reach per trial -- to the goal, to the other end, or none.
         outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]

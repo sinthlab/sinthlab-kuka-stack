@@ -1568,6 +1568,36 @@ does the IK; ROS only moves the target point.
   and the threshold before it starts. The estimate of the hand's force also drifts a little with
   posture, so far from the start some directions can feel slightly assisted or held back.
 
+#### Long moves — a reward for each long movement
+On the Free Move card, the **Long moves** tab (`long_move.reward: each_move`) pays for every movement
+of at least `long_move.min_m` as it ends, with the reward tone (`audio_cue_reward`), instead of paying
+for the session's end. The session runs as before, for `session_sec` or until Stop. It builds up to the
+maze's long movements: raise `min_m` live as he learns ([`long_move.py`](sinthlab_bringup/sinthlab_bringup/actions/long_move.py),
+logic in [`helpers/long_moves.py`](sinthlab_bringup/sinthlab_bringup/helpers/long_moves.py)).
+
+A **movement** runs from one rest to the next: it starts when the arm moves faster than
+`start_speed_mps`, counts once it has gone `confirm_m` from where it rested (a resting hand's ~7 mm bob
+never does), and ends once it has been slower than `stop_speed_mps` for `stop_sec`. Its **length** is
+the straight-line distance from where it started to where it ended; its **straightness** is that length
+over the path travelled.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `long_move.reward` | `session` | `session`: the session's end pays (as before) · `each_move`: each long movement pays (the card's tabs) |
+| `long_move.min_m` | `0.10` | shortest rewarded movement [m] |
+| `long_move.min_straightness` | `0` | 0–1, length over path at least this; 0 = not checked |
+| `long_move.min_gap_sec` | `1.0` | at least this long between two rewards [s] |
+| `long_move.start_speed_mps` / `stop_speed_mps` / `stop_sec` | `0.03` / `0.02` / `0.3` | where a movement starts and ends |
+| `long_move.confirm_m` | `0.02` | a movement counts once it has gone this far [m] |
+
+All live, from the next session. Events: `move_start` (confirmed), `move_end` (argument
+`length=…;straightness=…;duration=…;peak_speed=…`), and `long_move` (its length) when it is rewarded.
+`validate_recording.py` counts them.
+
+**On the rig, before a subject:** with debug logging on, make a few long and short pushes and check the
+log reports one movement per push with about the right length; rest a hand on the apple and check it
+reports none.
+
 #### Move Vertical / Move Horizontal — Free Move on one rail
 Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The
 arm goes along the rail wherever it is pushed and stays where it is let go; across the rail the

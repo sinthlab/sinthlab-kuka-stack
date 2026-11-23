@@ -23,8 +23,9 @@
       penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
 
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
-    # is let go. No goal, no reward, no boundary -- for getting used to holding and moving the arm. It
-    # runs as one free-movement SESSION, for session_sec or (0) until Stop.
+    # is let go. No goal, no boundary -- for getting used to holding and moving the arm. It runs as one
+    # free-movement SESSION, for session_sec or (0) until Stop. The reward: the session's end, or each
+    # long movement (long_move below).
     # At its end the arm holds, waits to be let go, parks, and the next session starts; Stop parks at once.
     #
     # HOW: ROS moves the cabinet spring's equilibrium at a speed proportional to the hand's force
@@ -52,6 +53,19 @@
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
     session_sec: 0.0  # session length [s]; 0 = until Stop. > 0: ends by itself, then the next starts
+    # LONG MOVES (actions/long_move.py): with reward each_move (the card's "Long moves" tab), every
+    # movement of at least min_m pays as it ends, with the reward tone; the session's end then pays
+    # nothing. A movement runs from rest to rest; it counts once it has gone confirm_m (a resting hand's
+    # bob never does). All live, from the next session: raise min_m as he learns.
+    long_move:  # reward each long enough movement, instead of the session's end
+      reward: "session"  # session = the session running its full session_sec pays (as before) | each_move = every movement of at least min_m pays
+      min_m: 0.10  # shortest rewarded movement: straight-line distance from where it started to where it ended [m]
+      min_straightness: 0.0  # 0-1: that distance over the path actually travelled must be at least this; 0 = not checked
+      min_gap_sec: 1.0  # at least this long between two rewards [s]
+      start_speed_mps: 0.03  # a movement starts when the arm moves faster than this [m/s]
+      stop_speed_mps: 0.02  # ...and ends once it has been slower than this for stop_sec [m/s]; <= start_speed_mps
+      stop_sec: 0.3  # how long the arm must be slow for a movement to end [s]
+      confirm_m: 0.02  # a movement counts (event move_start) once it has gone this far from where it started [m]
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
       update_rate: 200  # loop rate of this action [Hz]
@@ -166,6 +180,9 @@
     audio_cue_end:  # the session is over
       frequency_hz: 800  # end tone: pitch [Hz]
       duration_ms: 600  # end tone: length [ms]
+    audio_cue_reward:  # a long movement earned the reward (long_move.reward each_move)
+      frequency_hz: 1800  # reward tone: pitch [Hz]
+      duration_ms: 300  # reward tone: length [ms]
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
       enabled: true  # send a pulse at Start (experiment start) and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
@@ -175,7 +192,7 @@
       pulse_width_ms: 500  # how long each pulse stays high [ms], 10-5000
 
     reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
-      enabled: true  # send the reward pulse when a session runs its full session_sec (needs session_sec > 0); no response, early touch, safety trip and Stop get none
+      enabled: true  # send the reward pulse when a session runs its full session_sec (needs session_sec > 0), or with long_move.reward each_move for every long movement; no response, early touch, safety trip and Stop get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
       pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
 

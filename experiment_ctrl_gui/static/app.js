@@ -53,7 +53,10 @@ const PHASE_TEXT = {
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
   free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release",
-               release_wait: "waiting for release" },
+               release_wait: "waiting for release",
+               // Long moves (long_move.reward each_move): each movement is reported as it starts and ends.
+               move_start: "moving", move_end: "free move — the arm follows the hand",
+               long_move: "long movement — reward" },
   move_vertical: { session_end: "session over — waiting for release",
                    release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
   move_horizontal: { session_end: "session over — waiting for release",
