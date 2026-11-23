@@ -29,6 +29,7 @@
       max_displacement_m: 0.0  # 0 = off: a pull goes where it goes; the floor is the limit here
       max_speed_mps: 0.0  # 0 = off: a monkey's pull may be fast
       speed_trip_samples: 5  # unused while the speed check is off
+      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 

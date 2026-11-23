@@ -153,6 +153,7 @@
       max_displacement_m: 0.0  # 0 = no distance limit (free move is boundless)
       max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
       debug_log_enabled: false  # print this action's periodic debug line
       debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
 

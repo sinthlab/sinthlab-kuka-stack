@@ -3,7 +3,9 @@
 
 Watches the EE (tf ``base_frame`` -> ``ee_frame``) and fires ``on_trip`` ONCE if the arm moves too far
 from where the trial started, moves too fast, or takes the end effector below the floor (helpers/floor.py:
-more than ``floor.trip_margin_m`` under ``floor.height_m``). It is a backstop for faults the rest of the stack does
+more than ``floor.trip_margin_m`` under ``floor.height_m``) -- or if the robot's state (``lbr_state``)
+stops arriving for ``state_timeout_sec``. That last one is the arm going silent: in the 10 Nov runs the
+state stopped mid-trial right after the hardest hits and the trial ran on, unrecorded and unwatched. It is a backstop for faults the rest of the stack does
 NOT halt on — most importantly a gravity-driven fall when a *free* axis (e.g. Z in the vertical maze)
 is left holding the tool weight with too little stiffness or wrong load data. (The FRI CommandGuard only
 neutralises the outgoing command on a velocity fault; it does not stop the trial.)
@@ -14,7 +16,10 @@ safe pose). ``stop()`` disarms it for a normal trial end.
 from __future__ import annotations
 
 from typing import Callable, Optional
+import time
+
 import numpy as np
+from lbr_fri_idl.msg import LBRState
 
 from rclpy.duration import Duration
 from rclpy.node import Node as rclpyNode
@@ -54,6 +59,10 @@ class SafetyStopMonitor:
         # CONSECUTIVE new samples before tripping -- a real runaway sustains, a spike does not.
         self._speed_trip_samples = int(get_required_param(node, self._param_prefix + "speed_trip_samples"))
         self._speed_over = 0
+        # Trip if no lbr_state message arrives for this long (s): FRI sends one every cycle (10 ms), so a
+        # gap this long is the state stopping, not jitter. 0 = off.
+        self._state_timeout = float(get_required_param(node, self._param_prefix + "state_timeout_sec"))
+        self._last_state = time.monotonic()
 
         self._floor = Floor.from_node(node)
         self._dbg = DebugTicker(float(get_required_param(node, self._param_prefix + "debug_log_rate_hz")))
@@ -69,12 +78,14 @@ class SafetyStopMonitor:
         self._tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, node)
         self._timer = node.create_timer(self._dt, self._step)
+        node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
 
         node.get_logger().info(
             f"SafetyStopMonitor: max displacement "
             f"{f'{self._max_disp:.2f} m' if self._max_disp > 0 else 'off'}, max speed "
             f"{f'{self._max_speed:.2f} m/s' if self._max_speed > 0 else 'off'}, floor {self._floor.describe()} "
-            f"(trips {self._floor.trip_margin * 100:.0f} cm below)"
+            f"(trips {self._floor.trip_margin * 100:.0f} cm below), robot state "
+            f"{f'lost after {self._state_timeout:.2f} s' if self._state_timeout > 0 else 'not watched'}"
         )
 
     def start(self) -> None:
@@ -82,10 +93,14 @@ class SafetyStopMonitor:
         self._prev = None
         self._prev_stamp = None
         self._speed_over = 0
+        self._last_state = time.monotonic()     # the gap counts from the start at the earliest
         self._ready = True
 
     def stop(self) -> None:
         self._ready = False
+
+    def _on_state(self, _msg) -> None:
+        self._last_state = time.monotonic()
 
     def _ee_pose(self) -> Optional[tuple]:
         """(4x4 pose, its stamp [ns]) of the latest transform, or None."""
@@ -103,6 +118,10 @@ class SafetyStopMonitor:
 
     def _step(self) -> None:
         if not self._ready:
+            return
+        silent = time.monotonic() - self._last_state
+        if 0.0 < self._state_timeout <= silent:
+            self._trip(f"no robot state (lbr_state) for {silent:.2f} s -- the arm stopped reporting")
             return
         pose = self._ee_pose()
         if pose is None:
@@ -143,9 +162,12 @@ class SafetyStopMonitor:
             reason = (f"speed {self._last_speed:.3f} m/s >= {self._max_speed:.2f} m/s for "
                       f"{self._speed_over} consecutive samples")
         if reason is not None:
-            self._ready = False  # one-shot; the orchestrator drives recovery
-            self._node.get_logger().error(f"SAFETY STOP: {reason}. Halting fixture and recovering.")
-            try:
-                self._on_trip(reason)
-            except Exception as exc:
-                self._node.get_logger().error(f"SafetyStopMonitor on_trip error: {exc}")
+            self._trip(reason)
+
+    def _trip(self, reason: str) -> None:
+        self._ready = False  # one-shot; the orchestrator drives recovery
+        self._node.get_logger().error(f"SAFETY STOP: {reason}. Halting fixture and recovering.")
+        try:
+            self._on_trip(reason)
+        except Exception as exc:
+            self._node.get_logger().error(f"SafetyStopMonitor on_trip error: {exc}")
