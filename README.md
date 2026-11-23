@@ -2761,6 +2761,8 @@ block of every experiment YAML, all live:
 | `reward_pulse.enabled` | `true` | send the reward pulse on a successful trial |
 | `reward_pulse.output` | `4` | EL2124 output (front jack SYNC 1–4) cabled to the reward box's NSP jack; must differ from the `nsp_sync` outputs |
 | `reward_pulse.pulse_ms` | `500` | how long the valve stays open, 10–5000 ms |
+| `reward_pulse.count` | `1` | pulses per reward: more than 1 gives a burst of separate drops, each `pulse_ms` long |
+| `reward_pulse.gap_ms` | `300` | closed valve between a burst's pulses, 100–5000 ms (pulses must not touch: the cabinet stretches a pulse that is still high into one long opening) |
 
 **Calibrating the reward: milliseconds to microlitres.** `pulse_ms` is a time, not a volume.
 [`analysis/reward_calibration.py`](analysis/reward_calibration.py) measures the conversion. It sends the
@@ -2783,6 +2785,13 @@ does not confirm stops the batch, which is redone; it is never repeated blindly.
 would merge into one long opening). Widths whose batches vary by more than 10 % are left out of the
 calibrated range, and a volume outside that range is refused. `--demo` runs the whole procedure against
 a simulated cabinet. Recalibrate after changing the valve, tubing, spout, fluid or reservoir.
+
+**Rewards of several drops** (`reward_pulse.count` > 1): calibrate the burst itself with
+`sweep --burst N --burst-gap-ms G` (the same N and G as the experiment's). Each opening adds a fixed
+amount on top of its width, and the line may not recover between drops, so a burst is not N single
+pulses. The fit is then microlitres per reward against each pulse's width, and `ms` says which
+`count`, `gap_ms` and `pulse_ms` to set. Keep each burst setting in its own sweep file. `trials.csv`
+counts every opening (`reward_pulses`) and the total valve time.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event

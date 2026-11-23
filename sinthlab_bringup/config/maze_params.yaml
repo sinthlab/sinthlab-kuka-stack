@@ -165,6 +165,8 @@
       enabled: true  # send the reward pulse at the maze goal; failures (timeout, early touch, safety trip, Stop) get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
       pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
+      count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
+      gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.

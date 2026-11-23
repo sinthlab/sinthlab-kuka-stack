@@ -27,8 +27,11 @@ refusal or silence is logged (see reward_and_sync_box/README.md, "Sync: TTL puls
 REWARD. With `reward_pulse.enabled`, a successful trial's outcome (REWARD_EVENTS: the snap, the maze
 goal, a pre-training session that ran its full session_sec, or -- in the centre-out version of Move
 Vertical / Horizontal, which calls set_reward_events(("reach",)) -- each rewarded reach) sends "PULSE <reward_pulse.output> <reward_pulse.pulse_ms>" the same way; that output's jack (SYNC 4)
-is cabled to the reward box's NSP jack, so the pulse holds the juice valve open for pulse_ms. Failures
-(timeout, early touch, safety trip, Stop) send none. Independent of nsp_sync.enabled; same cabinet_ip.
+is cabled to the reward box's NSP jack, so the pulse holds the juice valve open for pulse_ms. With
+reward_pulse.count > 1 the reward is a burst: that many pulses, each pulse_ms long, reward_pulse.gap_ms of
+closed valve between them (the cabinet stretches a pulse that is still high, so they must not overlap).
+Failures (timeout, early touch, safety trip, Stop) send none. Independent of nsp_sync.enabled; same
+cabinet_ip.
 """
 from __future__ import annotations
 
@@ -170,10 +173,17 @@ class ExperimentControl:
             self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
         reward = None
         if self._reward is not None and token in self._reward_events:
-            output, ms = self._reward
+            output, ms, count, gap = self._reward
             self._nsp.pulse(output, ms, f"reward on {token}")
-            self._log.info(f"Reward: PULSE {output} {ms} (SYNC {output}, valve open {ms} ms) on {token}.")
-            reward = {"output": output, "ms": ms}
+            # A burst: the later pulses on timers, each after the one before has ended and gap_ms passed.
+            for k in range(1, count):
+                t = threading.Timer(k * (ms + gap) / 1000.0, self._nsp.pulse,
+                                    args=(output, ms, f"reward {k + 1}/{count} on {token}"))
+                t.daemon = True
+                t.start()
+            self._log.info(f"Reward: PULSE {output} {ms} (SYNC {output}, valve open {ms} ms)"
+                           + (f" x {count}, {gap} ms apart" if count > 1 else "") + f" on {token}.")
+            reward = {"output": output, "ms": ms, "count": count, "gap_ms": gap}
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
@@ -282,10 +292,14 @@ class ExperimentControl:
         self._nsp_enabled = bool(p("nsp_sync.enabled"))
         self._nsp_cfg = {token: int(p(name)) for token, name in NSP_OUTPUTS.items()}
         self._nsp_cfg["width_ms"] = int(p("nsp_sync.pulse_width_ms"))
-        # The reward pulse: (output, ms) when on, else None.
+        # The reward: (output, ms, pulses per reward, gap between them [ms]) when on, else None. A YAML
+        # without count / gap_ms (an older one) gives one pulse.
         self._reward = None
         if self._node.has_parameter("reward_pulse.enabled") and bool(p("reward_pulse.enabled")):
-            self._reward = (int(p("reward_pulse.output")), int(p("reward_pulse.pulse_ms")))
+            has = self._node.has_parameter
+            self._reward = (int(p("reward_pulse.output")), int(p("reward_pulse.pulse_ms")),
+                            max(1, int(p("reward_pulse.count"))) if has("reward_pulse.count") else 1,
+                            int(p("reward_pulse.gap_ms")) if has("reward_pulse.gap_ms") else 300)
         self._nsp.set_target(str(p("nsp_sync.cabinet_ip")).strip(), self._nsp_enabled or self._reward is not None)
 
 

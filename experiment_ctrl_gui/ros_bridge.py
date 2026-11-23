@@ -273,8 +273,11 @@ class DemoBridge:
         """As helpers/experiment_control.py does on a successful outcome (REWARD_EVENTS)."""
         if self._effective.get("reward_pulse.enabled"):
             out, ms = self._effective.get("reward_pulse.output", 4), self._effective.get("reward_pulse.pulse_ms", 500)
+            n, gap = int(self._effective.get("reward_pulse.count", 1) or 1), self._effective.get("reward_pulse.gap_ms", 300)
+            if n > 1:
+                self._log(f"Reward burst: {n} pulses, {gap} ms apart.")
             if self._meta is not None:
-                self._meta["rewards"].append({"output": out, "ms": ms, "event": token})
+                self._meta["rewards"].append({"output": out, "ms": ms, "count": n, "gap_ms": gap, "event": token})
             self._log(f"Reward: PULSE {out} {ms} (SYNC {out}, valve open {ms} ms) on {token}.")
 
     def _sleep(self, run_id: int, sec: float) -> bool:

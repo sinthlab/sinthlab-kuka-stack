@@ -41,7 +41,8 @@ _COMMON = [
 
 # The reward: a pulse on a Beckhoff output (SYNC 4) into the reward box's NSP jack on a successful trial.
 # Every experiment has it; the success outcomes are experiment_control.REWARD_EVENTS.
-_REWARD = ["reward_pulse.enabled", "reward_pulse.output", "reward_pulse.pulse_ms"]
+_REWARD = ["reward_pulse.enabled", "reward_pulse.output", "reward_pulse.pulse_ms",
+           "reward_pulse.count", "reward_pulse.gap_ms"]
 
 # The pull threshold and its dwell. Deliberately NOT cartesian_axis: that changes what the
 # threshold means, so it is a different experiment, not a different trial.
@@ -171,6 +172,10 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "nsp_sync.pulse_width_ms": (10, 5000),
     # How long the juice valve stays open. The cabinet pulses 1-5000 ms.
     "reward_pulse.pulse_ms": (10, 5000),
+    # A burst: pulses per reward, and the closed valve between them (the cabinet stretches a pulse that is
+    # still high into one long opening, so they must not touch).
+    "reward_pulse.count": (1, 10),
+    "reward_pulse.gap_ms": (100, 5000),
     # Centre-out: how close to a rail end counts as reaching it.
     "centre_out.end_tol_m": (0.005, 0.03),
     # The colour rule, No rail: how far left or right is a choice.

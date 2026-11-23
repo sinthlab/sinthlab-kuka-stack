@@ -19,6 +19,17 @@ widths, fit volume against width, then ask for the width that gives a volume:
     # Before a session: one batch at the width you will use, compared with the profile.
     python3 analysis/reward_calibration.py check --profile reward_calib/profile.json --width 120
 
+    # A reward of several drops (reward_pulse.count > 1): calibrate the burst itself, not one pulse
+    # times N -- each opening adds a fixed amount, and the line may not recover between drops.
+    python3 analysis/reward_calibration.py sweep --burst 3 --burst-gap-ms 300 --widths 20 30 40 50 \
+        --out reward_calib/burst3.csv
+
+BURSTS (--burst N, --burst-gap-ms G): each unit of a batch is a burst of N pulses of the width, G ms of
+closed valve between them, as an experiment delivers reward_pulse.count = N, reward_pulse.gap_ms = G.
+The batch then holds --pulses bursts, --spacing apart (from the start of one burst to the next), and
+everything is per burst: the fit is microlitres per reward against the width of each pulse, and the
+profile records N and G. One sweep file holds one burst setting; compare settings with separate files.
+
 THE PULSES go the way an experiment's reward does: "PULSE <output> <ms>" over UDP to the cabinet
 (port 30002, sunrise_controller_code/TtlPulser.java), output 4 = SYNC 4 = the reward box's NSP jack.
 The cabinet must be running PulseTestServer (it never moves the arm) or LbrImpedanceControlServer, and
@@ -68,8 +79,10 @@ DEFAULT_CABINET = "172.31.1.147"      # nsp_sync.cabinet_ip in every experiment 
 DEFAULT_OUTPUT = 4                    # reward_pulse.output: SYNC 4 -> the reward box's NSP jack
 MIN_OFF_SEC = 0.3                     # the valve closed at least this long between pulses
 DRAIN_SEC = 3.0                       # default wait after the last pulse for the last drop (--drain)
+# pulses_requested / _confirmed count UNITS: single pulses, or with --burst, whole bursts of `burst` pulses.
 FIELDS = ["batch", "width_ms", "pulses_requested", "pulses_confirmed", "spacing_s", "net_mass_g",
-          "status", "started", "duration_s", "cabinet", "output", "note"]
+          "status", "started", "duration_s", "cabinet", "output", "note", "burst", "burst_gap_ms"]
+MIN_GAP_MS = 100                      # reward_pulse.gap_ms's lower limit (helpers/live_params.py)
 
 Call = Callable[[str], Tuple[bool, str, float]]   # cmd -> (answered, reply, round trip ms)
 
@@ -86,24 +99,36 @@ def make_plan(widths: Sequence[int], reps: int, blanks: int, seed: int) -> List[
     return [{"batch": i + 1, "width_ms": w} for i, w in enumerate(batches)]
 
 
-def check_widths(widths: Sequence[int], spacing: float) -> None:
+def burst_sec(width_ms: int, burst: int = 1, gap_ms: int = 300) -> float:
+    """How long one unit lasts, first opening to last closing [s]."""
+    return (burst * width_ms + (burst - 1) * gap_ms) / 1000.0
+
+
+def check_widths(widths: Sequence[int], spacing: float, burst: int = 1, gap_ms: int = 300) -> None:
+    if not 1 <= burst <= 10:
+        raise ValueError(f"--burst {burst}: 1-10 pulses per reward (reward_pulse.count)")
+    if burst > 1 and gap_ms < MIN_GAP_MS:
+        raise ValueError(f"--burst-gap-ms {gap_ms}: at least {MIN_GAP_MS} ms of closed valve between pulses")
     for w in widths:
         lo, hi = ttl.WIDTH_MS
         if not lo <= w <= hi:
             raise ValueError(f"width {w} ms: the cabinet pulses {lo}-{hi} ms")
-        if spacing < w / 1000.0 + MIN_OFF_SEC:
+        need = burst_sec(w, burst, gap_ms) + MIN_OFF_SEC
+        if spacing < need:
             # TtlPulser extends a pulse that is still high instead of starting a new one, so two
             # pulses that overlap would come out as one long opening.
-            raise ValueError(f"--spacing {spacing:g} s is too short for {w} ms: the valve must close for at "
-                             f"least {MIN_OFF_SEC:g} s between pulses (spacing >= {w / 1000 + MIN_OFF_SEC:g} s)")
+            what = f"{w} ms" if burst == 1 else f"bursts of {burst} x {w} ms, {gap_ms} ms apart"
+            raise ValueError(f"--spacing {spacing:g} s is too short for {what}: the valve must close for at "
+                             f"least {MIN_OFF_SEC:g} s between units (spacing >= {need:g} s)")
 
 
 # ---------------------------------------------------------------- dispensing
 def dispense(call: Call, output: int, width_ms: int, pulses: int, spacing: float,
-             sleep: Callable[[float], None] = time.sleep, progress: Callable[[int], None] = lambda n: None
-             ) -> Tuple[int, Optional[str]]:
-    """Open the valve `pulses` times. Returns (pulses the cabinet confirmed, None) or, at the first
-    pulse it does not confirm, (pulses confirmed before it, the reason). Never retries a pulse."""
+             sleep: Callable[[float], None] = time.sleep, progress: Callable[[int], None] = lambda n: None,
+             burst: int = 1, gap_ms: int = 300) -> Tuple[int, Optional[str]]:
+    """Deliver `pulses` units -- single openings, or bursts of `burst` openings gap_ms apart -- spacing
+    apart. Returns (units the cabinet confirmed in full, None) or, at the first pulse it does not confirm,
+    (complete units before it, the reason). Never retries a pulse."""
     if width_ms == 0:                    # a blank: the same time, no pulse
         sleep(pulses * spacing)
         return 0, None
@@ -113,9 +138,12 @@ def dispense(call: Call, output: int, width_ms: int, pulses: int, spacing: float
         if wait > 0:
             sleep(wait)
         t_next += spacing
-        answered, reply, _ = call(f"PULSE {output} {width_ms}")
-        if not (answered and reply.startswith("OK")):
-            return n, reply or "no answer"
+        for k in range(burst):
+            answered, reply, _ = call(f"PULSE {output} {width_ms}")
+            if not (answered and reply.startswith("OK")):
+                return n, reply or "no answer"
+            if k < burst - 1:
+                sleep((width_ms + gap_ms) / 1000.0)
         progress(n + 1)
     return pulses, None
 
@@ -129,6 +157,12 @@ def read_rows(path: Path) -> List[dict]:
 
 def append_row(path: Path, row: dict) -> None:
     new = not path.exists()
+    if not new:
+        with path.open(newline="") as f:
+            header = next(csv.reader(f), [])
+        if header != FIELDS:
+            raise ValueError(f"{path} was written by an older version of this script (other columns): "
+                             f"use a new --out")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
@@ -166,7 +200,7 @@ def ask_mass(prompt: str) -> Optional[float]:
 
 
 def run_batches(plan: List[dict], out: Path, call: Call, *, output: int, pulses: int, spacing: float,
-                cabinet: str, note: str = "", drain: float = DRAIN_SEC) -> int:
+                cabinet: str, note: str = "", drain: float = DRAIN_SEC, burst: int = 1, gap_ms: int = 300) -> int:
     """Run every batch of `plan` not yet in `out` with status ok. Returns how many are left."""
     done = {int(r["batch"]) for r in read_rows(out) if r["status"] == "ok"}
     todo = [b for b in plan if b["batch"] not in done]
@@ -176,7 +210,8 @@ def run_batches(plan: List[dict], out: Path, call: Call, *, output: int, pulses:
     print(f"{len(todo)} of {len(plan)} batches to go; each ~{pulses * spacing + drain:.0f} s.")
     for i, b in enumerate(todo, 1):
         w = b["width_ms"]
-        what = "BLANK (no pulse)" if w == 0 else f"{w} ms x {pulses}"
+        what = ("BLANK (no pulse)" if w == 0 else f"{w} ms x {pulses}" if burst == 1
+                else f"{pulses} bursts of {burst} x {w} ms ({gap_ms} ms apart)")
         s = ask(f"\n[{i}/{len(todo)}] batch {b['batch']}: {what}. Tare the cup, then Enter "
                 f"(s = skip for now, q = quit): ")
         if s == "q":
@@ -186,14 +221,15 @@ def run_batches(plan: List[dict], out: Path, call: Call, *, output: int, pulses:
         started, t0 = dt.datetime.now().isoformat(timespec="seconds"), time.monotonic()
         try:
             got, err = dispense(call, output, w, pulses, spacing,
-                                progress=lambda n: print(f"\r  {n}/{pulses}", end="", flush=True))
+                                progress=lambda n: print(f"\r  {n}/{pulses}", end="", flush=True),
+                                burst=burst, gap_ms=gap_ms)
         except KeyboardInterrupt:
             call("ALLOFF")
             got, err = -1, "interrupted (Ctrl-C); every output set low"
         print()
         row = {"batch": b["batch"], "width_ms": w, "pulses_requested": 0 if w == 0 else pulses,
                "pulses_confirmed": max(got, 0), "spacing_s": spacing, "started": started,
-               "cabinet": cabinet, "output": output, "note": note}
+               "cabinet": cabinet, "output": output, "note": note, "burst": burst, "burst_gap_ms": gap_ms}
         if err:
             row.update(status="aborted", duration_s=round(time.monotonic() - t0, 1), note=f"{note} {err}".strip())
             append_row(out, row)
@@ -207,7 +243,8 @@ def run_batches(plan: List[dict], out: Path, call: Call, *, output: int, pulses:
         row.update(net_mass_g=mass if mass is not None else "", status="ok" if mass is not None else "discarded")
         append_row(out, row)
         if mass is not None and w:
-            print(f"  {1000 * mass / pulses:.1f} uL per pulse at density 1 (the fit uses your --density)")
+            print(f"  {1000 * mass / pulses:.1f} uL per {'pulse' if burst == 1 else 'burst'} at density 1 "
+                  f"(the fit uses your --density)")
     left = len([b for b in plan if b["batch"] not in {int(r["batch"]) for r in read_rows(out) if r["status"] == "ok"}])
     print(f"\n{left} batch(es) left." + ("" if left else f" Fit it:  python3 {Path(__file__).name} fit {out}"))
     return left
@@ -251,6 +288,14 @@ def fit_profile(rows: Sequence[dict], density: float, model: str = "linear", max
     """The calibration profile from the sweep's rows (module doc, THE FIT)."""
     if model not in ("linear", "interp"):
         raise ValueError("model must be linear or interp")
+    # One burst setting per fit: a burst's volume is not N single pulses (each opening adds a fixed amount).
+    pulsed = [r for r in rows if r.get("status") == "ok" and str(r.get("width_ms", "0")) not in ("0", "")]
+    settings = {(int(r.get("burst") or 1), int(r.get("burst_gap_ms") or 300) if int(r.get("burst") or 1) > 1 else 0)
+                for r in pulsed}
+    if len(settings) > 1:
+        raise ValueError(f"these batches mix burst settings {sorted(settings)} (pulses per reward, gap ms): "
+                         f"fit each setting's sweep on its own")
+    burst, gap = next(iter(settings)) if settings else (1, 0)
     pts, blanks = batch_volumes(rows, density)
     table = per_width(pts)
     if len(table) < 2:
@@ -286,6 +331,8 @@ def fit_profile(rows: Sequence[dict], density: float, model: str = "linear", max
     created = dt.datetime.now().isoformat(timespec="seconds")
     digest = hashlib.sha256(json.dumps([sorted(pts), density, model, max_cv]).encode()).hexdigest()[:8]
     return {
+        "burst": burst,                      # pulses per reward (reward_pulse.count)
+        "burst_gap_ms": gap,                 # closed valve between them (reward_pulse.gap_ms); 0 for single pulses
         "profile_id": f"reward-{created[:10]}-{digest}",
         "created": created,
         "model": model,
@@ -349,13 +396,16 @@ def _status_ok(call: Call) -> bool:
 
 def cmd_sweep(args) -> int:
     widths = sorted(set(args.widths))
-    check_widths(widths, args.spacing)
+    check_widths(widths, args.spacing, args.burst, args.burst_gap_ms)
     out = Path(args.out)
     plan_path = out.with_suffix(".plan.json")
     want = {"widths": widths, "reps": args.reps, "blanks": args.blanks, "pulses": args.pulses,
-            "spacing": args.spacing, "seed": args.seed, "output": args.output}
+            "spacing": args.spacing, "seed": args.seed, "output": args.output,
+            "burst": args.burst, "burst_gap_ms": args.burst_gap_ms}
     if plan_path.exists():
         saved = json.loads(plan_path.read_text())
+        saved["settings"].setdefault("burst", 1)
+        saved["settings"].setdefault("burst_gap_ms", 300)
         if saved["settings"] != want:
             print(f"{plan_path} holds a sweep with other settings:\n  {saved['settings']}\nUse those settings to "
                   f"resume it, or a new --out for a new sweep.")
@@ -372,13 +422,16 @@ def cmd_sweep(args) -> int:
               "the SmartPad, and check --cabinet. No experiment may be running.")
         return 1
     left = run_batches(plan, out, call, output=args.output, pulses=args.pulses, spacing=args.spacing,
-                       cabinet=cabinet, note=args.note, drain=args.drain)
+                       cabinet=cabinet, note=args.note, drain=args.drain, burst=args.burst, gap_ms=args.burst_gap_ms)
     return 0 if left == 0 else 3
 
 
 def _print_profile(p: dict) -> None:
-    print(f"\nProfile {p['profile_id']}  ({p['model']}, density {p['density_g_per_ml']:g} g/mL)")
-    print(f"  {'width ms':>8}  {'n':>2}  {'uL/pulse':>9}  {'SD':>6}  {'CV %':>5}  {'line resid %':>12}")
+    b = p.get("burst", 1)
+    unit = "uL/pulse" if b == 1 else "uL/reward"
+    print(f"\nProfile {p['profile_id']}  ({p['model']}, density {p['density_g_per_ml']:g} g/mL"
+          + (f"; rewards of {b} pulses, {p.get('burst_gap_ms')} ms apart: width = each pulse" if b > 1 else "") + ")")
+    print(f"  {'width ms':>8}  {'n':>2}  {unit:>9}  {'SD':>6}  {'CV %':>5}  {'line resid %':>12}")
     for t in p["per_width"]:
         res = t.get("linear_resid_pct")
         flag = "  excluded (CV)" if t["width_ms"] in p["excluded_widths_ms"] else ""
@@ -417,7 +470,9 @@ def cmd_fit(args) -> int:
 
 def cmd_ms(args) -> int:
     p = json.loads(Path(args.profile).read_text())
-    print(f"Profile {p['profile_id']} ({p['model']}); set reward_pulse.pulse_ms to:")
+    b = p.get("burst", 1)
+    print(f"Profile {p['profile_id']} ({p['model']}); set reward_pulse.count {b}"
+          + (f", reward_pulse.gap_ms {p.get('burst_gap_ms')}" if b > 1 else "") + ", and reward_pulse.pulse_ms to:")
     bad = 0
     for v in args.volumes:
         try:
@@ -441,16 +496,19 @@ def cmd_ul(args) -> int:
 def cmd_check(args) -> int:
     """One batch at a width, against the profile: the pre-session check."""
     p = json.loads(Path(args.profile).read_text())
-    check_widths([args.width], args.spacing)
+    burst, gap = int(p.get("burst", 1)), int(p.get("burst_gap_ms") or 300)
+    check_widths([args.width], args.spacing, burst, gap)
     call, cabinet = _caller(args)
     if not _status_ok(call):
         return 1
     want = volume_for(p, args.width)
-    if ask(f"{args.width} ms x {args.pulses}, profile says {want:.1f} uL each. Tare the cup, then Enter "
-           f"(q = quit): ") == "q":
+    unit = "pulse" if burst == 1 else f"burst of {burst}"
+    if ask(f"{args.width} ms x {args.pulses} ({unit}s), profile says {want:.1f} uL each. Tare the cup, then "
+           f"Enter (q = quit): ") == "q":
         return 1
     got, err = dispense(call, args.output, args.width, args.pulses, args.spacing,
-                        progress=lambda n: print(f"\r  {n}/{args.pulses}", end="", flush=True))
+                        progress=lambda n: print(f"\r  {n}/{args.pulses}", end="", flush=True),
+                        burst=burst, gap_ms=gap)
     print()
     if err:
         print(f"STOPPED after {got} pulses: {err}")
@@ -462,14 +520,15 @@ def cmd_check(args) -> int:
     each = 1000.0 * mass / (p["density_g_per_ml"] * got)
     off = 100.0 * (each - want) / want
     ok = abs(off) <= args.tolerance
-    print(f"{each:.1f} uL per pulse, {off:+.1f}% from the profile: "
+    print(f"{each:.1f} uL per {unit}, {off:+.1f}% from the profile: "
           + ("OK." if ok else f"OUTSIDE +/-{args.tolerance:g}%. Check the reservoir fill, the line for air, and "
                               f"the spout; recalibrate if it persists."))
     if args.log:
         append_row(Path(args.log), {"batch": "check", "width_ms": args.width, "pulses_requested": args.pulses,
                                     "pulses_confirmed": got, "spacing_s": args.spacing, "net_mass_g": mass,
                                     "status": "ok", "started": dt.datetime.now().isoformat(timespec="seconds"),
-                                    "cabinet": cabinet, "output": args.output,
+                                    "cabinet": cabinet, "output": args.output, "burst": burst,
+                                    "burst_gap_ms": gap if burst > 1 else "",
                                     "note": f"check vs {p['profile_id']}: {off:+.1f}%"})
     return 0 if ok else 1
 
@@ -496,6 +555,10 @@ def main(argv=None) -> int:
     sp.add_argument("--seed", type=int, default=1, help="the shuffled batch order")
     sp.add_argument("--out", required=True, help="CSV the batches are appended to")
     sp.add_argument("--note", default="", help="rig conditions, e.g. 'water, full reservoir, spout v2'")
+    sp.add_argument("--burst", type=int, default=1,
+                    help="pulses per unit, as reward_pulse.count: each unit is a burst of this many pulses")
+    sp.add_argument("--burst-gap-ms", type=int, default=300,
+                    help="closed valve between a burst's pulses, as reward_pulse.gap_ms [ms]")
     sp.set_defaults(fn=cmd_sweep)
 
     sp = sub.add_parser("fit", help="fit volume against width; write a profile")
