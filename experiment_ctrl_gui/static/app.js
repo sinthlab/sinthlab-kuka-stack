@@ -51,6 +51,7 @@ const PHASE_TEXT = {
   early_touch: "Early touch. Trial unrewarded. Parking before the penalty wait",
   response_timeout: "Response timed out. Trial unrewarded. Moving to park",
   stopped: "Stopped. Holding at park", cue_audio_end: null,
+  paused: "Pausing. Ending the trial and moving to park", paused_held: "Paused at park. Press Resume to continue",
   threshold: "Pull threshold reached. Returning",
   session_end: "Session ended. Waiting for release",
   grasp_wait: "Waiting for grasp", grasp: "Grasp detected. Waiting to apply perturbation",
@@ -356,6 +357,11 @@ function renderControls() {
   $("#btn-start").title = rk && rk !== S.selected ? `Stop ${expLabel(rk)} first` : `Start ${expLabel(S.selected)}`;
   $("#btn-start").classList.toggle("hidden", mine || stopping);
   $("#btn-stop").classList.toggle("hidden", !(mine || stopping));
+  const paused = !!(s && s.paused);
+  $("#btn-pause").classList.toggle("hidden", !mine);
+  $("#btn-pause").disabled = !s || stopping;
+  $("#btn-pause").textContent = paused ? "▶ Resume" : "⏸ Pause";
+  $("#btn-pause").classList.toggle("primary", paused);
   const showStatus = !!(s || r.state !== "idle");
   if (showStatus === $("#status-card").classList.contains("hidden")) {
     $("#status-card").classList.toggle("hidden", !showStatus);
@@ -378,6 +384,7 @@ function renderControls() {
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
+  else if (s && s.held && s.paused) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
   else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Parked · ${expLabel(s.experiment)}`; }
   else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${expLabel(s.experiment)} · trial ${s.trial}`; }
   else if (mine) { pl.className = "pill warn"; pl.textContent = `Starting ${exp(r.experiment)?.label ?? ""}…`; }
@@ -426,7 +433,7 @@ function renderStatus() {
   renderRunStats();
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
-  const phaseName = s ? (s.held ? "stopped" : s.phase) : null;
+  const phaseName = s ? (s.held ? (s.paused ? "paused_held" : "stopped") : s.phase) : null;
   const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "Not running";
   $("#st-phase").textContent = text;
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
@@ -1170,10 +1177,10 @@ const OUTCOME_CLASS = {
   reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
   choice_unrewarded: "unrewarded", reach_wrong: "wrong",
   response_timeout: "none", timeout: "none", early_touch: "early",
-  go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
+  go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort", paused: "abort",
 };
 const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong direction",
-  none: "No response", early: "Early touch", abort: "Aborted (safety)", stop: "Stopped by operator" };
+  none: "No response", early: "Early touch", abort: "Aborted (safety)", stop: "Stopped or paused" };
 const SV = { view: null, userView: false, data: null, hist: null, lastTrial: null, lastFetch: 0, busy: false };
 
 function sessionKey() { return runningKey() || S.selected; }
@@ -1335,7 +1342,7 @@ function juiceOf(d) {
 // Operator stops stay in the trial strip but are excluded from performance metrics.
 const SESSION_TASKS = ["free_move", "restricted_move_horizontal", "restricted_move_vertical", "reach_map"];
 const LAST_N = 20;
-const isOperatorStop = (r) => r.outcome === "stop_requested";
+const isOperatorStop = (r) => r.outcome === "stop_requested" || r.outcome === "paused";
 const median = (xs) => { const v = xs.filter(Number.isFinite).sort((a, b) => a - b); if (!v.length) return NaN;
   const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 const fmtS = (x) => (Number.isFinite(x) ? (x >= 100 ? `${Math.round(x)} s` : `${x.toFixed(1)} s`) : "–");
@@ -1593,6 +1600,11 @@ async function init() {
       ? "Skip parking and stop the launch now? The FRI session will close at the arm’s current position."
       : "End the current trial and stop the run? The trial is saved as stop_requested. The arm moves to park before the launch stops.";
     if (confirm(q)) act(() => api("/api/stop", {}), "Stopping");
+  };
+  $("#btn-pause").onclick = () => {
+    const paused = !!(statusLive() && statusLive().paused);
+    act(() => api(paused ? "/api/resume" : "/api/pause", {}).then((r) => ({ ...r, message: "" })),
+        paused ? "Resuming: the next trial starts" : "Pausing: the trial ends, the arm parks and waits for Resume");
   };
   $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating recording. See the log for details.");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };

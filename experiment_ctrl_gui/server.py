@@ -389,6 +389,20 @@ class App:
                                  "warn")
         threading.Thread(target=send, daemon=True).start()
 
+    def pause(self, resume: bool = False) -> dict:
+        """Pause: end the trial now, park, and hold until Resume -- the launch, FRI and the SmartPad app keep
+        running. Resume starts the next trial (live changes made meanwhile apply from it)."""
+        exp = self.running_experiment()
+        if exp is None or not self.runner.running():
+            raise RuntimeError("nothing is running")
+        if self.stopping:
+            raise RuntimeError("the run is stopping")
+        ok, msg = (self.bridge.resume if resume else self.bridge.pause)(exp)
+        self.runner.emit(f"{'Resume' if resume else 'Pause'}: {msg}", "gui" if ok else "warn")
+        if not ok:
+            raise RuntimeError(msg)
+        return {"ok": True, "message": msg}
+
     def stop(self) -> dict:
         exp = self.running_experiment()
         if not self.runner.running():
@@ -668,6 +682,8 @@ def make_handler(app: App):
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":
                 return app.stop()
+            if path in ("/api/pause", "/api/resume"):
+                return app.pause(resume=path == "/api/resume")
             if path == "/api/subject":
                 return app.select_subject(str(body.get("subject", "")), bool(body.get("clear_edits")))
             if path == "/api/profile/save":

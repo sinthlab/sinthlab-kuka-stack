@@ -3,6 +3,8 @@
 
     <ns>/experiment_status       std_msgs/String, JSON, latched   where the experiment is right now
     <ns>/<orchestrator>/stop     std_srvs/Trigger                 end the trial NOW, park, and hold
+    <ns>/<orchestrator>/pause    std_srvs/Trigger                 end the trial NOW, park, hold until resume
+    <ns>/<orchestrator>/resume   std_srvs/Trigger                 start the next trial
     ros2 param set <ns>/<orchestrator> <name> <value>             live parameters only
 
 LIVE PARAMETERS apply at the next trial boundary, never mid-trial, so each trial runs under one
@@ -16,6 +18,11 @@ STOP (the dashboard's Stop) ends the trial in progress at once -- the orchestrat
 hook stops whatever is running and parks the arm -- and no further trial starts: the control holds at
 park. Only then does the dashboard end the launch, so FRI always closes with the arm parked, out of
 reach. Stop is not a safety function -- the arm stays under control and compliant throughout.
+
+PAUSE is Stop without the end: the same stop hooks end the trial at once (marked `paused` instead of
+`stop_requested`) and park the arm, and begin_trial then holds at park, keeping the next trial, until
+RESUME starts it. The launch, FRI and the SmartPad app keep running throughout, so a pause costs no
+restart. Live changes made while paused apply from the resumed trial. Stop while paused ends the run.
 
 NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); with
 `nsp_sync.enabled`, trial_start and trial_end each send the cabinet one UDP datagram,
@@ -89,7 +96,9 @@ class ExperimentControl:
         self._phase_arg = None
         self._phase_t = time.time()
         self._stopped = False                               # no further trial: hold at park
-        self._held = False                                  # stopped, and parked
+        self._held = False                                  # stopped or paused, and parked
+        self._paused = False                                # pause: hold at park until resume
+        self._resume_fn: Optional[Callable[[], None]] = None  # the next trial, kept while paused
         self._pending: Dict[str, object] = {}               # accepted, applies at the next trial
         self._reloaders: List[Callable[[], None]] = []
         self._stop_hooks: List[Callable[[], None]] = []
@@ -115,6 +124,8 @@ class ExperimentControl:
                              reliability=ReliabilityPolicy.RELIABLE)
         self._pub = node.create_publisher(String, STATUS_TOPIC, latched)
         node.create_service(Trigger, "~/stop", self._on_stop)
+        node.create_service(Trigger, "~/pause", self._on_pause)
+        node.create_service(Trigger, "~/resume", self._on_resume)
         node.add_on_set_parameters_callback(self._gate)
         node.create_timer(_HEARTBEAT_SEC, self._publish)
         self._publish()
@@ -152,6 +163,11 @@ class ExperimentControl:
         """Register the orchestrator's Stop: end the trial in progress at once and park."""
         self._stop_hooks.append(fn)
 
+    def stop_token(self) -> str:
+        """The outcome the orchestrator's stop hook marks the interrupted trial with: `paused` for a pause,
+        `stop_requested` for Stop."""
+        return "paused" if self._paused and not self._stopped else "stop_requested"
+
     def hold(self, why: str) -> None:
         """Stop from the orchestrator itself, after the current trial: no further trial starts, and the
         arm holds at park until Stop ends the launch. For a run that must not continue as set up."""
@@ -171,6 +187,12 @@ class ExperimentControl:
             self._held = True
             self._set_phase("stopped")
             self._log.info("Stopped: holding at park.")
+            return
+        if self._paused:
+            self._held = True
+            self._resume_fn = start_fn
+            self._set_phase("paused")
+            self._log.info("Paused: holding at park until Resume.")
             return
         delay = self._reward_ready_at - time.monotonic() if self._sequence_rewards else 0.0
         if delay > 0:
@@ -240,6 +262,7 @@ class ExperimentControl:
             "phase_t": self._phase_t,
             "t": time.time(),
             "held": self._held,
+            "paused": self._paused,
             "pending": self._pending,
             "live": self._effective,
             "nsp_sync": self._nsp_enabled,
@@ -278,6 +301,44 @@ class ExperimentControl:
         else:
             response.message = "already holding at park"
         response.success = True
+        self._publish()
+        return response
+
+    def _on_pause(self, request, response):
+        response.success = True
+        if self._stopped:
+            response.success, response.message = False, "stopping: the run is ending"
+        elif self._paused:
+            response.message = "already paused" + (" at park" if self._held else "; parking")
+        else:
+            self._paused = True
+            if not self._held:
+                self._log.warn("PAUSE requested: ending the trial now and parking; then holding until Resume.")
+                for fn in self._stop_hooks:
+                    try:
+                        fn()
+                    except Exception as exc:
+                        self._log.error(f"pause (stop hook) failed: {exc}")
+            response.message = "pausing: the trial ends now, the arm parks, then holds until Resume"
+        self._publish()
+        return response
+
+    def _on_resume(self, request, response):
+        response.success = True
+        if self._stopped:
+            response.success, response.message = False, "stopping: the run is ending"
+        elif not self._paused:
+            response.message = "not paused"
+        else:
+            self._paused = False
+            fn, self._resume_fn = self._resume_fn, None
+            if self._held and fn is not None:
+                self._held = False
+                self._log.info("RESUME: starting the next trial.")
+                response.message = "resumed: the next trial starts now"
+                self.begin_trial(fn)
+            else:
+                response.message = "resumed: the run carries on once the arm is parked"
         self._publish()
         return response
 

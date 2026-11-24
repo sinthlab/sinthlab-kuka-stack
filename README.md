@@ -127,7 +127,13 @@ With an NSP recording, export aligns the robot data to the NSP clock using the t
    `start → at start → quiet → go cue → armed → threshold → park → end`. Before the first trial the
    arm makes one slow move to the [park pose](#park-pose--out-of-reach-between-trials), out of reach.
 5. **Change live settings** under **All settings → Live**. Most changes take effect at the next trial and show a purple `next trial` badge until then. Move speed changes take effect at the next move, which can occur within the current trial.
-6. **■ Stop** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
+6. **⏸ Pause** ends the trial in progress at once and parks the arm, like Stop, but the run goes on: the
+   arm holds at park, out of reach, until **▶ Resume** starts the next trial. Nothing is relaunched — the
+   ROS launch, the FRI session and the SmartPad app keep running — so a pause costs no restart. The
+   cut-short trial is saved, marked `paused` (an aborted trial in `trials.csv`). Live changes made while
+   paused apply from the resumed trial; **Stop** while paused ends the run. It works the same in every
+   task (`<ns>/<orchestrator>/pause` and `/resume`, std_srvs/Trigger, from a terminal).
+7. **■ Stop** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
    and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
    trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
    skip)**: a second press Ctrl-Cs at once, wherever the arm is. If the orchestrator does not
@@ -137,7 +143,7 @@ With an NSP recording, export aligns the robot data to the NSP clock using the t
    - **From a terminal**, Ctrl-C reaches every process at once, so nothing parks first. To park, call
      `ros2 service call /lbr/<orchestrator>/stop std_srvs/srv/Trigger` and Ctrl-C once the log says it
      is holding.
-7. **Validate recording** checks this run's data folder
+8. **Validate recording** checks this run's data folder
    (`analysis/validate_recording.py --folder …`) and prints the result in the log. To plot the
    run afterwards, see [Working with the data](#working-with-the-data).
 

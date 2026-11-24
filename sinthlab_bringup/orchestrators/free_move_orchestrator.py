@@ -430,14 +430,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self._stopping:
             return
         if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
-            self._trial_over("stop_requested")
+            self._trial_over(self.control.stop_token())
             self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active() or self.switch_to_joint.active():
             return                                # already on the way to park
         self._stopping = True
-        self._trial_over("stop_requested")
+        self._trial_over(self.control.stop_token())
         self._trial_ending = True
         self._session_live = False
         self.quiet_window.stop()
