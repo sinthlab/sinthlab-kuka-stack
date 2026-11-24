@@ -34,6 +34,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+import install_check  # noqa: E402
 from sinthlab_bringup.helpers import free_reach  # noqa: E402  (on the path via experiments)
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
@@ -318,6 +319,10 @@ class App:
             raise RuntimeError(f"{s.get('experiment')} is already running outside the dashboard "
                                f"({s.get('node')}). Stop it in its terminal first.")
         if not self.demo:
+            # The arm must run this checkout's code: the settings come from here (install_check.py).
+            stale = install_check.problem(ex.REPO)
+            if stale:
+                raise RuntimeError(f"Not starting: {stale}")
             # Leftovers of an earlier run (e.g. an old ros2_control_node holding the FRI connection) make
             # a new launch hang at its controller spawners: end them first. A live experiment started
             # outside the dashboard was refused above, so anything matching now is a leftover.

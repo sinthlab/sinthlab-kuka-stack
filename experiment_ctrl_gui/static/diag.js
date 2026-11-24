@@ -32,6 +32,12 @@ function parse(text) {
 const truthy = (v) => ["1", "true", "True"].includes(String(v));
 
 function showStatus(kv) {
+  // Older firmware answers over serial without its settings: say so instead of a row of dashes.
+  if (kv.firmware) {
+    $("#board-status").innerHTML = `<dt>Serial link</dt><dd>${esc(kv.serial || "–")}</dd>` +
+      `<dt>Firmware</dt><dd class="warn-text">${esc(kv.firmware)}</dd>`;
+    return;
+  }
   const rows = [
     ["Enabled", truthy(kv.enabled) ? "yes" : "no"],
     ["Brightness", kv.brightness], ["Colour (r,g,b,w)", `${kv.r}, ${kv.g}, ${kv.b}, ${kv.w}`],
