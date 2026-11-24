@@ -35,10 +35,10 @@ async function ttlCheck() {
   try {
     const j = await ttl("STATUS");
     pill.className = "pill " + (j.good ? "ok" : "err");
-    pill.textContent = j.good ? `outputs available · ${j.ms} ms` : j.ok ? "outputs unavailable" : "no answer";
+    pill.textContent = j.good ? `outputs available · ${j.ms} ms` : j.ok ? "Outputs unavailable" : "No response";
     $("#ttl-status").textContent = j.text;
   } catch (e) {
-    pill.className = "pill err"; pill.textContent = "refused";
+    pill.className = "pill err"; pill.textContent = "Check failed";
     tlog(e.message, "err");
   }
 }
@@ -80,7 +80,7 @@ async function fire() {
   } finally {
     T.busy = false;
     $("#btn-ttl-fire").disabled = false;
-    $("#ttl-progress").textContent = run === T.run ? "done" : "stopped";
+    $("#ttl-progress").textContent = run === T.run ? "Done" : "Stopped";
   }
 }
 

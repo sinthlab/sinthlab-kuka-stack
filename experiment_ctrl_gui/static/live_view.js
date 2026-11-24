@@ -68,12 +68,12 @@ class LiveView {
 
   status() {
     const g = this.geom, l = this.live;
-    if (!g) return "No experiment running — the view fills in once one starts.";
+    if (!g) return "No experiment running.";
     const age = performance.now() / 1000 - this.rxAt;
     const parts = [];
-    if (!g.model) parts.push("no robot model here: positions drawn around a nominal start");
-    if (!l || age > STALE_SEC) parts.push("no live update — is the dashboard still connected?");
-    else if (!l.ee) parts.push("no arm position (no lbr_state)");
+    if (!g.model) parts.push("Robot model unavailable. Showing positions relative to a nominal start.");
+    if (!l || age > STALE_SEC) parts.push("No recent position updates");
+    else if (!l.ee) parts.push("Arm position unavailable (no lbr_state)");
     if (l) parts.push(`trial ${l.trial ?? "–"} · ${String(l.phase ?? "–").replace(/_/g, " ")}`);
     if (this.target) parts.push(`goal: ${this.target}`);
     if (this.reached) parts.push(`reached: ${this.reached}`);

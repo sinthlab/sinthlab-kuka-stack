@@ -1,9 +1,6 @@
 # Experiment Control Dashboard: architecture and software
 
-**How to use the dashboard is in the main README:
-[Quick start: the experiment dashboard](../README.md#quick-start-the-experiment-dashboard).** This file
-covers how it is built: its components, the robot-side interfaces it relies on, how parameters are
-classified, where the parameter help comes from, and how to extend it.
+This guide describes the dashboard’s architecture, ROS interfaces, and parameter model. For operating instructions, see the [dashboard quick start](../README.md#quick-start-the-experiment-dashboard).
 
 ---
 
@@ -57,12 +54,8 @@ flowchart LR
     HW -- "lbr_state (FRI session, rate)" --> BR
 ```
 
-- **The dashboard never talks to the arm.** It starts and stops the same `ros2 launch` a user would
-  type, and uses the orchestrator's public ROS interfaces. The same interfaces serve the terminal
-  (`ros2 param set`, `ros2 service call`), which is also why an experiment launched in a terminal
-  is picked up automatically.
-- **The YAMLs are the source of truth** for values, defaults, descriptions and notes. The dashboard
-  never writes them: a per-run edit becomes a copy in `runs/`, passed as `params_file:=`.
+- The dashboard starts and stops ROS launches and uses the orchestrator’s public ROS interfaces. It discovers experiments started from a terminal through the same interfaces.
+- The task YAML files define default values, descriptions, and notes. The dashboard writes per-run edits to a copy in `runs/` and passes it as `params_file:=`.
 
 ---
 
@@ -73,13 +66,13 @@ flowchart LR
 | `server.py` | `ThreadingHTTPServer`: static files, the JSON API, and a Server-Sent Events stream of log lines and state (state is re-sent every second). Owns start / stop |
 | `runner.py` | runs one `ros2 launch` in its own process group, pumps its output into the log ring buffer (5000 lines) and `logs/`, and stops it: SIGINT → 20 s → SIGTERM → 5 s → SIGKILL |
 | `ros_bridge.py` | `RosBridge`: an rclpy node on a background executor that subscribes to `experiment_status`, `lbr_state` and the CLIK's `target_frame` (the live view's pull point) and calls `set_parameters_atomically` / `stop`. `UnavailableBridge` when ROS is not sourced. `DemoBridge` for `--demo` |
-| `kinematics.py` | the start pose from a height (the *Set by height* field under the start pose): 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
-| `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): three experiments and three pre-training tasks, shown under the **Experiments** and **Pre-training** tabs (`GROUPS`); an experiment's `paradigms` appear as nested tabs on its card and set its `paradigm_param` for the next Start (apple pluck: pluck / perturb / perturb bump / random start, `paradigm`; Move Vertical / Horizontal: either / cued end, `centre_out.target`), and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
+| `kinematics.py` | solves the start pose from a requested height: 6-D IK straight up or down from the current start, checked against reach, joint limits, the elbow and the floor. Builds the iiwa7 URDF with xacro, so it needs ROS sourced; without it the field says why |
+| `experiments.py` | the experiments (launch file, YAML, orchestrator node, SmartPad profile, controllers, run name, `group`): definitions grouped under **Experiments** and **Pre-training** (`GROUPS`); an experiment's `paradigms` appear as nested tabs on its card and set its `paradigm_param` for the next Start (apple pluck: pluck / perturb / perturb bump / random start, `paradigm`; Move Vertical / Horizontal: either / cued end, `centre_out.target`), and parameters of some paradigms only (`live_params.PARADIGM_ONLY`) are shown only under those; cautions and linked parameters |
 | `params.py` | YAML → flat dotted names; descriptions and notes; type coercion; per-run edits; the edited YAML and CLIK posture files; the Fixed tab's sections |
 | `board.py` | the Diagnostics page's Visual cue tab: sends each board command over the board's Wi-Fi or, as `GET /<cmd>`, over the serial link through the StarTech adapter; `FakeBoard` for `--demo` |
 | `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
 | `live_view.py` | the Live view: builds the running experiment's bounds from the parameters it runs with, anchors them once per trial, and turns the measured joints into the end effector by forward kinematics (`kinematics.py`) |
-| `postprocess.py` | the Post-processing page's jobs: archive a session as NWB (`analysis/nwb_export.py`) and upload it to the server, one job at a time, progress on the event stream |
+| `postprocess.py` | exports a session to NWB (`analysis/nwb_export.py`) and uploads it to the server. Runs one job at a time and reports progress through the event stream. |
 | `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, `live.html` + `live_view.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
@@ -100,7 +93,7 @@ Without them the page says so and the rest of the dashboard is unaffected.
 ## Robot side: ExperimentControl
 
 [`helpers/experiment_control.py`](../sinthlab_bringup/sinthlab_bringup/helpers/experiment_control.py)
-makes an orchestrator controllable from outside. Every orchestrator creates one:
+makes an orchestrator controllable from outside. Every orchestrator uses the following interfaces.
 
 | Interface | Type | Behaviour |
 |---|---|---|
@@ -111,9 +104,7 @@ makes an orchestrator controllable from outside. Every orchestrator creates one:
 
 The orchestrators end each trial with `control.begin_trial(self._next_trial)`. That call is where,
 after a Stop, the arm holds at park, and where accepted changes are applied: `_reload_live()` calls `reload()` on the cue,
-monitor and perturbation actions and resets the quiet-window and timeout durations. So a change
-never lands mid-trial, and the sidecar written at the next `TrialRecorder.start()` records the
-values that trial used.
+monitor and perturbation actions and updates the quiet-window and timeout durations. The next trial’s sidecar records the values in effect. Move speed changes apply from the next move, as described below.
 
 ---
 
@@ -141,7 +132,7 @@ the checks, which `check_value()` applies on both sides:
 Live motion parameters: every move's `speed_scale` is live in every experiment, and IMMEDIATE
 (`live_params.IMMEDIATE`): `ExperimentControl.apply_immediately` hands it straight to the move's
 `set_speed_scale`, used from that move's next start, and logs it with `TrialRecorder.note_change`. The
-dashboard marks such rows *applies now*. The base limits `move_to_pos_*` are per-run. The start /
+dashboard marks such rows *next move*. The base limits `move_to_pos_*` are per-run. The start /
 recover pose is live in apple pluck only (`_POSE`), re-read at the trial boundary.
 
 **Dashboard-only checks and conveniences** (`experiments.py`, `params.py`):
@@ -163,68 +154,23 @@ recover pose is live in apple pluck only (`_POSE`), re-read at the trial boundar
 
 ## Monkey profiles
 
-The settings that belong to the animal, not to the task, live in one profile per monkey
-([`profiles.py`](profiles.py)) and apply to every free-move task (Free Move, Restricted Move, Cued Reaches,
-the Colour Rule, N-Choice). Navin's experiments (apple pluck, restricted plane, maze) keep their YAMLs.
+Each monkey has a profile shared by Free Move, Reach Map, Restricted Move, Cued Reaches, Colour Rule, and N-Choice. Apple Pluck, Restricted Plane, and Maze use their task YAML files and per-run edits.
 
-| Layer | What | Where it is set |
+| Layer | Settings | Location |
 |---|---|---|
-| **Rig** | outputs, cue board, controllers, floor, safety, park pose, ... | the experiment YAMLs, as before (All settings) |
-| **Profile** | **feel** (damping, force threshold, top speed, acceleration, light-push range and damping), **reach** (left, right, down, up from the start), **pacing** (quiet window and its guard, time to respond), **reward** (valve time, pulses, gap) | `<data dir>/subjects/<ID>.yaml`, one per monkey |
-| **Today** | the task's own few settings (`Experiment.task_settings`), and any one-off edit | the dashboard, for the next Start |
+| **Task defaults** | Task configuration, including outputs, cue board, controllers, floor, safety, and park pose | Experiment YAML |
+| **Monkey profile** | Arm response, reach by direction, trial timing, and reward pulse settings | `<data dir>/subjects/<ID>.yaml` |
+| **Pending edits** | Changes for the next run | Dashboard |
 
-Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `current()`).
+Pending edits take precedence over a profile, and profile values take precedence over task defaults. See `ExperimentParams.base()` and `ExperimentParams.current()`.
 
-- **Mapping** (`profiles.FIELDS`): each feel, pacing and reward field sets one parameter of the same meaning
-  in every task. The **reach** sets the rail ends (`free_move.rail_min_m` / `rail_max_m`): left and right on a
-  horizontal rail (also the Colour Rule's Rail), down and up on a vertical one; a value past the task's
-  `LIMITS` is capped there with a note. Choice distances that are part of a task's design stay task
-  settings (the Colour Rule's No-rail `centre_out.free_reach_m`, the N-Choice `free_move.ray_length_m`,
-  kept the same as the number of choices grows) and so does Free Move's box; the dashboard notes where
-  one goes past the monkey's reach.
-- **Reward per task:** a profile can hold a different reward for one task (`reward_by_task`).
-- **The page** (two columns under a run bar): the **run bar**, always in view, holds the monkey, the task
-  (one drop-down grouped Experiments / Pre-training, then chips for the rail and the paradigm), the reward
-  (valve time, mL, −10 / +10 ms, set by volume, save to the profile), Start / Stop with the session timer and
-  the juice given, and the status pills. Left column: the session (trial and phase while running; the Run
-  monitor or Today vs recent; the SmartPad checklist folded to one line before a run). Right column: the
-  settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
-  settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
-  **All settings** (the Live / Per-run / Fixed tabs, unchanged). Every experiment has a Task view (Navin's
-  three too: the pull, the perturbation, the fixture); the Monkey view is for the free-move tasks only.
-- **One experiment at a time:** while a run goes the task picker is locked to it (its live tabs still switch).
-  *Today vs recent* can look up any subject's sessions without changing the monkey being run. Changing the
-  monkey with edits made today lists them and asks to keep or clear them (or not to change).
-- **Reach Map saves only to its own monkey:** the map shows whose recording it is, and the server refuses a
-  save to anyone else. The log is a one-line strip at the bottom
-  (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is the trial card's *Arm*
-  section, shown while a run goes, open unless folded with its heading (remembered per browser); *pop out ↗*
-  opens it on its own page (`/live.html`).
-- **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
-  live and waiting for the next trial included, wherever they differ from the profile; the reach comes
-  back from a horizontal or vertical rail's ends. Tick what to keep; a reward can go to this task only.
-  Every save bumps the version and appends to `<ID>.changes.jsonl` (time, version, from which task,
-  note, old and new values). A running task keeps the profile it started with until it ends.
-- **Records:** the run file (`runs/<exp>_<time>.yaml`) names the profile and version in its header and
-  holds its values; the recording folder gets `subject_profile.yaml`, the profile as the run started.
-- **New monkey:** *New monkey...* in the picker creates a profile from the defaults (the same values every
-  task's YAML has, so nothing changes until it is tuned); for a subject with recordings but no profile,
-  *Create from <task>* takes the selected task's current values. `test` never has a profile.
-- **Reach Map** (Pre-training card; `config/reach_map.yaml`, [`reach_view.py`](reach_view.py),
-  [`helpers/reach_map.py`](../sinthlab_bringup/sinthlab_bringup/helpers/reach_map.py)): measures the reach
-  instead of guessing it, once or twice per animal. Free Move in the frontal plane from the vertical tasks'
-  start, inside its own box; tabs **Long moves** (every movement of at least `long_move.min_m` pays) and
-  **New best** (`long_move.reward: new_best`: a movement pays when it goes at least `reach_map.margin_m`
-  farther than any before it in its direction, of `reach_map.sectors`; bests last the whole run), switchable
-  mid-session. Its Run monitor is the map, read from the run's trajectory CSVs as they are written
-  (`GET /api/reach_map`, redrawn every 5 s while running): where the hand went, each OUTWARD movement's
-  farthest point, the comfortable reach per direction (`reach_map.percentile`, 80) and the farthest, the box.
-  A direction whose reach ends at the box is **arm-limited** (the arm, not the monkey, stopped it; not ticked
-  for saving). Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail (that
-  rail runs near the top of the arm's workspace, where the box cuts every reach short). *Save ticked to
-  <monkey>'s reach* writes them into the profile with a record of the map (`reach_map` in the profile file).
-- **Start** uses the monkey chosen on the page. Typing another ID in the Start dialog selects that monkey
-  first and asks you to check its settings before starting.
+- **Profile mapping.** Each arm response, timing, and reward field maps to a task parameter in `profiles.FIELDS`. Reach sets the horizontal and vertical rail endpoints (`free_move.rail_min_m` and `free_move.rail_max_m`), including Colour Rule in Rail mode. The dashboard caps profile values at the task limits and shows a note when it does. The no-rail Colour Rule choice distance, N-Choice rail length, and Free Move box are set per task. The dashboard flags choice distances beyond the monkey’s profile reach.
+- **Save to profile.** The dialog compares settings for the selected task with the profile, including live values queued for the next trial. Select the changes to save. Reward settings can apply to an individual task via `reward_by_task`. A running task keeps the profile it started with. The update applies when a new run starts.
+- **Profile records.** Each save increments the profile version and appends a record to `<ID>.changes.jsonl` with the timestamp, version, source, note, and changed values. The generated run YAML names the profile and version and records its values. The recording folder contains a snapshot in `subject_profile.yaml`.
+- **New profiles.** Select **New monkey…** to create a profile using the default values. If an existing subject has no profile, **Create** in the Monkey menu uses the selected task’s current settings. The `test` subject uses task defaults and has no profile.
+- **Changing subjects.** If edits are pending when you select another monkey, choose whether to keep them, clear them, or cancel. If you enter a different subject ID in the **Start** dialog, the dashboard selects that monkey first so you can review the settings. **Session history** can display another subject’s sessions independently.
+- **Reach Map.** This pre-training task measures reach in the frontal plane from the vertical tasks’ start pose. **Long moves** rewards movements that reach the distance threshold (`long_move.min_m`). **New best** rewards a movement when it exceeds the previous best in its direction by at least `reach_map.margin_m`. Both modes can be selected during a run. A direction’s best is tracked for the whole run.
+- **Reach Map results.** The map uses the run’s trajectory CSVs and refreshes every 5 seconds during a run. It shows the farthest point of each outward movement and the farthest and comfortable reach by direction. Comfortable reach is the 80th percentile by default (`reach_map.percentile`). Directions limited by the workspace are unchecked by default. Horizontal reach is measured about 5 cm below the horizontal rail, where there is more room to reach sideways. Selected values and the map record can be saved only to the recorded monkey’s profile. See [the map endpoint](reach_view.py) and [reach calculations](../sinthlab_bringup/sinthlab_bringup/helpers/reach_map.py).
 
 ---
 
@@ -233,7 +179,7 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
 The help text comes from the YAML files (`params.yaml_docs()`):
 
 ```yaml
-    # Notes: the reasoning, measurements, knobs. Comment lines directly above the key,
+    # Notes: the rationale, measurements, or tuning guidance. Comment lines directly above the key,
     # with no blank line between, belong to that key (or to that block, above a block).
     polar_r_m: 0.05  # perturbation distance from the start [m]      <- the description
 ```
@@ -254,80 +200,38 @@ The Fixed tab's SmartPad and launch-argument rows are not YAML keys; their help 
 
 ## Diagnostics page
 
-`/diagnostics.html` — the **Diagnostics** button at the top right of the dashboard. Hardware checks
-that never move the arm, one tab per device.
+Select **Diagnostics** in the dashboard to test the visual cue and TTL outputs without moving the arm.
 
 ### Visual cue
 
-**Visual cue** checks the end-effector NeoPixel ring through its Metro board. **Every control works on
-either path, with the same tests and the same replies**; pick the path at the top:
+The Metro board drives the NeoPixel ring. Select a connection method and use **Check board** to see the current settings and connection status.
 
-- **Path: Wi-Fi** — over the board's own access point (join this computer to `KUKA_NEOPIXEL`; board
-  address `192.168.4.1`).
-- **Path: Serial** — over the RS-422 link through X76 (the StarTech adapter's port, `/dev/ttyUSB0`;
-  attach it to WSL first). Each command goes down the link as `GET /<command>?<params>`, which the
-  board runs with the very same function as the HTTP route. Refused while an experiment runs, since
-  the experiment owns the port. `diagnostics.html#serial` opens on this path. On board firmware from
-  before `GET`, the page falls back to the experiment commands by itself: *Check board* sends `PING`,
-  *Fire cue* `CUE`, *Solid colour* and *Quarter 0*–*3* `SEG`, *Off* `OFF`; the settings and the
-  LED test then need the Wi-Fi path.
+- **Wi-Fi.** Join the `KUKA_NEOPIXEL` network. The board address is `192.168.4.1`.
+- **Serial.** Attach the StarTech adapter to WSL (normally `/dev/ttyUSB0`). The connection uses RS-422 via X76. The serial port is reserved for the duration of an experiment. Use `diagnostics.html#serial` to open Diagnostics with serial selected.
 
-The controls:
+Under **Cue settings and tests**, you can change colour, pattern, segments, duration, period, brightness, and enabled state. Apply the settings and select **Trigger cue** to test them. **Solid colour** lights the whole ring. **Quarter 0** through **Quarter 3** light one quarter in green. You can turn the ring off, save settings to the board, or restore the firmware defaults. The **LED-by-LED test** shows the active pixel number to help locate a dark section. **Board replies** shows the latest raw reply and round-trip time.
 
-- **Cue board:** *Check board* — is the board reachable, and what it reports: enabled, brightness,
-  colour, pattern, LEDs, whether a cue is running, the serial link's state and how many serial cues
-  it has fired, uptime.
-- **What a cue looks like:** colour, pattern, segments, duration, period, brightness, enabled; apply
-  it; fire a cue; solid colour; **Quarter 0**–**3** (one quarter green, the rest dark: the quarters of the pre-training ring states); off; save on the
-  board; reset to the firmware defaults.
-- **LED-by-LED test**, showing which pixel is lit so a dead stretch of the ring can be located. If the
-  ring lights here, the board, the Pixel Shifter and the ring are fine.
-- **Board replies:** the raw text of the last reply, with its path and round trip.
-
-The browser cannot read the board's replies itself (another origin), so the server relays each
-command (`board.py`). In `--demo` a simulated board answers both paths, so the page can be tried
-without hardware.
+The dashboard server relays each command through [board.py](board.py). The serial path uses `GET /<command>?<params>`. On older firmware, **Check board**, **Trigger cue**, **Solid colour**, the quarter buttons, and **Off** fall back to `PING`, `CUE`, `SEG`, and `OFF`. Settings and the LED-by-LED test require Wi-Fi on that firmware. Demo mode simulates the board for both connection methods.
 
 ### TTL sync
 
-**TTL sync** fires the cabinet's sync outputs (the EL2124 in the reward and sync box; see
-[Sync: TTL pulses to the NSP](../reward_and_sync_box/README.md#sync-ttl-pulses-to-the-nsp)) with the
-same UDP commands the experiments send at trial start and end. Run **PulseTestServer** (or
-LbrImpedanceControlServer) on the SmartPad first. `diagnostics.html#ttl` opens on this tab.
+Run **PulseTestServer** or **LbrImpedanceControlServer** on the SmartPad. Enter the cabinet address (default `172.31.1.147`) and select **Check outputs** to send `STATUS`. The dashboard remembers the address in the current browser. Use `diagnostics.html#ttl` to open this tab directly.
 
-- **Cabinet:** its address (default `172.31.1.147`, remembered on this computer) and **Check outputs**
-  (`STATUS`): whether the cabinet answers, and whether its outputs are available.
-- **Fire pulses:** an output (1–4, or *All*: output 1 once, output 2 twice and so on), the width
-  (10–5000 ms), how many times and how often. **Stop** ends a series and sets every output low;
-  **All outputs low** sends `ALLOFF`. Each pulse lights the output's channel LED on the EL2124.
-- **Commands and replies:** every command, the cabinet's answer and the round trip.
+Select an output, pulse width (10–5000 ms), number of repetitions, and the repeat interval. **All outputs in sequence** sends one pulse on output 1, two on output 2, and so on. Each pulse lights its channel LED on the EL2124. **Stop** ends a series and sends `ALLOFF`. **All outputs low** also sends `ALLOFF`. Commands, replies, and round-trip times appear in the log.
 
-Pulses are refused while an experiment runs (a test pulse would be recorded by the NSP as a trial
-edge); *Check outputs* still works. The browser cannot send UDP, so the server relays each command
-(`ttl.py`): only `STATUS`, `ALLOFF` and `PULSE <output> <width ms>`, only to a private address. In
-`--demo` a simulated cabinet answers.
+The server uses the same UDP commands as the experiments. During a run it permits `STATUS` only, since the NSP would record a test pulse as a trial edge. See [ttl.py](ttl.py) and the [reward and sync box reference](../reward_and_sync_box/README.md#sync-ttl-pulses-to-the-nsp). Demo mode uses a simulated cabinet.
 
 ## Live view
 
-The trial card's **Arm** section on the dashboard while a run goes, and `/live.html` on its own (*pop out ↗*). The running
-experiment's bounds and the arm in them, in two views of the robot's base frame: **front** (Y to the
-right, Z up: as seen from the subject's side) and **top** (Y to the right, X toward the subject
-downward). Read-only, and entirely on the dashboard's side: the experiments do not change for it.
+The **Arm** section of the trial card shows motion and trial bounds during a run. Select **Open live view** to open `/live.html` in a larger view. Both views use the robot base frame. The front view is from the subject’s side, with Y to the right and Z up. The top view has Y to the right and X pointing down toward the subject.
 
-- **The bounds** are built by `live_view.py` from the parameters the run uses (the dashboard's copy,
-  with the live values the orchestrator reports), in the base frame. Start-relative bounds are placed
-  at the start pose's end effector (forward kinematics) until the trial is armed, then where the arm
-  was at that moment. The experiments anchor on the arm around then (the maze after it settles, Free
-  Move at the tare), so the drawing can sit a few mm off their own anchor.
-- **The arm:** the end effector, from the measured joints on `lbr_state` by forward kinematics, with
-  its last 8 s as a trail; the **pull point**, the CLIK's `target_frame` (where the spring pulls the
-  arm), in the CLIK experiments.
-- **The trial so far** — the centre-out goal and the end reached, the forks passed — is followed on the
-  server from every status, so a page opened mid-trial shows it too.
+- **Bounds.** The server uses the run’s configuration and reported live values. Before the trial is armed, bounds relative to the start are drawn around the nominal end-effector position. Once armed, the display uses the measured position at that moment. The experiment may anchor its bounds at a different point in the trial, leading to differences of a few millimetres.
+- **Arm and pull point.** The view calculates the end-effector position from the measured joints on `lbr_state` and shows its last 8 seconds of motion. CLIK experiments also show `target_frame`, the spring’s target.
+- **Trial progress.** The server tracks the centre-out target and reached endpoint, as well as forks passed in Maze. Opening the view mid-trial shows the progress so far.
 
 | Experiment | Bounds shown |
 |---|---|
-| every one | the start; the floor (`floor.height_m`, for the flange at the start's orientation) and its safety trip line; the safety distance (`*_safety.max_displacement_m`) where it is on |
+| All experiments | the start; the floor (`floor.height_m`, for the flange at the start's orientation) and its safety trip line; the safety distance (`*_safety.max_displacement_m`) where it is on |
 | Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
 | Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
 | Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
@@ -341,27 +245,12 @@ on the dashboard.
 
 ## Post-processing page
 
-`/postprocess.html` — the **Post-processing** button at the top right of the dashboard. It archives a
-session as one NWB file and uploads it to the server. Nothing on it moves the arm; a job is refused
-while an experiment runs (here or in a terminal), since a conversion reads and writes gigabytes.
+Select **Post-processing** to export a session as an NWB file and upload it to a mounted server folder. Export and upload are disabled during experiments.
 
-1. **Recordings.** The robot run folder (a list of the runs in `analysis/`, or any path) and the
-   Blackrock NSP recording: any one of its files (`.nev`, `.ns1`–`.ns6`) or the folder holding it, on a
-   network mount if it lives on the server; empty for a robot-only archive. The sync channels
-   (default `ainp6` = trial start, `ainp7` = trial end, `ainp8` = experiment start; empty = none) and
-   threshold (2.5 V), and whether to include
-   the continuous NSx data and the NEV spikes. **Check recordings** shows what each holds and flags a
-   sync channel the recording does not have.
-2. **Subject and session.** Subject ID (required), species, sex, age or date of birth, weight,
-   description; experimenter, lab, institution; array location and description; session description
-   and notes. The browser remembers the last values.
-3. **Archive to NWB.** The output file (default `<run folder>/sub-<subject>_ses-<session>.nwb`).
-   **Create NWB** runs [`analysis/nwb_export.py`](../analysis/nwb_export.py) with a progress bar and
-   **Cancel**; the result shows the file, its size, the trials, the time base and the sync fit
-   (matched pulses, rms and max residual, clock drift).
-4. **Upload to the server.** Once the archive exists the page asks for it to be uploaded: the server
-   folder defaults to the NSP recording's folder. The copy is written as `<name>.partial`, read back
-   and compared by SHA-256, then renamed; an existing file is replaced only if ticked.
+1. **Recordings.** Select a local robot run from `analysis/` or enter another run folder. For the Blackrock NSP recording, enter a recording file (`.nev` or `.ns1`–`.ns6`) or its folder. A network mount is supported. Leave the NSP field blank for a robot-only export. Default sync channels are `ainp6` for trial start, `ainp7` for trial end, and `ainp8` for experiment start. The default threshold is 2.5 V. Choose whether to include continuous NSx data and NEV spikes. **Check recordings** summarises the inputs and flags missing sync channels.
+2. **Subject and session.** Enter the required subject ID and any metadata you want saved in the archive. The browser remembers these fields for the next export.
+3. **Archive to NWB.** The default output path is `<run folder>/sub-<subject>_ses-<session>.nwb`. **Create NWB** runs [nwb_export.py](../analysis/nwb_export.py). The result shows the file path, size, trial count, time base, and sync fit, including matched pulses, RMS and maximum residuals, and clock drift.
+4. **Upload to server.** After export, the page fills in the NWB path. The destination defaults to the NSP recording’s folder when available. Upload writes `<name>.partial`, checks its SHA-256 checksum against the source, and renames it after verification. To replace an existing copy, select **Replace an existing file with the same name**.
 
 **How the clocks are aligned.** The cabinet pulses EL2124 output 1 at every `trial_start` and output 2
 at every `trial_end`; the NSP records them on the two channels set on the page. The rising edges are matched to the
@@ -382,7 +271,7 @@ joint torques, the FRI state and clocks, every other recorded column, and the ro
 `trial_start`/`trial_end`, experiment, paradigm, threshold, the sidecar as JSON); in `notes`, the
 SmartPad settings, the git state and the sync summary.
 
-The same conversion from a terminal:
+You can also run the export from a terminal.
 
 ```bash
 python3 analysis/nwb_export.py --robot analysis/expt_<run> --nsp /mnt/server/<recording>.ns5 \

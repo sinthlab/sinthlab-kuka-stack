@@ -51,21 +51,9 @@ worth reconsidering, is in the [appendix](#appendix--why-fri-position-mode-not-t
 
 ## Quick start: the experiment dashboard
 
-The quickest way to run an experiment is the **experiment control dashboard**, a local web page on
-the ROS computer. From it you:
+The experiment control dashboard runs on the ROS computer. Use it to select a task, adjust settings, start or stop a run, and monitor trials and recordings. You can also run experiments from a terminal. See [Running experiments on hardware](#5-running-experiments-on-hardware), [Without the dashboard](#without-the-dashboard), and the [dashboard developer guide](experiment_ctrl_gui/README.md).
 
-- pick an experiment (Apple Pluck, with its *normal*, *perturb* and *random start* paradigms, Restricted Plane or Maze), or a pre-training task;
-- check or change its parameters;
-- Start and Stop it;
-- change cues and other live settings between trials;
-- follow the trial, its events and the full log.
-
-Every experiment can still be run from a terminal instead: see
-[§5](#5-running-experiments-on-hardware) and [Without the dashboard](#without-the-dashboard). How the
-dashboard is built is in [`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md).
-
-> ⚠️ **Stop is not an emergency stop.** It parks the arm, then sends Ctrl-C to the launch. **The SmartPad
-> E-stop is the E-stop.** On the first run of any experiment, work in **T1** with a hand on it.
+> ⚠️ **Use the SmartPad emergency stop in an emergency.** The dashboard’s **Stop** button ends the trial and parks the arm before stopping the ROS launch. On the first run of any experiment, work in **T1** and keep a hand on the emergency stop.
 
 ### Start the dashboard
 On the ROS computer wired to the arm, with the workspace built ([§3](#3-building-the-stack)):
@@ -92,88 +80,36 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 | `--demo` | simulated robot: nothing is launched |
 | `--host 0.0.0.0` | serve beyond this computer. **Anyone who can reach the port can start the robot.** Prefer an SSH tunnel: `ssh -L 8080:localhost:8080 <ros-box>` |
 
-### The page
-- **Left column:** the experiment list (tabs **Experiments** and **Pre-training**), the **Run** controls, and a **Before you start** checklist
-  with the SmartPad selections for the chosen experiment.
-- **Middle column:** the **status**, the **session card**, then the **parameters**. Status shows the
-  trial number, the current phase, the trial's steps, and a list of every event.
-- **Session card**, two tabs, built on the [behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv):
-  - **Run monitor** (shown while a run is going): this run's `trials.csv` as it grows, or the last run
-    between runs. Trials, % success, rewards and valve time; % correct over the last 20 choices; the
-    colour rule's block and mapping; N-choice's recent payoff and % best choices; a strip of every trial's
-    outcome (grouped by block for the colour rule; hover a cell for the trial); outcome counts; choices per
-    block (the colour rule: falling counts mean faster reversals) or per direction (N-choice).
-  - **Today vs recent** (shown between runs): for the selected experiment and subject, each key setting
-    in the last three sessions (`sessions.csv`) beside today's value (● where it differs from last
-    session), and the last session at a glance (trials, success, rewards, duration, the task's own
-    summary, what changed during it). **Same as last session** copies last session's values as per-run
-    edits; clicking an earlier value uses just that one. The settings are the task's own plus the common
-    ones (`outcome_tables.settings_for`).
-  - Demo mode keeps its sessions in a temporary folder, never beside real data.
-- **Log:** on the right on a wide screen, below on a narrow one.
-- **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
-  run state. **Live view** (top right) shows the running experiment's bounds and the arm in them,
-  **Post-processing** archives a session as NWB, and **Diagnostics** opens the hardware checks — see
-  below.
+### Dashboard layout
 
-### Live view — the bounds and the arm
-The **Live view** button at the top right opens `/live.html` in its own tab: the running experiment's
-bounds and the arm in them, live, in a **front** view (Y to the right, Z up, as the subject sees the
-arm) and a **top** view (X toward the subject downward). It only reads: the arm's position from
-`lbr_state`, the pull point from the CLIK, and the bounds from the run's parameters.
+- **Top bar.** Select a monkey and task, adjust the reward, and start or stop a run. The status indicators report the ROS connection, the robot's FRI state, and the run state.
+- **Left column.** Follow the current trial, arm position, and trial events. **Run** shows the current or latest run, including trial outcomes and task-specific measures. **Session history** compares the next run’s settings with the last three sessions for the selected subject and task. Before a run, expand **Before you start** for the SmartPad checklist.
+- **Right column.** **Task** shows frequently adjusted settings. **Monkey** shows profile settings used by the selected task. **All settings** contains the **Live**, **Per-run**, and **Fixed** tabs.
+- **Log.** The bottom bar shows the latest message and the warning count. Select **Open log** to see more.
 
-| Experiment | Bounds shown |
-|---|---|
-| every one | the start; the floor (`floor.height_m`, for the flange at the start's orientation) and its safety trip line; the safety distance (`*_safety.max_displacement_m`) where it is on |
-| Apple Pluck | the pull threshold (`cartesian_displacement_threshold_m`): a sphere, or two planes for one axis. Perturb / perturb bump: the perturbed start. Random start: every start position |
-| Restricted Plane | the active fixture (`virtual_fixture_profile`): the sine rail, a locked plane, a box (`x_min`, `x_max`, `z_min`) or a cylinder; the pull threshold along its axis |
-| Maze | the rails (a corridor with width as a box), the forks (filled once passed this trial), the goal |
-| Free Move | the box, as `free_move.box.preset` sets it (a preset, or the custom x/y/z min and max from the start) |
-| Move Vertical / Horizontal | the rail and its end zones (`centre_out.end_tol_m`); the goal end filled green once lit (both for `either`), red once reached |
+Choose a subject in **Session history** to review their sessions. This leaves the monkey selected for the run unchanged. To reuse a setting for the selected monkey, select a value from a past session or choose **Use last session’s settings**.
 
-Start-relative bounds are placed where the arm was when the trial was armed, so they can sit a few mm
-off the experiment's own anchor. Details: `experiment_ctrl_gui/README.md`.
+### Live view
 
-### Diagnostics — hardware checks
-The **Diagnostics** button at the top right opens a separate page (`/diagnostics.html`) of hardware
-checks that **never move the arm**. Its first tab is **Visual cue**, for the end-effector NeoPixel ring.
-It talks to the ring's Metro board over the board's own Wi-Fi, so **join this computer to
-`KUKA_NEOPIXEL` first**.
+Expand **Arm** in the trial card to see the measured end-effector position, the last 8 seconds of movement, and the bounds of the current trial. Select **Open live view** for a larger view in a new tab. The front view is from the subject’s side, with Y to the right and Z up. In the top view, Y points right and X points down toward the subject. See the [live view reference](experiment_ctrl_gui/README.md#live-view) for the bounds shown for each task.
 
-- **Cue board** — *Check board*: is it reachable, and what does it report (enabled, brightness, colour,
-  pattern, whether a cue is running, how many wire cues it has fired, uptime). Start here.
-- **Path: Wi-Fi** — set what a cue looks like (colour, pattern, duration, brightness, enabled), apply
-  it, fire a cue, show a solid colour, turn it off, save the settings on the board, or reset them. The
-  **LED-by-LED test** lights each LED in turn and shows which one is lit, to find where a ring goes
-  dark. *If the ring lights from here, the board, the Pixel Shifter and the ring are fine.*
-- **Path: Wire** — the experiment trigger (X76 1–2 → tool pin 9 → Metro D2). Nothing on the computer
-  can close it yet, so **short X76 contacts 1 and 2 by hand** while *Start watching* shows the board's
-  D2 input live and logs every edge and every cue the wire fires. It flags a line that reads
-  "asserted" with nothing shorted (inverted polarity — untick *Active low*, no rewiring) and a board
-  that is not enabled. *If Wi-Fi works but the wire does not, the fault is in the trigger wiring.*
+### Diagnostics
 
-The second tab, **TTL sync**, fires the cabinet's sync outputs (the EL2124 TTL lines to the NSP) with
-the same commands the experiments send: run **PulseTestServer** on the SmartPad, give the cabinet's
-address, then *Check outputs* and fire an output (1–4, or *All*) with a width, a count and an interval;
-each pulse lights that output's LED on the EL2124. Pulses are refused while an experiment runs.
+Select **Diagnostics** to test the cue ring and TTL outputs without moving the arm.
 
-Both tabs work in `--demo` too, against a simulated board and cabinet. Details: `experiment_ctrl_gui/README.md`.
+- **Visual cue.** Choose Wi-Fi or serial, then select **Check board**. For Wi-Fi, join the `KUKA_NEOPIXEL` network. For serial, attach the StarTech adapter to WSL to reach the board through X76. Select **Trigger cue** to test the current cue settings or use **LED-by-LED test** to identify dark pixels.
+- **TTL sync.** Run **PulseTestServer** or **LbrImpedanceControlServer** on the SmartPad. Enter the cabinet address and select **Check outputs**. To send a test pulse, specify the output, pulse width, number of repetitions, and interval. Test pulses are disabled during experiments.
 
-### Post-processing — archive a session as NWB
-The **Post-processing** button at the top right opens `/postprocess.html`: it turns a session into one
-NWB file and uploads it to the server. Give it the robot run folder and the Blackrock NSP recording
-(a network-mounted path is fine; leave it empty for the robot data alone), fill in the subject and
-session, and press **Create NWB**. The robot data is put on the NSP's clock by matching the sync
-pulses (by default trial start on `ainp6`, trial end on `ainp7`; the experiment start pulse on `ainp8`
-is stored, not matched; all three channels are set on the page) to the run's trial events. When the file is
-written, the page asks for the server folder and uploads it, verifying the copy. It needs `pynwb` and
-`neo` (`pip install --user --break-system-packages pynwb neo "numpy<2"`). Details:
-[`experiment_ctrl_gui/README.md`](experiment_ctrl_gui/README.md#post-processing-page).
+Demo mode simulates both devices. See the [diagnostics reference](experiment_ctrl_gui/README.md#diagnostics-page) for the available commands and connection details.
+
+### Post-processing
+
+Select **Post-processing** to export a session to NWB. Select the robot run and, if available, the Blackrock NSP recording. Enter the subject and session information, then select **Create NWB**. When the file is ready, enter the mounted server folder and select **Upload**. The dashboard verifies the copy by checksum.
+
+With an NSP recording, export aligns the robot data to the NSP clock using the trial start and end pulses (`ainp6` and `ainp7` by default). The experiment start pulse (`ainp8` by default) is stored separately. Export requires `pynwb` and `neo`. See the [post-processing reference](experiment_ctrl_gui/README.md#post-processing-page) for installation and file details.
 
 ### Running an experiment
-1. **Pick the experiment:** Apple Pluck (with its paradigm tabs **Pluck normal** / **Pluck perturb** / **Pluck random start**
-   on the card), Restricted Plane or Maze; or, under
-   **Pre-training**, Free Move, Move Vertical or Move Horizontal ([§5](#pre-training--free-move-move-vertical-move-horizontal)).
+1. **Select a task.** The task menu groups experiments and [pre-training tasks](#pre-training--free-move-reach-map-restricted-move-cued-reaches). Use the tabs beside the task name to choose a mode or rail, if offered.
 2. **Prepare the SmartPad.** Start `LbrImpedanceControlServer` and make the selections listed under
    *Before you start*: FRI send period, remote IP, stiffness profile, damping, elbow stiffness (each
    question also offers **Cancel**). The app
@@ -190,9 +126,7 @@ written, the page asks for the server folder and uploads it, verifying the copy.
    parameters if you changed any. The status card then follows each trial, e.g.
    `start → at start → quiet → go cue → armed → threshold → park → end`. Before the first trial the
    arm makes one slow move to the [park pose](#park-pose--out-of-reach-between-trials), out of reach.
-5. **Change live settings** on the **Live** tab at any time. A change applies **from the next
-   trial**; the trial in progress is never changed. Until then the row shows a purple
-   `next trial → …` badge, and the log records when the change was accepted and when it was applied.
+5. **Change live settings** under **All settings → Live**. Most changes take effect at the next trial and show a purple `next trial` badge until then. Move speed changes take effect at the next move, which can occur within the current trial.
 6. **■ Stop** ends the trial in progress at once — no cue, no release wait — **parks the arm**,
    and only then Ctrl-Cs the launch, so FRI always closes with the arm out of reach. The cut-short
    trial is saved, marked `stop_requested`. While it parks the button reads **Parking… (press to
@@ -217,7 +151,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Tab | When it can change | What is in it |
 |---|---|---|
-| **Live** | Any time, **including while running**; applies from the next trial | cue switches, colours, tones and timing; NSP sync; move speeds; the pull threshold and hold; the perturbation; the start pose (apple pluck); the maze timeout ([full list](#live-parameters)) |
+| **Live** | Any time, **including while running**; normally applies from the next trial | cue switches, colours, tones and timing; NSP sync; move speeds; the pull threshold and hold; the perturbation; the start pose (apple pluck); the maze timeout ([full list](#live-parameters)) |
 | **Per-run** | Before **Start**, then **locked for the run** | everything else in the experiment YAML: the start pose in restricted plane / maze, rails, checkpoints and goal, move tolerances, safety limits, the fixture profile, the displacement axis, frames, debug logging |
 | **Fixed** | Not from the dashboard: at the SmartPad or in the file named | what every experiment shares: SmartPad (FRI) selections, launch arguments, `iiwa7_hardware_controllers.yaml`, the CLIK redundancy posture |
 
@@ -225,7 +159,7 @@ from the page; stop it with Ctrl-C in its own terminal.
   recorded trial's sidecar keeps the full parameter set it ran with, live changes included.
 - **Poses** are 7 joint angles in degrees. They are checked against the iiwa7 joint limits, and a
   nearly straight (singular) arm is refused — by the dashboard and again by the orchestrator.
-  - **Start and park must bend the elbow the same way** (A4 on the same side); an edit that flips one
+  - **The elbow must bend in the same direction at start and park** (A4 on the same side); an edit that flips one
     is refused — see [Park pose](#park-pose--out-of-reach-between-trials).
   - **Apple Pluck:** the start pose is live. The next trial moves to it from park.
   - **The park pose is live everywhere.** Like every live change it applies as the next trial
@@ -235,7 +169,7 @@ from the page; stop it with Ctrl-C in its own terminal.
     automatically.
   - **Maze:** a new start moves the whole maze with it. Run `check_maze.py` on the edited copy
     before trusting it.
-  - **Start height:** under the start pose (Per-run), *Set by height* takes a height above the
+  - **Start height:** under the start pose (Per-run), enter a height above the
     ground for [the floor's](#the-floor--a-height-the-end-effector-never-goes-below) reference point
     (apple bottom or base edge) and solves the start pose that puts it there: straight up or down
     from the current start, same orientation. It refuses heights below the floor, out of reach, near
@@ -263,7 +197,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site |
 | `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 500) |
 | `reward_pulse.enabled`, `reward_pulse.output`, `reward_pulse.pulse_ms` | the [reward pulse](#reward-pulse) on a successful trial — on/off (default on), the EL2124 output cabled to the reward box (1–4, default 4, different from the `nsp_sync` outputs), and how long the valve stays open (10–5000 ms, default 500) |
-| `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *applies now*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
+| `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *next move*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
 **Plus, per experiment** (`…displacement` = `apple_pluck_impedance_control_displacement`):
 
@@ -372,7 +306,7 @@ None of these are committed to git.
 - **Stop takes a while.** The nodes shut down in order. After 20 s the dashboard escalates, and the
   log says so.
 - **The cue ring does not light.** Open **Diagnostics → Visual cue**: *Check board*, then *Fire cue* over
-  Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics--hardware-checks).
+  Wi-Fi. That separates the board and ring from the wiring; see [Diagnostics](#diagnostics).
 - **The serial cue link stopped answering after WSL restarted or crashed** (log: `serial port …
   cannot be opened`, or Diagnostics → Visual cue, path Serial, *Check board* fails). The adapter left WSL with it.
   Restart the dashboard (`run_gui.sh` attaches it again). If that fails, in PowerShell:
@@ -1593,7 +1527,7 @@ four cards under the **Pre-training** tab:
 | Card | Tabs | Experiments (each its own YAML and launch file) |
 |---|---|---|
 | **Free Move** | Session · Long moves | `free_move` |
-| **Reach Map** | Long moves · New best | `reach_map`: maps how far the monkey reaches in each direction and sets his profile's reach ([below](#reach-map--how-far-this-monkey-reaches)) |
+| **Reach Map** | Long moves · New best | `reach_map`: measures reach by direction for the monkey’s profile ([below](#reach-map--how-far-this-monkey-reaches)) |
 | **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
 | **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Cued end · Left / Down only · Right / Up only | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
 

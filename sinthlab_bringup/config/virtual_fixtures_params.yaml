@@ -6,9 +6,9 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.88  # the floor, height above the ground [m]
-      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
-      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+      height_m: 0.88  # Floor height above ground [m]
+      reference: apple_bottom  # Point kept above the floor (apple_bottom or base_edge, the lowest edge of the Ø188 base)
+      trip_margin_m: 0.03  # Distance below the floor that triggers a trial abort and park [m]
 
     # ---- THE QUIET WINDOW IS GUARDED (live) ----
     # Moving or pushing the apple during the quiet window (before the go cue) ends the trial with no
@@ -16,11 +16,11 @@
     # "wait for the go cue". Compared with the window's first 0.2 s, so resting sag and force don't
     # count. An untouched arm still settles by up to 16 mm (Uniform 100) and its force reading wanders
     # by up to 3 N; an early pull moved it 74 mm with 31 N. See actions/quiet_gate.py.
-    quiet_gate:  # breaking off a trial when the apple is touched before the go cue
-      enabled: true  # false = the quiet window is a plain timed wait
-      move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
-      force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+    quiet_gate:  # Early-touch detection before the go cue
+      enabled: true  # End the trial if an early touch crosses the movement or force threshold
+      move_m: 0.03  # Displacement that ends the trial during the quiet window [m]
+      force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
+      penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
     # Restricted-plane runs in POSITION mode: move_to_start/move_to_park use MoveToPositionJointSpace, and
     # MoveRestrictedOnAPlaneAction streams the fixture-constrained equilibrium to kuka_clik_controller.
@@ -32,33 +32,33 @@
     end_effector_link: "lbr_link_ee"  # URDF end-effector link the fixture constrains
 
     move_to_start:  # joint-space move to the trial start pose
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       # Tool points down -Z. (Apple pluck and perturb start with the apple pointing at the monkey
       # instead -- see apple_pluck_impedance.yaml.)
       target_joint_position: [0.0, -4.16, 0.15, -49.23, 3.88, 41.27, 0.0]  # start pose, joint angles A1..A7 [deg]: EE (0.38, 0.01, 1.03) m, tool along +X; the maze's end-effector pose, elbow A4 < 0
       cartesian_move_tolerance: 0.03   # EE position tolerance [m] to consider the move arrived
-      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
+      joint_move_tolerance: 0.01  # Maximum joint error at the target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
-      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+      speed_scale: 0.7  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      wait_for_physical_arrival: false  # Wait for the measured arm position to reach the target
+      physical_arrival_timeout_sec: 0.0  # Wait this long for the measured arm position to reach the target [s]. Use 0 for no timeout.
 
     audio_cue_play:  # trial-start (go) tone
       frequency_hz: 1500  # trial-start (go) tone: pitch [Hz]
       duration_ms: 1500  # trial-start (go) tone: length [ms]
     apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> park
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       cartesian_axis: z  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
       cartesian_displacement_threshold_m: 0.12  # pull from the baseline that counts as success (snap) [m]; the floor is 14 cm below the start
       force_release_shutdown_delay_sec: 0.8  # after the snap, hold the arm frozen this long, then park [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
     # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
     # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
@@ -67,20 +67,20 @@
     # the same place with the elbow the other way. Start and park must bend the elbow the same way, or
     # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
     move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
-      cartesian_move_tolerance: 0.03  # apple within this of the park pose counts as arrived [m]
-      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      cartesian_move_tolerance: 0.03  # Maximum distance from the park target at arrival [m]
+      joint_move_tolerance: 0.15  # Maximum joint error at the target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
       first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run); this family never crosses the straight elbow, so no need to crawl
-      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
+      hold_sec: 2.0  # Time at park before moving to the next trial’s start [s]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      physical_arrival_timeout_sec: 10.0  # Wait this long for the measured arm position to reach the target before issuing a warning [s]
     audio_cue_snap:  # threshold-reached tone
       frequency_hz: 2000  # threshold-reached tone: pitch [Hz]
       duration_ms: 500  # threshold-reached tone: length [ms]
@@ -91,22 +91,22 @@
     # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
     quiet_window_sec: 2.0      # at the start pose, before the go cue [s]
     response_timeout_sec: 30.0  # no pull past the threshold within this long after armed -> the trial ends (event response_timeout), no reward, park [s]
-    audio_cue:  # switch for every beep
-      enabled: true            # false = no beeps at all; the trial sequence is unchanged
+    audio_cue:  # Enable audio cues
+      enabled: true            # Enable audio cues
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
       enabled: true           # send a pulse at Start (experiment start) and at every trial start and trial end
-      cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
+      cabinet_ip: "172.31.1.147"  # Cabinet address for pulse commands (UDP port 30002)
       trial_start_output: 1    # EL2124 output (1-4, front jack SYNC 1-4) pulsed at trial start
       trial_end_output: 2      # EL2124 output (1-4) pulsed at trial end
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
-      pulse_width_ms: 500       # how long each pulse stays high [ms], 10-5000
+      pulse_width_ms: 500       # Time each pulse stays high [ms], from 10 to 5000
 
-    reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
+    reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
       enabled: true  # send the reward pulse at the snap; failures (timeout, early touch, safety trip, Stop) get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
-      pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
-      count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
-      gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
+      pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
+      count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
+      gap_ms: 300  # Time the valve stays closed between pulses [ms], from 100 to 5000
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
@@ -141,15 +141,15 @@
     #   speed_trip_samples: speed is a single-sample TF difference and therefore noisy; require this many
     #     CONSECUTIVE over-threshold samples (5 = 50 ms at 100 Hz) so jitter cannot trip the abort.
     plane_safety:  # runaway stop: abort to park if the arm goes too far or too fast
-      update_rate: 100  # loop rate of this action [Hz]
+      update_rate: 100  # Action loop rate [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       max_displacement_m: 0.3  # abort if the EE gets farther than this from the trial start [m]
       max_speed_mps: 1.8  # abort if the EE moves faster than this [m/s]
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
-      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      state_timeout_sec: 0.5  # Stop if no robot state arrives within this time [s]. Normally lbr_state arrives every 10 ms. Use 0 to disable.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
     # Selects which fixture geometry below is active; switch this to change the constraint.
     virtual_fixture_profile: "sine_wave"  # which block under virtual_fixtures is active

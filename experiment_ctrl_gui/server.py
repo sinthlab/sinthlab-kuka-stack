@@ -235,8 +235,7 @@ class App:
         if body.get("reach_map_run"):     # the reach from a Reach Map run: keep a record of the map with it
             data = self.reach_map(key or "reach_map", str(body["reach_map_run"]))
             if data.get("run_subject") != self.subject:
-                raise ValueError(f"This map is {data.get('run_subject') or 'an unlabelled'} recording, not {self.subject}'s: "
-                                 f"choose {data.get('run_subject') or 'its monkey'} to save it (or run a Reach Map for {self.subject})")
+                raise ValueError("Select the subject recorded in this Reach Map before saving it to a profile.")
             reach_map = {**reach_view.record(data), "saved": time.strftime("%Y-%m-%d %H:%M")}
         prof = profiles.save(self.subject, values, by,
                              {key: task_only} if task_only else None, str(body.get("note") or ""), reach_map)
@@ -670,7 +669,7 @@ def make_handler(app: App):
             if path == "/api/live":
                 exp = app.running_experiment()
                 if exp is None:
-                    raise RuntimeError("no experiment is running -- edit it under Per-run instead")
+                    raise RuntimeError("No experiment is running. Set values for the next run under All settings.")
                 p = app.params[exp.key]
                 name = body["name"]
                 if name not in p.defaults:
@@ -702,7 +701,7 @@ def make_handler(app: App):
                 key = path.rsplit("/", 1)[1]     # solve the start pose for a height, as a per-run edit
                 p = app.params[key]
                 if app.runner.running() and app.runner.experiment == key:
-                    raise RuntimeError("the start pose is locked while this experiment runs -- stop it first")
+                    raise RuntimeError("Stop the experiment before editing the start pose.")
                 q, report = kinematics.start_for_height(float(body["height_m"]), p.current())
                 value = p.set_edit(ex.START_POSE, q)
                 app.runner.emit(f"Start height {float(body['height_m']):.3f} m -> {ex.START_POSE} = {value}: "
@@ -738,7 +737,7 @@ def make_handler(app: App):
             if path == "/api/validate":
                 folder = app.data_folder()
                 if not folder:
-                    raise RuntimeError("no recording folder from this run yet")
+                    raise RuntimeError("This run has no recording folder yet.")
                 threading.Thread(target=_validate, args=(app, folder), daemon=True).start()
                 return {"ok": True}
             raise KeyError(f"unknown endpoint {path}")
