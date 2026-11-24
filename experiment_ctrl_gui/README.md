@@ -190,7 +190,13 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
   monitor or Today vs recent; the SmartPad checklist folded to one line before a run). Right column: the
   settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
   settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
-  **All settings** (the Live / Per-run / Fixed tabs, unchanged). The log is a one-line strip at the bottom
+  **All settings** (the Live / Per-run / Fixed tabs, unchanged). Every experiment has a Task view (Navin's
+  three too: the pull, the perturbation, the fixture); the Monkey view is for the free-move tasks only.
+- **One experiment at a time:** while a run goes the task picker is locked to it (its live tabs still switch).
+  *Today vs recent* can look up any subject's sessions without changing the monkey being run. Changing the
+  monkey with edits made today lists them and asks to keep or clear them (or not to change).
+- **Reach Map saves only to its own monkey:** the map shows whose recording it is, and the server refuses a
+  save to anyone else. The log is a one-line strip at the bottom
   (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is the trial card's *Arm*
   section, shown while a run goes, open unless folded with its heading (remembered per browser); *pop out ↗*
   opens it on its own page (`/live.html`).

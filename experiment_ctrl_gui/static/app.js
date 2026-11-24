@@ -85,7 +85,9 @@ const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_puls
 const REWARD_STEP_MS = 10;
 // Task view group headings.
 const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Colour rule", n_choice: "Choices", long_move: "Movements",
-                      reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward" };
+                      reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
+                      apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
+                      grasp: "Grasp", virtual_fixtures: "Fixture" };
 // mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
 // interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
 function rewardVolume(ms, count = 1, gap = 0) {
@@ -248,7 +250,7 @@ function renderExperiments() {
   const box = $("#task-picker"), rk = runningKey(), sel = exp(S.selected);
   const selCard = sel ? (sel.card || sel.key) : null;
   const cards = S.groups.map((g) => ({ g, cs: cardsOf(g.key) }));
-  box.innerHTML = `<select id="task-select" aria-label="Task">` + cards.map(({ g, cs }) =>
+  box.innerHTML = `<select id="task-select" aria-label="Task"${rk ? ` disabled title="Stop ${esc(expLabel(rk))} to change the task"` : ""}>` + cards.map(({ g, cs }) =>
     `<optgroup label="${esc(g.label)}">` + cs.map((c) => `<option value="${esc(c.key)}"${c.key === selCard ? " selected" : ""}>` +
       `${esc(c.label)}${c.members.some((m) => m.key === rk) ? " ● running" : ""}</option>`).join("") + `</optgroup>`).join("") + `</select>`;
   $("#task-select").onchange = (ev) => {
@@ -310,6 +312,8 @@ function renderParadigmTabs(e, box, rk) {
   box.appendChild(row);
 }
 async function select(key) {
+  const rk = runningKey();
+  if (rk && key !== rk) { toast(`Stop ${expLabel(rk)} first: the page stays on the running task`, "err"); key = rk; }
   S.selected = key; store.set("exp", key);
   if (exp(key)?.card) store.set(`variant.${exp(key).card}`, key);   // the card reopens on this rail
   if (!runningKey()) { SV.data = SV.hist = null; setTimeout(() => refreshSession(true), 0); }
@@ -553,8 +557,9 @@ function renderParams(force = false) {
   const data = S.params[S.selected]; if (!data) return;
   const mode = paramMode(), s = statusLive();
   const liveVals = mode === "running" && s ? s.live : null, pending = mode === "running" && s ? s.pending : null;
-  const layered = data.params.some((p) => p.layer !== "other");      // Navin's experiments: All settings only
-  const view = layered ? S.pview : "all";
+  const layered = data.params.some((p) => p.layer !== "other");      // has a Task view
+  const profiled = data.params.some((p) => p.layer === "profile");   // the monkey's profile applies (not Navin's tasks)
+  const view = !layered ? "all" : S.pview === "monkey" && !profiled ? "task" : S.pview;
   const sig = JSON.stringify([S.selected, S.tab, view, S.profSig, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
   if (!force && sig === S.renderSig) return;
   if (!force && $("#params").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON") {
@@ -567,16 +572,17 @@ function renderParams(force = false) {
   const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
   const counts = { live: 0, run: 0, task: 0, profile: 0 };
-  const isReward = (p) => layered && REWARD_ROWS.includes(p.name);
+  const isReward = (p) => layered && REWARD_ROWS.includes(p.name);   // the pulses (and gap) on every Task view
   shown.forEach((p) => { counts[p.tier]++; if (p.layer !== "other") counts[p.layer]++; if (isReward(p)) counts.task++; });
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
-  $("#n-task").textContent = layered ? counts.task : ""; $("#n-monkey").textContent = layered ? counts.profile : "";
+  $("#n-task").textContent = layered ? counts.task : ""; $("#n-monkey").textContent = profiled ? counts.profile : "";
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
   document.querySelectorAll(".tab[data-pview]").forEach((t) => {
     const on = t.dataset.pview === view;
     t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
-    t.disabled = !layered && t.dataset.pview !== "all";
-    t.title = t.disabled ? "This experiment keeps all its settings in its own YAML: see All settings" : "";
+    t.disabled = (!layered && t.dataset.pview !== "all") || (!profiled && t.dataset.pview === "monkey");
+    t.title = t.disabled ? (t.dataset.pview === "monkey" ? "The monkey's profile applies to the free-move tasks only: this one keeps its own settings"
+                                                          : "See All settings") : "";
   });
   $("#all-tabs").classList.toggle("hidden", view !== "all");
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
@@ -618,12 +624,14 @@ function renderParams(force = false) {
       }
     }
     const byGroup = new Map();
-    for (const p of rows.filter((x) => !(view === "task" && isReward(x)))) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
+    // The Task view groups by plain heading, so blocks that share one (two "Pull" blocks) show as one.
+    const gkey = (p) => (view === "task" ? GROUP_LABEL[p.group] || p.group : p.group);
+    for (const p of rows.filter((x) => !(view === "task" && isReward(x)))) { const k = gkey(p); if (!byGroup.has(k)) byGroup.set(k, []); byGroup.get(k).push(p); }
     for (const [g, ps] of byGroup) {
       const box = document.createElement("div"); box.className = "group";
       const gt = groupTip(g, groups[g]);
       const gdesc = groups[g] && groups[g].help;
-      box.innerHTML = view === "task" ? `<h3 class="section">${esc(GROUP_LABEL[g] || g)}</h3>`
+      box.innerHTML = view === "task" ? `<h3 class="section">${esc(g)}</h3>`
         : `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
       for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
       root.appendChild(box);
@@ -733,7 +741,7 @@ function renderRewardBar() {
   const ms = Number(val("reward_pulse.pulse_ms")), n = Number(val("reward_pulse.count") ?? 1), gap = val("reward_pulse.gap_ms");
   const nx = next("reward_pulse.pulse_ms"), vol = rewardVolume(ms, n, gap);
   const fmt = (m, k) => (k > 1 ? `${k} × ${m} ms` : `${m} ms`);
-  const prof = (S.prof && S.prof.profile) || null, who = curSubject(), layered = d.params.some((x) => x.layer !== "other");
+  const prof = (S.prof && S.prof.profile) || null, who = curSubject(), layered = d.params.some((x) => x.layer === "profile");
   const own = prof && (prof.reward_by_task || {})[S.selected];
   const pv = prof && layered ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
   const off = pv && (Number(pv.ms) !== Number(nx ?? ms) || Number(pv.n) !== n);
@@ -875,14 +883,39 @@ function renderMonkey() {
   }
   $("#btn-profile").disabled = !cur || cur === "test";
 }
+// Changing the monkey with edits made today: say which, and keep or clear them (or don't change).
+function editsSummary() {
+  const names = (S.app && S.app.edited_names) || {};
+  return Object.entries(names).map(([k, ns]) => `${exp(k)?.label || k}: ${ns.join(", ")}`);
+}
+function askAboutEdits(subject) {
+  const lines = editsSummary();
+  if (!lines.length) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const dlg = $("#switch-dlg");
+    $("#switch-dlg-subject").textContent = subject;
+    $("#switch-dlg-list").innerHTML = lines.map((l) => `<li>${esc(l)}</li>`).join("");
+    dlg.onclose = () => resolve(dlg.returnValue === "clear" ? true : dlg.returnValue === "keep" ? false : null);
+    dlg.returnValue = ""; dlg.showModal();
+  });
+}
 async function selectSubject(subject) {
   if (subject === "__new") {
     const id = (prompt("New monkey's ID (letters, digits, _ and -):") || "").trim();
     if (!id) { renderMonkey(); return; }
-    const r = await act(() => api("/api/subject", { subject: id }));
+    const clear = await askAboutEdits(id);
+    if (clear === null) { renderMonkey(); return; }
+    const r = await act(() => api("/api/subject", { subject: id, clear_edits: clear }));
     if (r && !r.profile) await act(() => api("/api/profile/save", { values: {}, note: "created" }), `${id}'s profile created from the defaults`);
     store.set("subject", id);
     return;
+  }
+  if (subject && subject !== curSubject()) {
+    const clear = await askAboutEdits(subject);
+    if (clear === null) { renderMonkey(); return false; }           // not changed
+    const r = await act(() => api("/api/subject", { subject, clear_edits: clear }), `Monkey: ${subject}${clear ? " (today's edits cleared)" : ""}`);
+    if (r) { store.set("subject", subject); SV.histSubject = null; } else renderMonkey();
+    return !!r;
   }
   const r = await act(() => api("/api/subject", { subject }), subject ? `Monkey: ${subject}` : "");
   if (r) store.set("subject", subject); else renderMonkey();
@@ -1157,7 +1190,7 @@ async function refreshSession(force = false) {
     if (rk && !(SV.view === "monitor" && key !== "reach_map")) SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(rk)}`);
     if (SV.view === "monitor" && key === "reach_map") SV.map = await api("/api/reach_map");
     else if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
-    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(curSubject() || store.get("subject", ""))}`);
+    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(histSubject())}`);
   } catch (e) { /* shown as empty */ }
   finally { SV.busy = false; }
   SV.juice = runningKey() && SV.data ? juiceOf(SV.data) : null;
@@ -1222,12 +1255,18 @@ function reachSvg(d) {
 }
 function renderReachMap() {
   const box = $("#session-view"), d = SV.map;
-  $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
+  $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}${d.run_subject ? ` · ${d.run_subject}` : ""}` : "";
+  if (d && d.running && (!d.run || !d.n_movements)) {
+    box.innerHTML = `<p class="empty">Mapping ${esc(d.run_subject || d.subject || "")}: waiting for the first movements. The map fills in as he moves the arm.</p>`;
+    return;
+  }
   if (!d || !d.run) { box.innerHTML = `<p class="empty">No Reach Map run yet. Start one: the map fills in as he moves the arm.</p>`; return; }
   const enough = d.rows.filter((r) => r.comfortable_m != null).length;
-  const tiles = [["Movements", d.n_movements], ["Mapped", `${d.minutes} <small>min</small>`],
+  const tiles = [["Monkey", esc(d.run_subject || "?")], ["Movements", d.n_movements], ["Mapped", `${d.minutes} <small>min</small>`],
                  ["Directions", `${enough}/${d.sectors} <small>with ≥5 movements</small>`]];
-  const who = d.subject, canSave = who && who !== "test";
+  const who = d.subject, mine = !!d.run_subject && d.run_subject === who, canSave = who && who !== "test" && mine;
+  const saveWhy = !who || who === "test" ? "Choose the monkey to save" : !d.run_subject ? "This recording has no subject: it cannot be saved"
+    : !mine ? `This is ${d.run_subject}'s map: choose ${d.run_subject} to save it` : "";
   const rows = REACH_DIRS.map(([k, label, where], i) => {
     const p = d.proposal[k], now = d.profile_reach ? d.profile_reach[k] : null;
     const usable = p.value != null;
@@ -1242,7 +1281,7 @@ function renderReachMap() {
       <span class="lg far"></span>farthest <span class="lg reach"></span>a movement's farthest point
       <span class="lg prop"></span>this map's values <span class="lg cur"></span>${esc(who || "the profile")}'s now</div>
     <table class="save-rows rm-table"><tr><th></th><th>Reach</th><th>${esc(who || "Profile")} now</th><th>This map</th><th></th></tr>${rows}</table>
-    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save ticked to ${esc(who)}'s reach` : "Choose the monkey to save"}</button>
+    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save ticked to ${esc(who)}'s reach` : esc(saveWhy)}</button>
       <span class="muted small">The horizontal rail is ${(d.horizontal_dz * 100).toFixed(1)} cm above this map's start (${esc(d.horizontal_dz_how)}).</span></div>
     <details class="rm-sectors"><summary class="small">Every direction</summary><table class="save-rows"><tr><th>Direction</th><th>Movements</th><th>Comfortable</th><th>Farthest</th><th>Box</th></tr>
       ${d.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td class="v">${cm(r.comfortable_m)}${r.arm_limited ? " ⚠" : ""}</td><td class="v">${cm(r.farthest_m)}</td><td class="v">${cm(r.wall_m)}</td></tr>`).join("")}</table></details>`;
@@ -1359,16 +1398,21 @@ function parseVal(t) {
   try { return JSON.parse(x); } catch { return x; }
 }
 
+// Today vs recent looks up any subject's sessions without changing the monkey being run.
+function histSubject() { return SV.histSubject || curSubject() || store.get("subject", ""); }
 function renderHistory() {
   const box = $("#session-view"), h = SV.hist;
   const key = sessionKey(), label = exp(key)?.label || key;
-  const subject = curSubject() || store.get("subject", "");
-  const running = !!runningKey();
+  const subject = histSubject(), other = !!curSubject() && subject !== curSubject();
+  const running = !!runningKey(), sessions = (h && h.sessions) || [];
   $("#session-sub").textContent = h ? `${label}${subject ? ` · ${subject}` : ""}` : "";
-  const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Subject</label>
-    <input id="hist-subject" list="hist-subjects" value="${esc(subject)}" size="10" spellcheck="false">
+  const sameWhy = running ? "Stop the run to change per-run settings" : !sessions.length ? "No earlier session to copy"
+    : other ? `These are ${subject}'s sessions: choose ${subject} as the monkey to copy them` : "";
+  const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Sessions of</label>
+    <input id="hist-subject" list="hist-subjects" value="${esc(subject)}" size="10" spellcheck="false" title="Look up another subject's sessions (the monkey being run does not change)">
     <datalist id="hist-subjects">${((h && h.subjects) || []).map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist>
-    <button class="btn small" id="hist-same" ${running ? "disabled title=\"Stop the run to change per-run settings\"" : ""}>Same as last session</button></div>`;
+    ${other ? `<button class="btn small" id="hist-back">Back to ${esc(curSubject())}</button>` : ""}
+    <button class="btn small" id="hist-same" ${sameWhy ? `disabled title="${esc(sameWhy)}"` : ""}>Same as last session</button></div>`;
   if (!h) { box.innerHTML = tools + `<p class="empty">Loading…</p>`; wireHistory(); return; }
   const sess = h.sessions || [];
   if (!sess.length) {
@@ -1384,7 +1428,7 @@ function renderHistory() {
     const prev = st.history[st.history.length - 1];
     const changed = prev !== "" && prev != null && normVal(prev) !== normVal(st.today);
     const cells = st.history.map((v, j) => `<td class="v">${v === "" ? "–" :
-      running ? esc(v) : `<button class="use" data-i="${i}" data-j="${j}" title="Use ${esc(v)} today">${esc(v)}</button>`}</td>`).join("");
+      running || other ? esc(v) : `<button class="use" data-i="${i}" data-j="${j}" title="Use ${esc(v)} today">${esc(v)}</button>`}</td>`).join("");
     const today = Array.isArray(st.today) ? JSON.stringify(st.today) : String(st.today);
     return `<tr class="${changed ? "changed" : ""}"><td title="${esc(st.help || "")}">${esc(st.name)}</td>${cells}` +
       `<td class="v today">${esc(today)}${changed ? " ●" : ""}</td></tr>`;
@@ -1407,7 +1451,9 @@ function renderHistory() {
 
 function wireHistory() {
   const inp = $("#hist-subject");
-  if (inp) inp.onchange = () => selectSubject(inp.value.trim());     // the same monkey everywhere on the page
+  if (inp) inp.onchange = () => { SV.histSubject = inp.value.trim() || null; refreshSession(true); };   // look up only
+  const back = $("#hist-back");
+  if (back) back.onclick = () => { SV.histSubject = null; refreshSession(true); };
   const h = SV.hist;
   const apply = async (pairs) => {
     for (const [name, val] of pairs) await act(() => api(`/api/params/${sessionKey()}`, { name, value: parseVal(val) }));
@@ -1452,6 +1498,10 @@ $("#start-form").onsubmit = async (ev) => {
   const subject = $("#start-subject").value.trim();
   if (!$("#start-subject").checkValidity()) return $("#start-subject").reportValidity();
   $("#start-dlg").close();
+  if (subject !== curSubject()) {           // another monkey: load it (and its profile) first, for a look before Start
+    if (await selectSubject(subject)) toast(`Monkey set to ${subject}: check the settings, then press Start again`, "ok");
+    return;
+  }
   store.set("subject", subject);
   await act(() => api("/api/start", { experiment: S.selected, subject }), `Starting (subject ${subject})`);
 };

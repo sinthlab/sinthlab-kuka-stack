@@ -206,6 +206,21 @@
   </form>
 </dialog>
 
+<!-- Changing the monkey with edits made today: keep them, clear them, or don't change. -->
+<dialog id="switch-dlg" class="start-dlg wide-dlg" aria-labelledby="switch-dlg-title">
+  <form method="dialog">
+    <h3 id="switch-dlg-title">Change the monkey to <span id="switch-dlg-subject"></span>?</h3>
+    <p class="muted small">These settings were changed today for the next Start. They were made for the monkey before:</p>
+    <ul class="small" id="switch-dlg-list"></ul>
+    <p class="muted small">Clear them to start from the new monkey's profile and the task defaults.</p>
+    <div class="controls three">
+      <button value="cancel" class="btn">Don't change</button>
+      <button value="keep" class="btn">Keep the edits</button>
+      <button value="clear" class="btn primary">Clear the edits</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="tip" class="tip" role="tooltip"></div>
 <script src="live_view.js"></script>

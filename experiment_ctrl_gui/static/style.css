@@ -538,3 +538,5 @@ details.card > summary { cursor: pointer; list-style: revert; }
 .live-in .live-canvas { height: min(32vh, 300px); }
 .live-in .live-status { font-size: 12.5px; margin: 6px 0 2px; }
 .live-in .live-legend { margin: 0; }
+.start-dlg .controls.three { grid-template-columns: 1fr 1fr 1fr; }
+.start-dlg .controls.three .btn.primary { font-size: 14px; padding: 6px; }

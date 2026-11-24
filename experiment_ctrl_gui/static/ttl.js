@@ -101,7 +101,8 @@ function showTab(name) {
 
 document.querySelectorAll(".diag-tabs .tab").forEach((t) => (t.onclick = () => {
   showTab(t.dataset.tab);
-  if (t.dataset.tab !== "visual") stopWatch();
+  // diag.js has no stopWatch (an earlier name): its LED-test poll ends by itself, so only call it if it exists.
+  if (t.dataset.tab !== "visual" && typeof stopWatch === "function") stopWatch();
 }));
 try { const a = localStorage.getItem(ADDR_KEY); if (a) $("#ttl-addr").value = a; } catch (e) { /* storage blocked */ }
 $("#btn-ttl-check").onclick = ttlCheck;
