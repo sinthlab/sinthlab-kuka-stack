@@ -53,14 +53,14 @@
     session_sec: 0.0  # Session length [s]. Use 0 to run until Stop. With a timed session, the next session starts automatically.
 
     # CENTRE-OUT (actions/centre_out.py): ONE REACH PER TRIAL. The centre is the start, the goals are the
-    # rail's two ends. At the go cue the ring lights the goal; the first end the arm reaches ends the
+    # rail's two ends. At the go cue the ring lights (the whole ring for either end, the goal's quarter otherwise); the first end the arm reaches ends the
     # trial -- a goal end gives the reward (event `reach`), the other end none (`reach_wrong`) -- then the
     # release wait and park, as any trial. No reach within response_timeout_sec ends it too (no reward).
     # With it on, session_sec does not apply.
     centre_out:  # one rewarded reach per trial, from the centre to an end of the rail
       enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
       # One-direction work-up, switchable mid-session (the card's tabs): down only -> up only -> cued -> either.
-      target: "either"  # either = both ends are goals and both light | cued = one end drawn at random per trial, only it lights and only it is rewarded | down / up = that end on every trial (down / up only)
+      target: "either"  # either = both ends are goals, the whole ring lights (no direction cued) | cued = one end drawn at random per trial, only its quarter lights and only it is rewarded | down / up = that end on every trial (down / up only), its quarter lit
       block_other_end: true  # a trial with one goal end (cued, down, up) closes the other half of the rail, so the arm only moves toward the goal; false = the whole rail is open and the other end is reach_wrong
       max_repeats: 3  # cued: at most this many trials in a row to the same end (0 = no cap)
       end_tol_m: 0.02  # this close to an end counts as reaching it [m]

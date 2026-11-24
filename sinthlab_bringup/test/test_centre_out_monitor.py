@@ -137,17 +137,22 @@ def test_unblocked_wrong_end_is_not_rewarded():
 def test_either_keeps_the_whole_rail_and_rewards_both():
     node, arm, mon = horizontal(target="either")
     assert mon.pick_target() == "either"
-    assert sorted(mon.quarters()) == [1, 3]
+    assert mon.quarters() == [0, 1, 2, 3]          # the whole ring: no direction cued
     assert mon.open_span() is None
     assert run_to(node, arm, mon, 0.15) == ("right", True)
 
 
-def test_the_reached_end_has_its_own_quarter():
-    """The red 'reached' ring lights the end the arm reached, not every goal quarter (either: both)."""
+def test_either_turns_the_whole_ring_red_and_one_end_modes_their_quarter():
     node, arm, mon = horizontal(target="either")
     mon.pick_target()
-    assert mon.quarter_of("left") == 3 and mon.quarter_of("right") == 1
-    assert mon.quarter_of("up") is None
+    assert mon.reached_quarters("left") == [0, 1, 2, 3] == mon.reached_quarters("right")
+    node, arm, mon = horizontal(target="cued")
+    goal = mon.pick_target()
+    assert mon.quarters() == [mon.quarter_of(goal)]
+    assert mon.reached_quarters("left") == [3] and mon.reached_quarters("right") == [1]
+    node, arm, mon = horizontal(target="right")
+    mon.pick_target()
+    assert mon.quarters() == [1] and mon.reached_quarters("right") == [1]
 
 
 def test_no_outcome_short_of_an_end():

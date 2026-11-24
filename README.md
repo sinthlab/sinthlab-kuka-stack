@@ -1803,9 +1803,11 @@ from its limit.
 In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
 two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
 
-1. **Cue preview.** Before the go tone the ring lights the goal: both end quarters (`target: either`), one
-   end drawn at random (`target: cued`), or the same end every trial (`target: left` / `right` on Move
-   Horizontal, `down` / `up` on Move Vertical). With `block_other_end` (the default), a trial with one
+1. **Cue preview.** Before the go tone the ring lights green: the **whole ring** for `target: either`
+   (both ends pay, so no direction is cued), or **one end's quarter** -- drawn at random (`target: cued`)
+   or the same end every trial (`target: left` / `right` on Move Horizontal, `down` / `up` on Move
+   Vertical, the step before cued). At the end of a reach the same quarter (either: the whole ring)
+   turns red. With `block_other_end` (the default), a trial with one
    goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
    each trial allows one direction.
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
@@ -1825,7 +1827,7 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 | Parameter | Default | Meaning |
 |---|---|---|
 | `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
-| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded · `left` / `right` (Move Horizontal), `down` / `up` (Move Vertical): that end on every trial |
+| `centre_out.target` | `either` | `either`: both ends are goals and the whole ring lights · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded · `left` / `right` (Move Horizontal), `down` / `up` (Move Vertical): that end on every trial |
 | `centre_out.block_other_end` | `true` | a trial with one goal end (`cued` or one end only) closes the other half of the rail, so the arm can only move toward the goal; `false`: the whole rail is open and the other end is `reach_wrong` |
 | `centre_out.max_repeats` | `3` | `cued`: at most this many trials in a row to the same end (0 = no cap); switching mode restarts the count |
 | `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |

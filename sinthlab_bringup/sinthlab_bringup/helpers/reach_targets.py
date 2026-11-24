@@ -4,7 +4,7 @@ A rail has two ends, named by where they are (actions/centre_out.END_NAMES): ("d
 Vertical's rail, ("left", "right") on Move Horizontal's, ("min", "max") otherwise; the first is the
 rail_min_m end. centre_out.target picks the trial's goal:
 
-    either   both ends are goals                                   (a free choice, both lit)
+    either   both ends are goals                                   (a free choice: the whole ring lit)
     cued     one end per trial, drawn at random, never more than   (interleaved one-direction trials)
              max_repeats of the same end in a row
     <end>    that end on every trial: left / right, down / up      (one-direction trials, one side only)

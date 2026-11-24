@@ -2,19 +2,23 @@
 """Centre-out reach on a rail -- the rewarded version of Move Vertical / Move Horizontal.
 
 ONE REACH PER TRIAL. The centre is the start; the two goals are the rail's ends (free_move.rail_min_m
-and rail_max_m from the start). At the go cue the ring lights the goal, and the trial ends at the first
-end the arm reaches:
+and rail_max_m from the start). At the go cue the ring lights green, and the trial ends at the first end
+the arm reaches:
 
-    go cue          the goal is lit -- event `target` (an end's name, or "either")
+    go cue          the ring lights -- event `target` (an end's name, or "either")
     a goal end      `reach` -> the reward pulse, then the release wait and park, as any trial
     the other end   `reach_wrong` (cued only) -> no reward; the release wait and park
     neither within response_timeout_sec -> `response_timeout`, as in every experiment
 
-    centre_out.target  either -- both ends are goals; both end quarters light
+    centre_out.target  either -- both ends are goals; the WHOLE ring lights (green at the go cue, red at the
+                                 end): no direction is cued, so nothing tells him which way to go
                        cued   -- one end drawn at random per trial (never more than max_repeats of the
-                                 same end in a row); only its quarter lights and only it is rewarded
+                                 same end in a row); only its quarter lights (green, then red when it is
+                                 reached) and only it is rewarded
                        <end>  -- that end on every trial (left / right, down / up): one-direction
-                                 trials. Live, so a session can go left only -> right only -> cued.
+                                 trials, its quarter lit as in cued -- the step before cued, where the lit
+                                 quarter always matches the one open direction. Live, so a session can go
+                                 left only -> right only -> cued.
                        rule   -- the colour rule (helpers/rule_schedule.py): the whole ring lights red
                                  or blue, each colour means one end, the whole rail is open, and the
                                  mapping reverses without any signal to the animal once he reaches
@@ -168,7 +172,7 @@ class CentreOutMonitor:
 
     def ring_cue(self) -> Tuple[str, List[int]]:
         """What the ring shows at the go cue: (ring state, quarters). The colour rule lights the whole ring
-        in the cue colour (ring_cue.colours.rule_red / rule_blue); otherwise the goal's quarters, green."""
+        in the cue colour (ring_cue.colours.rule_red / rule_blue); otherwise quarters(), green."""
         if self.rule_on() and self._colour:
             return f"rule_{self._colour}", [0, 1, 2, 3]
         return "go", self.quarters()
@@ -195,14 +199,22 @@ class CentreOutMonitor:
         return self._target
 
     def quarter_of(self, end: str) -> Optional[int]:
-        """The ring quarter of one end of the rail (the end the arm reached), or None for an unknown name."""
+        """The ring quarter of one end of the rail, or None for an unknown name."""
         return self._quarter.get(end)
 
     def quarters(self) -> List[int]:
-        """The ring quarters to light for this trial's goal."""
+        """The ring quarters to light green for this trial: the goal end's quarter when one end is the goal
+        (cued, left / right, down / up); the whole ring for either end, so no direction is cued."""
         if self._target in self._ends:
             return [self._quarter[self._target]]
-        return [self._quarter[end] for end in self._ends]
+        return [0, 1, 2, 3]
+
+    def reached_quarters(self, end: str) -> List[int]:
+        """The ring quarters to turn red once the arm has reached `end`: that end's quarter in the one-end
+        modes, the whole ring for either end (both ends pay: still no direction shown)."""
+        if self._target in self._ends and end in self._quarter:
+            return [self._quarter[end]]
+        return self.quarters()
 
     def start(self, on_end: Callable[[str, bool], None]) -> None:
         """At the go cue: watch until the arm reaches an end, then call on_end(end, rewarded) once."""
