@@ -112,9 +112,12 @@ def check_admittance_events(report, exp, got, meta):
     report.check(all(event in allowed for event in outcomes), f"outcome is valid for {exp}")
     required = ["trial_start", "at_start", "fixture_active"]
     if not any(event in pre_cue for event in outcomes):
-        required.append("cue_go")
-        if exp == "colour_rule":
-            required.extend(["cue_colour", "target"])
+        choice_cue = ["cue_colour", "target"] if exp == "colour_rule" else []
+        # Older recordings marked cue_go before presenting the cue color.
+        if choice_cue and "cue_colour" in got and "cue_go" in got and got.index("cue_colour") < got.index("cue_go"):
+            required.extend(choice_cue + ["cue_go"])
+        else:
+            required.extend(["cue_go"] + choice_cue)
         required.append("armed")
         if exp == "n_choice":
             state = (meta or {}).get("n_choice")
@@ -265,7 +268,7 @@ def validate(path) -> bool:
     order = ORDER.get(exp, [])
     if "early_touch" in got:
         # The quiet window was broken (actions/quiet_gate.py): the trial ends there, without reward.
-        r.note("ended by an early touch in the quiet window (no go cue, no reward)")
+        r.note("ended by an early touch before arming (no reward)")
         order = [t for t in ("trial_start", "at_start", "early_touch", "trial_end") if t in order + ["early_touch"]]
     timed_out = "response_timeout" in got
     if timed_out and exp != "maze":
@@ -370,11 +373,11 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--file", help="specific CSV (default: newest here)")
     ap.add_argument("--all", action="store_true", help="validate every trial in the folder")
-    ap.add_argument("--folder", help="validate every trial in this expt_* folder (one launch)")
+    ap.add_argument("--folder", help="validate every trial in this run folder (one launch)")
     a = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv"))
-                   + glob.glob(os.path.join(HERE, "expt_*", "robot_trajectory_*.csv")))
+                   + glob.glob(os.path.join(HERE, "*", "robot_trajectory_*.csv")))
     if a.folder:
         folder = a.folder if os.path.isabs(a.folder) else os.path.join(HERE, a.folder)
         files = sorted(glob.glob(os.path.join(folder, "robot_trajectory_*.csv")))

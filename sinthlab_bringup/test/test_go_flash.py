@@ -1,124 +1,104 @@
-"""A pending go flash must not turn off a newer outcome cue."""
+"""Verify the light preview, audio release and early-touch cancellation."""
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from test_centre_out_monitor import FakeNode
 
+from sinthlab_bringup.actions import go_cue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 
 
-class TimerNode(FakeNode):
-    def create_timer(self, period, callback):
-        self.timers.append((period, callback))
-        return self.timers[-1]
-
-    def destroy_timer(self, timer):
-        self.timers.remove(timer)
-
-
-class Board:
-    def __init__(self):
-        self.commands = []
-
-    def show(self, path, label):
-        self.commands.append((path, label))
-
-    def fire(self, label, colour):
-        self.commands.append((colour, label))
-
-
-def test_go_flash_ends_and_a_new_cue_cancels_the_blackout(monkeypatch):
-    board = Board()
-    monkeypatch.setattr(VisualCue, "sender", lambda node: board)
-    monkeypatch.setattr(VisualCue, "_flash_timer", None)
-    node = TimerNode({
-        "visual_cue.enabled": True,
-        "visual_cue.colours.play": [0, 64, 0, 0],
-        "visual_cue.colours.snap": [255, 0, 0, 0],
-        "ring_cue.quarters": [0, 1, 2, 3],
-        "ring_cue.colours.go": [0, 64, 0, 0],
-    })
-    ring = RingStateCue(node)
-
-    ring.show("go", flash=True)
-    assert board.commands[-1][1] == "ring_go"
-    period, turn_off = node.timers[0]
-    assert period == 0.30
-    turn_off()
-    assert board.commands[-1] == ("/off", "ring_off")
-    assert node.timers == []
-
-    go = VisualCue(node, label="play", on_complete=None)
-    go.start()
-    _, stale_turn_off = node.timers[0]
-    snap = VisualCue(node, label="snap", on_complete=None)
-    snap.start()
-    stale_turn_off()
-    assert board.commands[-1] == ((255, 0, 0, 0), "snap")
-    assert node.timers == []
-
-
-def test_go_waits_for_both_channels_and_ignores_an_old_reply(monkeypatch):
-    from sinthlab_bringup.actions import go_cue
-
+def make_gate(monkeypatch, *, audio_enabled=True, visual_enabled=True):
     clock = [0.0]
     monkeypatch.setattr(go_cue.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(go_cue.AudioCue, "warmup", Mock())
     monkeypatch.setattr(VisualCue, "_result_sink", None)
-    node = TimerNode({"audio_cue.enabled": True, "visual_cue.enabled": True})
-    board = Board()
-    monkeypatch.setattr(VisualCue, "sender", lambda node: board)
-    monkeypatch.setattr(VisualCue, "_flash_timer", None)
-    events, audio, visual = [], [], []
+    commands, events = [], []
+    board = SimpleNamespace(show=lambda path, label: commands.append((path, label)))
+    monkeypatch.setattr(VisualCue, "sender", staticmethod(lambda node: board))
+    node = FakeNode({
+        "visual_cue.enabled": visual_enabled,
+        "visual_cue.colours.play": [0, 64, 0, 0],
+        "ring_cue.quarters": [0, 1, 2, 3],
+        "ring_cue.colours.rule_red": [128, 0, 0, 0],
+    })
+    audio, quiet, ready = Mock(), Mock(), Mock()
+    audio.enabled.return_value = audio_enabled
+    recorder = SimpleNamespace(mark=lambda *args: events.append(args))
+    gate = go_cue.GoCue(node, recorder, quiet, audio, ready)
+    return node, gate, audio, quiet, ready, clock, commands, events
 
-    class Recorder:
-        def mark(self, label, value=None):
-            events.append((label, value))
 
-    class Audio:
-        def enabled(self):
-            return True
+def test_go_waits_for_preview_then_waits_for_darkness_and_audio(monkeypatch):
+    node, gate, audio, quiet, ready, clock, commands, events = make_gate(monkeypatch)
+    ring = RingStateCue(node)
+    gate.start(lambda label: ring.show("rule_red", label=label), visual_enabled=True)
+    path, preview_label = commands[-1]
+    assert path == "/segments?factor=4&colors=" + ".".join(["128,0,0,0"] * 4)
+    quiet.continue_until_go.assert_called_once()
+    audio.start.assert_not_called()
 
-        def start(self, *, on_started):
-            audio.append(on_started)
-
-    gate = go_cue.GoCue(node, Recorder(), lambda: events.append(("armed", None)))
-    gate.start(Audio(), visual.append, visual_enabled=True)
-    audio[0]()
+    clock[0] = 0.10
+    gate._visual_result(preview_label, True, 2.0)
     gate._poll()
-    assert events == [("cue_audio_start", None)]
+    clock[0] = 0.399
+    gate._poll()
+    audio.start.assert_not_called()
+    clock[0] = 0.40
+    gate._poll()
+    path, release_label = commands[-1]
+    assert path == "/off"
+    assert release_label != preview_label
 
+    audio.start.call_args.kwargs["on_started"]()
+    gate._visual_result(preview_label, True, 2.0)  # duplicate reply cannot release movement
+    gate._poll()
+    ready.assert_not_called()
+    gate._visual_result(release_label, True, 2.0)
+    gate._poll()
+    ready.assert_called_once()
+    quiet.stop.assert_called_once()
+    assert [event[0] for event in events] == [
+        "cue_preview", "cue_visual_ack", "cue_go", "cue_audio_start", "cue_visual_off",
+    ]
+
+
+def test_early_touch_cancels_preview_and_plays_distinct_warning(monkeypatch):
+    node, gate, audio, quiet, ready, clock, commands, _ = make_gate(monkeypatch)
+    warning = Mock()
+    monkeypatch.setattr(go_cue.AudioCue, "play_early_touch", warning)
+    gate.start(VisualCue(node, label="play", on_complete=None).preview, visual_enabled=True)
+    path, preview_label = commands[-1]
+    assert path == "/segments?factor=1&colors=0,64,0,0"
+    gate._visual_result(preview_label, True, 2.0)
+    gate._poll()
+    gate.cancel()
+    gate.warn_early_touch()
+    clock[0] = 0.31
+    gate._poll()
+    assert commands[-1] == ("/off", "ring_off")
+    warning.assert_called_once_with(node)
+    audio.start.assert_not_called()
+    ready.assert_not_called()
+    quiet.stop.assert_called_once()
+
+
+def test_missing_preview_does_not_play_go(monkeypatch):
+    node, gate, audio, _, ready, clock, commands, events = make_gate(monkeypatch)
+    gate.start(VisualCue(node, label="play", on_complete=None).preview, visual_enabled=True)
     clock[0] = 0.26
     gate._poll()
     assert events[-1] == ("go_cue_failed", "visual")
-    assert board.commands[-1] == ("/off", "ring_off")
-
-    gate.start(Audio(), visual.append, visual_enabled=True)
-    gate._visual_result(visual[0], True, 1.0)
-    gate._poll()
-    assert events[-1][0] == "go_cue_failed"
-    gate._visual_result(visual[1], True, 2.0)
-    gate._poll()
-    assert events[-1] == ("cue_visual_ack", 2.0)
-    audio[1]()
-    gate._poll()
-    assert events[-1] == ("armed", None)
+    assert commands[-1] == ("/off", "ring_off")
+    audio.start.assert_not_called()
+    ready.assert_not_called()
 
 
 def test_go_with_both_channels_off_arms_without_waiting(monkeypatch):
-    from sinthlab_bringup.actions.go_cue import GoCue
-
-    monkeypatch.setattr(VisualCue, "_result_sink", None)
-    node = TimerNode({"audio_cue.enabled": False, "visual_cue.enabled": False})
-
-    class Silent:
-        def enabled(self):
-            return False
-
-        def start(self, *, on_started):
-            pass
-
-    ready = []
-    gate = GoCue(node, SimpleNamespace(mark=lambda *args: None), lambda: ready.append(True))
-    gate.start(Silent(), lambda label: None, visual_enabled=False)
-    assert ready == [True]
+    _, gate, _, quiet, ready, _, commands, _ = make_gate(monkeypatch, audio_enabled=False, visual_enabled=False)
+    gate.start(Mock(), visual_enabled=False)
+    assert commands == []
+    ready.assert_called_once()
+    quiet.stop.assert_called_once()

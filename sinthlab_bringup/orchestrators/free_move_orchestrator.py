@@ -106,7 +106,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, experiment=self.experiment,
             extra_header=self.admittance.record_extra_header(), extra_fn=self.admittance.record_extra,
             on_event=self.control.on_event)
-        self.go = GoCue(self, self.recorder, self.on_go_complete)
+        self.go = GoCue(self, self.recorder, self.quiet_window, self.go_cue, self.on_go_complete)
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
@@ -172,7 +172,6 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def on_quiet_window_complete(self):
         if not self._smartpad_ok():        # checked before the go cue: no "go" for an arm that will not move
             return
-        self.recorder.mark("cue_go")
         if self._centre_out_on():          # this trial's goal: drawn now, lit with the go cue
             target = self.centre_out.pick_target()
             # One-direction trial: close the other half of the rail before the arm may move. Marked
@@ -191,12 +190,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
                 self.recorder.mark("cue_colour", self.centre_out.cue_colour())
             self.recorder.mark("target", target)
             state, quarters = self.centre_out.ring_cue()
-            self.go.start(self.go_cue, lambda label: self.ring.show(state, quarters, label=label),
+            self.go.start(lambda label: self.ring.show(state, quarters, label=label),
                           visual_enabled=self.ring.enabled())
         else:
             if self._n_choice_on():        # every direction's reward probability, before the choice
                 self.recorder.annotate(n_choice=self.n_choice.state())
-            self.go.start(self.go_cue, lambda label: self.ring.show("go", flash=True, label=label),
+            self.go.start(lambda label: self.ring.show("go", label=label),
                           visual_enabled=self.ring.enabled())
 
     def _centre_out_on(self) -> bool:
@@ -295,6 +294,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the penalty wait before the next trial."""
+        self.go.cancel()
+        self.go.warn_early_touch()
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._end_trial("early_touch")

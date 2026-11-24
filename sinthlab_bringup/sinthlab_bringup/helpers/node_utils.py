@@ -42,7 +42,7 @@ def get_required_param(node: rclpyNode, name: str):
 
 
 def get_launch_param(node: rclpyNode, name: str, default):
-    """A value the LAUNCH supplies rather than the experiment YAML -- robot_description, run_name,
+    """A value the LAUNCH supplies rather than the experiment YAML -- robot_description,
     paradigm_override, subject -- which may legitimately be absent. Experiment parameters use
     get_required_param: every one of them lives in the YAML, so a missing one is an error, never a
     silent default."""

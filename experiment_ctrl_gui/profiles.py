@@ -7,7 +7,7 @@ Three layers of settings, from the bottom up:
   profile  how the arm fits this monkey: the FEEL of the admittance (damping, threshold, speed, ...), its
            REACH in each direction, the PACING (quiet window, its guard, the response time) and the REWARD.
            One file per subject; applied to every free-move task, so the feel tuned in Free Move is the feel
-           of the Colour Rule.
+           of the Color Rule.
   today    the task's own few settings (Experiment.task_settings) and any one-off edit, made on the dashboard
            for the next Start. A one-off edit wins over the profile, and is not saved to it unless asked.
 
@@ -16,7 +16,7 @@ with every change appended to <ID>.changes.jsonl. Each save bumps its version; t
 names the profile and version it was made from, and the recording folder gets a copy.
 
 Most profile fields map one to one onto a task parameter of the same meaning (FIELDS). REACH sets the ends of
-a horizontal rail (left, right) or a vertical one (down, up): Restricted Move, Cued Reaches, the Colour Rule's
+a horizontal rail (left, right) or a vertical one (down, up): Restricted Move, Cued Reaches, the Color Rule's
 Rail. A value beyond a task's limits is capped there, with a note; the dashboard's and the node's own checks
 still apply on top. The choice distances that are part of a task's design stay task settings -- the Colour
 Rule's No-rail reach, the N-Choice rail length (kept the same as the number of choices grows) -- and Free
@@ -249,7 +249,7 @@ def _ray_reach(deg: float, left: float, right: float, down: float, up: float) ->
 
 def reach_values(exp: ex.Experiment, reach: Dict[str, float], context: Dict[str, object]) -> Dict[str, float]:
     """The rail ends the reach sets, given the task's other values in effect (context): a vertical rail (z)
-    runs from down to up, any other (the horizontal rail; the Colour Rule, whose Rail is horizontal) from
+    runs from down to up, any other (the horizontal rail; the Color Rule, whose Rail is horizontal) from
     left to right."""
     if "free_move.rail_min_m" not in context:
         return {}
@@ -329,7 +329,7 @@ def from_task(exp: ex.Experiment, values: Dict[str, object]) -> Dict[str, object
     """The profile fields a task's values imply: one-to-one fields, and the reach from a rail's ends."""
     out = {f.name: values[f.param] for f in FIELDS if f.param and f.param in values}
     axis = str(values.get("free_move.rail_axis", ""))
-    if "free_move.rail_min_m" in values and axis in ("y", "z"):       # not the Colour Rule's No rail
+    if "free_move.rail_min_m" in values and axis in ("y", "z"):       # not the Color Rule's No rail
         lo, hi = (REACH[0], REACH[1]) if axis == "y" else (REACH[2], REACH[3])
         out[lo] = round(-float(values["free_move.rail_min_m"]), 4)
         out[hi] = round(float(values["free_move.rail_max_m"]), 4)

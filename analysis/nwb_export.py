@@ -2,7 +2,7 @@
 """Archive a recording session as one NWB file: the robot's trials and, when given, the Blackrock NSP
 recording, aligned by the TTL sync pulses the cabinet sends to the NSP.
 
-    python3 nwb_export.py --robot analysis/expt_iiwa7_apple_pluck_..._20261026_165155 \
+    python3 nwb_export.py --robot analysis/20261026_M1_apple-pluck_165155 \
         --nsp /mnt/server/blackrock/20261026/datafile001.ns5 \
         --subject-id M1 --species "Macaca mulatta" --sex M --age P8Y \
         --description "apple pluck, uniform 400" --out session.nwb
@@ -746,7 +746,7 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--robot", required=True, help="robot run folder (analysis/expt_...)")
+    ap.add_argument("--robot", required=True, help="robot run folder")
     ap.add_argument("--nsp", help="Blackrock recording: one of its files, or its folder")
     ap.add_argument("--out", required=True, help="NWB file to write")
     ap.add_argument("--sync-channels", nargs=2, default=["ainp6", "ainp7"], metavar=("START", "END"),

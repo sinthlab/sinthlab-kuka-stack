@@ -60,7 +60,7 @@ function defaultOut() {
   const robot = $("#robot").value.trim().replace(/\/+$/, "");
   if (!robot) return;
   const sub = (meta().subject_id || "SUBJECT").replace(/[^A-Za-z0-9-]/g, "-");
-  const ses = (P.robot && P.robot.session_id) || robot.split("/").pop().replace(/^expt_/, "");
+  const ses = (P.robot && P.robot.session_id) || robot.split("/").pop();
   if (!$("#out").dataset.edited) $("#out").value = `${robot}/sub-${sub}_ses-${ses.replace(/[^A-Za-z0-9-]/g, "-")}.nwb`;
 }
 

@@ -16,6 +16,7 @@ developed, on a computer with no robot and no ROS.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import random
 import threading
@@ -204,7 +205,7 @@ class DemoBridge:
             # The behavioural tables, as the recorder would write them: one trials.csv row per trial
             # (outcome_tables.trial_row on a sidecar-like record), and a sessions.csv row at the end.
             self._subject = subject
-            self._run = f"demo_{exp.run_name}_{time.strftime('%Y%m%d_%H%M%S')}"
+            self._run = ex.outcome_tables.run_folder_name(subject, exp.key, dt.datetime.now())
             self._meta: Optional[dict] = None
             self._metas: List[dict] = []
             self.trial_rows: List[dict] = []
@@ -218,7 +219,7 @@ class DemoBridge:
             self._in_trial = False
             self._trial = 0
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
-            self._rule: Optional[ReversalSchedule] = None   # the colour rule, built on entering it
+            self._rule: Optional[ReversalSchedule] = None   # the Color Rule, built on entering it
             self._bandit: Optional[DepletingBandit] = None  # N-choice, built at the first trial
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
@@ -330,7 +331,15 @@ class DemoBridge:
         return self._sleep(run_id, 1.5)
 
     def _trial_body(self, run_id: int) -> bool:
-        cue = lambda: self._effective.get("audio_cue.enabled", True)
+        def go():
+            if self._effective.get("visual_cue.enabled"):
+                self._phase_to("cue_preview", None, "Cue light on. Waiting before Go.")
+                if not self._sleep(run_id, 0.30):
+                    return False
+            self._phase_to("cue_go", None, "Cue light off. Go tone played if enabled.")
+            self._phase_to("armed", None, "Ready for movement.")
+            return True
+
         if run_id == self._run_id:
             with self._lock:
                 if self._pending:
@@ -346,15 +355,10 @@ class DemoBridge:
             self._phase_to("at_start", None, "Arm returned to start. Waiting for a quiet window...")
             if not self._sleep(run_id, float(self._effective.get("quiet_window_sec", 2.0))):
                 return False
-            self._phase_to("cue_go", None, "Quiet window complete. Sounding audio cue."
-                           if cue() else "Quiet window complete. (audio cues off)")
-            if self._effective.get("visual_cue.enabled"):
-                self._log(f"Visual cue 'play' fired over the {self._effective.get('visual_cue.trigger', 'wifi')} trigger.")
-            if not self._sleep(run_id, 0.5):
-                return False
-            self._phase_to("armed", None, "Monitor armed (baseline locked). Watching for the pull.")
-            if not self._sleep(run_id, random.uniform(2.0, 4.5)):
-                return False
+            centre_out = self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled"))
+            if not centre_out:
+                if not go() or not self._sleep(run_id, random.uniform(2.0, 4.5)):
+                    return False
             if self._exp.key == "maze":
                 self._phase_to("checkpoint", 0, "Reward at checkpoint 0.")
                 if not self._sleep(run_id, 1.0):
@@ -381,7 +385,7 @@ class DemoBridge:
                     self._reward("choice")
                 else:
                     self._phase_to("choice_unrewarded", name, f"N-choice: {name} (p = {p:.2f}) -- no reward.")
-            elif self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled")):
+            elif centre_out:
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
                 # (none with the other half of the rail closed: actions/centre_out.py).
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
@@ -389,7 +393,7 @@ class DemoBridge:
                 if self._picker is None:
                     self._picker = TargetPicker(ends)
                 if mode == RULE:
-                    # The colour rule: a simulated learner, right more often the longer the block runs, so
+                    # The Color Rule: a simulated learner, right more often the longer the block runs, so
                     # the criterion is met and the mapping reverses (unsignaled) every few dozen trials.
                     e = self._effective
                     if self._rule is None:
@@ -398,19 +402,19 @@ class DemoBridge:
                                          int(e.get("rule.min_trials", 20)), int(e.get("rule.max_repeats", 3)))
                     mapping = self._rule.mapping() if self._rule.take_reversal() else None
                     if mapping:
-                        self._phase_to("reversal", mapping, f"(operator only) Colour rule: now {mapping}.")
+                        self._phase_to("reversal", mapping, f"(operator only) Color Rule: now {mapping}.")
                     if self._meta is not None:
                         self._meta["rule"] = self._rule.state()
                     colour = self._rule.draw_colour()
                     target = self._rule.end_for(colour)
                     self._phase_to("cue_colour", colour, "")
-                    self._phase_to("target", target, f"Colour rule: {colour} -- the goal is {target}.")
-                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                    self._phase_to("target", target, f"Color Rule: {colour} -- the goal is {target}.")
+                    if not go() or not self._sleep(run_id, random.uniform(1.0, 3.0)):
                         return False
                     p_right = min(0.95, 0.35 + 0.04 * self._rule.choices_in_block)
                     end = target if random.random() < p_right else [x for x in ends if x != target][0]
                     if self._rule.record(end == target):
-                        self._log(f"Colour rule: criterion met -- reverses, unsignaled, from the next trial: "
+                        self._log(f"Color Rule: criterion met -- reverses, unsignaled, from the next trial: "
                                   f"{self._rule.mapping()} (block {self._rule.block}).")
                     closed = None
                 else:
@@ -423,7 +427,7 @@ class DemoBridge:
                     if closed:
                         self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
                     self._phase_to("target", target, f"Centre-out: the goal is {target}.")
-                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                    if not go() or not self._sleep(run_id, random.uniform(1.0, 3.0)):
                         return False
                     end = target if closed else random.choice(ends)
                 if target in ("either", end):
@@ -478,7 +482,7 @@ class DemoBridge:
         trial is armed (along the rail on a rail task), and is at the start otherwise."""
         if self._status is None:
             return {"q": None, "q_t": 0.0, "pull": None, "pull_t": 0.0}
-        moving = self._phase in ("armed", "target", "cue_audio_end", "checkpoint")
+        moving = self._phase in ("armed", "checkpoint")
         t = time.time() - self._phase_t if moving else 0.0
         import math
         axis = str(self._params.get("free_move.rail_axis", "none"))

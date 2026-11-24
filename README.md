@@ -289,7 +289,7 @@ pre-training launches also accept `clik_nullspace_cfg:=`.
 |---|---|
 | `experiment_ctrl_gui/runs/<exp>_<time>.yaml` | the edited parameter copy a Start used (only when something was edited), plus `…_clik_nullspace.yaml` when a CLIK start pose was edited |
 | `experiment_ctrl_gui/logs/<exp>_<time>.log` | the full launch output of each run |
-| `analysis/expt_<run_name>_<time>/` | the trial recordings, written by the orchestrator as always ([§7](#7-data-collected)) |
+| `analysis/YYYYMMDD_subject_task_HHMMSS/` | the trial recordings, written by the orchestrator as always ([§7](#7-data-collected)) |
 | `analysis/sessions.csv` | one row per run, added when the run ends ([behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv)) |
 
 None of these are committed to git.
@@ -639,7 +639,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 3c | Apple Pluck, perturb bump paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb_bump` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
-| 5 | Colour Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 5 | Color Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
@@ -701,7 +701,7 @@ Every experiment ends a trial in which the animal does not respond in time, with
 
 1. the trial **ends without reward** — event `response_timeout`, then `trial_end` (the NSP pulse);
 2. the arm **parks**, and the next trial follows as usual. In the maze the timeout cue plays and the
-   arm waits for release first. Centre-out, Colour Rule and N-Choice also wait for release, in silence.
+   arm waits for release first. Centre-out, Color Rule and N-Choice also wait for release, in silence.
    Their choice window starts at `armed`. Partial movement does not extend it. After timeout the fixture
    holds until fresh low-force samples span the release duration, then the arm parks.
 
@@ -711,7 +711,7 @@ Every experiment ends a trial in which the animal does not respond in time, with
 | Apple pluck, perturb bump | the go cue (`grasp_wait`), then again from `armed` | the grasp; then the pull reaching the threshold |
 | Restricted plane | `armed` | the pull reaching the threshold (`snap`) |
 | Maze | `maze_armed` (the go cue) | reaching the goal |
-| Centre-out, Colour Rule, N-Choice | `armed` | reaching a choice threshold |
+| Centre-out, Color Rule, N-Choice | `armed` | reaching a choice threshold |
 | Free Move | `armed` (the go cue) | the arm moved more than `quiet_gate.move_m` (3 cm) from where it was at the go cue; after that the session runs on to `session_sec` or Stop |
 | Move Vertical, Move Horizontal | `armed` (the go cue) | the [centre-out reach](#centre-out-reach): the arm at an end of the rail (with `centre_out.enabled` off: as Free Move) |
 
@@ -1415,14 +1415,14 @@ Work up the ladder and stop at the first rung that feels wrong.
 > box with free area inside it again. Segments must **touch** to form a junction; START (0,0) must lie on
 > one; the checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
 
-### Scenario 5 — Colour Rule (unsignaled reversals)
-A task of its own (the **Colour Rule** card under Experiments), not part of pre-training: some days it
+### Scenario 5 — Color Rule (unsignaled reversals)
+A task of its own (the **Color Rule** card under Experiments), not part of pre-training: some days it
 is all that runs. It runs on the free-move node with the centre-out reach fixed to its `rule` mode
 ([`colour_rule.yaml`](sinthlab_bringup/config/colour_rule.yaml),
 [`helpers/rule_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/rule_schedule.py)).
 
-1. **The cue.** At the go cue the **whole ring** lights **red** or **blue** (`ring_cue.colours.rule_red` /
-   `rule_blue`), drawn at random, never more than `rule.max_repeats` of one colour in a row.
+1. **The cue.** The **whole ring** previews **red** or **blue** for 300 ms (`ring_cue.colours.rule_red` /
+   `rule_blue`). Colors are drawn at random, with no more than `rule.max_repeats` repeats in a row. The monkey can reach when the ring goes dark and the go tone starts. Reaching before Go plays a low warning tone and ends the trial without juice.
 2. **The choice.** Each colour means one end: in block 1, red means `rule.red_end` (right) and blue the
    other. Either choice plays the same confirmation tone. The end indicated by the colour also delivers juice. The
    ring goes dark at the choice (no red "reached" ring: red is a cue here).
@@ -1492,7 +1492,7 @@ the start). Nothing moves toward or away from him. The number and length are per
 (up is the limit from the maze start), so rails can go up as well as down; the dashboard's floor check
 covers the lowest rail's end. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30.
 
-**One choice per trial.** A dim green flash of about 300 ms accompanies the go tone. Every rail is available. The task arms after the LED board acknowledges the flash and the audio worker reaches playback. If an enabled cue is unconfirmed after 250 ms, the arm stays at the start and the dashboard asks the operator to stop the run. Reaching a rail end (within `n_choice.end_tol_m`) ends the choice and delivers the reward immediately on a rewarded trial. Both rewarded and unrewarded choices play the same confirmation tone when the choice registers. The arm holds until release, then returns to park. The recorded outcomes are `choice` and `choice_unrewarded` respectively. After the choice, the probabilities update as follows.
+**One choice per trial.** A dim green light previews the trial for about 300 ms. The light goes out as the go tone starts. The task arms after the LED board confirms the light is off and the audio worker signals playback. If an enabled cue is unconfirmed after 250 ms, the arm stays at the start and the dashboard asks the operator to stop the run. Reaching a rail end (within `n_choice.end_tol_m`) ends the choice and delivers the reward immediately on a rewarded trial. Both rewarded and unrewarded choices play the same confirmation tone when the choice registers. The arm holds until release, then returns to park. The recorded outcomes are `choice` and `choice_unrewarded` respectively. After the choice, the probabilities update as follows.
 
 - the direction chosen **depletes**: p → p − `deplete` × (p − `p_min`);
 - every other direction **recovers**: p → p + `recover` × (`p_max` − p).
@@ -1538,7 +1538,7 @@ pose; the rail is fixed during a run, and the card reopens on the rail last used
 - run on the CLIK, like the maze;
 - have no threshold. Free Move and Restricted Move run as one **session** per trial, for `session_sec`
   or until **■ Stop**, then the arm parks; in Cued Reaches each trial is one **centre-out reach**.
-- record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
+- record the same per-trial CSV and sidecar, into `analysis/YYYYMMDD_subject_task_HHMMSS/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
@@ -1746,7 +1746,7 @@ read from the trajectory CSVs as they are written. Per direction: the **comforta
 `reach_map.percentile`, 80, of the farthest points of his outward movements that way) and the farthest;
 a reach that ends at the box is **arm-limited** (he would have gone farther). Its four values (right, up,
 left, down) are saved to the monkey's profile, which sets the rail ends of Restricted Move, Cued Reaches
-and the Colour Rule. Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail.
+and the Color Rule. Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail.
 
 Rig checks: the box passes the Start check (posture, floor) from this start; New best pays as the hand
 pushes out and stops paying once a direction's edge is reached; the map's points line up with the live view.
@@ -1803,7 +1803,7 @@ from its limit.
 In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
 two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
 
-1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), one
+1. **Cue preview.** Before the go tone the ring lights the goal: both end quarters (`target: either`), one
    end drawn at random (`target: cued`), or the same end every trial (`target: left` / `right` on Move
    Horizontal, `down` / `up` on Move Vertical). With `block_other_end` (the default), a trial with one
    goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
@@ -1885,7 +1885,7 @@ Python state transitions never compromise the 1000 Hz hardware control loops.
 **Parameters come from the YAML only.** Every experiment parameter is read with `get_required_param`
 ([`helpers/node_utils.py`](sinthlab_bringup/sinthlab_bringup/helpers/node_utils.py)): no defaults
 in code, so a key missing from the YAML stops the orchestrator at startup with its name. Only values
-the launch supplies (`robot_description`, `run_name`, `paradigm_override`, `subject`) are optional,
+the launch supplies (`robot_description`, `paradigm_override`, `subject`) are optional,
 via `get_launch_param`. Live changes go through the dashboard ([Live parameters](#live-parameters)).
 
 ### 6.1 System Overview — data flow
@@ -2331,7 +2331,7 @@ stateDiagram-v2
     FirstPark --> MoveToStart : at park, the wait (move_to_park.hold_sec) begins [trial_start]<br/>then the move to start
     MoveToStart --> SwitchToCLIK : at start [at_start]
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
-    QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
+    QuietWindow --> Free : quiet window ends, ring lights for 300 ms [cue_preview]<br/>ring off and tone [cue_go], then admittance and speed monitor on [armed]
     QuietWindow --> Free : rail tasks: the goal lit with the go cue [target]
     Free --> ReleaseWait : session_sec runs out (Free Move), the arm holds [session_end, trial_end]
     Free --> ReleaseWait : rail tasks: either end plays the confirmation tone<br/>a goal end also gives reward [reach, trial_end]<br/>other end [reach_wrong, trial_end]
@@ -2972,22 +2972,22 @@ Recorded data is gitignored ([Where files go](#where-files-go)).
 ### Working with the data
 After a session, check the recordings, then plot them. The scripts in `analysis/` need only Python 3
 with numpy and matplotlib: no ROS, no pandas. They run on the ROS computer, or on any laptop you
-copy an `analysis/expt_*` folder to (keep the `.csv` and `.meta.json` pairs together).
+copy a run folder from `analysis/` to (keep the `.csv` and `.meta.json` pairs together).
 
-**1. Find the run.** Each launch writes one folder, `analysis/expt_<launch name>_<start time>/`, with
+**1. Find the run.** Each launch writes one folder, `analysis/YYYYMMDD_subject_task_HHMMSS/`, with
 one CSV and one `.meta.json` sidecar per trial ([Where files go](#where-files-go)). The dashboard's
 Run card shows the folder of the current run.
 
 ```bash
 cd ~/lbr-stack/src/sinthlab-kuka-stack/analysis
-ls -d expt_*/                                   # one folder per launch, newest last
+ls -d [0-9]*/                                   # one folder per launch, newest last
 ```
 
 **2. Validate it** before analysing anything. The dashboard's **Validate recording** button runs the
 same check.
 
 ```bash
-python3 validate_recording.py --folder expt_iiwa7_apple_pluck_impedance_control_20260923_160523
+python3 validate_recording.py --folder 20260923_M1_apple-pluck_160523
 python3 validate_recording.py                   # just the newest trial
 python3 validate_recording.py --all             # every trial in every folder
 ```
@@ -3009,8 +3009,8 @@ complete on disk (it ends at park) but carries `stop_requested` and lacks the ev
 
 ```bash
 python3 plot_trajectory.py                                        # newest trial, in a window
-python3 plot_trajectory.py --folder expt_iiwa7_maze_20260924_101500 # every trial of one run, overlaid
-python3 plot_trajectory.py --file expt_iiwa7_maze_20260924_101500/robot_trajectory_20260924_101512.csv
+python3 plot_trajectory.py --folder 20260924_M1_maze_101500 # every trial of one run, overlaid
+python3 plot_trajectory.py --file 20260924_M1_maze_101500/robot_trajectory_20260924_101512.csv
 python3 plot_trajectory.py --folder <run> --save run.png          # static image of the final frame
 python3 plot_trajectory.py --file <trial.csv> --save trial.gif    # animated GIF of the 3-D path
 ```
@@ -3021,7 +3021,7 @@ Paths are relative to `analysis/` (absolute paths work too). On WSL or any headl
 | Option | Effect |
 |---|---|
 | `--file <csv>` | one trial |
-| `--folder <expt_… folder>` | every trial of one launch, overlaid |
+| `--folder <run folder>` | every trial of one launch, overlaid |
 | `--all` | every trial in every folder, overlaid (mixes runs; mostly for a quick look) |
 | `--save out.png` \| `out.gif` | write a file instead of opening a window |
 | `--no-anim` | draw the whole 3-D path at once |
@@ -3054,8 +3054,8 @@ python3 retime_gif.py trial.gif 57 -o synced.gif   # make it play in exactly 57.
 
 ```python
 import csv, json
-rows = list(csv.DictReader(open("expt_…/robot_trajectory_20260923_160541.csv")))
-meta = json.load(open("expt_…/robot_trajectory_20260923_160541.meta.json"))
+rows = list(csv.DictReader(open("20260923_M1_apple-pluck_160523/robot_trajectory_20260923_160541.csv")))
+meta = json.load(open("20260923_M1_apple-pluck_160523/robot_trajectory_20260923_160541.meta.json"))
 events = meta["events"]            # precise event times (wall, ROS and cabinet clock)
 params = meta["params"]            # every parameter this trial ran with
 ```
@@ -3065,23 +3065,20 @@ Align to neural data with the cabinet clock, `fri_s` / `fri_ns`; see
 
 ### Where files go
 
-One folder per launch, named from the launch file:
+Each launch gets a folder named `YYYYMMDD_subject_task_HHMMSS`, using the rig’s local 24-hour clock.
 
 ```
 analysis/
-  expt_iiwa7_apple_pluck_impedance_control_20260923_160523/
+  20260923_M1_apple-pluck_160523/
       robot_trajectory_20260923_160523.csv
       robot_trajectory_20260923_160523.meta.json
       robot_trajectory_20260923_160541.csv
       ...
 ```
 
-Each wrapper launch file sets `RUN_NAME` to its own stem and passes it through
-`experiment_base.launch.py` as the `run_name` parameter; without one, the folder falls back to the
-orchestrator's node name. One CSV + sidecar per trial inside it, so a bad trial is a file you
-delete rather than a row range you have to remember to exclude.
+The subject comes from the dashboard or the `subject:=` launch argument. A launch without a subject uses `unknown`. Task names use hyphens between words, such as `color-rule` and `n-choice`. Launches with the same name in the same second get a suffix such as `-02`. Each folder holds one CSV and one JSON sidecar per trial.
 
-**All of it is gitignored** (`analysis/expt_*/`, and any loose `analysis/*.csv` / `*.meta.json`). Recorded data is never version-controlled.
+**All of it is gitignored** (run folders and any loose `analysis/*.csv` / `*.meta.json`). Recorded data is never version-controlled.
 
 ## 8. Neural Synchronisation
 

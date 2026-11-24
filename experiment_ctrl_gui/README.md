@@ -154,7 +154,7 @@ recover pose is live in apple pluck only (`_POSE`), re-read at the trial boundar
 
 ## Monkey profiles
 
-Each monkey has a profile shared by Free Move, Reach Map, Restricted Move, Cued Reaches, Colour Rule, and N-Choice. Apple Pluck, Restricted Plane, and Maze use their task YAML files and per-run edits.
+Each monkey has a profile shared by Free Move, Reach Map, Restricted Move, Cued Reaches, Color Rule, and N-Choice. Apple Pluck, Restricted Plane, and Maze use their task YAML files and per-run edits.
 
 | Layer | Settings | Location |
 |---|---|---|
@@ -164,7 +164,7 @@ Each monkey has a profile shared by Free Move, Reach Map, Restricted Move, Cued 
 
 Pending edits take precedence over a profile, and profile values take precedence over task defaults. See `ExperimentParams.base()` and `ExperimentParams.current()`.
 
-- **Profile mapping.** Each arm response, timing, and reward field maps to a task parameter in `profiles.FIELDS`. Reach sets the horizontal and vertical rail endpoints (`free_move.rail_min_m` and `free_move.rail_max_m`), including Colour Rule in Rail mode. The dashboard caps profile values at the task limits and shows a note when it does. The no-rail Colour Rule choice distance, N-Choice rail length, and Free Move box are set per task. The dashboard flags choice distances beyond the monkey’s profile reach.
+- **Profile mapping.** Each arm response, timing, and reward field maps to a task parameter in `profiles.FIELDS`. Reach sets the horizontal and vertical rail endpoints (`free_move.rail_min_m` and `free_move.rail_max_m`), including Color Rule in Rail mode. The dashboard caps profile values at the task limits and shows a note when it does. The no-rail Color Rule choice distance, N-Choice rail length, and Free Move box are set per task. The dashboard flags choice distances beyond the monkey’s profile reach.
 - **Save to profile.** The dialog compares settings for the selected task with the profile, including live values queued for the next trial. Select the changes to save. Reward settings can apply to an individual task via `reward_by_task`. A running task keeps the profile it started with. The update applies when a new run starts.
 - **Profile records.** Each save increments the profile version and appends a record to `<ID>.changes.jsonl` with the timestamp, version, source, note, and changed values. The generated run YAML names the profile and version and records its values. The recording folder contains a snapshot in `subject_profile.yaml`.
 - **New profiles.** Select **New monkey…** to create a profile using the default values. If an existing subject has no profile, **Create** in the Monkey menu uses the selected task’s current settings. The `test` subject uses task defaults and has no profile.
@@ -274,7 +274,7 @@ SmartPad settings, the git state and the sync summary.
 You can also run the export from a terminal.
 
 ```bash
-python3 analysis/nwb_export.py --robot analysis/expt_<run> --nsp /mnt/server/<recording>.ns5 \
+python3 analysis/nwb_export.py --robot analysis/20261124_M1_color-rule_143052 --nsp /mnt/server/<recording>.ns5 \
     --subject-id <id> --sex M --age P8Y --out session.nwb
 ```
 
@@ -320,7 +320,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 - **Stop:** the orchestrator's stop service; once the status reports `held` (parked), SIGINT to the
   process group, exactly like Ctrl-C. After 20 s it sends SIGTERM, and after 5 s more SIGKILL.
 - **Shutting down the server** stops a launch it started, the same way.
-- **The data folder** is the newest `analysis/expt_<run_name>_*` modified since the launch started.
+- **The data folder** is the newest recording folder for the run’s task and subject, modified since the launch started.
 
 ---
 

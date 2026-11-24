@@ -36,7 +36,8 @@ const STEP_LABEL = {
 };
 const PHASE_TEXT = {
   starting: "Starting", trial_start: "At park, before moving to start", at_start: "Quiet window", quiet_end: "Go cue",
-  cue_go: "Go cue", armed: "Waiting for pull", snap: "Pull threshold reached", freeze: "Plucked. Pull-back disabled",
+  cue_preview: "Showing cue preview", cue_visual_ack: "Cue lit. Waiting for the go tone",
+  cue_visual_off: "Go cue", cue_audio_start: "Go cue", cue_go: "Go cue", armed: "Waiting for pull", snap: "Pull threshold reached", freeze: "Plucked. Pull-back disabled",
   cue_snap: "Pull threshold reached", release_wait: "Waiting for the arm to settle", recover_start: "Moving to park", trial_end: "Trial ended",
   parking: "Moving slowly to park",
   perturb_delay_start: "Waiting to apply perturbation", perturb_applied: "Perturbation applied. Settling",
@@ -46,14 +47,14 @@ const PHASE_TEXT = {
   safety_trip: "Safety abort. Moving to park", released: "Moving to park",
   early_touch: "Early touch. Trial unrewarded. Parking before the penalty wait",
   response_timeout: "Response timed out. Trial unrewarded. Moving to park",
-  stopped: "Stopped. Holding at park", cue_audio_end: null, cue_visual_ack: null,
+  stopped: "Stopped. Holding at park", cue_audio_end: null,
   threshold: "Pull threshold reached. Returning",
   session_end: "Session ended. Waiting for release",
   grasp_wait: "Waiting for grasp", grasp: "Grasp detected. Waiting to apply perturbation",
   grasp_timeout: "No grasp detected. Resetting",
   stop_requested: "Stop requested. Ending trial and moving to park",
   closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
-  cue_colour: null, reversal: null,   // the colour rule's cue and reversal marks, just before `target`
+  cue_colour: null, reversal: null,   // the Color Rule's cue and reversal marks, just before `target`
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
@@ -63,12 +64,12 @@ const PHASE_TEXT_BY_EXP = {
                move_start: "moving", move_end: "Free movement within the workspace",
                long_move: "Long movement rewarded" },
   move_vertical: { session_end: "Session ended. Waiting for release",
-                   release_wait: "Waiting for release", target: "Target lit", armed: "Waiting for a reach to the lit target", reach: "Target reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+                   release_wait: "Waiting for release", target: "Target selected", armed: "Waiting for a reach to the cued target", reach: "Target reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
   move_horizontal: { session_end: "Session ended. Waiting for release",
-                     release_wait: "Waiting for release", target: "Target lit", armed: "Waiting for a reach to the lit target", reach: "Target reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+                     release_wait: "Waiting for release", target: "Target selected", armed: "Waiting for a reach to the cued target", reach: "Target reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
   n_choice: { release_wait: "Waiting for release", armed: "Waiting for a choice",
               choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
-  colour_rule: { release_wait: "Waiting for release", target: "Colour cue lit", armed: "Waiting for a choice",
+  colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
                  reach: "Correct choice rewarded. Waiting for release", reach_wrong: "Incorrect choice. No reward. Waiting for release" },
   reach_map: { armed: "Mapping reach in the frontal plane", session_end: "Session ended. Waiting for release",
                release_wait: "Waiting for release", move_start: "moving", move_end: "Mapping reach in the frontal plane",
@@ -85,7 +86,7 @@ const PHASE_TEXT_BY_EXP = {
 const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
 const REWARD_STEP_MS = 10;
 // Task view group headings.
-const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Colour rule", n_choice: "Choices", long_move: "Movements",
+const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Color Rule", n_choice: "Choices", long_move: "Movements",
                       reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
                       apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
                       grasp: "Grasp", virtual_fixtures: "Fixture" };
@@ -332,7 +333,7 @@ function renderChecklist() {
     <li>Start the app on the SmartPad and select the following settings.<ul>${sp}</ul></li>
     <li>Press <strong>Start</strong> within about 60 seconds, while the app is waiting for ROS.</li>
     <li>For visual cues over Wi-Fi, first connect this computer to <code>KUKA_NEOPIXEL</code>.</li>
-    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>. Recordings are saved to <code>analysis/expt_${esc(e.run_name)}_&lt;time&gt;/</code>.</li>`;
+    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>. Recordings are saved to <code>YYYYMMDD_&lt;subject&gt;_${esc(e.task_slug)}_HHMMSS/</code>.</li>`;
 }
 
 // ---------------------------------------------------------------- controls + status
@@ -877,7 +878,7 @@ function renderMonkey() {
   if (!cur) info.textContent = "Select a monkey";
   else if (cur === "test") info.textContent = "Test run uses task defaults";
   else if (p) { info.textContent = `profile v${p.version} · ${p.updated.slice(0, 16)}`;
-    info.title = "This profile applies to pre-training tasks, Colour Rule, and N-Choice."; }
+    info.title = "This profile applies to pre-training tasks, Color Rule, and N-Choice."; }
   else {
     info.innerHTML = `no profile <button class="btn small" id="btn-profile-create" title="Create ${esc(cur)}'s profile from ${esc(exp(S.selected)?.label || "this task")}'s settings">Create</button>`;
     $("#btn-profile-create").onclick = () => createProfileFromTask();
@@ -1350,7 +1351,7 @@ function renderMonitor() {
   const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.cue_colour && `cue ${r.cue_colour}`,
     r.chosen_end && `chose ${r.chosen_end}`, r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
     r.reversal == 1 && "first trial after a reversal"].filter(Boolean).join(" · ");
-  // The strip: the last 120 trials, grouped by block when the task has blocks (the colour rule).
+  // The strip: the last 120 trials, grouped by block when the task has blocks (the Color Rule).
   const shown = rows.slice(-120);
   const groups = [];
   for (const r of shown) {
@@ -1367,7 +1368,7 @@ function renderMonitor() {
   const bars = (items, max) => `<div class="bars">` + items.map(([k, v]) =>
     `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
   const panels = [`<div><h3>Outcomes</h3>${bars(present.map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`];
-  if (rows.some((r) => r.block)) {      // the colour rule: choices to criterion, block by block
+  if (rows.some((r) => r.block)) {      // the Color Rule: choices to criterion, block by block
     const per = {};
     rows.forEach((r) => { if (r.block && (String(r.correct) === "0" || String(r.correct) === "1")) per[r.block] = (per[r.block] || 0) + 1; });
     const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);

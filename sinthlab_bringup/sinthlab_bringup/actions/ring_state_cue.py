@@ -75,22 +75,19 @@ class RingStateCue:
     def enabled(self) -> bool:
         return self._enabled
 
-    def show(self, state: str, quarters: Optional[List[int]] = None, *, flash: bool = False, label: Optional[str] = None) -> None:
-        """Show the state on the selected quarters, either briefly or until the next cue."""
+    def show(self, state: str, quarters: Optional[List[int]] = None, *, label: Optional[str] = None) -> None:
+        """Show the state on the selected quarters until the next cue."""
         self._state = state
         if not self._enabled:
             return
         try:
             sender = VisualCue.sender(self._node)
             if sender is not None:
-                VisualCue.cancel_flash(self._node)
                 path = self.path_for(state, quarters)
                 if label is None:
                     sender.show(path, f"ring_{state}")
                 elif path != "/off":
                     sender.show(path, label)
-                if flash and path != "/off":
-                    VisualCue.finish_flash_after_delay(self._node, sender)
         except Exception as exc:
             self._node.get_logger().warn(f"Ring cue '{state}' not sent: {exc}")
 

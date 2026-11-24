@@ -152,7 +152,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             on_event=self.control.on_event,
         )
 
-        self.go = GoCue(self, self.recorder, self.on_audio_complete)
+        self.go = GoCue(self, self.recorder, self.quiet_window, self.audio_cue, self.on_audio_complete)
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         speeds = {"move_to_start.speed_scale": self.move_to_start.set_speed_scale,
@@ -278,8 +278,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
         self.recorder.mark("quiet_end")
-        self.recorder.mark("cue_go")
-        self.go.start(self.audio_cue, lambda label: self.visual_cue.start(label=label),
+        self.go.start(self.visual_cue.preview,
                       visual_enabled=self.visual_cue.enabled())
 
     def on_audio_complete(self):
@@ -406,6 +405,8 @@ class ApplePluckOrchestratorNode(rclpyNode):
         without reward, park, and add the penalty wait before the next trial."""
         if self._stopping or self.move_park.active():
             return
+        self.go.cancel()
+        self.go.warn_early_touch()
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._abort_trial("early_touch")

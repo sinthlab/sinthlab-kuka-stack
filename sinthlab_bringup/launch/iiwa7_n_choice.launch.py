@@ -8,9 +8,6 @@ from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
-# Names the recording folder: analysis/expt_<this file's name>_<timestamp>/
-RUN_NAME = "iiwa7_n_choice"
-
 
 def generate_launch_description():
     return LaunchDescription(
@@ -45,7 +42,6 @@ def generate_launch_description():
                 launch_arguments={
                     "subject": LaunchConfiguration("subject"),
                     "params_file": LaunchConfiguration("params_file"),
-                    "run_name": RUN_NAME,
                     "orchestrator": "free_move_orchestrator.py",
                     # Joint controller active for the exact-posture start/recover moves; CLIK loaded
                     # inactive and switched in by the orchestrator for the trial.

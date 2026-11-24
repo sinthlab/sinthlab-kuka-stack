@@ -43,7 +43,7 @@ def test_every_experiment_has_its_own_config_and_launch_file():
     for e in experiments.EXPERIMENTS:
         assert (CONFIG / e.params_yaml).exists() and (LAUNCH / e.launch_file).exists(), e.key
         launch = (LAUNCH / e.launch_file).read_text()
-        assert f'"{e.params_yaml}"' in launch and f'RUN_NAME = "{e.run_name}"' in launch, e.key
+        assert f'"{e.params_yaml}"' in launch, e.key
         if e.node == "free_move_orchestrator":
             assert params(e)["experiment"] == e.key, e.key   # the node records the dashboard's key
 

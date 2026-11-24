@@ -26,7 +26,7 @@ and along the rail being travelled, by least squares over the maze phase:
 
 The lag share of b is K_along x lag; what is left is damping (and anything else speed-proportional).
 
-    python3 analysis/maze_drag.py expt_iiwa7_maze_20261021_101500          # every trial of one run
+    python3 analysis/maze_drag.py 20261021_M1_maze_101500          # every trial of one run
     python3 analysis/maze_drag.py run_folder/robot_trajectory_*.csv         # chosen trials
     python3 analysis/maze_drag.py run_folder --plot drag.png                 # force-speed plots
     python3 analysis/maze_drag.py run_folder --stiffness 1000 1000 2500      # if smartpad_params.json is missing

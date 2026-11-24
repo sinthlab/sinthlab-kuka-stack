@@ -196,10 +196,10 @@
       enabled: true  # Enable audio cues
     audio_cue_play:  # go cue: free movement starts
       frequency_hz: 1500  # go tone: pitch [Hz]
-      duration_ms: 180  # go tone: length [ms]
+      duration_ms: 500  # go tone: length [ms]
     audio_cue_end:  # confirms a valid choice
       frequency_hz: 800  # end tone: pitch [Hz]
-      duration_ms: 150  # choice confirmation tone: length [ms]
+      duration_ms: 350  # choice confirmation tone: length [ms]
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
       enabled: true  # send a pulse at Start (experiment start) and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # Cabinet address for pulse commands (UDP port 30002)

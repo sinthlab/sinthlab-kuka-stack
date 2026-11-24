@@ -96,7 +96,7 @@ class MazeOrchestratorNode(rclpyNode):
         # any sound. The beep process blocks for exactly duration_ms, so its EXIT gives the real
         # end and the start follows by subtraction. The visual ack comes back after the firmware
         # has already called pixels.show(), so it brackets the light.
-        self.go = GoCue(self, self.recorder, self.on_go_complete)
+        self.go = GoCue(self, self.recorder, self.quiet_window, self.go_cue, self.on_go_complete)
         self.checkpoint_monitor = CheckpointMonitor(
             self, param_prefix="checkpoint_monitor",
             on_complete=self.on_goal_reached, on_reward=self.on_checkpoint_reward,
@@ -155,8 +155,7 @@ class MazeOrchestratorNode(rclpyNode):
 
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding go cue.")
-        self.recorder.mark("cue_go")
-        self.go.start(self.go_cue, lambda label: self.go_cue_visual.start(label=label),
+        self.go.start(self.go_cue_visual.preview,
                       visual_enabled=self.go_cue_visual.enabled())
 
     def on_go_complete(self):
@@ -184,6 +183,8 @@ class MazeOrchestratorNode(rclpyNode):
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the penalty wait before the next trial."""
+        self.go.cancel()
+        self.go.warn_early_touch()
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._end_trial("early_touch")

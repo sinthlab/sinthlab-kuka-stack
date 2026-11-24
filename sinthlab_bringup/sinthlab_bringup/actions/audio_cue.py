@@ -123,6 +123,10 @@ class AudioCue:
         self._duration = int(get_required_param(node, self._param_prefix + "duration_ms"))
         self._enabled = bool(get_required_param(node, "audio_cue.enabled"))
 
+    @classmethod
+    def play_early_touch(cls, node: rclpyNode) -> None:
+        cls._players["early_touch"].jobs.put((time.monotonic(), 220, 350, None, None, node.get_logger()))
+
     def enabled(self) -> bool:
         return self._enabled
 

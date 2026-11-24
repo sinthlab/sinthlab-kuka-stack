@@ -49,7 +49,6 @@ class Experiment:
     node: str                      # orchestrator node name (namespace /<robot_name>)
     stiffness_profile: str         # SmartPad "Cartesian stiffness (K diagonal)" selection
     ros_controller: str
-    run_name: str                  # recording folder prefix: analysis/expt_<run_name>_<ts>/
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
@@ -59,7 +58,7 @@ class Experiment:
     # paradigm only (live_params.PARADIGM_ONLY) are shown only under it.
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
     paradigm_param: str = "paradigm"
-    # Parameters fixed by the task itself, not shown in the dashboard (the colour rule: centre_out.target is
+    # Parameters fixed by the task itself, not shown in the dashboard (the Color Rule: centre_out.target is
     # always "rule"). The YAML holds them; the node refuses another value.
     hidden: Tuple[str, ...] = ()
     # One CARD can hold several experiments, one per variant (Restricted Move and Cued Reaches: a horizontal
@@ -96,7 +95,6 @@ EXPERIMENTS: List[Experiment] = [
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
         stiffness_profile="Uniform 100",
         ros_controller="lbr_joint_position_command_controller",
-        run_name="iiwa7_apple_pluck_impedance_control",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
         task_settings=("apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m",
                        "resistance.stiffness_n_per_m", "response_timeout_sec", "quiet_window_sec",
@@ -110,7 +108,6 @@ EXPERIMENTS: List[Experiment] = [
         params_yaml="virtual_fixtures_params.yaml", node="restricted_plane_orchestrator",
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_move_restricted_plane",
         task_settings=("apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m",
                        "response_timeout_sec", "quiet_window_sec", "virtual_fixture_profile"),
         launch_args={"ctrl": "lbr_joint_position_command_controller",
@@ -124,7 +121,6 @@ EXPERIMENTS: List[Experiment] = [
         params_yaml="maze_params.yaml", node="maze_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_maze",
         task_settings=("response_timeout_sec", "quiet_window_sec", "virtual_fixtures.rail_lead_sec", "virtual_fixture_profile"),
         launch_args={"ctrl": "lbr_joint_position_command_controller",
                      "extra_inactive_ctrl": "kuka_clik_controller",
@@ -158,7 +154,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("free_move"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_free_move",
         # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
         paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
         task_settings=("session_sec", "long_move.min_m", "long_move.min_straightness", "long_move.min_gap_sec"),
@@ -173,7 +168,6 @@ EXPERIMENTS += [
         params_yaml="reach_map.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("reach_map"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_reach_map",
         paradigms=[("each_move", "Long moves"), ("new_best", "New best")], paradigm_param="long_move.reward",
         task_settings=("long_move.min_m", "long_move.min_gap_sec", "reach_map.margin_m", "reach_map.min_m",
                        "reach_map.percentile"),
@@ -189,7 +183,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_restricted_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("restricted_move_horizontal"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_restricted_move_horizontal",
         task_settings=("session_sec",),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
@@ -200,7 +193,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_restricted_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("restricted_move_vertical"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_restricted_move_vertical",
         task_settings=("session_sec",),
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
@@ -216,7 +208,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("move_horizontal"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_move_horizontal",
         paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
         task_settings=_CUED_TASK,
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
@@ -228,7 +219,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("move_vertical"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_move_vertical",
         paradigms=list(_CENTRE_OUT_VERTICAL), paradigm_param="centre_out.target",
         task_settings=_CUED_TASK,
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
@@ -236,17 +226,16 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
-# The colour rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# The Color Rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
 # or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
 EXPERIMENTS += [
     Experiment(
-        key="colour_rule", label="Colour Rule", group="experiments",
-        summary="Ring colour cues left or right. The rule reverses without warning at criterion.",
+        key="colour_rule", label="Color Rule", group="experiments",
+        summary="Ring color cues left or right. The rule reverses without warning at criterion.",
         launch_file="iiwa7_colour_rule.launch.py",
         params_yaml="colour_rule.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("colour_rule"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_colour_rule",
         paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
         task_settings=("rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials", "rule.max_repeats",
                        "centre_out.end_tol_m", "centre_out.free_reach_m"),
@@ -265,7 +254,6 @@ EXPERIMENTS += [
         params_yaml="n_choice.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("n_choice"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_n_choice",
         # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.
         paradigms=[("2", "2 choices"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8")],
         paradigm_param="free_move.ray_layout",
@@ -335,7 +323,7 @@ LABELS: Dict[str, str] = {
     "rule.window": "Criterion window [choices]",
     "rule.criterion_pct": "Criterion [% correct]",
     "rule.min_trials": "Min choices per block",
-    "rule.max_repeats": "Max repeats of one colour",
+    "rule.max_repeats": "Max repeats of one color",
     "n_choice.p_max": "Highest reward probability",
     "n_choice.p_min": "Lowest reward probability",
     "n_choice.deplete": "Depletion per choice",

@@ -47,9 +47,8 @@ class PostProcessor:
     def runs() -> list:
         """Local run folders, newest first."""
         out = []
-        for p in sorted(ex.DATA.glob("expt_*"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if p.is_dir():
-                out.append({"path": str(p), "name": p.name, "trials": len(list(p.glob("robot_trajectory_*.csv")))})
+        for p in sorted(ex.outcome_tables.run_folders(ex.DATA), key=lambda p: p.stat().st_mtime, reverse=True):
+            out.append({"path": str(p), "name": p.name, "trials": len(list(p.glob("robot_trajectory_*.csv")))})
         return out
 
     def scan(self, robot: str, nsp: str) -> dict:

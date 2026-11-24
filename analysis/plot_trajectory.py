@@ -18,7 +18,7 @@ environment on the arm box.
     python3 plot_trajectory.py --fps 40 --frames 400
     python3 plot_trajectory.py --elev 0 --azim 0   # face-on Y-Z instead of perspective
     python3 plot_trajectory.py --file robot_trajectory_20260902_115639.csv
-    python3 plot_trajectory.py --folder expt_iiwa7_maze_20260924_101500   # overlay every trial of one run
+    python3 plot_trajectory.py --folder 20260924_M1_maze_101500   # overlay every trial of one run
     python3 plot_trajectory.py --all           # overlay every CSV from every run
 """
 from __future__ import annotations
@@ -154,7 +154,7 @@ def load_rails(profile=None, sidecar=None):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", help="specific CSV (default: newest in this folder)")
-    ap.add_argument("--folder", help="overlay every trial in this expt_* folder (one launch)")
+    ap.add_argument("--folder", help="overlay every trial in this run folder (one launch)")
     ap.add_argument("--all", action="store_true", help="overlay every CSV from every run")
     ap.add_argument("--save", help="write here instead of showing a window; .gif animates, .png is static")
     ap.add_argument("--fps", type=int, default=25, help="animation frames per second")
@@ -175,7 +175,7 @@ def main() -> int:
     import matplotlib.pyplot as plt
 
     files = sorted(glob.glob(os.path.join(HERE, "robot_trajectory_*.csv"))
-                   + glob.glob(os.path.join(HERE, "expt_*", "robot_trajectory_*.csv")))
+                   + glob.glob(os.path.join(HERE, "*", "robot_trajectory_*.csv")))
     if not files:
         print("No trajectory CSV files found next to this script.")
         return 1

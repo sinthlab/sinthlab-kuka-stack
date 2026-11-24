@@ -381,7 +381,6 @@ LAUNCH_HELP = {
     "robot_name": "ROS namespace of the arm: topics are /<robot_name>/...",
     "startup_delay": "seconds to hold the orchestrator back so the controllers are active first",
     "orchestrator": "the experiment's state machine node",
-    "run_name": "names the recording folder: analysis/expt_<run_name>_<time>/",
     "ctrl": "controller spawned ACTIVE (moves to start and park)",
     "extra_inactive_ctrl": "second controller spawned INACTIVE; the orchestrator switches to it for the fixture",
     "clik_nullspace_cfg": "CLIK redundancy posture file (must equal the start pose)",
@@ -406,7 +405,7 @@ def read_fixed_config(exp: ex.Experiment, p: "ExperimentParams") -> List[dict]:
         "source": f"sinthlab_bringup/launch/{exp.launch_file} → experiment_base.launch.py",
         "rows": [{"name": k, "value": v, "help": LAUNCH_HELP.get(k, "")} for k, v in
                  {**ex.COMMON_LAUNCH_ARGS, "orchestrator": exp.node + ".py",
-                  "run_name": exp.run_name, **exp.launch_args,
+                  **exp.launch_args,
                   "params_file": (f"copy of config/{exp.params_yaml} with "
                                   + " and ".join(x for x in (f"profile {p.profile_tag()}" if p.profile_tag() else "",
                                                              "today's edits" if p.edits else "") if x)

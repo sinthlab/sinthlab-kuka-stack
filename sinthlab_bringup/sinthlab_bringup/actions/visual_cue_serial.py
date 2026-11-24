@@ -159,7 +159,7 @@ class SerialCueTrigger:
                            f"{REPLY_TIMEOUT_SEC * 1000:.0f} ms. Is the board powered and the link wired?")
             return
 
-        if (cmd.startswith("CUE") or cmd.startswith("SEG ")) and self._on_result is not None and label is not None:
+        if self._on_result is not None and label is not None and (cmd.startswith("CUE") or label.startswith("go_")):
             try:
                 self._on_result(label, True, ms)
             except Exception:
