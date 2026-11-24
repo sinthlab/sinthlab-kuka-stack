@@ -174,7 +174,7 @@ class VisualCue:
         """Show a solid cue until the go controller explicitly turns the ring off."""
         sender = self.sender(self._node)
         if self._enabled and sender is not None:
-            colour = self._colour if self._colour is not None else (0, 64, 0, 0)
+            colour = self._colour if self._colour is not None else (0, 255, 0, 0)   # full value: brightness scales it
             if any(colour):
                 sender.show("/segments?factor=1&colors=" + ",".join(map(str, colour)), label)
 

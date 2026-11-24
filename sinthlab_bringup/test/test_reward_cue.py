@@ -73,6 +73,14 @@ def test_brightness_is_sent_once_per_change():
     assert sender.sent == [0.1, 0.05]
     VisualCue._senders, VisualCue._brightness = {}, None
     for name in FREE_MOVE + ["apple_pluck_impedance", "maze_params", "virtual_fixtures_params"]:
-        assert params(name)["visual_cue"]["brightness"] == 0.1, name
+        assert params(name)["visual_cue"]["brightness"] == 0.05, name
     assert live_params.is_live("move_free", "visual_cue.brightness") and live_params.is_live("maze", "visual_cue.brightness")
     assert live_params.check_value("visual_cue.brightness", 0.5) is not None      # past the power note's 0.3
+
+
+def test_every_colour_is_at_full_value_so_brightness_alone_sets_how_bright():
+    for f in sorted(CONFIG.glob("*.yaml")):
+        p = yaml.safe_load(f.read_text()).get("/**", {}).get("ros__parameters", {})
+        for block in ("ring_cue", "visual_cue"):
+            for name, c in ((p.get(block) or {}).get("colours") or {}).items():
+                assert not any(c) or max(c) == 255, (f.name, block, name, c)    # dark, or full value
