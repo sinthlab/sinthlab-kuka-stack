@@ -352,6 +352,7 @@ function renderControls() {
   const showStatus = !!(s || r.state !== "idle");
   if (showStatus === $("#status-card").classList.contains("hidden")) {
     $("#status-card").classList.toggle("hidden", !showStatus);
+    $("#arm-card").classList.toggle("hidden", !showStatus);
     liveToggled(false);
   }
   $("#checklist-card").classList.toggle("hidden", !!(s || r.state !== "idle"));
@@ -1095,7 +1096,7 @@ async function liveLoad() {
     $("#live-sub").textContent = m.geometry ? "Live position and trial bounds" : "No experiment running";
   } catch { /* the next message retries */ }
 }
-function liveShown() { return $("#live-card").open && !$("#status-card").classList.contains("hidden"); }
+function liveShown() { return $("#live-card").open && !$("#arm-card").classList.contains("hidden"); }
 function onLive(l) {
   if (!LV.view || !liveShown()) return;
   if ((l.version ?? null) !== LV.version || (l.experiment && !LV.view.geom) || (!l.experiment && LV.view.geom)) liveLoad();
@@ -1173,7 +1174,8 @@ function pct(n, d) { return d ? `${Math.round(100 * n / d)}%` : "–"; }
 const num = (v) => (v === "" || v == null ? NaN : Number(v));
 
 function chooseSessionView() {
-  if (!SV.userView) SV.view = runningKey() || sessionKey() === "reach_map" ? "monitor" : "history";
+  // Run while a run goes, and after it ends (SV.ranKey) until another task or tab is chosen; else history.
+  if (!SV.userView) SV.view = runningKey() || SV.ranKey === sessionKey() || sessionKey() === "reach_map" ? "monitor" : "history";
   document.querySelectorAll(".session-card .tab").forEach((t) => {
     const on = t.dataset.view === SV.view;
     t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
@@ -1202,13 +1204,21 @@ async function refreshSession(force = false) {
 
 // Called on every status update: refetch the trials when a trial ends.
 function sessionOnState() {
-  const s = statusLive();
+  const s = statusLive(), rk = runningKey();
+  if (rk !== SV.runKey) {                  // a run started or ended: back to the default view, which is Run
+    if (rk || SV.runKey) SV.userView = false;
+    if (SV.runKey && !rk) SV.ranKey = SV.runKey;
+    SV.runKey = rk;
+  }
   const t = s ? `${s.experiment}:${s.trial}:${["trial_end", "recover_start"].includes(s.phase)}` : null;
   const viewWas = SV.view;
   chooseSessionView();
-  if (t !== SV.lastTrial || SV.view !== viewWas) { SV.lastTrial = t; refreshSession(true); }
-  // The Reach Map grows within its one long session: redraw it every few seconds while it runs.
-  else if (s && s.experiment === "reach_map" && SV.view === "monitor" && Date.now() - SV.lastFetch > 5000) refreshSession(true);
+  if (t !== SV.lastTrial || SV.view !== viewWas) {
+    SV.lastTrial = t; refreshSession(true);
+    setTimeout(() => refreshSession(true), 2500);   // again once the finished trial's row is written
+  }
+  // While a run goes, keep its progress current (a trial's row is written as it ends).
+  else if (rk && Date.now() - SV.lastFetch > 4000) refreshSession(true);
 }
 
 function renderSession() {
