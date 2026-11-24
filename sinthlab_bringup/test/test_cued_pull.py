@@ -1,0 +1,363 @@
+"""Cued Pull: helpers/pull_task.py (scoring, schedule, geometry), actions/cued_pull.py on a fake arm,
+AdmittanceMoveAction.displace(), its trials.csv columns and its card.
+
+    python3 -m pytest sinthlab_bringup/test
+"""
+import json
+import random
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "sinthlab_bringup"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT / "experiment_ctrl_gui"))
+
+import test_centre_out_monitor as stubs  # noqa: E402  (ROS stand-ins)
+from sinthlab_bringup.helpers import live_params, outcome_tables as ot, pull_task as pt  # noqa: E402
+from sinthlab_bringup.actions import cued_pull  # noqa: E402
+from sinthlab_bringup.actions.admittance_move import AdmittanceMoveAction  # noqa: E402
+
+YAML = ROOT / "sinthlab_bringup/config/cued_pull.yaml"
+
+
+def yaml_params():
+    d = yaml.safe_load(YAML.read_text())["/**"]["ros__parameters"]
+    out = {}
+
+    def flat(node, prefix=""):
+        for k, v in node.items():
+            if isinstance(v, dict):
+                flat(v, prefix + k + ".")
+            else:
+                out[prefix + k] = v
+    flat(d)
+    return out
+
+
+def yaml_box():
+    p = yaml_params()
+    return (np.array([p[f"free_move.box.{a}_min_m"] for a in "xyz"]),
+            np.array([p[f"free_move.box.{a}_max_m"] for a in "xyz"]))
+
+
+# ---------------------------------------------------------------- scoring
+def test_directions_and_rotation():
+    assert np.allclose(pt.rotate(pt.unit("right"), 90), pt.unit("up"))          # counter-clockwise as he sees it
+    assert np.allclose(pt.rotate(pt.unit("down"), 270), pt.unit("left"))
+    assert pt.QUARTER == {"up": 0, "right": 1, "down": 2, "left": 3}             # the ring's quarters
+
+
+def test_a_pull_ends_at_its_distance_and_is_scored_against_the_cone():
+    assert pt.crossing([0.03, 0.0], 0.05, "right", 15) is None                   # not there yet
+    assert pt.crossing([0.0, -0.06], 0.05, None, 15) == (True, 270.0, None)      # shaping: any direction pays
+    ok, ang, err = pt.crossing([0.05, 0.01], 0.05, "right", 15)                  # 11 deg above right
+    assert ok and err == pytest.approx(11.3, abs=0.1)
+    ok, _, err = pt.crossing([0.05, -0.02], 0.05, "right", 15)                   # 22 deg below: outside
+    assert not ok and err < 0
+    ok, _, err = pt.crossing([-0.01, -0.05], 0.05, "down", 15)                   # left of down = clockwise
+    assert ok and err < 0
+
+
+def test_an_uncorrected_bump_misses_the_target():
+    s = pt.PullSettings()
+    d = s.bump_m * pt.rotate(pt.unit("right"), 90) + s.distance_m * pt.unit("right")   # bumped, carried on straight
+    assert not pt.crossing(d, s.distance_m, "right", s.cone_deg)[0]
+
+
+# ---------------------------------------------------------------- the schedule
+def test_blocks_balance_directions_perturbations_and_angles():
+    s = pt.PullSettings(mode="bump")
+    sched = pt.PullSchedule(s, random.Random(1))
+    plans = [sched.next() for _ in range(4 * s.block_trials)]
+    assert {p.block for p in plans} == {1}
+    for d in s.directions:
+        mine = [p for p in plans if p.direction == d]
+        assert len(mine) == 6 and sum(p.perturb == "bump" for p in mine) == 2      # round(0.33 x 6)
+    angles = [p.angle_deg for p in plans if p.perturb]
+    assert angles.count(90.0) == angles.count(270.0) == 4
+
+
+@pytest.mark.parametrize("p", [0.33, 0.5])
+def test_perturbed_trials_never_run_together(p):
+    sched = pt.PullSchedule(pt.PullSettings(mode="jump", probability=p), random.Random(2))
+    plans = [sched.next() for _ in range(240)]                                   # ten blocks, across their edges
+    flags = [x.perturb is not None for x in plans]
+    assert not any(a and b for a, b in zip(flags, flags[1:]))
+    assert sum(flags) == round(p * 6) * 4 * 10                                    # still balanced
+
+
+def test_too_many_perturbed_trials_raise_the_cap_as_little_as_needed():
+    sched = pt.PullSchedule(pt.PullSettings(mode="bump", probability=0.83), random.Random(5))   # 5 of 6
+    flags = [sched.next().perturb is not None for _ in range(24)]
+    runs, run = [], 0
+    for f in flags:
+        run = run + 1 if f else 0
+        runs.append(run)
+    assert sum(flags) == 20 and max(runs) <= 5
+
+
+def test_a_change_starts_a_new_block_and_shaping_has_no_cue():
+    s = pt.PullSettings(mode="jump")
+    sched = pt.PullSchedule(s, random.Random(3))
+    sched.next()
+    s.mode = "shaping"
+    p = sched.next()
+    assert (p.direction, p.perturb, p.block) == (None, None, 2)
+    s.mode, s.probability = "bump", 0.0
+    assert all(sched.next().perturb is None for _ in range(24))                  # cued pulls only
+
+
+# ---------------------------------------------------------------- settings and the box
+def test_settings_checks():
+    assert pt.settings_problem(pt.PullSettings()) is None
+    assert "bump_at_m" in pt.settings_problem(pt.PullSettings(bump_at_m=0.045))  # no room left to correct
+    assert "unknown" in pt.settings_problem(pt.PullSettings(directions=["sideways"]))
+    assert pt.settings_problem(pt.PullSettings(mode="pluck"))
+
+
+def test_the_default_pulls_fit_the_box_and_longer_ones_need_fewer_directions():
+    lo, hi = yaml_box()
+    s = cued_pull.settings_from(lambda n: yaml_params()[n])
+    assert pt.settings_problem(s) is None and pt.box_problem(s, lo, hi) is None
+    s.distance_m = 0.07
+    assert "outside the box" in pt.box_problem(s, lo, hi)                        # up runs out of room
+    s.directions = ["right", "left", "down"]
+    s.distance_m = 0.06
+    assert pt.box_problem(s, lo, hi) is None
+    s.directions, s.distance_m = ["right", "left"], 0.12
+    assert pt.box_problem(s, lo, hi) is None
+
+
+# ---------------------------------------------------------------- the monitor on a fake arm
+class Clock:
+    def __init__(self):
+        self.t = 100.0
+
+    def monotonic(self):
+        return self.t
+
+
+class FakeArm:
+    def __init__(self):
+        self.pos, self.force, self.disp, self.box_ = np.zeros(3), 0.0, None, yaml_box()
+
+    def shape(self):
+        return "frontal"
+
+    def box(self):
+        return self.box_
+
+    def rest_offset_from_anchor(self):
+        return self.pos.copy()
+
+    def displacing(self):
+        return self.disp is not None
+
+    def hand_force_n(self):
+        return self.force
+
+    def displace(self, off, sec, on_done=None):
+        self.disp = (np.asarray(off), on_done)
+        return True
+
+    def finish(self):
+        off, on_done = self.disp
+        self.pos = self.pos + off
+        self.disp = None
+        on_done()
+
+
+def monitor(monkeypatch, **over):
+    clock = Clock()
+    monkeypatch.setattr(cued_pull, "time", clock)
+    params = {**yaml_params(), **over}
+    node, arm, marks = stubs.FakeNode(params), FakeArm(), []
+    mon = cued_pull.CuedPullMonitor(node, arm, lambda e, a=None: marks.append((e, a)), rng=random.Random(4))
+    return node, arm, mon, marks, clock
+
+
+def tick(node):
+    for t in node.timers:
+        t()
+
+
+def run_trial(node, arm, mon, clock, plan):
+    got = []
+    mon.plan = plan
+    mon.start(lambda ok, ang: got.append((ok, ang)))
+    return got
+
+
+def test_shaping_rewards_any_pull(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch)
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("shaping", None))
+    assert mon.quarters() == [0, 1, 2, 3] and mon.target() == "any"
+    arm.pos = np.array([0.0, -0.03, -0.045])                  # down-left, 5.4 cm
+    tick(node)
+    assert got == [(True, pytest.approx(236.3, abs=0.1))]
+    assert [e for e, _ in marks] == ["grip"]                  # moved > grip.move_m counts as the grip
+
+
+def test_a_bump_comes_after_the_grip_and_the_target_stays(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
+    plan = pt.TrialPlan("bump", "right", "bump", 90.0, 0.015)
+    got = run_trial(node, arm, mon, clock, plan)
+    assert mon.quarters() == [1]
+    arm.force = 5.0
+    tick(node)
+    clock.t += 0.05
+    tick(node)
+    assert marks[-1][0] == "grip"
+    arm.pos = np.array([0.0, 0.026, 0.0])                     # past bump_at_m along right
+    tick(node)
+    assert marks[-1] == ("bump", 90.0) and arm.displacing()
+    assert np.allclose(arm.disp[0], [0, 0, 0.015])            # straight up: perpendicular to right
+    tick(node)
+    assert not got                                            # nothing is judged mid-bump
+    arm.finish()
+    assert marks[-1][0] == "bump_end"
+    arm.pos = np.array([0.0, 0.05, 0.015])                    # carried on without correcting: 16.7 deg off
+    tick(node)
+    assert got and got[0][0] is False
+    assert mon.result()["perturbed"] == 1 and mon.result()["error_deg"] == pytest.approx(16.7, abs=0.1)
+
+
+def test_a_jump_before_the_grip_moves_where_the_pull_starts(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump"})
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "down", "jump", 270.0, 0.015))
+    clock.t += 0.35                                            # past the latest jump delay
+    tick(node)
+    assert marks[-1] == ("jump", 270.0)
+    assert np.allclose(arm.disp[0], [0, -0.015, 0])            # clockwise from down = left (-Y)
+    arm.finish()
+    tick(node)
+    assert "grip" not in [e for e, _ in marks]                 # the jump itself is not his grip
+    arm.pos = arm.pos + [0, 0, -0.05]                          # straight down from where it landed
+    tick(node)
+    assert got == [(True, 270.0)]
+
+
+def test_no_jump_once_he_has_gripped(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "left", "jump", 90.0, 0.015))
+    arm.pos = np.array([0.0, -0.01, 0.0])                      # already moving it
+    tick(node)
+    tick(node)
+    assert [e for e, _ in marks] == ["grip", "jump_skipped"]
+    clock.t += 1.0
+    tick(node)
+    assert not arm.displacing() and mon.result()["perturbed"] == 0
+
+
+def test_live_changes_are_checked_against_the_box(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch)
+    assert mon.check_live("pull.distance_m", 0.09, {}) is not None
+    assert mon.check_live("pull.distance_m", 0.04, {}) is None
+    assert mon.check_live("pull.mode", "bump", {}) is None
+    assert mon.check_live("pull.cue_delay_min_sec", 2.0, {}) is not None        # above the max (0.3)
+    assert mon.check_live("pull.cue_delay_max_sec", 2.0, {}) is None
+
+
+def test_needs_the_frontal_plane(monkeypatch):
+    arm = FakeArm()
+    arm.shape = lambda: "y"
+    with pytest.raises(ValueError):
+        cued_pull.CuedPullMonitor(stubs.FakeNode(yaml_params()), arm, lambda *a: None)
+
+
+# ---------------------------------------------------------------- the admittance's displacement
+def test_displace_drives_the_equilibrium_then_hands_back(monkeypatch):
+    from sinthlab_bringup.actions import admittance_move as am
+    clock = Clock()
+    monkeypatch.setattr(am.time, "monotonic", clock.monotonic)
+    adm = AdmittanceMoveAction.__new__(AdmittanceMoveAction)
+    adm._rail, adm._open, adm._shape, adm._rays, adm._box = None, None, "frontal", None, yaml_box()
+    adm._plane_n = np.array([1.0, 0.0, 0.0])
+    adm._anchor = np.eye(4)
+    adm._anchor[0:3, 3] = [0.38, 0.01, 0.98]
+    adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
+    adm._eq, adm._moving, adm._disp = adm._anchor[0:3, 3].copy(), True, None
+    adm._v, adm._f_filt = np.ones(3), np.ones(3)
+    published, done = [], []
+    adm._publish = published.append
+    assert adm.displace([0.0, 0.0, -0.015], 0.1, on_done=lambda: done.append(1))
+    assert not adm.displace([0.0, 0.01, 0.0], 0.1)                 # one at a time
+    clock.t += 0.05
+    adm._displace_tick(clock.t)
+    assert published[-1][2] == pytest.approx(0.98 - 0.0075)        # halfway, on the minimum-jerk path
+    clock.t += 0.06
+    adm._displace_tick(clock.t)
+    assert published[-1][2] == pytest.approx(0.965) and done == [1] and not adm.displacing()
+    assert not np.any(adm._v)                                      # no speed carried over
+
+
+def test_min_jerk_profile():
+    assert pt.min_jerk(0) == 0 and pt.min_jerk(1) == 1 and pt.min_jerk(0.5) == pytest.approx(0.5)
+    assert pt.min_jerk_peak_speed(0.015, 0.1) == pytest.approx(0.281, abs=0.001)
+
+
+# ---------------------------------------------------------------- trials.csv / sessions.csv
+def sidecar(k, plan, outcome, events=(), err=None):
+    ev = lambda n, dt, a=None: {"event": n, "arg": a, "t_wall": 1e9 + 10 * k + dt}   # noqa: E731
+    evs = [ev("trial_start", 0, k), ev("cue_go", 3)] + [ev(n, dt, a) for n, dt, a in events]
+    if outcome:
+        evs.append(ev(outcome[0], 4, outcome[1]))
+    evs.append(ev("trial_end", 4.1, k))
+    return {"experiment": "cued_pull", "trial_index": k, "subject": "M1", "params": {"pull.mode": plan["mode"]},
+            "pull": plan, "pull_result": {"error_deg": err}, "events": evs}
+
+
+def test_columns_and_session(tmp_path):
+    std = {"mode": "bump", "direction": "right", "perturb": None, "angle_deg": None, "size_m": 0.0, "block": 1,
+           "cue_delay_sec": 0.3}
+    bump = {**std, "perturb": "bump", "angle_deg": 90.0, "size_m": 0.015}
+    metas = [sidecar(1, std, ("pull", 2.0), [("grip", 3.25, 4.0)], err=2.0),
+             sidecar(2, bump, ("pull_wrong", 17.0), [("grip", 3.3, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)],
+                     err=17.0),
+             sidecar(3, bump, ("pull", 5.0), [("grip", 3.2, 4.0), ("bump", 3.45, 90.0), ("bump_end", 3.55, None)],
+                     err=5.0)]
+    row = ot.trial_row(metas[1])
+    assert (row["paradigm"], row["target"], row["perturbation"], row["perturbed"], row["correct"]) == \
+        ("bump", "right", "bump", 1, 0)
+    assert (row["grip_s"], row["perturb_s"], row["error_deg"], row["success"]) == (0.3, 0.5, 17.0, 0)
+    run = tmp_path / "expt_p"
+    run.mkdir()
+    for m in metas:
+        (run / f"t{m['trial_index']}.meta.json").write_text(json.dumps(m))
+        ot.append_trial(run, m)
+    s = ot.session_row(run)
+    assert (s["n_pulls"], s["pct_correct"], s["pct_correct_standard"], s["pct_correct_perturbed"]) == \
+        (3, 66.7, 100.0, 50.0)
+    assert s["median_grip_s"] == 0.25
+
+
+# ---------------------------------------------------------------- the card and the live settings
+def test_card_and_live_settings():
+    experiments = pytest.importorskip("experiments")
+    e = experiments.BY_KEY["cued_pull"]
+    assert e.group == "experiments" and e.paradigm_param == "pull.mode"
+    assert [k for k, _ in e.paradigms] == ["shaping", "jump", "bump"]
+    assert e.clik_nullspace == "clik_nullspace_pretrain_vertical.yaml"
+    for name in yaml_params():
+        if name.split(".")[0] in ("pull", "perturb", "grip"):
+            assert live_params.is_live("cued_pull", name), name                # every task setting, mid-run
+    assert not live_params.is_live("cued_pull", "free_move.box.z_max_m")       # the box is per-run
+    assert live_params.paradigm_of("perturb.bump_at_m") == ("bump",)
+    assert live_params.check_value("pull.mode", "jump") is None
+    assert live_params.check_value("perturb.jump_sec", 0.01) is not None        # too fast
+    start = yaml_params()["move_to_start.target_joint_position"]
+    nchoice = yaml.safe_load((ROOT / "sinthlab_bringup/config/n_choice.yaml").read_text())["/**"]["ros__parameters"]
+    assert start == nchoice["move_to_start"]["target_joint_position"]          # N-Choice's start and posture
+
+
+def test_the_dashboard_check_matches_the_node():
+    p = yaml_params()
+    assert pt.params_problem(p) is None
+    assert "outside the box" in pt.params_problem({**p, "pull.distance_m": 0.09})
+    assert pt.params_problem({**p, "pull.cue_delay_min_sec": 1.0})          # above the max
+    assert pt.params_problem({"free_move.damping_ns_per_m": 50}) is None     # not a Cued Pull: nothing to check

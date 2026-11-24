@@ -29,6 +29,7 @@ from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
 from sinthlab_bringup.helpers.rail_shapes import direction_name, layout_degs
+from sinthlab_bringup.helpers import pull_task
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -221,6 +222,7 @@ class DemoBridge:
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
             self._rule: Optional[ReversalSchedule] = None   # the Color Rule, built on entering it
             self._bandit: Optional[DepletingBandit] = None  # N-choice, built at the first trial
+            self._pull: Optional[pull_task.PullSchedule] = None  # Cued Pull, built at the first trial
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -356,7 +358,8 @@ class DemoBridge:
             if not self._sleep(run_id, float(self._effective.get("quiet_window_sec", 2.0))):
                 return False
             centre_out = self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled"))
-            if not centre_out:
+            pull = "pull.mode" in self._params
+            if not centre_out and not pull:
                 if not go() or not self._sleep(run_id, random.uniform(2.0, 4.5)):
                     return False
             if self._exp.key == "maze":
@@ -385,6 +388,65 @@ class DemoBridge:
                     self._reward("choice")
                 else:
                     self._phase_to("choice_unrewarded", name, f"N-choice: {name} (p = {p:.2f}) -- no reward.")
+            elif pull:
+                # Cued Pull: a simulated monkey -- grips after a reaction time, pulls; a perturbation makes
+                # him miss more often (actions/cued_pull.py, helpers/pull_task.py).
+                e = {**self._params, **self._effective}
+                s = pull_task.settings_from(lambda n: e.get(n))
+                if self._pull is None:
+                    self._pull = pull_task.PullSchedule(s)
+                self._pull.configure(s)
+                plan = self._pull.next()
+                delay = round(random.uniform(float(e.get("pull.cue_delay_min_sec", 0.3)),
+                                             max(float(e.get("pull.cue_delay_min_sec", 0.3)),
+                                                 float(e.get("pull.cue_delay_max_sec", 0.3)))), 3)
+                if self._meta is not None:
+                    self._meta["pull"] = {**plan.record(), "cue_delay_sec": delay}
+                self._phase_to("target", plan.direction or "any", f"Cued Pull: pull {plan.direction or 'any way'}.")
+                if not go():
+                    return False
+                rt = random.uniform(0.25, 0.6)
+                done = 0.0
+                if plan.perturb == "jump":
+                    at = random.uniform(s.jump_delay_min_sec, s.jump_delay_max_sec)
+                    if at < rt:
+                        if not self._sleep(run_id, at):
+                            return False
+                        self._phase_to("jump", plan.angle_deg, "Cued Pull: the apple jumps.")
+                        if not self._sleep(run_id, s.jump_sec):
+                            return False
+                        self._phase_to("jump_end", None, "")
+                        done = at + s.jump_sec
+                if not self._sleep(run_id, max(0.05, rt - done)):
+                    return False
+                self._phase_to("grip", 4.0, "")
+                if plan.perturb == "jump" and done == 0.0:
+                    self._phase_to("jump_skipped", None, "Cued Pull: gripped before the jump -- no jump this trial.")
+                hit = plan.perturb is not None and (plan.perturb == "bump" or done > 0.0)
+                if plan.perturb == "bump":
+                    if not self._sleep(run_id, 0.2):
+                        return False
+                    self._phase_to("bump", plan.angle_deg, "Cued Pull: bump.")
+                    if not self._sleep(run_id, s.bump_sec):
+                        return False
+                    self._phase_to("bump_end", None, "")
+                if not self._sleep(run_id, random.uniform(0.3, 0.7)):
+                    return False
+                ok = random.random() < (0.97 if plan.direction is None else 0.6 if hit else 0.85)
+                if plan.direction is None:
+                    err, ang = None, round(random.uniform(0.0, 360.0), 1)
+                else:
+                    err = round(random.gauss(0.0, s.cone_deg / 3) if ok else
+                                random.choice((-1, 1)) * random.uniform(s.cone_deg + 1, 40.0), 1)
+                    ang = round((pull_task.angle_of(pull_task.unit(plan.direction)) + err) % 360.0, 1)
+                    ok = abs(err) <= s.cone_deg
+                if self._meta is not None:
+                    self._meta["pull_result"] = {"perturbed": int(hit), "crossing_deg": ang, "error_deg": err}
+                if ok:
+                    self._phase_to("pull", ang, "Cued Pull: pull to the target -- reward.")
+                    self._reward("pull")
+                else:
+                    self._phase_to("pull_wrong", ang, "Cued Pull: pull outside the target -- no reward.")
             elif centre_out:
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
                 # (none with the other half of the rail closed: actions/centre_out.py).

@@ -57,6 +57,12 @@ force dipped under the threshold for a moment (free-move recording 26 Oct: 5 of 
 the acceleration limit, as before.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
+DISPLACING THE APPLE: displace() (the Cued Pull's jump and bump, actions/cued_pull.py). For its duration
+the equilibrium is DRIVEN -- from where it is, by a set offset, along a minimum-jerk profile -- and the
+hand's force does not move it; the stiff cabinet spring carries the arm (and a hand holding it) along.
+Then the admittance carries on from the displaced equilibrium, so the apple stays where it was put until
+the hand moves it. The offset stays inside the rail / box and above the floor.
+
 A HAND FASTER THAN THE EQUILIBRIUM: TRAIL. A strong push moves the arm faster than the equilibrium
 may move (max_speed_mps, accel_limit_mps2): the hand then drags the arm AHEAD of it, against the
 cabinet spring, and on letting go the spring pulls the arm back -- the jerk at the end of a fast
@@ -128,6 +134,7 @@ from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers import rail_shapes
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
+from sinthlab_bringup.helpers.pull_task import min_jerk
 from sinthlab_bringup.helpers.start_grid import StartGrid
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
@@ -232,6 +239,8 @@ class AdmittanceMoveAction:
         self._t_prev: Optional[float] = None
         self._p_go: Optional[np.ndarray] = None         # the arm at the go cue (enable_motion)
         self._max_exc = 0.0                             # farthest the arm has been moved from there [m]
+        self._f_hand = np.zeros(3)                      # tared hand force, every direction, filtered (the grip)
+        self._disp = None                               # displace(): (eq0, offset, t0, duration, on_done)
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
@@ -280,6 +289,8 @@ class AdmittanceMoveAction:
         self._low_t = 0.0
         self._settle_until = 0.0
         self._open = None                       # every trial starts with the whole rail open
+        self._disp = None
+        self._f_hand[:] = 0.0
         self._t_start = time.monotonic()
 
     def enable_motion(self) -> None:
@@ -300,6 +311,7 @@ class AdmittanceMoveAction:
         self._node.get_logger().info(f"Free move: tare {np.round(self._tare, 2)} N (base frame), resting offset "
                                      f"{np.round(self._rest_offset * 1000, 1)} mm; moving.")
         self._pushing = False
+        self._f_hand[:] = 0.0
         self._p_go = None if self._p_meas is None else self._p_meas.copy()
         self._max_exc = 0.0
         self._moving = True
@@ -307,6 +319,29 @@ class AdmittanceMoveAction:
     def stop(self) -> None:
         """Stop moving. The CLIK keeps the last equilibrium, so the arm holds where it is."""
         self._active = self._moving = False
+        self._disp = None
+
+    def displace(self, offset_xyz, duration_sec: float, on_done=None) -> bool:
+        """Move the equilibrium by offset_xyz [m, base frame] over duration_sec, minimum jerk, whatever the
+        hand does (class doc, "displacing the apple"); then call on_done(). Only while moving (after
+        enable_motion) and not already displacing; returns whether it started."""
+        if not self._moving or self._eq is None or self._disp is not None:
+            return False
+        self._disp = (self._eq.copy(), np.asarray(offset_xyz, dtype=float), time.monotonic(),
+                      max(float(duration_sec), 1e-3), on_done)
+        return True
+
+    def displacing(self) -> bool:
+        return self._disp is not None
+
+    def hand_force_n(self) -> float:
+        """The hand's force on the apple [N]: tared, filtered, in EVERY direction (not only along the rail or
+        plane), so a pull toward the monkey counts too. 0 before the go cue."""
+        return float(np.linalg.norm(self._f_hand))
+
+    def box(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        """The box's (min, max) offsets from the start [m, base frame], or None (a rail, the asterisk)."""
+        return self._box
 
     def set_open_span(self, span: Optional[tuple]) -> None:
         """Open only part of the rail, (lo, hi) [m from the start, within rail_min_m..rail_max_m], for this
@@ -441,6 +476,11 @@ class AdmittanceMoveAction:
 
         if self._p_go is not None:
             self._max_exc = max(self._max_exc, float(np.linalg.norm(self._p_meas - self._p_go)))
+        k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
+        self._f_hand += k * ((f_base - self._tare) - self._f_hand)
+        if self._disp is not None:                        # a jump or a bump: the equilibrium is driven
+            self._displace_tick(now)
+            return
 
         # Force -> velocity.
         f = f_base - self._tare
@@ -530,6 +570,23 @@ class AdmittanceMoveAction:
                 + f"tau_ext={np.round(getattr(self, '_tau_ext', np.zeros(7)), 2)} Nm  "
                 + f"q4={np.degrees(self._q_last[3]):.1f} deg  "
                 f"eq-start={np.round(eq - self._anchor[0:3, 3], 3)} m")
+
+    def _displace_tick(self, now: float) -> None:
+        """One step of displace(): the equilibrium on its minimum-jerk path; at the end, hand back to the
+        admittance from rest (no speed carried over) and call on_done."""
+        eq0, off, t0, dur, on_done = self._disp
+        s = (now - t0) / dur
+        self._eq = self._bound(eq0 + off * min_jerk(s))
+        self._publish(self._eq)
+        if s < 1.0:
+            return
+        self._disp = None
+        self._v[:] = 0.0
+        self._f_filt[:] = 0.0
+        self._settle_until = 0.0
+        self._quiet = self._low_t = 0.0
+        if on_done is not None:
+            on_done()
 
     def _bound(self, xyz: np.ndarray) -> np.ndarray:
         """xyz kept where the equilibrium may be: on the rail (or in the box), then above the floor."""

@@ -34,6 +34,7 @@ import experiments as ex  # noqa: F401  (puts sinthlab_bringup on sys.path)
 import kinematics
 from sinthlab_bringup.helpers.floor import reference_drop
 from sinthlab_bringup.helpers.free_move_box import box_bounds
+from sinthlab_bringup.helpers import pull_task
 from sinthlab_bringup.helpers.rail_shapes import direction_name, frontal_dir as rail_dir, layout_degs  # noqa: E402
 
 # Without a robot model (demo without ROS): the pre-training start, tool along +X.
@@ -153,7 +154,7 @@ class LiveView:
         elif key == "maze":
             self._maze(p, a, add)
         elif key in ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map"):
+                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "cued_pull"):
             self._free_move(p, a, add)
         return {"experiment": key, "shapes": shapes, "anchor": a.tolist(), "start": start.tolist(),
                 "model": real, "version": self._version + 1}
@@ -252,6 +253,22 @@ class LiveView:
                 add({"kind": "seg", "a": a.tolist(), "b": end.tolist(), "role": "rail", "label": f"{direction_name(deg)} rail"})
                 add({"kind": "marker", "p": end.tolist(), "r": float(p.get("n_choice.end_tol_m", 0.015)), "role": "end",
                      "id": f"end:{direction_name(deg)}", "label": f"{direction_name(deg)} end"})
+            return
+        if axis == "frontal" and "pull.distance_m" in p:     # Cued Pull: the box, and where a pull ends
+            try:
+                lo, hi = box_bounds(p.__getitem__, "free_move.box.")
+                add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "box"})
+            except (KeyError, ValueError):
+                pass
+            d = float(p["pull.distance_m"])
+            ring = [(a + np.array([0.0, d * math.cos(t), d * math.sin(t)])).tolist()
+                    for t in np.linspace(0.0, 2 * math.pi, 49)]
+            add({"kind": "poly", "pts": ring, "role": "rail", "label": f"a pull ends at {d * 100:.0f} cm"})
+            for name in p.get("pull.directions") or []:
+                if name in pull_task.DIRECTIONS:
+                    end = a + pull_task.to_base(d * pull_task.unit(name))
+                    add({"kind": "marker", "p": end.tolist(), "r": 0.01, "role": "end", "id": f"end:{name}",
+                         "label": f"{name} target"})
             return
         if axis == "frontal":         # the colour rule, No rail: free in the plane, inside the box; a choice
             try:                      # is reaching free_reach_m left or right

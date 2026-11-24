@@ -263,6 +263,27 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
+# Cued Pull (CIHR grant Aims 1-2): grip and pull the apple in the frontal plane; shaping, then cued pulls with
+# pre-grip jumps or mid-pull bumps. On the free-move node; Navin's Apple Pluck stays as it is. The mode
+# (pull.mode) is live, so the tabs switch it during a run, from the next trial.
+EXPERIMENTS += [
+    Experiment(
+        key="cued_pull", label="Cued Pull", group="experiments",
+        summary="Grip the apple and pull it the cued way. Jumps before the grip, or bumps during the pull.",
+        launch_file="iiwa7_cued_pull.launch.py",
+        params_yaml="cued_pull.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("cued_pull"),
+        ros_controller="kuka_clik_controller",
+        paradigms=[("shaping", "Shaping"), ("jump", "Cued jump"), ("bump", "Cued bump")],
+        paradigm_param="pull.mode",
+        task_settings=("pull.distance_m", "pull.cone_deg", "pull.directions", "pull.cue_delay_min_sec",
+                       "pull.cue_delay_max_sec", "perturb.probability", "perturb.jump_m", "perturb.jump_angles_deg",
+                       "perturb.jump_delay_min_sec", "perturb.jump_delay_max_sec", "perturb.bump_m",
+                       "perturb.bump_angles_deg", "perturb.bump_at_m"),
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
+]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
 for _e in EXPERIMENTS:
     assert _e.stiffness_profile in SMARTPAD_PROFILES, f"{_e.key}: unknown SmartPad profile {_e.stiffness_profile!r}"
@@ -330,6 +351,19 @@ LABELS: Dict[str, str] = {
     "n_choice.start": "Initial reward probabilities",
     "n_choice.end_tol_m": "End tolerance [m]",
     "free_move.ray_length_m": "Rail length [m]",
+    "pull.distance_m": "Pull length [m]",
+    "pull.cone_deg": "Target cone [deg]",
+    "pull.directions": "Cued directions",
+    "pull.cue_delay_min_sec": "Cue before go, min [s]",
+    "pull.cue_delay_max_sec": "Cue before go, max [s]",
+    "perturb.probability": "Perturbed trials [fraction]",
+    "perturb.jump_m": "Jump size [m]",
+    "perturb.jump_angles_deg": "Jump angles from the cue [deg]",
+    "perturb.jump_delay_min_sec": "Jump after go, earliest [s]",
+    "perturb.jump_delay_max_sec": "Jump after go, latest [s]",
+    "perturb.bump_m": "Bump size [m]",
+    "perturb.bump_angles_deg": "Bump angles from the cue [deg]",
+    "perturb.bump_at_m": "Bump after pulling [m]",
     "reach_map.margin_m": "Minimum improvement for a new best [m]",
     "reach_map.min_m": "Minimum reach to include [m]",
     "reach_map.percentile": "Comfortable reach percentile",
@@ -351,6 +385,7 @@ LABELS: Dict[str, str] = {
     "long_move.reward": "Reward mode (tab)",
     "free_move.rail_axis": "Rail / No rail (tab)",
     "free_move.ray_layout": "Number of choices (tab)",
+    "pull.mode": "Mode (tab)",
     "reward_pulse.pulse_ms": "Valve open [ms]",
     "reward_pulse.count": "Pulses per reward",
     "reward_pulse.gap_ms": "Gap between pulses [ms]",

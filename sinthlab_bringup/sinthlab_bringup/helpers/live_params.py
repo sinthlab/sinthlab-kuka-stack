@@ -137,6 +137,10 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Reach Map: Free Move in the frontal plane; the reward (long_move.reward: each_move / new_best) and the
     # New-best settings are live; the box is per-run.
     "reach_map": [x for x in _FREE if x not in ("centre_out.*", "rule.*")] + ["reach_map.*"],
+    # Cued Pull: the same node and feel; the mode, the pull, the perturbations and the grip are all live
+    # (actions/cued_pull.py checks every change against the box); the frontal plane and the box are per-run.
+    "cued_pull": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")]
+                 + ["pull.*", "perturb.*", "grip.*"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -200,6 +204,24 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "n_choice.deplete": (0.0, 1.0),
     "n_choice.recover": (0.0, 1.0),
     "free_move.ray_length_m": (0.02, 0.15),
+    # Cued Pull (actions/cued_pull.py, helpers/pull_task.py); how they fit the box is checked there.
+    "pull.distance_m": (0.02, 0.15),
+    "pull.cone_deg": (1.0, 44.0),
+    "pull.block_trials": (1, 50),
+    "pull.cue_delay_min_sec": (0.0, 5.0),
+    "pull.cue_delay_max_sec": (0.0, 5.0),
+    "perturb.probability": (0.0, 1.0),
+    "perturb.max_in_row": (0, 10),
+    "perturb.jump_m": (0.0, 0.03),
+    "perturb.bump_m": (0.0, 0.03),
+    "perturb.jump_sec": (0.05, 1.0),       # 3 cm in 0.05 s peaks at 1.1 m/s, under the 1.5 m/s safety trip
+    "perturb.bump_sec": (0.05, 1.0),
+    "perturb.jump_delay_min_sec": (0.0, 3.0),
+    "perturb.jump_delay_max_sec": (0.0, 3.0),
+    "perturb.bump_at_m": (0.005, 0.14),
+    "grip.threshold_n": (1.0, 30.0),
+    "grip.hold_sec": (0.0, 0.5),
+    "grip.move_m": (0.002, 0.03),
     # Long moves (actions/long_move.py).
     "long_move.min_m": (0.02, 0.40),
     "long_move.min_straightness": (0.0, 1.0),
@@ -270,6 +292,13 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "restricted"),
     # Free Move, whose paradigm is long_move.reward.
     "long_move.*": ("each_move", "new_best"),
+    # Cued Pull, whose paradigm is pull.mode: the cue and the perturbations only in the cued modes.
+    "perturb.jump_*": ("jump",),
+    "perturb.bump_*": ("bump",),
+    "perturb.*": ("jump", "bump"),
+    "pull.directions": ("jump", "bump"),
+    "pull.cone_deg": ("jump", "bump"),
+    "pull.block_trials": ("jump", "bump"),
 }
 
 
@@ -328,6 +357,7 @@ CHOICES: Dict[str, List[str]] = {
     "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move", "new_best"],  # actions/long_move.MODES (new_best: the Reach Map only)
+    "pull.mode": ["shaping", "jump", "bump"],                 # helpers/pull_task.MODES
     "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
     "free_move.ray_layout": ["2", "3", "4", "5", "6", "7", "8"],   # helpers/rail_shapes.LAYOUT_COUNTS
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS

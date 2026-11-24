@@ -24,7 +24,10 @@ class GoCue:
         node.create_timer(0.005, self._poll)
         VisualCue.set_result_sink(self._visual_result)
 
-    def start(self, light, *, visual_enabled):
+    def start(self, light, *, visual_enabled, preview_sec=None):
+        """Light the cue (light(label)), hold it PREVIEW_SEC -- or preview_sec: Cued Pull's instructed
+        delay, the cued direction shown before the go -- then release on light-off and the tone."""
+        self._preview_sec = self.PREVIEW_SEC if preview_sec is None else max(0.0, float(preview_sec))
         self._sequence += 1
         self._visual_enabled = visual_enabled
         self._quiet_window.continue_until_go()
@@ -85,7 +88,7 @@ class GoCue:
             self._record(event, round(ms, 1) if ms is not None else None)
             if self._stage == "preview":
                 self._stage = "showing"
-                self._deadline = received + self.PREVIEW_SEC
+                self._deadline = received + self._preview_sec
         if self._stage is None:
             return
         now = time.monotonic()

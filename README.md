@@ -641,6 +641,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 5 | Color Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 7 | Cued Pull (shaping / cued jump / cued bump) | `iiwa7_cued_pull.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1516,6 +1517,62 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 **On the rig, before a subject:** with the diagnostics scripts, solve every rail's end from this start
 (the diagonals especially); then push out along each rail and check the junction at the start is smooth,
 with no snag when committing to a rail.
+
+### Scenario 7 — Cued Pull (jump and bump perturbations)
+A task of its own (the **Cued Pull** card under Experiments), on the free-move node, for the CIHR grant's
+perturbation aims ([`cued_pull.yaml`](sinthlab_bringup/config/cued_pull.yaml),
+[`actions/cued_pull.py`](sinthlab_bringup/sinthlab_bringup/actions/cued_pull.py),
+[`helpers/pull_task.py`](sinthlab_bringup/sinthlab_bringup/helpers/pull_task.py)). Navin's Apple Pluck
+(Scenarios 1 and 3) is unchanged and remains the first shaping task on the impedance spring.
+
+**The pull.** He grips the apple and moves it in the plane facing him (`free_move.rail_axis: frontal`;
+nothing moves toward or away from him), inside the box. A trial's pull ends when the apple has gone
+`pull.distance_m` (5 cm) from where the pull started. Same start, posture and SmartPad profile as N-Choice
+("Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30).
+
+**Three modes** (`pull.mode`, the card's tabs, **live**: switch between trials without a restart):
+
+| Mode | Cue | Rewarded | Perturbation |
+|---|---|---|---|
+| **Shaping** | the whole ring | any pull | none |
+| **Cued jump** | the cued direction's quarter (0 up, 1 right, 2 down, 3 left) | a pull within `pull.cone_deg` (15°) of it | on `perturb.probability` of trials (0.33), the apple **jumps** `perturb.jump_m` (1.5 cm) before he grips it, `jump_delay_min_sec`..`max_sec` (0.1-0.3 s) after the go cue; he pulls from where it landed. If he grips first, no jump (`jump_skipped`). |
+| **Cued bump** | as Cued jump | as Cued jump | once he has pulled `perturb.bump_at_m` (2.5 cm) along the cue, the apple is **bumped** `perturb.bump_m` (1.5 cm) across it; the target stays, so he has to correct |
+
+Perturbation angles (`perturb.jump_angles_deg`, `perturb.bump_angles_deg`, default `[90, 270]` =
+perpendicular, both sides) are from the cued direction, counter-clockwise as he sees the plane. Each
+jump or bump drives the admittance's equilibrium along a minimum-jerk path (`perturb.jump_sec`,
+`bump_sec`, 0.1 s: peak 0.28 m/s), so the stiff cabinet spring carries the arm and his hand with it
+(`AdmittanceMoveAction.displace()`); then the admittance carries on from there.
+A pull outside the cone ends the trial as `pull_wrong`: no reward, no end tone, ring dark. The cone is
+checked where the pull ends, not along the way, so the correction after a bump counts.
+
+**The cue and the go.** The trial's cue shows for `pull.cue_delay_min_sec`..`max_sec` (0.3 s = the
+standard flash) before the go (light off + tone); longer values give an instructed delay. The quiet
+window's guard runs through it, so moving early is an early touch.
+
+**The schedule.** Shuffled blocks: every direction `pull.block_trials` (6) times, `round(probability ×
+block_trials)` of them perturbed, cycling through the angles; never more than `perturb.max_in_row` (1)
+perturbed trials together. Any change of mode or settings starts a new block.
+
+**The grip** (event `grip`, the reaction time): the hand's force on the apple, every direction, tared,
+at least `grip.threshold_n` (3 N) for `grip.hold_sec`, or the apple moved `grip.move_m` (5 mm). No touch
+sensor is read yet.
+
+**Reach and the box.** From this start the arm has about 7 cm up and down and much more sideways. With
+all four directions the pull is 5 cm; without up, 6 cm; left and right only, 12 cm. The dashboard and the
+node refuse any setting whose pulls, jumps or bumps need the apple outside the box (5 mm margin), before a
+run and on every live change.
+
+**Recorded:** events `target`, `grip`, `jump` / `jump_end` / `jump_skipped`, `bump` / `bump_end`, `pull` /
+`pull_wrong` (arg: the direction the pull ended in, degrees, 0 = right, 90 = up). The sidecar has `pull`
+(mode, direction, perturbation, angle, size, block, cue delay) and `pull_result` (perturbed, crossing angle,
+error). `trials.csv` adds the target, the perturbation and whether it happened, grip and perturbation
+times from the go cue, the crossing angle and error, correct and block; `sessions.csv` adds % correct
+overall, on standard and on perturbed trials, and the median grip time.
+
+**On the rig, before a subject:** confirm the box start-up check passes at this start; with the arm
+held lightly, run a few bump and jump trials and check the displacement is felt but not violent (lower
+`bump_m` or lengthen `bump_sec` if needed); check the grip time against the recorded force.
 
 ### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
 Short tasks that get a subject used to the arm before the real experiments, all on the free-move node.

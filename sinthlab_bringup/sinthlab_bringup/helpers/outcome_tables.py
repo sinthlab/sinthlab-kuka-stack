@@ -114,11 +114,12 @@ TRIALS_CSV = "trials.csv"
 SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
-OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
+OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "pull", "pull_wrong",
+            "session_end",
             "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "go_cue_failed", "stop_requested")
 # A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
-SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
-FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
+SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "pull", "session_end")
+FAILURE = ("timeout", "reach_wrong", "pull_wrong", "response_timeout", "early_touch")
 # safety_trip, smartpad_mismatch, go_cue_failed, stop_requested: aborted -- neither (success left blank)
 
 COMMON = {
@@ -619,6 +620,63 @@ class NChoiceTables(TaskTables):
                 "pct_chose_best": pct(sum(r["chose_best"] == "1" for r in chosen)),
                 "pct_switch": round(100.0 * switches / (len(chosen) - 1), 1) if len(chosen) > 1 else "",
                 "choice_counts": "; ".join(f"{k}={v}" for k, v in sorted(counts.items()))}
+
+
+@register("cued_pull")
+class CuedPullTables(TaskTables):
+    """Cued Pull (actions/cued_pull.py, helpers/pull_task.py): the pull, its cue and its perturbation."""
+    paradigm_param = "pull.mode"
+    trial_columns = {
+        "target": "the cued direction (right / left / down / up), or any in shaping",
+        "perturbation": "the trial's planned perturbation: jump, bump, or blank for a standard trial",
+        "perturb_angle_deg": "its direction from the cued direction [deg]: 90 = counter-clockwise as he sees it, 270 = clockwise",
+        "perturb_m": "its size [m]",
+        "perturbed": "1 = the perturbation happened, 0 = planned but not delivered (a jump after he had gripped), blank = none planned",
+        "cue_delay_s": "how long the cue showed before the go [s]",
+        "grip_s": "the grip (force or first movement), from the go cue [s]: the reaction time",
+        "perturb_s": "the jump or bump onset, from the go cue [s]",
+        "crossing_deg": "the direction the pull ended in [deg]: 0 = right, 90 = up",
+        "error_deg": "how far that was from the cued direction [deg], + = counter-clockwise; blank in shaping",
+        "correct": "1 = a pull to the target (rewarded), 0 = outside it, blank = no pull",
+        "block": "the schedule's block (a new one at every change of mode or settings)",
+    }
+    settings = ["pull.mode", "pull.directions", "pull.distance_m", "pull.cone_deg", "perturb.probability",
+                "perturb.jump_m", "perturb.bump_m", "perturb.bump_at_m", "response_timeout_sec", "reward_pulse.pulse_ms"]
+    session_columns = {"n_pulls": "trials ending in a pull",
+                       "pct_correct": "pulls to the target over all pulls [%]",
+                       "pct_correct_standard": "the same, unperturbed trials [%]",
+                       "pct_correct_perturbed": "the same, trials with a jump or bump [%]",
+                       "median_grip_s": "median grip time from the go cue [s]"}
+
+    def trial_fields(self, tr):
+        plan = tr.meta.get("pull") or {}
+        res = tr.meta.get("pull_result") or {}
+        go = tr.t("cue_go")
+        since = lambda tok: _num(tr.t(tok) - go, 3) if go is not None and tr.has(tok) else ""   # noqa: E731
+        kind = plan.get("perturb") or ""
+        pulled = tr.arg("pull") if tr.has("pull") else tr.arg("pull_wrong")
+        return {"target": plan.get("direction") or ("any" if plan else ""),
+                "perturbation": kind,
+                "perturb_angle_deg": "" if plan.get("angle_deg") is None else plan["angle_deg"],
+                "perturb_m": plan.get("size_m", "") if kind else "",
+                "perturbed": (1 if tr.has(kind) else 0) if kind else "",
+                "cue_delay_s": plan.get("cue_delay_sec", ""),
+                "grip_s": since("grip"), "perturb_s": since(kind) if kind else "",
+                "crossing_deg": "" if pulled is None else pulled,
+                "error_deg": "" if res.get("error_deg") is None else res["error_deg"],
+                "correct": 1 if tr.has("pull") else 0 if tr.has("pull_wrong") else "",
+                "block": plan.get("block", "")}
+
+    def session_fields(self, trials):
+        pulled = [r for r in trials if r.get("correct") in ("0", "1")]
+        pct = lambda rows: (round(100.0 * sum(r["correct"] == "1" for r in rows) / len(rows), 1)   # noqa: E731
+                            if rows else "")
+        grips = sorted(float(r["grip_s"]) for r in trials if r.get("grip_s") not in ("", None))
+        return {"n_pulls": len(pulled), "pct_correct": pct(pulled),
+                "pct_correct_standard": pct([r for r in pulled if r.get("perturbed") != "1"]),
+                "pct_correct_perturbed": pct([r for r in pulled if r.get("perturbed") == "1"]),
+                "median_grip_s": (round((grips[(len(grips) - 1) // 2] + grips[len(grips) // 2]) / 2, 3)
+                                  if grips else "")}
 
 
 @register("free_move", "reach_map")

@@ -24,6 +24,8 @@ STEPS.restricted_move_horizontal = STEPS.restricted_move_vertical = STEPS.free_m
 STEPS.reach_map = STEPS.free_move;
 STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
                   "trial_end", "release_wait", "released"];
+STEPS.cued_pull = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "grip", "pull",
+                   "trial_end", "release_wait", "released"];
 STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
@@ -33,6 +35,7 @@ const STEP_LABEL = {
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze active", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "wait for release", released: "released", threshold: "threshold",
   session_end: "session ended", grasp_wait: "wait for grasp", grasp: "grasped", reach: "reach", choice: "choice",
+  grip: "grip", pull: "pull",
 };
 const PHASE_TEXT = {
   starting: "Starting", trial_start: "At park, before moving to start", at_start: "Quiet window", quiet_end: "Go cue",
@@ -71,6 +74,10 @@ const PHASE_TEXT_BY_EXP = {
               choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
   colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
                  reach: "Correct choice rewarded. Waiting for release", reach_wrong: "Incorrect choice. No reward. Waiting for release" },
+  cued_pull: { target: "Cue lit", armed: "Waiting for the pull", grip: "Pulling", jump: "Apple jumped",
+               jump_end: "Waiting for the pull", jump_skipped: null, bump: "Bump", bump_end: "Pulling",
+               pull: "Pull rewarded. Waiting for release", pull_wrong: "Pull outside the target. No reward. Waiting for release",
+               release_wait: "Waiting for release" },
   reach_map: { armed: "Mapping reach in the frontal plane", session_end: "Session ended. Waiting for release",
                release_wait: "Waiting for release", move_start: "moving", move_end: "Mapping reach in the frontal plane",
                long_move: "Long movement rewarded", new_best: "New longest reach in this direction rewarded" },
@@ -89,7 +96,7 @@ const REWARD_STEP_MS = 10;
 const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Color Rule", n_choice: "Choices", long_move: "Movements",
                       reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
                       apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
-                      grasp: "Grasp", virtual_fixtures: "Fixture" };
+                      grasp: "Grasp", virtual_fixtures: "Fixture", pull: "Pull", perturb: "Perturbations", grip: "Grip" };
 // mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
 // interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
 function rewardVolume(ms, count = 1, gap = 0) {
@@ -1160,12 +1167,12 @@ function connect() {
 // Today vs recent (mock-up E): the selected experiment's key settings across the subject's last sessions
 // (sessions.csv), today's values beside them, and the last session at a glance.
 const OUTCOME_CLASS = {
-  reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
-  choice_unrewarded: "unrewarded", reach_wrong: "wrong",
+  reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success", pull: "success",
+  choice_unrewarded: "unrewarded", reach_wrong: "wrong", pull_wrong: "wrong",
   response_timeout: "none", timeout: "none", early_touch: "early",
   go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
 };
-const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong end",
+const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong direction",
   none: "No response", early: "Early touch", abort: "Aborted (safety)", stop: "Stopped by operator" };
 const SV = { view: null, userView: false, data: null, hist: null, lastTrial: null, lastFetch: 0, busy: false };
 
@@ -1381,6 +1388,15 @@ function renderMonitor() {
   } else if (key === "n_choice") {
     const choices = rows.filter((r) => ["0", "1"].includes(String(r.chose_best))).slice(-LAST_N);
     row2.push(["Chose best · last 20", pct(choices.filter((r) => String(r.chose_best) === "1").length, choices.length)]);
+  } else if (key === "cued_pull") {
+    // Cued modes: accuracy on standard and perturbed trials apart, the comparison the perturbations are for.
+    if (last.paradigm !== "shaping") {
+      const pulled = rows.filter((r) => ["0", "1"].includes(String(r.correct)));
+      const acc = (rs) => { const t = rs.slice(-LAST_N); return pct(t.filter((r) => String(r.correct) === "1").length, t.length); };
+      row2.push(["Standard · last 20", acc(pulled.filter((r) => String(r.perturbed) !== "1"))]);
+      row2.push(["Perturbed · last 20", acc(pulled.filter((r) => String(r.perturbed) === "1"))]);
+    }
+    row2.push(["Grip time", fmtS(median(rows.slice(-10).map((r) => num(r.grip_s)))), "", "Median of the last 10, from the go cue"]);
   } else if (key === "free_move") {
     const moves = rows.reduce((sum, r) => sum + (num(r.n_movements) || 0), 0);
     const long = rows.reduce((sum, r) => sum + (num(r.n_long_moves) || 0), 0);
@@ -1399,7 +1415,8 @@ function renderMonitor() {
   }
   const cls = (r) => (isOperatorStop(r) ? "stop" : OUTCOME_CLASS[r.outcome] || "none");
   const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.paradigm && paradigmLabel(key, r.paradigm),
-    r.cue_colour && `cue ${r.cue_colour}`, r.target && r.target !== "either" && `cued ${r.target}`, r.chosen_end && `reached ${r.chosen_end}`,
+    r.cue_colour && `cue ${r.cue_colour}`, r.target && !["either", "any"].includes(r.target) && `cued ${r.target}`, r.chosen_end && `reached ${r.chosen_end}`,
+    r.perturbation && (String(r.perturbed) === "1" ? `${r.perturbation} ${r.perturb_angle_deg}°` : `${r.perturbation} not delivered`),
     r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
     r.outcome_latency_s && `${num(r.outcome_latency_s).toFixed(1)} s`, String(r.reversal) === "1" && "first trial after a reversal"].filter(Boolean).join(" · ");
   const strip = groups.map((g) => `<div class="blk">${g.label ? `<span class="blk-l">${esc(g.label)}</span>` : ""}<div class="cells">` +
