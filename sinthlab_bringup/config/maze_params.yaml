@@ -162,7 +162,8 @@
       pulse_width_ms: 500       # Time each pulse stays high [ms], from 10 to 5000
 
     reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
-      enabled: true  # send the reward pulse at the maze goal; failures (timeout, early touch, safety trip, Stop) get none
+      enabled: true  # Enable juice at the goal and at checkpoints if configured
+      maze_checkpoints: true  # Deliver juice once per checkpoint on its first visit each trial
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
       pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
       count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
@@ -188,7 +189,7 @@
       # the board). The board's own pattern, duration and brightness still apply. A site with no line
       # keeps the board's current colour.
       colours:  # RGBW colour per cue site, each channel 0-255
-        play: [0, 255, 0, 0]       # go -- green
+        play: [0, 64, 0, 0]       # go -- green
         reward: [0, 0, 255, 0]     # checkpoint reward -- blue
         goal: [255, 0, 0, 0]       # maze solved (end) -- red
         timeout: [255, 0, 0, 0]    # timed out (end) -- red

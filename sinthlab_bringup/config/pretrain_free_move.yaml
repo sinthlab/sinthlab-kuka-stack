@@ -220,4 +220,4 @@
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # all four quarters (ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59)
       colours:  # RGBW, each 0-255
-        go: [0, 255, 0, 0]  # free to move -- green
+        go: [0, 64, 0, 0]  # free to move -- green

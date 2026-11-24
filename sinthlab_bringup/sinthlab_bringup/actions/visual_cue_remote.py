@@ -73,7 +73,7 @@ class RemoteCueTrigger:
         """Send a STATE change -- e.g. /segments, /off -- that holds until the next one. Returns
         immediately. Never dropped as stale: a late state is still the right state, and dropping it
         would leave the ring showing the previous one (ring_state_cue.py)."""
-        self._jobs.put(((path,), label, time.monotonic(), False))
+        self._jobs.put(((path,), label, time.monotonic(), label.startswith("go_")))
 
     def _run(self) -> None:
         while True:
@@ -86,7 +86,7 @@ class RemoteCueTrigger:
     def _send(self, paths: Tuple[str, ...], label: Optional[str], queued_at: float,
               droppable: bool = True) -> None:
         waited = time.monotonic() - queued_at
-        if droppable and label is not None and waited > STALE_SEC:
+        if droppable and label is not None and waited > (0.25 if label and label.startswith("go_") else STALE_SEC):
             self._log.warn(
                 f"Visual cue '{label}' DROPPED: it waited {waited * 1000:.0f} ms behind a slow "
                 "request and would have lit late.")

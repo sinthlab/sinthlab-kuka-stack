@@ -12,6 +12,7 @@ from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.helpers.live_params import CHOICE_GEOMETRY, choice_geometry_problem
 from sinthlab_bringup.helpers.stiffness_profiles import SMARTPAD_PROFILES, required_profile
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.actions.go_cue import GoCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
@@ -58,7 +59,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     def __init__(self) -> None:
         super().__init__("free_move_orchestrator", automatically_declare_parameters_from_overrides=True)
-        AudioCue.warmup(self)
+        AudioCue.warmup()
         VisualCue.warmup(self)
         self.experiment = str(get_required_param(self, "experiment"))   # see the class doc
 
@@ -69,6 +70,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
         self.trial_count = 0
         self._trial_ending = False
+        self._end_tone_pending = False
         self._ended = False
 
         self.move_to_start = MoveToPositionJointSpace(
@@ -90,7 +92,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
         self.go_cue = AudioCue(
-            self, param_prefix="audio_cue_play", on_complete=self.on_go_complete,
+            self, param_prefix="audio_cue_play", on_complete=None,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)))
 
         self.control = ExperimentControl(self, self.experiment)
@@ -104,8 +106,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, experiment=self.experiment,
             extra_header=self.admittance.record_extra_header(), extra_fn=self.admittance.record_extra,
             on_event=self.control.on_event)
-        VisualCue.set_result_sink(
-            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
+        self.go = GoCue(self, self.recorder, self.on_go_complete)
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
@@ -189,12 +190,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
                     self.recorder.mark("reversal", mapping)
                 self.recorder.mark("cue_colour", self.centre_out.cue_colour())
             self.recorder.mark("target", target)
-            self.ring.show(*self.centre_out.ring_cue())
+            state, quarters = self.centre_out.ring_cue()
+            self.go.start(self.go_cue, lambda label: self.ring.show(state, quarters, label=label),
+                          visual_enabled=self.ring.enabled())
         else:
             if self._n_choice_on():        # every direction's reward probability, before the choice
                 self.recorder.annotate(n_choice=self.n_choice.state())
-            self.ring.show("go")
-        self.go_cue.start()
+            self.go.start(self.go_cue, lambda label: self.ring.show("go", flash=True, label=label),
+                          visual_enabled=self.ring.enabled())
 
     def _centre_out_on(self) -> bool:
         return self.centre_out is not None and self.centre_out.enabled
@@ -331,8 +334,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
         self.get_logger().info("Session over. The arm holds; waiting for release before reset."
                                if reason == "session_end" else "The arm holds; waiting for release before reset.")
-        if reason not in ("reach_wrong", "choice_unrewarded", "response_timeout"):
+        if reason in ("choice", "choice_unrewarded", "reach", "reach_wrong"):
             self.end_cue.start()
+        self._end_tone_pending = reason == "session_end"
         self.recorder.mark("release_wait")
         self.force_release.start()
 
@@ -342,6 +346,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.switch_to_joint.start()
 
     def on_switched_to_joint(self):
+        if self._end_tone_pending:
+            self.end_cue.start()
+        self._end_tone_pending = False
         self.move_park.start()
 
     def on_park_complete(self):
@@ -355,6 +362,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         move to the start pose begins (move_to_park.hold_sec, plus any early-touch penalty wait)."""
         self._stopping = False
         self._trial_ending = False
+        self._end_tone_pending = False
         self._ended = False
         self.trial_count += 1
         self.recorder.start(trial_index=self.trial_count)
@@ -365,6 +373,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _trial_over(self, why: str, arg=None):
         """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
         The park move that follows is still in the trial's file."""
+        self.go.cancel()
         self.recorder.mark(why, arg)
         self._mark_end()
 
@@ -376,6 +385,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _stop_now(self):
         """Stop (the dashboard's Stop, or ~/stop): end the trial at once and park -- no cue, no release
         wait. No further trial starts, so the arm then holds at park and the launch can end."""
+        self._end_tone_pending = False
         if self._stopping:
             return
         if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold

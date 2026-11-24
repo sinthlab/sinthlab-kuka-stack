@@ -193,5 +193,5 @@
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 2]  # the up and down quarters, 0-3
       colours:  # RGBW, each 0-255
-        go: [0, 255, 0, 0]  # free to move -- green
+        go: [0, 64, 0, 0]  # free to move -- green
         reached: [255, 0, 0, 0]  # unused here (no reach target in Restricted Move)

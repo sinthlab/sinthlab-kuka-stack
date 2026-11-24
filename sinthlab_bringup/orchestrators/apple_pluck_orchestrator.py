@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.perturb_initial_position import PerturbInitialPosi
 from sinthlab_bringup.actions.grasp_detector import GraspDetector
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.actions.go_cue import GoCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
@@ -55,7 +56,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             "apple_pluck_orchestrator",
             automatically_declare_parameters_from_overrides=True,
         )
-        AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
+        AudioCue.warmup()
         VisualCue.warmup(self)  # logs which visual-cue trigger is active (serial or Wi-Fi)
 
         # The launch argument `paradigm:=` (paradigm_override) wins over the YAML, so the paradigm can
@@ -87,7 +88,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
         self.audio_cue = AudioCue(
-            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
+            self, param_prefix="audio_cue_play", on_complete=None,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
         )
         self.audio_cue_snap = AudioCue(
@@ -151,13 +152,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
             on_event=self.control.on_event,
         )
 
-        # --- cue delivery, as observed rather than assumed -------------------------------------
-        # AudioCue.on_complete fires when Popen RETURNS (~49 ms on WSL2), which is ~290 ms before
-        # any sound. The beep process blocks for exactly duration_ms, so its EXIT gives the real
-        # end and the start follows by subtraction. The visual ack comes back after the firmware
-        # has already called pixels.show(), so it brackets the light.
-        VisualCue.set_result_sink(
-            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
+        self.go = GoCue(self, self.recorder, self.on_audio_complete)
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         speeds = {"move_to_start.speed_scale": self.move_to_start.set_speed_scale,
@@ -283,23 +278,23 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
         self.recorder.mark("quiet_end")
-        self.audio_cue.start()
-        self.visual_cue.start()
         self.recorder.mark("cue_go")
+        self.go.start(self.audio_cue, lambda label: self.visual_cue.start(label=label),
+                      visual_enabled=self.visual_cue.enabled())
 
     def on_audio_complete(self):
         if self._stopping:
             return
         if self.bump:
-            self.get_logger().info("Audio cue played. Waiting for the grasp...")
+            self.get_logger().info("Go cue confirmed. Waiting for the grasp...")
             self.grasp.arm()
             self.response_timeout.start()   # no grasp in time -> on_response_timeout
             self.recorder.mark("grasp_wait")
         elif self.perturbing:
-            self.get_logger().info("Audio cue played. Waiting before perturbation...")
+            self.get_logger().info("Go cue confirmed. Waiting before perturbation...")
             self._start_delay()
         else:
-            self.get_logger().info("Audio cue played. Initiating Displacement Monitor.")
+            self.get_logger().info("Go cue confirmed. Initiating Displacement Monitor.")
             self.monitor.start()
 
     def on_grasp(self, force_n: float):
@@ -383,6 +378,7 @@ class ApplePluckOrchestratorNode(rclpyNode):
     def _trial_over(self, why: str, arg=None):
         """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
         The park move that follows is still in the trial's file."""
+        self.go.cancel()
         self.recorder.mark(why, arg)
         self._mark_end()
 

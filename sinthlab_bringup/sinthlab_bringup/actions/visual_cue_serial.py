@@ -93,7 +93,7 @@ class SerialCueTrigger:
         if cmd is None:
             self._log.warn(f"Visual cue '{label}': {path} has no serial equivalent; not sent.")
             return
-        self._jobs.put((cmd, label, time.monotonic(), False))
+        self._jobs.put((cmd, label, time.monotonic(), label.startswith("go_")))
 
     # ---------------------------------------------------------------- the worker
     def _run(self) -> None:
@@ -131,7 +131,7 @@ class SerialCueTrigger:
 
     def _send(self, cmd: str, label: Optional[str], queued_at: float, droppable: bool) -> None:
         waited = time.monotonic() - queued_at
-        if droppable and waited > STALE_SEC:
+        if droppable and waited > (0.25 if label and label.startswith("go_") else STALE_SEC):
             self._log.warn(
                 f"Visual cue '{label}' DROPPED: it waited {waited * 1000:.0f} ms behind a slow "
                 "command and would have lit late.")
@@ -159,7 +159,7 @@ class SerialCueTrigger:
                            f"{REPLY_TIMEOUT_SEC * 1000:.0f} ms. Is the board powered and the link wired?")
             return
 
-        if cmd.startswith("CUE") and self._on_result is not None and label is not None:
+        if (cmd.startswith("CUE") or cmd.startswith("SEG ")) and self._on_result is not None and label is not None:
             try:
                 self._on_result(label, True, ms)
             except Exception:

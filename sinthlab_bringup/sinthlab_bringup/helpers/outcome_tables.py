@@ -74,11 +74,11 @@ SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
 OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
-            "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "stop_requested")
+            "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "go_cue_failed", "stop_requested")
 # A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
 SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
 FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
-# safety_trip, smartpad_mismatch, stop_requested: aborted -- neither (success left blank)
+# safety_trip, smartpad_mismatch, go_cue_failed, stop_requested: aborted -- neither (success left blank)
 
 COMMON = {
     "run": "the run folder (one Start-to-Stop session)",

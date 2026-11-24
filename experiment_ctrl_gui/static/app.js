@@ -42,6 +42,7 @@ const PHASE_TEXT = {
   perturb_delay_start: "Waiting to apply perturbation", perturb_applied: "Perturbation applied. Settling",
   fixture_active: "Fixture active. Quiet window", maze_armed: "Navigating maze", checkpoint: "Navigating maze",
   goal: "Goal reached. Waiting for release", timeout: "Timed out. Waiting for release",
+  go_cue_failed: "Go cue not confirmed. Press Stop to end the run",
   safety_trip: "Safety abort. Moving to park", released: "Moving to park",
   early_touch: "Early touch. Trial unrewarded. Parking before the penalty wait",
   response_timeout: "Response timed out. Trial unrewarded. Moving to park",
@@ -1160,7 +1161,7 @@ const OUTCOME_CLASS = {
   reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
   choice_unrewarded: "unrewarded", reach_wrong: "wrong",
   response_timeout: "none", timeout: "none", early_touch: "early",
-  safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
+  go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
 };
 const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong end",
   none: "No response", early: "Early touch", abort: "Aborted (safety, Stop)" };

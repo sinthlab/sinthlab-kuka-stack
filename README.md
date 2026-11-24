@@ -1424,7 +1424,7 @@ is all that runs. It runs on the free-move node with the centre-out reach fixed 
 1. **The cue.** At the go cue the **whole ring** lights **red** or **blue** (`ring_cue.colours.rule_red` /
    `rule_blue`), drawn at random, never more than `rule.max_repeats` of one colour in a row.
 2. **The choice.** Each colour means one end: in block 1, red means `rule.red_end` (right) and blue the
-   other. The end the colour means gives the reward and the end tone; the other end gives nothing. The
+   other. Either choice plays the same confirmation tone. The end indicated by the colour also delivers juice. The
    ring goes dark at the choice (no red "reached" ring: red is a cue here).
 3. **The reversal.** Once the last `rule.window` choices of the block are at least
    `rule.criterion_pct` % correct, and the block has run at least `rule.min_trials` choices, the
@@ -1492,10 +1492,7 @@ the start). Nothing moves toward or away from him. The number and length are per
 (up is the limit from the maze start), so rails can go up as well as down; the dashboard's floor check
 covers the lowest rail's end. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30.
 
-**One choice per trial.** At the go cue the whole ring lights green: no cue, nothing says which
-direction is best. The trial ends when the arm reaches the end of a rail (within `n_choice.end_tol_m`).
-That direction pays with its current probability p (`choice`: the reward and the end tone; or
-`choice_unrewarded`: nothing). Then the probabilities change:
+**One choice per trial.** A dim green flash of about 300 ms accompanies the go tone. Every rail is available. The task arms after the LED board acknowledges the flash and the audio worker reaches playback. If an enabled cue is unconfirmed after 250 ms, the arm stays at the start and the dashboard asks the operator to stop the run. Reaching a rail end (within `n_choice.end_tol_m`) ends the choice and delivers the reward immediately on a rewarded trial. Both rewarded and unrewarded choices play the same confirmation tone when the choice registers. The arm holds until release, then returns to park. The recorded outcomes are `choice` and `choice_unrewarded` respectively. After the choice, the probabilities update as follows.
 
 - the direction chosen **depletes**: p → p − `deplete` × (p − `p_min`);
 - every other direction **recovers**: p → p + `recover` × (`p_max` − p).
@@ -1812,8 +1809,8 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
    goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
    each trial allows one direction.
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
-   - a **goal end**: the **reward pulse** and the end tone;
-   - the **other end** (cued or one end only, with `block_other_end` off): no reward, no tone.
+   - a **goal end**: the confirmation tone and the reward pulse.
+   - the **other end** (cued or one end only, with `block_other_end` off): the same confirmation tone, without a reward.
 
    Either way the lit quarters turn **red** (`ring_cue.colours.reached`) and stay red until the hand
    lets go.
@@ -2322,7 +2319,7 @@ stateDiagram-v2
     Maze --> ReleaseWait : goal [goal] or response_timeout_sec (30 s) [response_timeout], then [trial_end]<br/>fixture off, goal / timeout cue [release_wait]
     ReleaseWait --> SwitchToJoint : operator lets go [released]
     Maze --> SwitchToJoint : SAFETY trip — no cue, no wait [safety_trip, trial_end]
-    SwitchToJoint --> Park
+    SwitchToJoint --> Park : session-end tone for timed Free Move
     Park --> NextTrial : at park, out of reach
     NextTrial --> MoveToStart : next trial (after Stop: holds, the launch ends)
 ```
@@ -2336,8 +2333,8 @@ stateDiagram-v2
     SwitchToCLIK --> QuietWindow : hold, measure the resting force (tare) [fixture_active]
     QuietWindow --> Free : quiet_window_sec, ring green [cue_go]<br/>admittance + speed monitor on [armed]
     QuietWindow --> Free : rail tasks: the goal lit with the go cue [target]
-    Free --> ReleaseWait : session_sec runs out (Free Move), end tone, the arm holds [session_end, trial_end]
-    Free --> ReleaseWait : rail tasks: a goal end -- reward, end tone [reach, trial_end]<br/>the other end -- no reward [reach_wrong, trial_end]
+    Free --> ReleaseWait : session_sec runs out (Free Move), the arm holds [session_end, trial_end]
+    Free --> ReleaseWait : rail tasks: either end plays the confirmation tone<br/>a goal end also gives reward [reach, trial_end]<br/>other end [reach_wrong, trial_end]
     Free --> SwitchToJoint : Stop -- no end tone, no release wait [stop_requested, trial_end]
     ReleaseWait --> SwitchToJoint : hand lets go [released]
     Free --> SwitchToJoint : SAFETY trip (too fast) [safety_trip, trial_end]
@@ -2420,7 +2417,7 @@ visual_cue:
 | Code | [`visual_cue_serial.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py) | [`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py) |
 
 Either way each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at
-threshold, goal and timeout, blue for maze rewards. Commands go out from one background thread, so a
+threshold, goal and timeout, blue for Maze checkpoints. Maze pays once per checkpoint per trial when `reward_pulse.maze_checkpoints` is enabled. The goal also pays. Closely spaced rewards use separate valve pulses. Commands go out from one background thread, so a
 slow or missing board never stalls a trial; every cue is logged with its round trip, a failed one says
 why, and the board's acknowledgement — sent only once the ring is lit — is recorded as
 `cue_visual_ack`. [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py) is called

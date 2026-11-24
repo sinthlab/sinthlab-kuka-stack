@@ -127,7 +127,7 @@
       # Colour per cue event, [r, g, b, w] 0-255 -- as in apple_pluck_impedance.yaml. Present even
       # while the ring is off so the dashboard can change it live.
       colours:  # RGBW colour per cue site, each channel 0-255
-        play: [0, 255, 0, 0]       # trial start -- green
+        play: [0, 64, 0, 0]       # trial start -- green
         snap: [255, 0, 0, 0]       # pull threshold reached -- red
 
     # Runaway safety-stop (backstop for a gravity-driven fall on the free pull axis, which the FRI

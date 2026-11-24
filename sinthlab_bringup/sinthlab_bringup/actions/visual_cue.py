@@ -32,6 +32,7 @@ from sinthlab_bringup.actions.visual_cue_serial import SerialCueTrigger
 from sinthlab_bringup.helpers.node_utils import get_required_param
 
 TRIGGERS = ("serial", "wifi")
+GO_FLASH_SEC = 0.30
 
 
 def colour_param(node: rclpyNode, name: str):
@@ -103,6 +104,26 @@ class VisualCue:
                 cls._senders[trigger] = RemoteCueTrigger(node, board, on_result=sink)
         return cls._senders[trigger]
 
+    # One ring is shared by all cue sites in this process. A later cue must
+    # cancel the blackout so an old go cue cannot blank an outcome cue.
+    _flash_timer = None
+
+    @classmethod
+    def cancel_flash(cls, node: rclpyNode) -> None:
+        if cls._flash_timer is not None:
+            node.destroy_timer(cls._flash_timer)
+            cls._flash_timer = None
+
+    @classmethod
+    def finish_flash_after_delay(cls, node: rclpyNode, sender) -> None:
+        def turn_off():
+            if cls._flash_timer is timer:
+                cls.cancel_flash(node)
+                sender.show("/off", "ring_off")
+
+        timer = node.create_timer(GO_FLASH_SEC, turn_off)
+        cls._flash_timer = timer
+
     def __init__(self, node: rclpyNode, *, label: str = "cue",
                  on_complete: Callable[[], None]) -> None:
         self._node = node
@@ -137,12 +158,25 @@ class VisualCue:
         vals += [0] * (4 - len(vals))
         return tuple(max(0, min(255, v)) for v in vals)
 
-    def start(self) -> None:
+    @classmethod
+    def clear_ring(cls, node: rclpyNode) -> None:
+        cls.cancel_flash(node)
+        sender = cls.sender(node)
+        if sender is not None:
+            sender.show("/off", "ring_off")
+
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def start(self, *, label: Optional[str] = None) -> None:
         if self._enabled:
             try:
                 sender = VisualCue.sender(self._node)
                 if sender is not None:
-                    sender.fire(self._label, self._colour)
+                    self.cancel_flash(self._node)
+                    sender.fire(label or self._label, self._colour)
+                    if self._label == "play":
+                        self.finish_flash_after_delay(self._node, sender)
             except Exception as exc:    # a missing cue is bad; a stalled experiment is worse
                 self._node.get_logger().warn(f"Visual cue '{self._label}' not sent: {exc}")
         self._shutdown()

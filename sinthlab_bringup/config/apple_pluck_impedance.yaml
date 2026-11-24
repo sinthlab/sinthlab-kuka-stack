@@ -322,5 +322,5 @@
       # the board). The board's own pattern, duration and brightness still apply. A site with no line
       # keeps the board's current colour.
       colours:  # RGBW colour per cue site, each channel 0-255
-        play: [0, 255, 0, 0]       # trial start -- green
+        play: [0, 64, 0, 0]       # trial start -- green
         snap: [255, 0, 0, 0]       # pull threshold reached -- red
