@@ -23,9 +23,10 @@
       penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
     # CUED PULL: grip the apple and pull it, with jump and bump perturbations (Matt's CIHR grant, Aims 1-2).
-    # The arm is free in the plane facing the monkey (no movement toward or away from him), inside the box
-    # below. ONE PULL PER TRIAL: it ends when the apple has gone pull.distance_m from where the pull
-    # started. Three modes (pull.mode, the card's tabs, LIVE: switch between trials, no restart):
+    # The arm is free in 3-D inside the box below: he can push or pull it toward or away from himself as
+    # well. Only the movement's part in the plane facing him (sideways, up / down) is scored, against the
+    # cue: depth neither counts toward the pull's length nor against its direction. ONE PULL PER TRIAL: it
+    # ends when that part has gone pull.distance_m from where the pull started. Three modes (pull.mode, the card's tabs, LIVE: switch between trials, no restart):
     #   shaping  any direction counts; the whole ring lights at the go cue. Every pull is rewarded.
     #   jump     the cued direction's quarter lights; a pull within pull.cone_deg of it is rewarded, one
     #            outside it is not (pull_wrong). On perturb.probability of trials the apple JUMPS before
@@ -36,7 +37,7 @@
     # block_trials) of them perturbed, cycling through the angles; never more than perturb.max_in_row
     # perturbed trials together. A change of mode or settings starts a new block.
     #
-    # HOW: the free-move admittance in the frontal plane (actions/admittance_move.py; a jump or bump drives
+    # HOW: the free-move admittance in its box (actions/admittance_move.py; a jump or bump drives
     # its equilibrium, displace()) and actions/cued_pull.py, with the trial logic in helpers/pull_task.py.
     # The same node as the pre-training tasks. Navin's Apple Pluck (apple_pluck_impedance.yaml) is
     # unchanged: it stays the shaping task on the impedance spring.
@@ -169,12 +170,13 @@
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
-      rail_axis: "frontal"  # free in the plane facing the monkey (no movement toward or away from him). Fixed for this task
+      rail_axis: "none"  # none = free in 3-D inside the box (depth free, not scored) | frontal = held to the plane facing the monkey. Per-run
       # THE BOX: the equilibrium stays inside it -- a soft wall, like the floor. ITS ORIGIN IS THE START POSITION:
       # every bound is an offset from the start, base frame -- X toward the subject, Y sideways, Z up. The dashboard
       # and the experiment at start-up refuse a box whose corners, edge middles or face centres would bend the elbow
       # (A4) under 30 deg, come within 10 deg of a joint limit or near a singular posture. This one is the standard
-      # box's space seen from this start (5 cm lower), a little narrower sideways.
+      # box's space seen from this start (5 cm lower), a little narrower sideways. X is the depth he may push or pull:
+      # 3 cm toward him, 5 cm away (the standard box's; more needs the posture check on the rig).
       box:  # the box the equilibrium stays in; origin = the start position
         preset: "custom"  # standard | more_x | most_x | centred | custom (the six values below)
         x_min_m: -0.05  # (custom) back: how far toward -X from the start [m], <= 0

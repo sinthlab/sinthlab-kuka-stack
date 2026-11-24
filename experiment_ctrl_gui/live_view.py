@@ -254,7 +254,7 @@ class LiveView:
                 add({"kind": "marker", "p": end.tolist(), "r": float(p.get("n_choice.end_tol_m", 0.015)), "role": "end",
                      "id": f"end:{direction_name(deg)}", "label": f"{direction_name(deg)} end"})
             return
-        if axis == "frontal" and "pull.distance_m" in p:     # Cued Pull: the box, and where a pull ends
+        if "pull.distance_m" in p:     # Cued Pull (3-D or the frontal plane): the box, and where a pull ends
             try:
                 lo, hi = box_bounds(p.__getitem__, "free_move.box.")
                 add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "box"})

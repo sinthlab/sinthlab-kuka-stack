@@ -147,7 +147,7 @@ class FakeArm:
         self.pos, self.force, self.disp, self.box_ = np.zeros(3), 0.0, None, yaml_box()
 
     def shape(self):
-        return "frontal"
+        return "none"
 
     def box(self):
         return self.box_
@@ -263,7 +263,25 @@ def test_live_changes_are_checked_against_the_box(monkeypatch):
     assert mon.check_live("pull.cue_delay_max_sec", 2.0, {}) is None
 
 
-def test_needs_the_frontal_plane(monkeypatch):
+def test_depth_is_free_and_not_scored(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump", "perturb.probability": 0.0})
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "right"))
+    arm.pos = np.array([0.04, 0.0, 0.0])                       # pushed 4 cm toward himself only
+    tick(node)
+    assert [e for e, _ in marks] == ["grip"] and not got       # a grip, but no pull yet
+    arm.pos = np.array([-0.03, 0.05, 0.005])                   # then away from himself while pulling right
+    tick(node)
+    assert got == [(True, pytest.approx(5.7, abs=0.1))]        # scored on its sideways part only
+
+
+def test_3d_or_frontal_only():
+    p = yaml_params()
+    assert p["free_move.rail_axis"] == "none"
+    assert pt.params_problem({**p, "free_move.rail_axis": "frontal"}) is None
+    assert "rail_axis" in pt.params_problem({**p, "free_move.rail_axis": "y"})
+
+
+def test_needs_a_box(monkeypatch):
     arm = FakeArm()
     arm.shape = lambda: "y"
     with pytest.raises(ValueError):

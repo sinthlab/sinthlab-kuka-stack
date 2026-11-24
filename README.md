@@ -1525,9 +1525,12 @@ perturbation aims ([`cued_pull.yaml`](sinthlab_bringup/config/cued_pull.yaml),
 [`helpers/pull_task.py`](sinthlab_bringup/sinthlab_bringup/helpers/pull_task.py)). Navin's Apple Pluck
 (Scenarios 1 and 3) is unchanged and remains the first shaping task on the impedance spring.
 
-**The pull.** He grips the apple and moves it in the plane facing him (`free_move.rail_axis: frontal`;
-nothing moves toward or away from him), inside the box. A trial's pull ends when the apple has gone
-`pull.distance_m` (5 cm) from where the pull started. Same start, posture and SmartPad profile as N-Choice
+**The pull.** He grips the apple and moves it, free in 3-D inside the box (`free_move.rail_axis: none`;
+`frontal` holds it to the plane facing him instead, per-run). He may push or pull it toward or away from
+himself (the box gives 3 cm toward him, 5 cm away), but only the movement's part in the plane facing him,
+sideways and up / down, is scored: depth neither counts toward the pull's length nor against its
+direction. A trial's pull ends when that part has gone `pull.distance_m` (5 cm) from where the pull
+started. Same start, posture and SmartPad profile as N-Choice
 ("Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30).
 
 **Three modes** (`pull.mode`, the card's tabs, **live**: switch between trials without a restart):

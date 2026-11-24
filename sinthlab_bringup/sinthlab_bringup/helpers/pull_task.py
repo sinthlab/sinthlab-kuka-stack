@@ -1,8 +1,9 @@
 """Cued Pull: the trial logic -- no ROS, unit-tested.
 
-The task (actions/cued_pull.py on the free-move node): he grips the apple and pulls it, in the plane
-facing him (free_move.rail_axis frontal). A pull ENDS when the arm has gone pull.distance_m from where the
-pull started (a circle around it is crossed). Three modes, live, switchable between trials:
+The task (actions/cued_pull.py on the free-move node): he grips the apple and pulls it, free in 3-D inside
+the box (free_move.rail_axis none; or frontal, held to the plane facing him). Only the movement's part in
+the plane facing him is scored -- depth (toward or away from him) is free. A pull ENDS when that part has
+gone pull.distance_m from where the pull started (a circle around it is crossed). Three modes, live, switchable between trials:
 
     shaping   any direction: every crossing is rewarded (the whole ring lights at the go cue)
     jump      cued: one quarter of the ring lights, the direction to pull. On a fraction of trials
@@ -36,6 +37,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 MODES = ("shaping", "jump", "bump")
+SHAPES = ("none", "frontal")      # free_move.rail_axis: free in 3-D (the default), or held to the frontal plane
 CUED = ("jump", "bump")
 # Frontal-plane unit vectors (base Y, base Z) and the ring quarter that lights for each direction.
 DIRECTIONS: Dict[str, Tuple[float, float]] = {"right": (1.0, 0.0), "up": (0.0, 1.0),
@@ -223,6 +225,8 @@ def params_problem(values: Dict[str, object]) -> Optional[str]:
         lo, hi = box_bounds(lambda n: values[n])
     except (KeyError, TypeError, ValueError) as exc:
         return f"Cued Pull settings: {exc}"
+    if str(values.get("free_move.rail_axis", "none")) not in SHAPES:
+        return f"Cued Pull needs free_move.rail_axis {' or '.join(SHAPES)}"
     lo_d, hi_d = float(values.get("pull.cue_delay_min_sec", 0.0)), float(values.get("pull.cue_delay_max_sec", 0.0))
     if lo_d > hi_d:
         return "pull.cue_delay_min_sec must be <= pull.cue_delay_max_sec"

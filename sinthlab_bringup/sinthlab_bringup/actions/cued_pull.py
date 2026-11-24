@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Cued Pull: grip the apple and pull it, with jump and bump perturbations (the CIHR grant's Aims 1-2).
 
-The arm is free in the plane facing the monkey (free_move.rail_axis frontal), inside the box. ONE PULL PER
-TRIAL. The trial's plan (helpers/pull_task.py) is drawn at the go cue; the ring shows it (the whole ring
+The arm is free in 3-D inside the box (free_move.rail_axis none; frontal holds it to the plane facing the
+monkey instead). Only the part of the movement in the plane facing him -- sideways and up / down -- is
+scored: pushing toward him or away is allowed, within the box, and neither counts toward the pull's
+length nor against its direction. ONE PULL PER TRIAL. The trial's plan (helpers/pull_task.py) is drawn at the go cue; the ring shows it (the whole ring
 in shaping, the cued direction's quarter in jump / bump). The pull ends when the arm has gone
 pull.distance_m from where the pull started:
 
@@ -60,9 +62,9 @@ GRIP_BLANK_SEC = 0.1      # after a jump or bump, the force reading carries the 
 class CuedPullMonitor:
     def __init__(self, node: rclpyNode, admittance, mark: Callable[[str, object], None], *,
                  rng: Optional[random.Random] = None) -> None:
-        if admittance.shape() != "frontal" or admittance.box() is None:
-            raise ValueError("Cued Pull needs free_move.rail_axis: frontal (free in the plane facing the monkey, "
-                             "inside the box)")
+        if admittance.shape() not in pt.SHAPES or admittance.box() is None:
+            raise ValueError(f"Cued Pull needs free_move.rail_axis {' or '.join(pt.SHAPES)} (free in 3-D, or in the "
+                             f"plane facing the monkey, inside the box)")
         self._node, self._adm, self._mark = node, admittance, mark
         self._rng = rng or random.Random()
         self._settings = self._read()
@@ -190,7 +192,8 @@ class CuedPullMonitor:
         if not self._gripped and now >= self._blank_until:
             held = self._adm.hand_force_n() >= self._grip_n
             self._grip_since = (self._grip_since or now) if held else None
-            if (held and now - self._grip_since >= self._grip_sec) or float(np.hypot(*d)) >= self._grip_m:
+            moved = float(np.linalg.norm(p - self._baseline))          # every direction, depth included
+            if (held and now - self._grip_since >= self._grip_sec) or moved >= self._grip_m:
                 self._gripped = True
                 self._result["t_grip_s"] = round(now - self._t0, 3)
                 self._mark("grip", round(self._adm.hand_force_n(), 2))
