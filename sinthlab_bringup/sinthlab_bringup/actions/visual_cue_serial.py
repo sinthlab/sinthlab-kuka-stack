@@ -13,6 +13,7 @@ which path is in use, and translates each board request into a serial command li
     fire(label, (r, g, b, w))        CUE r g b w      -> ACK CUE <n>
     show("/segments?factor=f&colors=c")  SEG f c      -> ACK SEG
     show("/off")                     OFF              -> ACK OFF
+    set_brightness(b)                GET /config?brightness=b  -> OK ...   (firmware with GET)
     check()                          PING             -> PONG
 
 THE ACK MARKS THE LIGHT. The firmware writes ACK CUE only after pixels.show(), so the ack's arrival
@@ -86,6 +87,11 @@ class SerialCueTrigger:
         cmd = "CUE" if colour is None else "CUE {} {} {} {}".format(*colour)
         self._jobs.put((cmd, label, time.monotonic(), True))
 
+    def set_brightness(self, value: float) -> None:
+        """Set the ring's brightness (0-1) in the board's RAM. Needs firmware that answers GET over the
+        serial link; older firmware replies ERR, and the warning says so. Returns immediately."""
+        self._jobs.put((f"GET /config?brightness={value:g}", "brightness", time.monotonic(), False))
+
     def show(self, path: str, label: str) -> None:
         """Send a STATE change -- the same /segments or /off request the Wi-Fi trigger sends. Never
         dropped as stale: a late state is still the right state (ring_state_cue.py)."""
@@ -152,11 +158,18 @@ class SerialCueTrigger:
             return
         ms = (time.monotonic() - sent_at) * 1000
 
-        expected = {"PING": "PONG"}.get(cmd, "ACK " + cmd.split()[0])
+        expected = "OK" if cmd.startswith("GET ") else {"PING": "PONG"}.get(cmd, "ACK " + cmd.split()[0])
         if not reply.startswith(expected):
             why = "no reply" if not reply else f"replied {reply!r}"
+            hint = ("The board's firmware cannot change settings over the serial link: update it "
+                    "(end_effector_metro_code/code.py), or set the brightness over Wi-Fi in Diagnostics."
+                    if cmd.startswith("GET ") and reply.startswith("ERR") else
+                    "Is the board powered and the link wired?")
             self._log.warn(f"{what} ({cmd}) NOT confirmed: {why} within "
-                           f"{REPLY_TIMEOUT_SEC * 1000:.0f} ms. Is the board powered and the link wired?")
+                           f"{REPLY_TIMEOUT_SEC * 1000:.0f} ms. {hint}")
+            return
+        if label == "brightness":
+            self._log.info(f"Ring brightness set to {cmd.rsplit('=', 1)[1]} on the board ({ms:.1f} ms).")
             return
 
         if self._on_result is not None and label is not None and (cmd.startswith("CUE") or label.startswith("go_")):

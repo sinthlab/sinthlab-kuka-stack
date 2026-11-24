@@ -7,14 +7,15 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const D = { path: "wifi" };
 
-async function board(cmd, params = {}) {
+// show = false keeps the reply panel on the previous command (the status refresh after a change).
+async function board(cmd, params = {}, show = true) {
   const r = await fetch("/api/diag/board", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Experiment-Ctrl": "1" },
     body: JSON.stringify({ addr: $("#addr").value.trim(), port: $("#port").value.trim(), path: D.path, cmd, params }),
   });
   const j = await r.json();
   if (j.error) throw new Error(j.error);
-  $("#reply").textContent = `${cmd} over ${D.path === "serial" ? "serial" : "Wi-Fi"} (${j.ms} ms)\n${j.text}`;
+  if (show) $("#reply").textContent = `${cmd} over ${D.path === "serial" ? "serial" : "Wi-Fi"} (${j.ms} ms)\n${j.text}`;
   return j;
 }
 
@@ -50,10 +51,10 @@ function fillForm(kv) {
   brightWarn();
 }
 
-async function check() {
+async function check(show = true) {
   const pill = $("#reach");
   try {
-    const j = await board("status");
+    const j = await board("status", {}, show);
     pill.className = "pill " + (j.ok ? "ok" : "err");
     pill.textContent = j.ok ? `reachable · ${j.ms} ms` : "not reachable";
     if (!j.ok) return null;
@@ -63,9 +64,21 @@ async function check() {
   } catch (e) { pill.className = "pill err"; pill.textContent = e.message; return null; }
 }
 
+// A command, then the status refresh -- which keeps the command's own reply in view, says plainly when the
+// board refused it, and checks that a brightness change actually took (the form is refilled from the board).
 async function act(cmd, params) {
-  try { const j = await board(cmd, params); if (!j.ok) $("#reach").className = "pill err"; await check(); }
-  catch (e) { $("#reply").textContent = e.message; }
+  try {
+    const j = await board(cmd, params);
+    if (!j.ok) {
+      $("#reach").className = "pill err";
+      $("#reply").textContent = `${cmd} NOT applied over ${D.path === "serial" ? "serial" : "Wi-Fi"}: ${j.text}`;
+      return;
+    }
+    const kv = await check(false);
+    const want = params && params.brightness !== undefined ? parseFloat(params.brightness) : NaN;
+    if (kv && Number.isFinite(want) && Math.abs(parseFloat(kv.brightness) - want) > 0.01)
+      $("#reply").textContent += `\nThe board reports brightness ${kv.brightness}, not ${want}: the change did not take.`;
+  } catch (e) { $("#reply").textContent = e.message; }
 }
 
 const cueParams = () => ({

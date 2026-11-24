@@ -216,6 +216,7 @@
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
+      brightness: 0.1  # the whole ring, 0-0.3 (0 = leave the board's own); sent to the board at every run start and change, RAM only [fraction]
       trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)

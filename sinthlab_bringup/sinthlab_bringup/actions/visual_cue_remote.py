@@ -69,6 +69,10 @@ class RemoteCueTrigger:
             paths = ("/config?r={}&g={}&b={}&w={}".format(*colour), "/cue")
         self._jobs.put((paths, label, time.monotonic(), True))
 
+    def set_brightness(self, value: float) -> None:
+        """Set the ring's brightness (0-1) in the board's RAM (never save=1). Returns immediately."""
+        self._jobs.put(((f"/config?brightness={value:g}",), "brightness", time.monotonic(), False))
+
     def show(self, path: str, label: str) -> None:
         """Send a STATE change -- e.g. /segments, /off -- that holds until the next one. Returns
         immediately. Never dropped as stale: a late state is still the right state, and dropping it
@@ -105,6 +109,9 @@ class RemoteCueTrigger:
                 return
 
         ms = (time.monotonic() - sent_at) * 1000
+        if label == "brightness":
+            self._log.info(f"Ring brightness set to {paths[0].rsplit('=', 1)[1]} on the board ({ms:.0f} ms).")
+            return
         if self._on_result is not None and label is not None:
             try:
                 self._on_result(label, True, ms)

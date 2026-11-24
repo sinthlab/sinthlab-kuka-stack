@@ -47,3 +47,32 @@ def test_the_reward_cue_is_the_whole_ring():
     node = stubs.FakeNode(flat)
     ring = RingStateCue(node)
     assert ring.path_for("reward", [0, 1, 2, 3]) == "/segments?factor=4&colors=" + ".".join(["0,0,0,255"] * 4)
+
+
+# ---------------------------------------------------------------- the ring's brightness, a task setting
+def test_brightness_is_sent_once_per_change():
+    from sinthlab_bringup.actions.visual_cue import VisualCue
+    from sinthlab_bringup.helpers import live_params
+
+    class Sender:
+        def __init__(self):
+            self.sent = []
+
+        def set_brightness(self, v):
+            self.sent.append(v)
+
+    sender = Sender()
+    VisualCue._senders, VisualCue._brightness = {"serial": sender}, None
+    node = stubs.FakeNode({"visual_cue.enabled": True, "visual_cue.trigger": "serial", "visual_cue.brightness": 0.1})
+    VisualCue.apply_brightness(node)
+    VisualCue.apply_brightness(node)                     # many cue sites, one send
+    node.params["visual_cue.brightness"] = 0.05
+    VisualCue.apply_brightness(node)
+    node.params["visual_cue.brightness"] = 0.0           # 0 = leave the board's own
+    VisualCue.apply_brightness(node)
+    assert sender.sent == [0.1, 0.05]
+    VisualCue._senders, VisualCue._brightness = {}, None
+    for name in FREE_MOVE + ["apple_pluck_impedance", "maze_params", "virtual_fixtures_params"]:
+        assert params(name)["visual_cue"]["brightness"] == 0.1, name
+    assert live_params.is_live("move_free", "visual_cue.brightness") and live_params.is_live("maze", "visual_cue.brightness")
+    assert live_params.check_value("visual_cue.brightness", 0.5) is not None      # past the power note's 0.3

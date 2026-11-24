@@ -49,6 +49,7 @@ class RingStateCue:
         self._enabled = bool(get_required_param(node, "visual_cue.enabled"))
         self._quarters = sorted({int(q) for q in get_required_param(node, self._p + "quarters")
                                  if 0 <= int(q) < _QUARTERS})
+        VisualCue.apply_brightness(node)       # visual_cue.brightness, sent once per change
 
     def _colour(self, state: str) -> Optional[Tuple[int, ...]]:
         raw = colour_param(self._node, f"{self._p}colours.{state}")

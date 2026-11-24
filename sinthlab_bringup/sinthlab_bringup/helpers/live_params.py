@@ -34,6 +34,7 @@ _COMMON = [
     "visual_cue.enabled",          # master switch for the NeoPixel ring
     "visual_cue.trigger",          # serial (the RS-422 link) or wifi (the board's access point)
     "visual_cue.colours.*",
+    "visual_cue.brightness",       # the whole ring's brightness, sent to the board at each change
     # TTL sync pulses to the Blackrock NSP: switch, cabinet address, the trial outputs, width. Not
     # nsp_sync.experiment_start_output: that pulse is sent once, by the dashboard at Start (per-run).
     "nsp_sync.enabled", "nsp_sync.cabinet_ip", "nsp_sync.trial_*_output", "nsp_sync.pulse_width_ms",
@@ -154,6 +155,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
     "visual_cue.colours.*": (0, 255),
+    # The ring's brightness: 0 = leave the board's own. Capped at 0.3, where colour cues start to exceed the
+    # end effector's 5 V converter (end_effector_metro_code/code.py, POWER); Diagnostics can go higher.
+    "visual_cue.brightness": (0.0, 0.3),
     "*.cartesian_displacement_threshold_m": (0.005, 0.5),
     "*.force_release_shutdown_delay_sec": (0.0, 10.0),
     "*.baseline_settle_sec": (0.0, 10.0),
