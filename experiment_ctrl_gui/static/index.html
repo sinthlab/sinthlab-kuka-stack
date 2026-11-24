@@ -89,28 +89,7 @@
 
   <!-- ============ right: settings ============ -->
   <section class="col">
-    <div class="card params-card">
-      <!-- Task: today's few settings. Monkey: the profile's, as this task uses them. All settings: everything. -->
-      <div class="tabs" role="tablist" aria-label="Settings">
-        <button class="tab" data-pview="task" role="tab">Task <span class="count" id="n-task"></span></button>
-        <button class="tab" data-pview="monkey" role="tab">Monkey <span class="count" id="n-monkey"></span></button>
-        <button class="tab" data-pview="all" role="tab">All settings</button>
-        <div class="tab-tools">
-          <input id="param-filter" type="search" placeholder="Filter" aria-label="Filter settings">
-          <button id="btn-reset-edits" class="btn small" title="Discard unsaved edits and restore profile values and task defaults">Reset edits</button>
-        </div>
-      </div>
-      <div class="tabs subtabs" id="all-tabs" role="tablist" aria-label="All settings">
-        <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
-        <button class="tab" data-tab="run" role="tab">Per-run <span class="count" id="n-run"></span></button>
-        <button class="tab" data-tab="fixed" role="tab">Fixed <span class="count" id="n-fixed"></span></button>
-      </div>
-      <p class="tab-help" id="tab-help"></p>
-      <div class="profile-bar hidden" id="profile-bar"></div>
-      <div id="params" class="params"></div>
-    </div>
-
-    <!-- While a run goes, under the settings: the arm in the experiment's bounds (live_view.js, as on /live.html),
+    <!-- While a run goes, above the settings: the arm in the experiment's bounds (live_view.js, as on /live.html),
          folded with its heading, remembered per browser. -->
     <div class="card arm-card hidden" id="arm-card">
         <details class="live-in" id="live-card" open>
@@ -131,6 +110,27 @@
             <span>Front view shows Y to the right and Z up. Top view shows Y to the right and X down toward the subject.</span>
           </p>
         </details>
+    </div>
+
+    <div class="card params-card">
+      <!-- Task: today's few settings. Monkey: the profile's, as this task uses them. All settings: everything. -->
+      <div class="tabs" role="tablist" aria-label="Settings">
+        <button class="tab" data-pview="task" role="tab">Task <span class="count" id="n-task"></span></button>
+        <button class="tab" data-pview="monkey" role="tab">Monkey <span class="count" id="n-monkey"></span></button>
+        <button class="tab" data-pview="all" role="tab">All settings</button>
+        <div class="tab-tools">
+          <input id="param-filter" type="search" placeholder="Filter" aria-label="Filter settings">
+          <button id="btn-reset-edits" class="btn small" title="Discard unsaved edits and restore profile values and task defaults">Reset edits</button>
+        </div>
+      </div>
+      <div class="tabs subtabs" id="all-tabs" role="tablist" aria-label="All settings">
+        <button class="tab active" data-tab="live" role="tab">Live <span class="count" id="n-live"></span></button>
+        <button class="tab" data-tab="run" role="tab">Per-run <span class="count" id="n-run"></span></button>
+        <button class="tab" data-tab="fixed" role="tab">Fixed <span class="count" id="n-fixed"></span></button>
+      </div>
+      <p class="tab-help" id="tab-help"></p>
+      <div class="profile-bar hidden" id="profile-bar"></div>
+      <div id="params" class="params"></div>
     </div>
   </section>
 </main>
