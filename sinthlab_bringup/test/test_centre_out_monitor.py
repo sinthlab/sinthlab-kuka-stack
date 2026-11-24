@@ -142,6 +142,14 @@ def test_either_keeps_the_whole_rail_and_rewards_both():
     assert run_to(node, arm, mon, 0.15) == ("right", True)
 
 
+def test_the_reached_end_has_its_own_quarter():
+    """The red 'reached' ring lights the end the arm reached, not every goal quarter (either: both)."""
+    node, arm, mon = horizontal(target="either")
+    mon.pick_target()
+    assert mon.quarter_of("left") == 3 and mon.quarter_of("right") == 1
+    assert mon.quarter_of("up") is None
+
+
 def test_no_outcome_short_of_an_end():
     node, arm, mon = horizontal(target="right")
     mon.pick_target()

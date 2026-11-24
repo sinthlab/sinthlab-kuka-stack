@@ -194,6 +194,10 @@ class CentreOutMonitor:
             self._target = self._picker.pick()
         return self._target
 
+    def quarter_of(self, end: str) -> Optional[int]:
+        """The ring quarter of one end of the rail (the end the arm reached), or None for an unknown name."""
+        return self._quarter.get(end)
+
     def quarters(self) -> List[int]:
         """The ring quarters to light for this trial's goal."""
         if self._target in self._ends:

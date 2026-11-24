@@ -310,6 +310,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip", arg)
         lit = self.centre_out.quarters() if self.centre_out is not None else None
+        # The end the arm reached: only its quarter turns red (in "either", not both goal quarters).
+        reached = self.centre_out.quarter_of(arg) if self.centre_out is not None and isinstance(arg, str) else None
+        if reached is not None and reason in ("reach", "reach_wrong"):
+            lit = [reached]
         # The colour rule shows no red "reached" ring: red is one of its cues. Only the outcome tells.
         rule = self.centre_out is not None and self.centre_out.rule_on()
         if self.centre_out is not None:
@@ -323,7 +327,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.safety.stop()
         self.admittance.stop()          # holds where it is
         if reason in ("reach", "reach_wrong") and not rule:
-            self.ring.show("reached", lit)   # the lit quarters turn red until the hand lets go
+            self.ring.show("reached", lit)   # the reached end's quarter turns red until the hand lets go
         else:
             self.ring.show("off")
         if reason in ("safety", "early_touch", "smartpad_mismatch") or (
