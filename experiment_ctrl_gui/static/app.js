@@ -411,7 +411,7 @@ function renderRunStats() {
   const a = S.app, el = $("#run-stats"); if (!a || !el) return;
   const r = a.runner, on = r.state !== "idle" && r.started_at;
   if (!on) { el.innerHTML = ""; return; }
-  const j = SV.juice;
+  const j = SV.view === "monitor" && sessionKey() !== "reach_map" ? null : SV.juice;
   el.innerHTML = `<span class="k">⏱</span>${fmtDur(Date.now() / 1000 - r.started_at)}` +
     (j && j.ml != null ? ` · <span class="k">juice</span>${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <span class="k">${fmtMl(j.rate)}/h</span>` : ""}` : "");
 }
@@ -1325,22 +1325,13 @@ function juiceOf(d) {
   const hours = (t1 - t0) / 3600;
   return { ml, unsure, rate: hours > 0.05 ? ml / hours : null };
 }
-// The Run pane. Row 1 is the same on every task (Trials, Rewarded, Juice, Reaction time / Session length,
-// Misses), so the eye always finds them in the same place; row 2 holds the task's own tiles. Running
-// percentages use the last 20 trials, the session total in small text. A trial cut short by Stop is the
-// operator's, not the monkey's: left out of every count and drawn grey in the strip.
+// Operator stops stay in the trial strip but are excluded from performance metrics.
 const SESSION_TASKS = ["free_move", "restricted_move_horizontal", "restricted_move_vertical", "reach_map"];
 const LAST_N = 20;
 const isOperatorStop = (r) => r.outcome === "stop_requested";
 const median = (xs) => { const v = xs.filter(Number.isFinite).sort((a, b) => a - b); if (!v.length) return NaN;
   const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 const fmtS = (x) => (Number.isFinite(x) ? (x >= 100 ? `${Math.round(x)} s` : `${x.toFixed(1)} s`) : "–");
-function rate(rows, test) {              // [% of the last 20 rows, "k/n" over the session] for a 1/0 test
-  const all = rows.filter((r) => test(r) !== null), last = all.slice(-LAST_N);
-  const k = last.filter((r) => test(r)).length, K = all.filter((r) => test(r)).length;
-  return { pct: pct(k, last.length), small: all.length > last.length ? `session ${pct(K, all.length)}` : `${k}/${last.length}`, n: all.length };
-}
-const tile = (k, v, small = "", cls = "") => [k, `${v}${small ? ` <small>${small}</small>` : ""}`, cls];
 function paradigmLabel(key, value) {
   const pr = (exp(key)?.paradigms || []).find((x) => x.key === String(value));
   return pr ? pr.label : String(value || "");
@@ -1355,91 +1346,47 @@ function renderMonitor() {
   }
   const rows = all.filter((r) => !isOperatorStop(r));          // the monkey's trials
   const last = all[all.length - 1], session = SESSION_TASKS.includes(key);
-  // ---- row 1: the same five on every task
-  const t0 = num(all[0].t_start), t1 = d.running ? Date.now() / 1000 : num(last.t_end);
-  const mins = (t1 - t0) / 60;
-  const rewarded = rate(rows, (r) => (num(r.n_rewards) || 0) > 0);
-  const rewards = rows.reduce((x, r) => x + (num(r.n_rewards) || 0), 0);
-  const j = juiceOf(d);
-  const lat = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
-  const noResp = rows.filter((r) => r.outcome === "response_timeout" || r.outcome === "timeout").length;
-  const early = rows.filter((r) => r.outcome === "early_touch").length;
+  const recent = rows.slice(-LAST_N);
+  const rewarded = recent.filter((r) => num(r.n_rewards) > 0).length;
+  const juice = juiceOf(d);
+  const latency = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
+  const misses = rows.filter((r) => ["response_timeout", "timeout", "early_touch"].includes(r.outcome)).length;
   const row1 = [
-    tile("Trials", rows.length, mins > 1 ? `${(rows.length / mins).toFixed(1)}/min` : ""),
-    tile("Rewarded, last 20", rewarded.pct, rewarded.small),
-    j.ml != null ? tile("Juice", `${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}`, `${rewards} reward${rewards === 1 ? "" : "s"}${j.rate ? ` · ${fmtMl(j.rate)}/h` : ""}`)
-                 : tile("Rewards", rewards),
-    session ? tile("Session length", fmtS(lat), "median, last 10") : tile("Reaction time", fmtS(lat), "median, last 10"),
-    tile("Misses", noResp + early, `${noResp} no response · ${early} early`, noResp + early ? "warn" : ""),
+    [session ? "Sessions" : "Trials", rows.length],
+    session ? ["Rewards", rows.reduce((sum, r) => sum + (num(r.n_rewards) || 0), 0)]
+            : ["Rewarded · last 20", recent.length ? `${rewarded}/${recent.length}` : "–"],
+    ["Juice", juice.ml == null ? "–" : `${juice.unsure ? "≈ " : ""}${fmtMl(juice.ml)}`],
+    [session ? "Session length" : "Time to outcome", fmtS(latency), "", "Median of the last 10, from go cue to outcome"],
+    ["Misses", misses, misses ? "warn" : "", "No response or early touch"],
   ];
-  // ---- row 2: the task's own
-  const row2 = [], panels = [];
-  const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
-  if (key === "move_horizontal" || key === "move_vertical") {       // Cued Reaches
-    const mode = String(last.paradigm || "");
-    let inMode = 0; for (let i = rows.length - 1; i >= 0 && String(rows[i].paradigm) === mode; i--) inMode++;
-    row2.push(tile("Mode", esc(paradigmLabel(key, mode)), `${inMode} trial${inMode === 1 ? "" : "s"}`));
-    const cued = rate(chosen.filter((r) => r.paradigm === "cued"), (r) => String(r.correct) === "1");
-    row2.push(tile("Correct, Cued end", cued.n ? cued.pct : "–", cued.n ? cued.small : "no Cued end trials yet"));
-    const reached = rows.filter((r) => r.chosen_end).slice(-LAST_N);
-    const sides = [...new Set(rows.map((r) => r.chosen_end).filter(Boolean))].sort();
-    const ends = key === "move_horizontal" ? ["left", "right"] : ["down", "up"];
-    const share = (e) => pct(reached.filter((r) => r.chosen_end === e).length, reached.length);
-    row2.push(tile("Side, last 20", reached.length ? `${share(ends[0])} ${ends[0]}` : "–", reached.length ? `${share(ends[1])} ${ends[1]}` : ""));
-    // Per side: how often he went each way, and (Cued end) how often he got it right when that side was cued.
-    const sideRows = ends.map((e) => {
-      const cs = chosen.filter((r) => r.target === e && r.paradigm === "cued"), c = cs.filter((r) => String(r.correct) === "1").length;
-      return `<tr><td>${esc(e)}</td><td class="v">${rows.filter((r) => r.chosen_end === e).length}</td>` +
-             `<td class="v">${cs.length ? `${pct(c, cs.length)} <span class="muted">${c}/${cs.length}</span>` : "–"}</td></tr>`;
-    }).join("");
-    panels.push(`<div><h3>Per side</h3><table class="mini"><tr><th></th><th>Reaches</th><th>Correct when cued</th></tr>${sideRows}</table></div>`);
-    void sides;
+  const row2 = [];
+  if (key === "n_choice") {
+    if (last.n_options || last.paradigm) row2.push(["Options", esc(last.n_options || last.paradigm)]);
+  } else if (key.startsWith("restricted_move_")) {
+    row2.push(["Rail", esc(exp(key)?.variant || "–")]);
+  } else if (last.paradigm) row2.push(["Mode", esc(paradigmLabel(key, last.paradigm))]);
+  if (key === "move_horizontal" || key === "move_vertical") {
+    const end = key === "move_horizontal" ? "left" : "up";
+    const reaches = rows.filter((r) => r.chosen_end).slice(-LAST_N);
+    row2.push([`${end === "left" ? "Left" : "Up"} reaches · last 20`, pct(reaches.filter((r) => r.chosen_end === end).length, reaches.length)]);
+    if (last.paradigm === "cued") {
+      const cued = rows.filter((r) => r.paradigm === "cued" && ["0", "1"].includes(String(r.correct))).slice(-LAST_N);
+      row2.push(["Cued accuracy · last 20", pct(cued.filter((r) => String(r.correct) === "1").length, cued.length)]);
+    }
   } else if (key === "colour_rule") {
-    const crit = num(paramValue("rule.criterion_pct"));
-    row2.push(tile("Block · mapping", esc(last.block || "–"), esc(last.mapping || "")));
-    row2.push(tile("Criterion window", last.window_pct !== "" && last.window_pct != null ? `${Math.round(num(last.window_pct))}%` : "–",
-                   Number.isFinite(crit) ? `needs ${crit}%` : ""));
-    const inBlock = rows.filter((r) => String(r.block) === String(last.block) && (String(r.correct) === "0" || String(r.correct) === "1")).length;
-    row2.push(tile("Choices in block", inBlock, `min ${paramValue("rule.min_trials") ?? "–"}`));
-    row2.push(tile("Reversals", rows.filter((r) => String(r.reversal) === "1").length));
-    const per = {};
-    chosen.forEach((r) => { if (r.block) per[r.block] = (per[r.block] || 0) + 1; });
-    const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);
-    const items = blocks.map((b) => [`B${b}${b === Math.max(...blocks) ? " (now)" : ""}`, per[b]]);
-    panels.push(`<div><h3>Choices per block</h3>${bars(items, Math.max(1, ...items.map((x) => x[1])))}</div>`);
-    const pers = blocks.filter((b) => b > 1).map((b) => { const f = chosen.filter((r) => num(r.block) === b).slice(0, 10);
-      return [`B${b}: errors, first ${f.length}`, f.filter((r) => String(r.correct) === "0").length]; });
-    if (pers.length) panels.push(`<div><h3>After each reversal</h3>${bars(pers, 10)}</div>`);
+    row2.push(["Block", esc(last.block || "–")]);
+    if (last.mapping) row2.push(["Mapping", esc(last.mapping)]);
+    const accuracy = num(last.window_pct);
+    row2.push(["Criterion window", Number.isFinite(accuracy) ? `${Math.round(accuracy)}%` : "–"]);
   } else if (key === "n_choice") {
-    const ch = rows.filter((r) => r.choice);
-    const best = rate(ch, (r) => String(r.chose_best) === "1");
-    row2.push(tile("Chose best, last 20", best.n ? best.pct : "–", best.n ? best.small : ""));
-    let ws = 0, wsn = 0, ls = 0, lsn = 0;
-    ch.slice(-(LAST_N + 1)).forEach((r, i, a) => { if (!i) return; const prev = a[i - 1];
-      if (String(prev.rewarded) === "1") { wsn++; if (r.choice === prev.choice) ws++; } else { lsn++; if (r.choice !== prev.choice) ls++; } });
-    row2.push(tile("Win-stay", wsn ? pct(ws, wsn) : "–", wsn ? `${ws}/${wsn}` : ""));
-    row2.push(tile("Lose-shift", lsn ? pct(ls, lsn) : "–", lsn ? `${ls}/${lsn}` : ""));
-    row2.push(tile("Options", esc(last.n_options || last.paradigm || "–"), "directions"));
-    const perDir = {};
-    ch.forEach((r) => { perDir[r.choice] = (perDir[r.choice] || 0) + 1; });
-    const items = Object.entries(perDir).sort((a, b) => b[1] - a[1]);
-    panels.push(`<div><h3>Choices per direction</h3>${bars(items, Math.max(1, ...items.map((x) => x[1])))}</div>`);
-    const pv = String(last.p_values || "").split(";").map((x) => x.trim().split("=")).filter((x) => x.length === 2);
-    if (pv.length) panels.push(`<div><h3>Reward probability now</h3>${bars(pv.map(([k, v]) => [k, Math.round(100 * num(v))]), 100)}</div>`);
+    const choices = rows.filter((r) => ["0", "1"].includes(String(r.chose_best))).slice(-LAST_N);
+    row2.push(["Chose best · last 20", pct(choices.filter((r) => String(r.chose_best) === "1").length, choices.length)]);
   } else if (key === "free_move") {
-    const mv = rows.reduce((x, r) => x + (num(r.n_movements) || 0), 0), lm = rows.reduce((x, r) => x + (num(r.n_long_moves) || 0), 0);
-    row2.push(tile("Mode", esc(paradigmLabel(key, last.paradigm))));
-    row2.push(tile("Long moves", lm, `of ${mv} moves`));
+    const moves = rows.reduce((sum, r) => sum + (num(r.n_movements) || 0), 0);
+    const long = rows.reduce((sum, r) => sum + (num(r.n_long_moves) || 0), 0);
+    row2.push(["Long moves", moves ? `${long}/${moves}` : "–"]);
     const longest = Math.max(0, ...rows.map((r) => num(r.max_length_m)).filter(Number.isFinite));
-    row2.push(tile("Longest move", longest ? `${(longest * 100).toFixed(0)} cm` : "–"));
-    row2.push(tile("Moves per minute", mins > 1 ? (mv / mins).toFixed(1) : "–"));
-  } else if (key.startsWith("restricted_move")) {
-    row2.push(tile("Rail", esc(exp(key)?.variant || "")));
-    row2.push(tile("Sessions completed", rows.filter((r) => r.outcome === "session_end").length));
-  } else {                                                        // Apple Pluck, Restricted Plane, Maze
-    if (last.paradigm) row2.push(tile("Paradigm", esc(paradigmLabel(key, last.paradigm))));
-    const tOut = rows.filter((r) => r.outcome === "timeout" || r.outcome === "response_timeout").length;
-    row2.push(tile("Timed out", tOut, `of ${rows.length}`));
+    row2.push(["Longest move", longest ? `${(longest * 100).toFixed(0)} cm` : "–"]);
   }
   // ---- the strip: the last 120 trials, in segments by Color Rule block, or wherever the mode changed
   const shown = all.slice(-120);
@@ -1461,22 +1408,10 @@ function renderMonitor() {
   all.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
   const present = Object.keys(OUTCOME_LABEL).filter((k) => counts[k]);
   const legend = present.map((k) => `<span><i class="o-${k}"></i>${OUTCOME_LABEL[k]}</span>`).join("");
-  panels.unshift(`<div><h3>Outcomes</h3>${bars(present.filter((k) => k !== "stop").map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`);
-  const tiles = (row, cls2) => `<div class="tiles ${cls2}">${row.map(([k, v, c]) => `<div class="tile ${c || ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>`;
+  const tiles = (row, cls) => `<div class="tiles ${cls}">${row.map(([label, value, state = "", hint = ""]) =>
+    `<div class="tile ${state}"${hint ? ` title="${esc(hint)}"` : ""}><div class="k">${label}</div><div class="v">${value}</div></div>`).join("")}</div>`;
   box.innerHTML = tiles(row1, "row1") + (row2.length ? tiles(row2, "row2") : "") +
-    `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>` +
-    `<div class="mon-grid">${panels.join("")}</div>`;
-}
-function bars(items, max) {
-  return `<div class="bars">` + items.map(([k, v]) =>
-    `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
-}
-// A setting's value for the selected task (the dashboard's copy: the run's own value while it runs).
-function paramValue(name) {
-  const s = statusLive();
-  if (s && s.live && name in s.live) return s.live[name];
-  const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
-  return p ? p.value : undefined;
+    `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>`;
 }
 
 // Values as sessions.csv writes them (Python str / json.dumps) and as the dashboard holds them: compare loosely.
