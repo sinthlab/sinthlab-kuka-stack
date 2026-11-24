@@ -73,7 +73,7 @@ def test_brightness_is_sent_once_per_change():
     assert sender.sent == [0.1, 0.05]
     VisualCue._senders, VisualCue._brightness = {}, None
     for name in FREE_MOVE + ["apple_pluck_impedance", "maze_params", "virtual_fixtures_params"]:
-        assert params(name)["visual_cue"]["brightness"] == 0.05, name
+        assert params(name)["visual_cue"]["brightness"] == 0.02, name
     assert live_params.is_live("move_free", "visual_cue.brightness") and live_params.is_live("maze", "visual_cue.brightness")
     assert live_params.check_value("visual_cue.brightness", 0.5) is not None      # past the power note's 0.3
 

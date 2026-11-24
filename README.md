@@ -2482,7 +2482,7 @@ visual_cue:
   trigger: "serial"             # serial (the RS-422 link) or wifi (the board's access point)
   serial_port: "/dev/ttyUSB0"   # the StarTech adapter in WSL (serial only)
   remote_board: "192.168.4.1"   # the board on its own access point (wifi only)
-  brightness: 0.05              # the whole ring, 0-0.3 (0 = the board's own); live
+  brightness: 0.02              # the whole ring, 0-0.3 (0 = the board's own); live
   colours:                      # optional, per cue site: [r, g, b, w]
     play: [0, 255, 0, 0]        # trial start: green
     snap: [0, 0, 0, 255]        # threshold reached, the reward: white (the reward cue in every task)
@@ -2507,7 +2507,7 @@ why, and the board's acknowledgement — sent only once the ring is lit — is r
 beside `AudioCue` at all eight cue sites.
 
 **Brightness is the task's setting.** Every colour is at full value (255 on its channel), so `visual_cue.brightness` alone sets how bright the
-ring is, the same for the cue and the reward. Every task sends it (default 0.05, at most 0.3:
+ring is, the same for the cue and the reward. Every task sends it (default 0.02, about 5 of 255; at most 0.3:
 the POWER note in `end_effector_metro_code/code.py`) to the board when it starts and whenever it is changed
 (Live), into the board's RAM only, so the ring is as bright as the task says whatever it was left at, and the
 value is in each trial's record. Over serial this needs board firmware that answers `GET` (the current

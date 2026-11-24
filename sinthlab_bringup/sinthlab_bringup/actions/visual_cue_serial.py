@@ -169,7 +169,8 @@ class SerialCueTrigger:
                            f"{REPLY_TIMEOUT_SEC * 1000:.0f} ms. {hint}")
             return
         if label == "brightness":
-            self._log.info(f"Ring brightness set to {cmd.rsplit('=', 1)[1]} on the board ({ms:.1f} ms).")
+            self._log.info(f"Ring brightness set to {cmd.rsplit('=', 1)[1]} on the board ({ms:.1f} ms): every colour "
+                           f"now lights at about {round(255 * float(cmd.rsplit('=', 1)[1]))} of 255.")
             return
 
         if self._on_result is not None and label is not None and (cmd.startswith("CUE") or label.startswith("go_")):
