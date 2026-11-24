@@ -73,28 +73,6 @@
       <div id="session-view"></div>
     </div>
 
-    <!-- While a run goes, under its progress: the arm in the experiment's bounds (live_view.js, as on /live.html),
-         folded with its heading, remembered per browser. -->
-    <div class="card arm-card hidden" id="arm-card">
-        <details class="live-in" id="live-card" open>
-          <summary>Arm <span class="muted small" id="live-sub"></span>
-            <a class="small live-pop" href="/live.html" target="_blank" title="Open a larger view in a new tab">Open live view ↗</a></summary>
-          <div class="live-views">
-            <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
-            <canvas id="cv-top" class="live-canvas" aria-label="Top view with Y pointing right and X pointing down toward the subject"></canvas>
-          </div>
-          <p class="live-status" id="live-status"></p>
-          <p class="live-legend muted small">
-            <span><span class="key" style="background:var(--ink)"></span>arm (last 8 s)</span>
-            <span><span class="key ring" style="border-color:var(--accent)"></span>pull point</span>
-            <span><span class="key line" style="background:var(--info)"></span>rail</span>
-            <span><span class="key line" style="background:var(--warn)"></span>wall / box</span>
-            <span><span class="key line dash" style="border-color:var(--err)"></span>floor</span>
-            <span><span class="key ring" style="border-color:var(--ok)"></span>goal / rail end</span>
-            <span>Front view shows Y to the right and Z up. Top view shows Y to the right and X down toward the subject.</span>
-          </p>
-        </details>
-    </div>
 
     <!-- Before a run: the SmartPad selections and the launch, folded to one line. -->
     <details class="card checklist-card" id="checklist-card">
@@ -130,6 +108,29 @@
       <p class="tab-help" id="tab-help"></p>
       <div class="profile-bar hidden" id="profile-bar"></div>
       <div id="params" class="params"></div>
+    </div>
+
+    <!-- While a run goes, under the settings: the arm in the experiment's bounds (live_view.js, as on /live.html),
+         folded with its heading, remembered per browser. -->
+    <div class="card arm-card hidden" id="arm-card">
+        <details class="live-in" id="live-card" open>
+          <summary>Arm <span class="muted small" id="live-sub"></span>
+            <a class="small live-pop" href="/live.html" target="_blank" title="Open a larger view in a new tab">Open live view ↗</a></summary>
+          <div class="live-views">
+            <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
+            <canvas id="cv-top" class="live-canvas" aria-label="Top view with Y pointing right and X pointing down toward the subject"></canvas>
+          </div>
+          <p class="live-status" id="live-status"></p>
+          <p class="live-legend muted small">
+            <span><span class="key" style="background:var(--ink)"></span>arm (last 8 s)</span>
+            <span><span class="key ring" style="border-color:var(--accent)"></span>pull point</span>
+            <span><span class="key line" style="background:var(--info)"></span>rail</span>
+            <span><span class="key line" style="background:var(--warn)"></span>wall / box</span>
+            <span><span class="key line dash" style="border-color:var(--err)"></span>floor</span>
+            <span><span class="key ring" style="border-color:var(--ok)"></span>goal / rail end</span>
+            <span>Front view shows Y to the right and Z up. Top view shows Y to the right and X down toward the subject.</span>
+          </p>
+        </details>
     </div>
   </section>
 </main>
