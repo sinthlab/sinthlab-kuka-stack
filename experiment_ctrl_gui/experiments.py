@@ -283,6 +283,24 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
+# Foraging: search a felt arena for hidden reward zones, one environment per session (a new one each day). The
+# tabs pick the space (the plane facing him, or 3-D); the arena and today's zones are per-run.
+EXPERIMENTS += [
+    Experiment(
+        key="forage", label="Foraging", group="experiments",
+        summary="Search the arena for hidden rewards. One environment per session, new each day.",
+        launch_file="iiwa7_forage.launch.py",
+        params_yaml="forage.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("forage"),
+        ros_controller="kuka_clik_controller",
+        paradigms=[("frontal", "Plane"), ("none", "3-D")], paradigm_param="free_move.rail_axis",
+        task_settings=("forage.n_zones", "forage.zone_radius_m", "free_move.box.shape", "forage.dwell_sec",
+                       "warm.mode", "warm.start_factor", "warm.shrink_trials", "warm.fade_trials",
+                       "probe.probability", "forage.time_limit_sec", "forage.seed"),
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
+]
 BY_KEY = {e.key: e for e in EXPERIMENTS}
 for _e in EXPERIMENTS:
     assert _e.stiffness_profile in SMARTPAD_PROFILES, f"{_e.key}: unknown SmartPad profile {_e.stiffness_profile!r}"
@@ -350,6 +368,17 @@ LABELS: Dict[str, str] = {
     "n_choice.start": "Initial reward probabilities",
     "n_choice.end_tol_m": "End tolerance [m]",
     "free_move.ray_length_m": "Rail length [m]",
+    "forage.n_zones": "Zones",
+    "forage.zone_radius_m": "Zone radius [m]",
+    "free_move.box.shape": "Arena shape",
+    "forage.dwell_sec": "Dwell to pay [s]",
+    "forage.time_limit_sec": "Search time limit [s]",
+    "forage.seed": "Environment (0 = today's)",
+    "warm.mode": "Warm-zone cue",
+    "warm.start_factor": "Warm radius at first [x zone]",
+    "warm.shrink_trials": "Trials to shrink",
+    "warm.fade_trials": "Trials to fade",
+    "probe.probability": "Probe trials [fraction]",
     "free_reach.distance_m": "Reach length [m]",
     "free_reach.cone_deg": "Target cone [deg]",
     "free_reach.directions": "Cued directions",

@@ -135,6 +135,7 @@ from sinthlab_bringup.helpers import rail_shapes
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
 from sinthlab_bringup.helpers.free_reach import min_jerk
+from sinthlab_bringup.helpers import forage
 from sinthlab_bringup.helpers.start_grid import StartGrid
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
@@ -192,6 +193,10 @@ class AdmittanceMoveAction:
                                  f"not run: {problem}. Use fewer or shorter rails ({self._p}ray_layout, "
                                  f"{self._p}ray_length_m).")
         self._box = None                        # Free Move: (min, max) offsets from the start [x, y, z]
+        # The box's shape: rectangle, or the ellipse / ellipsoid inscribed in it (Foraging's arena;
+        # helpers/forage.py). Only tasks with free_move.box.shape have the choice.
+        self._box_shape = (str(get_required_param(node, self._p + "box.shape")).strip().lower()
+                           if node.has_parameter(self._p + "box.shape") else "rectangle")
         start_pose = get_required_param(node, "move_to_start.target_joint_position")
         if self._rail is not None:
             # The hard bound on a rail: the posture check along the whole rail, as the dashboard runs it.
@@ -346,6 +351,10 @@ class AdmittanceMoveAction:
     def box(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """The box's (min, max) offsets from the start [m, base frame], or None (a rail, the asterisk)."""
         return self._box
+
+    def box_shape(self) -> str:
+        """rectangle, or ellipse (the ellipse / ellipsoid inscribed in the box)."""
+        return getattr(self, "_box_shape", "rectangle")
 
     def set_open_span(self, span: Optional[tuple]) -> None:
         """Open only part of the rail, (lo, hi) [m from the start, within rail_min_m..rail_max_m], for this
@@ -597,7 +606,11 @@ class AdmittanceMoveAction:
         xyz = self._on_rail(xyz)
         if self._box is not None:
             a = self._anchor[0:3, 3]
-            xyz = a + np.clip(np.asarray(xyz, dtype=float) - a, self._box[0], self._box[1])
+            d = np.clip(np.asarray(xyz, dtype=float) - a, self._box[0], self._box[1])
+            if getattr(self, "_box_shape", "rectangle") == "ellipse":   # the ellipse in the plane, the ellipsoid in 3-D
+                d = forage.clamp_ellipse(d, self._box[0], self._box[1],
+                                         forage.PLANE_DIMS if self._plane_n is not None else forage.SPACE_DIMS)
+            xyz = a + d
         return self._floor.clamp_xyz(xyz, self._anchor[0:3, 0:3])
 
     def _on_rail(self, xyz: np.ndarray) -> np.ndarray:

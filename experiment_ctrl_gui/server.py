@@ -36,6 +36,7 @@ import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
 import install_check  # noqa: E402
 from sinthlab_bringup.helpers import free_reach  # noqa: E402  (on the path via experiments)
+from sinthlab_bringup.helpers import forage  # noqa: E402
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
 import reward_volume  # noqa: E402
@@ -114,7 +115,8 @@ class App:
         exp = self.running_experiment()
         status = self.status()
         self.live_view.update(exp.key if exp else None,
-                              self.params[exp.key].current() if exp else {},
+                              {**self.params[exp.key].current(), "_subject": self._run_subject or self.subject}
+                              if exp else {},
                               status if status and not status["stale"] else None)
 
     def _live_ticker(self) -> None:
@@ -336,6 +338,9 @@ class App:
         problem = kinematics.floor_problem(p.current())
         if problem:                              # refuse here, with the reason, before anything launches
             raise ValueError(f"Not starting: {problem}. Change the floor or the pose on the Per-run tab.")
+        problem = forage.params_problem(p.current(), subject)    # Foraging: today's zones must fit the arena
+        if problem:
+            raise ValueError(f"Not starting: {problem}.")
         overrides = p.launch_overrides()          # edited YAML (+ CLIK posture) or nothing
         params_file = overrides.get("params_file")
         if self.demo:

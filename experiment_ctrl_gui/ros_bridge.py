@@ -32,6 +32,7 @@ from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
 from sinthlab_bringup.helpers.rail_shapes import direction_name, layout_degs
 from sinthlab_bringup.helpers import free_reach
+from sinthlab_bringup.helpers import forage
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -236,6 +237,7 @@ class DemoBridge:
             self._rule: Optional[ReversalSchedule] = None   # the Color Rule, built on entering it
             self._bandit: Optional[DepletingBandit] = None  # N-choice, built at the first trial
             self._reaches: Optional[free_reach.ReachSchedule] = None  # Cued Reaches, free: built at the first trial
+            self._forage_rng: Optional[random.Random] = None          # Foraging: the probe draws, per run
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -385,7 +387,8 @@ class DemoBridge:
                 return False
             centre_out = self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled"))
             free = "free_reach.cue" in self._params
-            if not centre_out and not free:
+            foraging = "forage.n_zones" in self._params
+            if not centre_out and not free and not foraging:
                 if not go() or not self._sleep(run_id, random.uniform(2.0, 4.5)):
                     return False
             if self._exp.key == "maze":
@@ -414,6 +417,57 @@ class DemoBridge:
                     self._reward("choice")
                 else:
                     self._phase_to("choice_unrewarded", name, f"N-choice: {name} (p = {p:.2f}) -- no reward.")
+            elif foraging:
+                # Foraging: a simulated monkey who finds the zones faster as the session goes on (the same
+                # environment all session); a probe pays nothing (actions/forage.py, helpers/forage.py).
+                e = {**self._params, **self._effective}
+                s = forage.settings_from(lambda n: e.get(n))
+                seed = s.seed or forage.day_seed(self._subject or "")
+                zones = forage.zones_for(s, seed)
+                if self._forage_rng is None:
+                    self._forage_rng = random.Random(seed + 1)
+                plan = forage.plan_trial(s, self._trial, seed, zones, self._forage_rng)
+                if self._meta is not None:
+                    self._meta["forage"] = plan.record(s)
+                if plan.probe:
+                    self._phase_to("probe", None, "Foraging: a probe trial (no cue, no rewards).")
+                if not go():
+                    return False
+                limit = float(e.get("forage.time_limit_sec", 60.0))
+                t0, found, times, revisits = time.time(), [], [], 0
+                for i in random.sample(range(len(zones)), len(zones)):
+                    search = max(1.0, random.gauss(10.0 * 0.85 ** self._trial, 1.0))
+                    if plan.probe:
+                        search = min(search, float(e.get("forage.probe_sec", 20.0)) - (time.time() - t0))
+                    if time.time() - t0 + search > limit or search <= 0:
+                        break
+                    if plan.warm_brightness > 0:
+                        self._phase_to("warm_on", None, "")
+                    if not self._sleep(run_id, search):
+                        return False
+                    if plan.probe:
+                        self._phase_to("zone_enter", i, f"Foraging (probe): in zone {i + 1}.")
+                        continue
+                    found.append(i)
+                    times.append(round(time.time() - t0, 3))
+                    self._phase_to("zone", i, f"Foraging: zone {i + 1} found -- reward.")
+                    self._reward("zone")
+                    if random.random() < 0.3:
+                        revisits += 1
+                        self._phase_to("zone_revisit", i, "")
+                if self._meta is not None:
+                    self._meta["forage_result"] = {"found": found, "n_found": len(found), "n_zones": len(zones),
+                                                   "t_zone_s": times, "revisits": revisits,
+                                                   "path_m": round(random.uniform(0.1, 0.6), 3),
+                                                   "warm_on_s": round(random.uniform(0, 3), 2) if plan.warm_brightness else 0.0}
+                if plan.probe:
+                    if not self._sleep(run_id, max(0.0, float(e.get("forage.probe_sec", 20.0)) - (time.time() - t0))):
+                        return False
+                    self._phase_to("probe_end", None, "Foraging: probe over.")
+                elif len(found) == len(zones):
+                    self._phase_to("forage_done", None, "Foraging: every zone found.")
+                else:
+                    self._phase_to("response_timeout", None, "Foraging: time up.")
             elif free:
                 # Cued Reaches, free: a simulated monkey -- grips after a reaction time, reaches; a perturbation
                 # makes him miss more often (actions/free_reach.py, helpers/free_reach.py).

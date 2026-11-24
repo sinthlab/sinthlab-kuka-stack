@@ -35,6 +35,7 @@ import kinematics
 from sinthlab_bringup.helpers.floor import reference_drop
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers import free_reach
+from sinthlab_bringup.helpers import forage
 from sinthlab_bringup.helpers.rail_shapes import direction_name, frontal_dir as rail_dir, layout_degs  # noqa: E402
 
 # Without a robot model (demo without ROS): the pre-training start, tool along +X.
@@ -154,7 +155,7 @@ class LiveView:
         elif key == "maze":
             self._maze(p, a, add)
         elif key in ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free"):
+                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free", "forage"):
             self._free_move(p, a, add)
         return {"experiment": key, "shapes": shapes, "anchor": a.tolist(), "start": start.tolist(),
                 "model": real, "version": self._version + 1}
@@ -253,6 +254,28 @@ class LiveView:
                 add({"kind": "seg", "a": a.tolist(), "b": end.tolist(), "role": "rail", "label": f"{direction_name(deg)} rail"})
                 add({"kind": "marker", "p": end.tolist(), "r": float(p.get("n_choice.end_tol_m", 0.015)), "role": "end",
                      "id": f"end:{direction_name(deg)}", "label": f"{direction_name(deg)} end"})
+            return
+        if "forage.n_zones" in p:     # Foraging: the arena and today's zones (the same seed as the run's)
+            try:
+                lo, hi = box_bounds(p.__getitem__, "free_move.box.")
+            except (KeyError, ValueError):
+                return
+            shape = str(p.get("free_move.box.shape", "rectangle"))
+            if shape == "ellipse":
+                c, r = (lo + hi) / 2, (hi - lo) / 2
+                ring = [(a + c + np.array([0.0, r[1] * math.cos(t), r[2] * math.sin(t)])).tolist()
+                        for t in np.linspace(0.0, 2 * math.pi, 61)]
+                add({"kind": "poly", "pts": ring, "role": "wall", "label": "arena (ellipse)"})
+            else:
+                add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "arena"})
+            try:
+                s = forage.settings_from(p.__getitem__)
+                seed = s.seed or forage.day_seed(str(p.get("_subject", "")))
+                for i, z in enumerate(forage.zones_for(s, seed)):
+                    add({"kind": "marker", "p": (a + z).tolist(), "r": s.zone_radius_m, "role": "end",
+                         "id": f"zone:{i}", "label": f"zone {i + 1}"})
+            except (KeyError, TypeError, ValueError):
+                pass
             return
         if "free_reach.distance_m" in p:     # Cued Reaches, free (3-D or frontal): the box, and where a reach ends
             try:
