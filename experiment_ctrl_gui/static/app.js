@@ -1166,7 +1166,7 @@ const OUTCOME_CLASS = {
   go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
 };
 const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong end",
-  none: "No response", early: "Early touch", abort: "Aborted (safety, Stop)" };
+  none: "No response", early: "Early touch", abort: "Aborted (safety)", stop: "Stopped by operator" };
 const SV = { view: null, userView: false, data: null, hist: null, lastTrial: null, lastFetch: 0, busy: false };
 
 function sessionKey() { return runningKey() || S.selected; }
@@ -1325,75 +1325,158 @@ function juiceOf(d) {
   const hours = (t1 - t0) / 3600;
   return { ml, unsure, rate: hours > 0.05 ? ml / hours : null };
 }
+// The Run pane. Row 1 is the same on every task (Trials, Rewarded, Juice, Reaction time / Session length,
+// Misses), so the eye always finds them in the same place; row 2 holds the task's own tiles. Running
+// percentages use the last 20 trials, the session total in small text. A trial cut short by Stop is the
+// operator's, not the monkey's: left out of every count and drawn grey in the strip.
+const SESSION_TASKS = ["free_move", "restricted_move_horizontal", "restricted_move_vertical", "reach_map"];
+const LAST_N = 20;
+const isOperatorStop = (r) => r.outcome === "stop_requested";
+const median = (xs) => { const v = xs.filter(Number.isFinite).sort((a, b) => a - b); if (!v.length) return NaN;
+  const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const fmtS = (x) => (Number.isFinite(x) ? (x >= 100 ? `${Math.round(x)} s` : `${x.toFixed(1)} s`) : "–");
+function rate(rows, test) {              // [% of the last 20 rows, "k/n" over the session] for a 1/0 test
+  const all = rows.filter((r) => test(r) !== null), last = all.slice(-LAST_N);
+  const k = last.filter((r) => test(r)).length, K = all.filter((r) => test(r)).length;
+  return { pct: pct(k, last.length), small: all.length > last.length ? `session ${pct(K, all.length)}` : `${k}/${last.length}`, n: all.length };
+}
+const tile = (k, v, small = "", cls = "") => [k, `${v}${small ? ` <small>${small}</small>` : ""}`, cls];
+function paradigmLabel(key, value) {
+  const pr = (exp(key)?.paradigms || []).find((x) => x.key === String(value));
+  return pr ? pr.label : String(value || "");
+}
 function renderMonitor() {
-  const box = $("#session-view"), d = SV.data;
-  const rows = (d && d.rows) || [];
+  const box = $("#session-view"), d = SV.data, key = (d && d.experiment) || sessionKey();
+  const all = (d && d.rows) || [];
   $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
-  if (!rows.length) {
+  if (!all.length) {
     box.innerHTML = `<p class="empty">No trials yet${d && d.run ? " in this run" : ` for ${esc(exp(sessionKey())?.label || "")}`}.</p>`;
     return;
   }
-  const last = rows[rows.length - 1];
-  const done = rows.filter((r) => r.success === "0" || r.success === "1" || r.success === 0 || r.success === 1);
-  const ok = done.filter((r) => String(r.success) === "1").length;
-  const rewards = rows.reduce((a, r) => a + (num(r.n_rewards) || 0), 0);
-  const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
-  const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
-                 ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
+  const rows = all.filter((r) => !isOperatorStop(r));          // the monkey's trials
+  const last = all[all.length - 1], session = SESSION_TASKS.includes(key);
+  // ---- row 1: the same five on every task
+  const t0 = num(all[0].t_start), t1 = d.running ? Date.now() / 1000 : num(last.t_end);
+  const mins = (t1 - t0) / 60;
+  const rewarded = rate(rows, (r) => (num(r.n_rewards) || 0) > 0);
+  const rewards = rows.reduce((x, r) => x + (num(r.n_rewards) || 0), 0);
   const j = juiceOf(d);
-  if (j.ml != null && rewards) tiles.push(["Juice", `${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <small>${fmtMl(j.rate)}/h</small>` : ""}`]);
+  const lat = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
+  const noResp = rows.filter((r) => r.outcome === "response_timeout" || r.outcome === "timeout").length;
+  const early = rows.filter((r) => r.outcome === "early_touch").length;
+  const row1 = [
+    tile("Trials", rows.length, mins > 1 ? `${(rows.length / mins).toFixed(1)}/min` : ""),
+    tile("Rewarded, last 20", rewarded.pct, rewarded.small),
+    j.ml != null ? tile("Juice", `${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}`, `${rewards} reward${rewards === 1 ? "" : "s"}${j.rate ? ` · ${fmtMl(j.rate)}/h` : ""}`)
+                 : tile("Rewards", rewards),
+    session ? tile("Session length", fmtS(lat), "median, last 10") : tile("Reaction time", fmtS(lat), "median, last 10"),
+    tile("Misses", noResp + early, `${noResp} no response · ${early} early`, noResp + early ? "warn" : ""),
+  ];
+  // ---- row 2: the task's own
+  const row2 = [], panels = [];
   const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
-  if (chosen.length) {
-    const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
-    tiles.push(["Correct, last 20", `${pct(c, lastN.length)} <small>${c}/${lastN.length}</small>`]);
+  if (key === "move_horizontal" || key === "move_vertical") {       // Cued Reaches
+    const mode = String(last.paradigm || "");
+    let inMode = 0; for (let i = rows.length - 1; i >= 0 && String(rows[i].paradigm) === mode; i--) inMode++;
+    row2.push(tile("Mode", esc(paradigmLabel(key, mode)), `${inMode} trial${inMode === 1 ? "" : "s"}`));
+    const cued = rate(chosen.filter((r) => r.paradigm === "cued"), (r) => String(r.correct) === "1");
+    row2.push(tile("Correct, Cued end", cued.n ? cued.pct : "–", cued.n ? cued.small : "no Cued end trials yet"));
+    const reached = rows.filter((r) => r.chosen_end).slice(-LAST_N);
+    const sides = [...new Set(rows.map((r) => r.chosen_end).filter(Boolean))].sort();
+    const ends = key === "move_horizontal" ? ["left", "right"] : ["down", "up"];
+    const share = (e) => pct(reached.filter((r) => r.chosen_end === e).length, reached.length);
+    row2.push(tile("Side, last 20", reached.length ? `${share(ends[0])} ${ends[0]}` : "–", reached.length ? `${share(ends[1])} ${ends[1]}` : ""));
+    // Per side: how often he went each way, and (Cued end) how often he got it right when that side was cued.
+    const sideRows = ends.map((e) => {
+      const cs = chosen.filter((r) => r.target === e && r.paradigm === "cued"), c = cs.filter((r) => String(r.correct) === "1").length;
+      return `<tr><td>${esc(e)}</td><td class="v">${rows.filter((r) => r.chosen_end === e).length}</td>` +
+             `<td class="v">${cs.length ? `${pct(c, cs.length)} <span class="muted">${c}/${cs.length}</span>` : "–"}</td></tr>`;
+    }).join("");
+    panels.push(`<div><h3>Per side</h3><table class="mini"><tr><th></th><th>Reaches</th><th>Correct when cued</th></tr>${sideRows}</table></div>`);
+    void sides;
+  } else if (key === "colour_rule") {
+    const crit = num(paramValue("rule.criterion_pct"));
+    row2.push(tile("Block · mapping", esc(last.block || "–"), esc(last.mapping || "")));
+    row2.push(tile("Criterion window", last.window_pct !== "" && last.window_pct != null ? `${Math.round(num(last.window_pct))}%` : "–",
+                   Number.isFinite(crit) ? `needs ${crit}%` : ""));
+    const inBlock = rows.filter((r) => String(r.block) === String(last.block) && (String(r.correct) === "0" || String(r.correct) === "1")).length;
+    row2.push(tile("Choices in block", inBlock, `min ${paramValue("rule.min_trials") ?? "–"}`));
+    row2.push(tile("Reversals", rows.filter((r) => String(r.reversal) === "1").length));
+    const per = {};
+    chosen.forEach((r) => { if (r.block) per[r.block] = (per[r.block] || 0) + 1; });
+    const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);
+    const items = blocks.map((b) => [`B${b}${b === Math.max(...blocks) ? " (now)" : ""}`, per[b]]);
+    panels.push(`<div><h3>Choices per block</h3>${bars(items, Math.max(1, ...items.map((x) => x[1])))}</div>`);
+    const pers = blocks.filter((b) => b > 1).map((b) => { const f = chosen.filter((r) => num(r.block) === b).slice(0, 10);
+      return [`B${b}: errors, first ${f.length}`, f.filter((r) => String(r.correct) === "0").length]; });
+    if (pers.length) panels.push(`<div><h3>After each reversal</h3>${bars(pers, 10)}</div>`);
+  } else if (key === "n_choice") {
+    const ch = rows.filter((r) => r.choice);
+    const best = rate(ch, (r) => String(r.chose_best) === "1");
+    row2.push(tile("Chose best, last 20", best.n ? best.pct : "–", best.n ? best.small : ""));
+    let ws = 0, wsn = 0, ls = 0, lsn = 0;
+    ch.slice(-(LAST_N + 1)).forEach((r, i, a) => { if (!i) return; const prev = a[i - 1];
+      if (String(prev.rewarded) === "1") { wsn++; if (r.choice === prev.choice) ws++; } else { lsn++; if (r.choice !== prev.choice) ls++; } });
+    row2.push(tile("Win-stay", wsn ? pct(ws, wsn) : "–", wsn ? `${ws}/${wsn}` : ""));
+    row2.push(tile("Lose-shift", lsn ? pct(ls, lsn) : "–", lsn ? `${ls}/${lsn}` : ""));
+    row2.push(tile("Options", esc(last.n_options || last.paradigm || "–"), "directions"));
+    const perDir = {};
+    ch.forEach((r) => { perDir[r.choice] = (perDir[r.choice] || 0) + 1; });
+    const items = Object.entries(perDir).sort((a, b) => b[1] - a[1]);
+    panels.push(`<div><h3>Choices per direction</h3>${bars(items, Math.max(1, ...items.map((x) => x[1])))}</div>`);
+    const pv = String(last.p_values || "").split(";").map((x) => x.trim().split("=")).filter((x) => x.length === 2);
+    if (pv.length) panels.push(`<div><h3>Reward probability now</h3>${bars(pv.map(([k, v]) => [k, Math.round(100 * num(v))]), 100)}</div>`);
+  } else if (key === "free_move") {
+    const mv = rows.reduce((x, r) => x + (num(r.n_movements) || 0), 0), lm = rows.reduce((x, r) => x + (num(r.n_long_moves) || 0), 0);
+    row2.push(tile("Mode", esc(paradigmLabel(key, last.paradigm))));
+    row2.push(tile("Long moves", lm, `of ${mv} moves`));
+    const longest = Math.max(0, ...rows.map((r) => num(r.max_length_m)).filter(Number.isFinite));
+    row2.push(tile("Longest move", longest ? `${(longest * 100).toFixed(0)} cm` : "–"));
+    row2.push(tile("Moves per minute", mins > 1 ? (mv / mins).toFixed(1) : "–"));
+  } else if (key.startsWith("restricted_move")) {
+    row2.push(tile("Rail", esc(exp(key)?.variant || "")));
+    row2.push(tile("Sessions completed", rows.filter((r) => r.outcome === "session_end").length));
+  } else {                                                        // Apple Pluck, Restricted Plane, Maze
+    if (last.paradigm) row2.push(tile("Paradigm", esc(paradigmLabel(key, last.paradigm))));
+    const tOut = rows.filter((r) => r.outcome === "timeout" || r.outcome === "response_timeout").length;
+    row2.push(tile("Timed out", tOut, `of ${rows.length}`));
   }
-  if (last.block) tiles.push(["Block · mapping", `${esc(last.block)} <small>${esc(last.mapping || "")}</small>`]);
-  if ("choice" in last && !("correct" in last)) {
-    const ch = rows.filter((r) => r.choice), lastN = ch.slice(-20);
-    tiles.push(["Rewarded, last 20", pct(lastN.filter((r) => String(r.rewarded) === "1").length, lastN.length)]);
-    tiles.push(["Chose highest probability", pct(ch.filter((r) => String(r.chose_best) === "1").length, ch.length)]);
-  }
-  if ("n_long_moves" in last) {
-    const mv = rows.reduce((a, r) => a + (num(r.n_movements) || 0), 0), lm = rows.reduce((a, r) => a + (num(r.n_long_moves) || 0), 0);
-    tiles.push(["Long moves", `${lm} <small>of ${mv}</small>`]);
-  }
-  const cls = (r) => OUTCOME_CLASS[r.outcome] || "none";
-  const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.cue_colour && `cue ${r.cue_colour}`,
-    r.chosen_end && `chose ${r.chosen_end}`, r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
-    r.reversal == 1 && "first trial after a reversal"].filter(Boolean).join(" · ");
-  // The strip: the last 120 trials, grouped by block when the task has blocks (the Color Rule).
-  const shown = rows.slice(-120);
+  // ---- the strip: the last 120 trials, in segments by Color Rule block, or wherever the mode changed
+  const shown = all.slice(-120);
+  const modes = new Set(all.map((r) => r.paradigm).filter(Boolean));
   const groups = [];
   for (const r of shown) {
-    const g = r.block ? `B${r.block} · ${r.mapping || ""}` : "";
+    const g = r.block ? `B${r.block} · ${r.mapping || ""}` : modes.size > 1 ? paradigmLabel(key, r.paradigm) : "";
     if (!groups.length || groups[groups.length - 1].label !== g) groups.push({ label: g, rows: [] });
     groups[groups.length - 1].rows.push(r);
   }
+  const cls = (r) => (isOperatorStop(r) ? "stop" : OUTCOME_CLASS[r.outcome] || "none");
+  const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.paradigm && paradigmLabel(key, r.paradigm),
+    r.cue_colour && `cue ${r.cue_colour}`, r.target && r.target !== "either" && `cued ${r.target}`, r.chosen_end && `reached ${r.chosen_end}`,
+    r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
+    r.outcome_latency_s && `${num(r.outcome_latency_s).toFixed(1)} s`, String(r.reversal) === "1" && "first trial after a reversal"].filter(Boolean).join(" · ");
   const strip = groups.map((g) => `<div class="blk">${g.label ? `<span class="blk-l">${esc(g.label)}</span>` : ""}<div class="cells">` +
     g.rows.map((r) => `<span class="cell o-${cls(r)}" title="${esc(title(r))}"></span>`).join("") + "</div></div>").join("");
   const counts = {};
-  rows.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
+  all.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
   const present = Object.keys(OUTCOME_LABEL).filter((k) => counts[k]);
   const legend = present.map((k) => `<span><i class="o-${k}"></i>${OUTCOME_LABEL[k]}</span>`).join("");
-  const bars = (items, max) => `<div class="bars">` + items.map(([k, v]) =>
-    `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
-  const panels = [`<div><h3>Outcomes</h3>${bars(present.map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`];
-  if (rows.some((r) => r.block)) {      // the Color Rule: choices to criterion, block by block
-    const per = {};
-    rows.forEach((r) => { if (r.block && (String(r.correct) === "0" || String(r.correct) === "1")) per[r.block] = (per[r.block] || 0) + 1; });
-    const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);
-    const items = blocks.map((b) => [`B${b}${b === Math.max(...blocks) ? " (now)" : ""}`, per[b]]);
-    panels.push(`<div><h3>Choices per block</h3><p class="muted small">Number of choices needed to reach criterion in each completed block.</p>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
-  }
-  if (rows.some((r) => r.choice)) {     // N-choice: how often each direction was chosen
-    const per = {};
-    rows.forEach((r) => { if (r.choice) per[r.choice] = (per[r.choice] || 0) + 1; });
-    const items = Object.entries(per).sort((a, b) => b[1] - a[1]);
-    panels.push(`<div><h3>Choices per direction</h3>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
-  }
-  box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>` +
+  panels.unshift(`<div><h3>Outcomes</h3>${bars(present.filter((k) => k !== "stop").map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`);
+  const tiles = (row, cls2) => `<div class="tiles ${cls2}">${row.map(([k, v, c]) => `<div class="tile ${c || ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>`;
+  box.innerHTML = tiles(row1, "row1") + (row2.length ? tiles(row2, "row2") : "") +
     `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>` +
     `<div class="mon-grid">${panels.join("")}</div>`;
+}
+function bars(items, max) {
+  return `<div class="bars">` + items.map(([k, v]) =>
+    `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
+}
+// A setting's value for the selected task (the dashboard's copy: the run's own value while it runs).
+function paramValue(name) {
+  const s = statusLive();
+  if (s && s.live && name in s.live) return s.live[name];
+  const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
+  return p ? p.value : undefined;
 }
 
 // Values as sessions.csv writes them (Python str / json.dumps) and as the dashboard holds them: compare loosely.

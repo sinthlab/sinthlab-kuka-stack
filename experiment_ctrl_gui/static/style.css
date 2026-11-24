@@ -540,3 +540,16 @@ details.card > summary { cursor: pointer; list-style: revert; }
 .live-in .live-legend { margin: 0; }
 .start-dlg .controls.three { grid-template-columns: 1fr 1fr 1fr; }
 .start-dlg .controls.three .btn.primary { font-size: 14px; padding: 6px; }
+
+/* The Run pane: row 1 the same five tiles on every task, row 2 the task's own (tinted, so it reads apart). */
+.tiles.row1 { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 6px; }
+.tiles.row2 { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-top: 0; }
+.tiles.row2 .tile { background: color-mix(in srgb, var(--info) 6%, var(--panel)); border-color: color-mix(in srgb, var(--info) 25%, var(--line)); }
+.tile .v small { font-size: 11.5px; font-weight: 500; color: var(--muted); white-space: normal; }
+table.mini { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+table.mini th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11.5px; padding: 2px 8px 4px 0; }
+table.mini td { padding: 3px 8px 3px 0; border-top: 1px solid var(--line); }
+table.mini td.v { font-family: var(--mono); }
+.tile.warn .v { color: var(--warn); }
+.o-stop { background: transparent; border: 1.5px dashed var(--o-none); box-sizing: border-box; }
+@media (max-width: 600px) { .tiles.row1 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
