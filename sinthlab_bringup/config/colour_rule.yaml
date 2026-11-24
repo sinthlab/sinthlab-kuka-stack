@@ -53,7 +53,6 @@
     centre_out:  # one choice per trial: the colour rule (actions/centre_out.py, mode rule)
       enabled: true  # the choice task; keep true
       target: "rule"  # the colour rule; fixed in this task (the node refuses anything else)
-      block_other_end: false  # unused here: the colour rule keeps the whole rail open (it is a choice)
       max_repeats: 3  # unused here: the cue colours' cap is rule.max_repeats
       end_tol_m: 0.02  # Rail: this close to an end counts as reaching it [m]
       free_reach_m: 0.12  # No rail: reaching this far to the left or right of the start is the choice [m]

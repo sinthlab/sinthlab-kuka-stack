@@ -499,12 +499,12 @@ class CentreOutTables(TaskTables):
     paradigm_param = "centre_out.target"
     trial_columns = {
         "target": "the goal: an end's name, or either",
-        "closed_end": "the end closed off this trial (one-direction trials with block_other_end), else blank",
+        "closed_end": "the end closed off this trial (restricted cued), else blank",
         "chosen_end": "the end the arm reached, blank if none",
         "correct": "1 = reached a goal end, 0 = the other end, blank = no reach",
         "end_tol_m": "how close to an end counted as reaching it [m]",
     }
-    settings = ["centre_out.target", "centre_out.block_other_end", "centre_out.max_repeats",
+    settings = ["centre_out.target", "centre_out.max_repeats",
                 "centre_out.end_tol_m", "reward_pulse.pulse_ms"]
     session_columns = {"n_reaches": "trials ending in a reach (either end)",
                        "pct_correct": "reaches to a goal end over all reaches [%]"}

@@ -33,36 +33,34 @@ def longest_run(seq):
 
 
 # ---------------------------------------------------------------- modes
-def test_modes_per_rail():
-    assert modes_for(H) == ("either", "cued", "left", "right", "rule")
-    assert modes_for(V) == ("either", "cued", "down", "up", "rule")
-    assert check_mode("left", H) is None
-    assert check_mode("left", V) is not None        # no left end on the vertical rail
+def test_modes_are_the_same_on_both_rails():
+    assert modes_for(H) == modes_for(V) == ("either", "restricted", "cued", "rule")
+    assert check_mode("restricted", V) is None
+    assert check_mode("left", H) is not None        # the one-end modes are gone: restricted cued replaced them
     assert check_mode("sideways", H) is not None
 
 
 def test_invalid_mode_raises_and_keeps_the_old_one():
     p = TargetPicker(H)
-    p.set_mode("left")
+    p.set_mode("restricted")
     with pytest.raises(ValueError):
         p.set_mode("up")
-    assert p.mode == "left"
+    assert p.mode == "restricted"
 
 
 # ---------------------------------------------------------------- picking
-def test_either_and_one_end_only():
+def test_either_and_restricted():
     p = TargetPicker(H, random.Random(0))
     assert {p.pick() for _ in range(50)} == {"either"}
-    p.set_mode("left")
-    assert {p.pick() for _ in range(50)} == {"left"}
-    p.set_mode("right")
-    assert {p.pick() for _ in range(50)} == {"right"}
+    p.set_mode("restricted", max_repeats=3)
+    assert {p.pick() for _ in range(50)} == set(H)          # both directions, at random
 
 
+@pytest.mark.parametrize("mode", ["cued", "restricted"])
 @pytest.mark.parametrize("cap", [1, 2, 3, 5])
-def test_cued_never_repeats_more_than_the_cap(cap):
+def test_cued_never_repeats_more_than_the_cap(cap, mode):
     p = TargetPicker(V, random.Random(cap))
-    p.set_mode("cued", max_repeats=cap)
+    p.set_mode(mode, max_repeats=cap)
     seq = [p.pick() for _ in range(5000)]
     assert longest_run(seq) <= cap
     assert set(seq) == set(V)
@@ -84,11 +82,9 @@ def test_cap_of_one_alternates():
 
 def test_changing_mode_restarts_the_run_count():
     p = TargetPicker(H, random.Random(3))
-    p.set_mode("cued", max_repeats=1)
-    first = p.pick()
-    p.set_mode(first)                  # one-direction trials to the same end...
+    p.set_mode("restricted", max_repeats=1)
     for _ in range(5):
-        assert p.pick() == first
+        p.pick()                       # restricted trials...
     p.set_mode("cued", max_repeats=1)  # ...do not count toward the cued run afterwards
     assert p._run_len == 0 and p._run_end is None
 
@@ -123,15 +119,16 @@ def test_open_span_stays_on_a_rail_not_through_the_start():
 
 # ---------------------------------------------------------------- the dashboard and the node agree
 def test_live_registry_accepts_the_new_settings():
-    for mode in ("either", "cued", "left", "right", "down", "up"):
+    for mode in ("either", "restricted", "cued"):
         assert live_params.check_value("centre_out.target", mode) is None
-    assert live_params.check_value("centre_out.target", "sideways") is not None
+    for mode in ("sideways", "left", "up"):
+        assert live_params.check_value("centre_out.target", mode) is not None
     assert live_params.check_value("centre_out.max_repeats", 3) is None
     assert live_params.check_value("centre_out.max_repeats", 50) is not None
-    for name in ("centre_out.target", "centre_out.block_other_end", "centre_out.max_repeats"):
+    for name in ("centre_out.target", "centre_out.max_repeats"):
         assert live_params.is_live("move_horizontal", name)
         assert live_params.is_live("move_vertical", name)
-    assert live_params.paradigm_of("centre_out.max_repeats") == ("cued",)
+    assert live_params.paradigm_of("centre_out.max_repeats") == ("cued", "restricted")
 
 
 def test_dashboard_tabs_match_each_rail():

@@ -12,23 +12,22 @@ the arm reaches:
 
     centre_out.target  either -- both ends are goals; the WHOLE ring lights (green at the go cue, red at the
                                  end): no direction is cued, so nothing tells him which way to go
-                       cued   -- one end drawn at random per trial (never more than max_repeats of the
-                                 same end in a row); only its quarter lights (green, then red when it is
-                                 reached) and only it is rewarded
-                       <end>  -- that end on every trial (left / right, down / up): one-direction
-                                 trials, its quarter lit as in cued -- the step before cued, where the lit
-                                 quarter always matches the one open direction. Live, so a session can go
-                                 left only -> right only -> cued.
+                       restricted -- RESTRICTED CUED: one end drawn at random per trial (never more than
+                                 max_repeats of the same end in a row); only its quarter lights (green, then
+                                 red when it is reached), and the other half of the rail is CLOSED, so the
+                                 arm can only move toward the cue -- the step before cued
+                       cued   -- CUED END: drawn the same way, but the whole rail is OPEN: only the cued
+                                 end is rewarded, the other end is reach_wrong. Live, so a session can go
+                                 restricted cued -> cued end -> either.
                        rule   -- the colour rule (helpers/rule_schedule.py): the whole ring lights red
                                  or blue, each colour means one end, the whole rail is open, and the
                                  mapping reverses without any signal to the animal once he reaches
                                  criterion (the rule block: red_end, window, criterion_pct, min_trials,
                                  max_repeats). Entering it starts at block 1 with red = rule.red_end.
 
-ONE DIRECTION PER TRIAL. With centre_out.block_other_end, a trial with one goal end (cued or <end>) closes
-the other half of the rail (AdmittanceMoveAction.set_open_span): the arm moves only between the centre and
-the goal end, so it cannot reach the wrong end. Off, the whole rail is open and the other end is
-`reach_wrong`. The goal logic itself is helpers/reach_targets.py (no ROS, unit-tested).
+ONE DIRECTION PER TRIAL. Restricted cued closes the other half of the rail (AdmittanceMoveAction.
+set_open_span): the arm moves only between the centre and the cued end, so it cannot reach the wrong end.
+Cued end leaves the whole rail open, and the other end is `reach_wrong`. The goal logic itself is helpers/reach_targets.py (no ROS, unit-tested).
 
 THE ENDS ARE NAMED by where they are, seen from the front of the arm (README, "The ring"): the
 rail_min_m / rail_max_m end is down / up on a z rail (Move Vertical), left / right on a y rail (Move
@@ -38,9 +37,9 @@ counts only when the arm is really there. It only watches and reports: the motio
 
 Parameters (all live, read at the next trial):
     centre_out.enabled        bool   off = Move Vertical / Horizontal as plain free movement on the rail
-    centre_out.target         str    either | cued | an end's name (left / right, down / up)
-    centre_out.block_other_end bool  a trial with one goal end closes the other half of the rail
-    centre_out.max_repeats    int    cued: at most this many trials in a row to the same end (0 = no cap)
+    centre_out.target         str    either | restricted | cued (| rule: the Colour Rule task)
+    centre_out.max_repeats    int    restricted / cued: at most this many trials in a row to the same end
+                                     (0 = no cap)
     centre_out.end_tol_m      float  this close to an end counts as reaching it [m]
     centre_out.quarter_<end>  int    ring quarter (0-3) that lights for that end: quarter_down / quarter_up
                                      (Move Vertical), quarter_left / quarter_right (Move Horizontal)
@@ -52,7 +51,8 @@ from typing import Callable, List, Optional, Tuple
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
-from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, check_mode, open_span as rail_open_span
+from sinthlab_bringup.helpers.reach_targets import (CUED_MODES, RESTRICTED, RULE, TargetPicker, check_mode,
+                                                    open_span as rail_open_span)
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 
 # The (rail_min_m, rail_max_m) ends' names, by the rail's base axis (an x rail: "min" / "max").
@@ -90,7 +90,6 @@ class CentreOutMonitor:
             self._free_ends = (-d, d)
         self.enabled = bool(get_required_param(n, p + "enabled")) and self._ends_m() is not None
         mode = str(get_required_param(n, p + "target")).strip().lower()
-        self._block = bool(get_launch_param(n, p + "block_other_end", False))
         max_repeats = int(get_launch_param(n, p + "max_repeats", 0))
         was = None if self._first_load else self._picker.mode
         try:
@@ -117,14 +116,14 @@ class CentreOutMonitor:
             lo, hi = self._ends_m()
             mode = self._picker.mode
             r = self._rule
-            how = (f"{mode} only" if mode in self._ends else
-                   f"cued (at most {self._picker.max_repeats} in a row)" if mode == "cued" and self._picker.max_repeats
+            label = {"cued": "cued end", RESTRICTED: "restricted cued"}.get(mode, mode)
+            how = (f"{label} (at most {self._picker.max_repeats} in a row)" if mode in CUED_MODES and self._picker.max_repeats
                    else f"colour rule, {r.mapping()} (block {r.block}; reverses unsignaled at "
                         f"{r.criterion_pct:g}% of the last {r.window} choices, after at least {r.min_trials})"
-                   if mode == RULE else mode)
+                   if mode == RULE else label)
             n.get_logger().info(
                 f"Centre-out: one reach per trial, {how}"
-                + (", the other half of the rail closed" if self._block and mode not in ("either", RULE) else "")
+                + (", the other half of the rail closed" if mode == RESTRICTED else ", the whole rail open" if mode == "cued" else "")
                 + ("; no rail (free in the frontal plane): a choice is reaching" if self._free else
                    "; an end counts within {:.0f} mm of".format(self._end_tol * 1000))
                 + f" the {self._ends[0]} ({lo:+.3f} m) / {self._ends[1]} ({hi:+.3f} m) end.")
@@ -181,15 +180,15 @@ class CentreOutMonitor:
         """This trial's open part of the rail (lo, hi) [m from the start], or None for the whole rail."""
         if self._target is None or self._adm.rail_ends() is None or self.rule_on() or self._free:
             return None             # the colour rule is a choice, and no rail has nothing to close
-        return rail_open_span(self._target, self._ends, self._adm.rail_ends(), self._block)
+        return rail_open_span(self._target, self._ends, self._adm.rail_ends(), self._picker.mode == RESTRICTED)
 
     def closed_end(self) -> Optional[str]:
         """The end closed off this trial, or None if the whole rail is open."""
         return None if self.open_span() is None else self._picker.other(self._target)
 
     def pick_target(self) -> str:
-        """The goal for this trial: an end's name (cued, drawn at random; or the one end of a one-direction
-        mode; or the end the cue colour means under the colour rule) or "either"."""
+        """The goal for this trial: an end's name (restricted / cued, drawn at random; or the end the cue
+        colour means under the colour rule) or "either"."""
         if self.rule_on():
             self._colour = self._rule.draw_colour()
             self._target = self._rule.end_for(self._colour)
@@ -204,13 +203,13 @@ class CentreOutMonitor:
 
     def quarters(self) -> List[int]:
         """The ring quarters to light green for this trial: the goal end's quarter when one end is the goal
-        (cued, left / right, down / up); the whole ring for either end, so no direction is cued."""
+        (restricted cued, cued end); the whole ring for either end, so no direction is cued."""
         if self._target in self._ends:
             return [self._quarter[self._target]]
         return [0, 1, 2, 3]
 
     def reached_quarters(self, end: str) -> List[int]:
-        """The ring quarters to turn red once the arm has reached `end`: that end's quarter in the one-end
+        """The ring quarters to turn red once the arm has reached `end`: that end's quarter in the cued
         modes, the whole ring for either end (both ends pay: still no direction shown)."""
         if self._target in self._ends and end in self._quarter:
             return [self._quarter[end]]

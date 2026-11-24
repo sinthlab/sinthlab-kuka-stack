@@ -1526,7 +1526,7 @@ four cards under the **Pre-training** tab:
 | **Free Move** | Session · Long moves | `free_move` |
 | **Reach Map** | Long moves · New best | `reach_map`: measures reach by direction for the monkey’s profile ([below](#reach-map--how-far-this-monkey-reaches)) |
 | **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
-| **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Cued end · Left / Down only · Right / Up only | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
+| **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Restricted cued · Cued end | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
 
 A card with a **Rail** row holds two experiments, one per rail, each with its own settings and start
 pose; the rail is fixed during a run, and the card reopens on the rail last used. All of them:
@@ -1803,19 +1803,20 @@ from its limit.
 In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
 two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
 
-1. **Cue preview.** Before the go tone the ring lights green: the **whole ring** for `target: either`
-   (both ends pay, so no direction is cued), or **one end's quarter** -- drawn at random (`target: cued`)
-   or the same end every trial (`target: left` / `right` on Move Horizontal, `down` / `up` on Move
-   Vertical, the step before cued). At the end of a reach the same quarter (either: the whole ring)
-   turns red. With `block_other_end` (the default), a trial with one
-   goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
-   each trial allows one direction.
+1. **Cue preview.** Before the go tone the ring lights green: the **whole ring** for **Either end**
+   (`target: either`: both ends pay, so no direction is cued), or **the cued end's quarter**, drawn at
+   random each trial (never more than `max_repeats` of the same end in a row), in the two cued modes:
+   - **Restricted cued** (`target: restricted`): the other half of the rail is **closed**, so the arm
+     can only move toward the cue. The cue always matches the one open direction: the step before cued.
+   - **Cued end** (`target: cued`): the whole rail is **open**; only the cued end pays.
+
+   At the end of a reach the same quarter (Either end: the whole ring) turns red.
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the confirmation tone and the reward pulse.
-   - the **other end** (cued or one end only, with `block_other_end` off): the same confirmation tone, without a reward.
+   - the **other end** (Cued end only: Restricted cued cannot reach it): the same confirmation tone, without a reward.
 
-   Either way the lit quarters turn **red** (`ring_cue.colours.reached`) and stay red until the hand
-   lets go.
+   Either way the ring turns **red** (`ring_cue.colours.reached`): the reached end's quarter in the cued
+   modes, the whole ring for Either end. It stays red until the hand lets go.
 3. Then, as any trial: the arm holds where it is, the **release wait** (the ring goes dark at release), **park**, and the next trial from
    the start.
 4. **No reach** within `response_timeout_sec` (30 s) ends the trial too, without reward. Moving the arm
@@ -1827,9 +1828,8 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 | Parameter | Default | Meaning |
 |---|---|---|
 | `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
-| `centre_out.target` | `either` | `either`: both ends are goals and the whole ring lights · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded · `left` / `right` (Move Horizontal), `down` / `up` (Move Vertical): that end on every trial |
-| `centre_out.block_other_end` | `true` | a trial with one goal end (`cued` or one end only) closes the other half of the rail, so the arm can only move toward the goal; `false`: the whole rail is open and the other end is `reach_wrong` |
-| `centre_out.max_repeats` | `3` | `cued`: at most this many trials in a row to the same end (0 = no cap); switching mode restarts the count |
+| `centre_out.target` | `either` | `either`: both ends are goals and the whole ring lights · `restricted`: one end per trial, drawn at random, only its quarter lights, the other half of the rail closed · `cued`: drawn the same way, the whole rail open, only the cued end is rewarded |
+| `centre_out.max_repeats` | `3` | `restricted` / `cued`: at most this many trials in a row to the same end (0 = no cap); switching mode restarts the count |
 | `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |
 | `centre_out.quarter_down` / `quarter_up` | `2` / `0` | Move Vertical: the ring quarter lit for the down end (`rail_min_m`) and for the up end (`rail_max_m`) |
 | `centre_out.quarter_left` / `quarter_right` | `3` / `1` | Move Horizontal: the ring quarter lit for the left end (`rail_min_m`) and for the right end (`rail_max_m`) |
@@ -1839,13 +1839,11 @@ Vertical's rail, **left** / **right** on Move Horizontal's.
 
 **Switching within a session.** `centre_out.target` is live, and the paradigm tabs on the Move Vertical
 / Move Horizontal card stay clickable while it runs: a click switches the mode from the next trial (the
-tab shows *next trial* until then), so one session can work up from one direction to both, for example
-**Left only → Right only → Cued end (one-way trials, interleaved) → Cued end with `block_other_end` off
-(a cued choice) → Either end**. The node refuses an end its rail does not have (`up` on Move
-Horizontal). The goal logic is [`helpers/reach_targets.py`](sinthlab_bringup/sinthlab_bringup/helpers/reach_targets.py),
+tab shows *next trial* until then), so one session can work up from following the cue to choosing:
+**Restricted cued → Cued end → Either end**. The goal logic is [`helpers/reach_targets.py`](sinthlab_bringup/sinthlab_bringup/helpers/reach_targets.py),
 unit-tested without ROS: `python3 -m pytest sinthlab_bringup/test`.
 
-Events: `closed_end` (the closed end's name, only when half the rail is closed) and `target` at the go
+Events: `closed_end` (the closed end's name, Restricted cued only) and `target` at the go
 cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
 end, the reward) or `reach_wrong` (the other end), each with the end's name as its argument — or
 `response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's

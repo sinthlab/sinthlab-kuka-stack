@@ -136,16 +136,16 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
                 "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
-# switch it during a run, from the next trial: one end only -> the other -> cued -> either.
-_CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
+# switch it during a run, from the next trial: restricted cued (the cue's direction only) -> cued end (both
+# directions open, only the cued end pays) -> either end.
+_CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("cued", "Cued end")]
 # Cards holding several experiments (Experiment.card): key -> (label, summary).
 CARDS = {
     "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
     "cued_reach": ("Cued Reaches", "One reach per trial, from the centre to an end of the rail."),
 }
-_CUED_TASK = ("centre_out.max_repeats", "centre_out.block_other_end", "centre_out.end_tol_m")
-_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
-_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
+_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m")
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same three modes on either rail
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
@@ -198,8 +198,8 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
-    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, a cued end, or one
-    # end only. The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
+    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, restricted cued (the
+    # cue's direction only), or cued end (both directions open, only the cued end pays). The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
     # their recordings stay comparable with earlier ones.
     Experiment(
         key="move_horizontal", label="Cued Reaches · Horizontal", group="pretraining",
@@ -239,7 +239,7 @@ EXPERIMENTS += [
         paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
         task_settings=("rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials", "rule.max_repeats",
                        "centre_out.end_tol_m", "centre_out.free_reach_m"),
-        hidden=("centre_out.enabled", "centre_out.target", "centre_out.block_other_end",
+        hidden=("centre_out.enabled", "centre_out.target",
                 "centre_out.max_repeats", "centre_out.quarter_left", "centre_out.quarter_right"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
@@ -316,7 +316,6 @@ LABELS: Dict[str, str] = {
     "long_move.min_straightness": "Min straightness (0 = off)",
     "long_move.min_gap_sec": "Min time between rewards [s]",
     "centre_out.max_repeats": "Max repeats at the same end",
-    "centre_out.block_other_end": "Block the opposite half of the rail",
     "centre_out.end_tol_m": "End tolerance [m]",
     "centre_out.free_reach_m": "No-rail choice distance [m]",
     "rule.red_end": "Red target in the first block",

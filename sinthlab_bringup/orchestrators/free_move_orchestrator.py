@@ -41,11 +41,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
-    goal end(s) of the rail; the first end the arm reaches ends the trial: a goal end gives the reward
-    (`reach`), the other end none (`reach_wrong`); then the release wait and park, as any trial. No
-    reach within response_timeout_sec ends it too; session_sec does not apply. One-direction trials
-    (centre_out.target an end's name, or cued) can close the other half of the rail
-    (centre_out.block_other_end), so the arm only moves toward the goal. Free Move with long_move.reward
+    whole ring (either end) or the cued end's quarter; the first end the arm reaches ends the trial: a goal
+    end gives the reward (`reach`), the other end none (`reach_wrong`); then the release wait and park, as
+    any trial. No reach within response_timeout_sec ends it too; session_sec does not apply. Restricted
+    cued (centre_out.target restricted) closes the other half of the rail, so the arm only moves toward
+    the cue; cued end leaves it open. Free Move with long_move.reward
     each_move (actions/long_move.py): every movement of at least long_move.min_m is rewarded as it ends,
     with the reward tone, and the session's end pays nothing.
 

@@ -422,8 +422,7 @@ class DemoBridge:
                     self._picker.set_mode(mode if mode in modes_for(ends) and mode != RULE else "either",
                                           int(self._effective.get("centre_out.max_repeats", 0) or 0))
                     target = self._picker.pick()
-                    closed = (self._picker.other(target) if target in ends
-                              and self._effective.get("centre_out.block_other_end") else None)
+                    closed = (self._picker.other(target) if target in ends and mode == "restricted" else None)
                     if closed:
                         self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
                     self._phase_to("target", target, f"Centre-out: the goal is {target}.")
