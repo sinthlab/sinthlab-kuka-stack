@@ -1518,8 +1518,9 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 with no snag when committing to a rail.
 
 ### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
-Short tasks that get a subject used to the arm before the real experiments. In the dashboard they are
-four cards under the **Pre-training** tab:
+Short tasks that get a subject used to the arm before the real experiments, all on the free-move node.
+In the dashboard, Free Move, Reach Map and Restricted Move are under **Pre-training**; Cued Reaches is under
+**Experiments**, where every task organised in trials sits:
 
 | Card | Tabs | Experiments (each its own YAML and launch file) |
 |---|---|---|

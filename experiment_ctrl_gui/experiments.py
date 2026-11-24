@@ -51,7 +51,7 @@ class Experiment:
     ros_controller: str
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
-    group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
+    group: str = "experiments"     # dashboard tab: "experiments" (organised in trials) or "pretraining"
     # Variants of one experiment, chosen per run by its `paradigm_param` parameter and shown as nested
     # tabs on its card: [(value, label), ...]. A live paradigm_param (the rails' centre_out.target) can
     # also be switched by those tabs during a run, from the next trial. Parameters that belong to one
@@ -198,11 +198,11 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
-    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, restricted cued (the
+    # Cued Reaches: under Experiments, like every task organised in trials. One reach per trial from the centre of a rail to an end -- either end, restricted cued (the
     # cue's direction only), or cued end (both directions open, only the cued end pays). The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
     # their recordings stay comparable with earlier ones.
     Experiment(
-        key="move_horizontal", label="Cued Reaches · Horizontal", group="pretraining",
+        key="move_horizontal", label="Cued Reaches · Horizontal", group="experiments",
         summary=CARDS["cued_reach"][1], card="cued_reach", variant="Horizontal",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
@@ -213,7 +213,7 @@ EXPERIMENTS += [
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
-        key="move_vertical", label="Cued Reaches · Vertical", group="pretraining",
+        key="move_vertical", label="Cued Reaches · Vertical", group="experiments",
         summary=CARDS["cued_reach"][1], card="cued_reach", variant="Vertical",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",

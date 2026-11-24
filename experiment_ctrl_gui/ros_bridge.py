@@ -485,7 +485,7 @@ class DemoBridge:
         t = time.time() - self._phase_t if moving else 0.0
         import math
         axis = str(self._params.get("free_move.rail_axis", "none"))
-        if self._exp.group == "pretraining" and axis in ("y", "z"):
+        if self._exp.node == "free_move_orchestrator" and axis in ("y", "z"):
             lo, hi = float(self._params.get("free_move.rail_min_m", -0.1)), float(self._params.get("free_move.rail_max_m", 0.1))
             v = (hi if math.sin(0.8 * t) >= 0 else -lo) * math.sin(0.8 * t)
             off = [0.0, v, 0.0] if axis == "y" else [0.0, 0.0, v]

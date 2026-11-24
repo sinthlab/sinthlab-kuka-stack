@@ -32,8 +32,10 @@ def test_pretraining_cards_and_their_variants():
         "free_move": [("", "free_move")],
         "reach_map": [("", "reach_map")],
         "restricted_move": [("Horizontal", "restricted_move_horizontal"), ("Vertical", "restricted_move_vertical")],
-        "cued_reach": [("Horizontal", "move_horizontal"), ("Vertical", "move_vertical")],
     }
+    # Anything organised in trials sits under Experiments, Cued Reaches included.
+    assert {e.key for e in experiments.EXPERIMENTS if e.card == "cued_reach"} == {"move_horizontal", "move_vertical"}
+    assert all(e.group == "experiments" for e in experiments.EXPERIMENTS if e.card == "cued_reach")
     assert set(experiments.CARDS) == {"restricted_move", "cued_reach"}
 
 
