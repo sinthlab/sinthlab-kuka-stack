@@ -34,7 +34,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
-from sinthlab_bringup.helpers import pull_task  # noqa: E402  (on the path via experiments)
+from sinthlab_bringup.helpers import free_reach  # noqa: E402  (on the path via experiments)
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
 import reward_volume  # noqa: E402
@@ -693,8 +693,8 @@ def make_handler(app: App):
                                                         **(st.get("pending") or {}), **values})
                     if problem:
                         raise ValueError(problem)
-                # Cued Pull: the pull, its perturbations and the box, together (the node checks the same).
-                problem = pull_task.params_problem({**p.current(), **(st.get("live") or {}),
+                # Cued Reaches, free: the reach, its perturbations and the box, together (the node checks the same).
+                problem = free_reach.params_problem({**p.current(), **(st.get("live") or {}),
                                                     **(st.get("pending") or {}), **values})
                 if problem:
                     raise ValueError(problem)
@@ -726,7 +726,7 @@ def make_handler(app: App):
                 before = dict(p.edits)
                 value = p.set_edit(body["name"], body["value"])
                 problem = (kinematics.floor_problem(p.current()) if body["name"].startswith(kinematics.FLOOR_RELEVANT)
-                           else None) or pull_task.params_problem(p.current())
+                           else None) or free_reach.params_problem(p.current())
                 if problem:
                     p.edits = before             # refused: the edit is not kept
                     raise ValueError(problem)

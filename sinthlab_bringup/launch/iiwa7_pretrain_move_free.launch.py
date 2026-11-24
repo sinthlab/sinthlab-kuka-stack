@@ -1,4 +1,4 @@
-"""Cued Pull: grip and pull the apple in the frontal plane, with jump and bump perturbations. Thin wrapper over experiment_base.launch.py."""
+"""Cued Reaches, free (3-D): one reach per trial, with jump and bump perturbations. Thin wrapper over experiment_base.launch.py."""
 import os
 
 from launch import LaunchDescription
@@ -17,7 +17,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "params_file",
                 default_value=PathJoinSubstitution(
-                    [FindPackageShare("sinthlab_bringup"), "config", "cued_pull.yaml"]
+                    [FindPackageShare("sinthlab_bringup"), "config", "pretrain_move_free.yaml"]
                 ),
                 description="Experiment parameter YAML.",
             ),

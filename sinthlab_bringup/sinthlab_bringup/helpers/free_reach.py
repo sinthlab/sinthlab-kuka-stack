@@ -1,31 +1,30 @@
-"""Cued Pull: the trial logic -- no ROS, unit-tested.
+"""Cued Reaches, Free (3-D): the trial logic -- no ROS, unit-tested.
 
-The task (actions/cued_pull.py on the free-move node): he grips the apple and pulls it, free in 3-D inside
-the box (free_move.rail_axis none; or frontal, held to the plane facing him). Only the movement's part in
-the plane facing him is scored -- depth (toward or away from him) is free. A pull ENDS when that part has
-gone pull.distance_m from where the pull started (a circle around it is crossed). Three modes, live, switchable between trials:
+The free variant of Cued Reaches (actions/free_reach.py on the free-move node): he grips the apple and
+moves it, free in 3-D inside the box (free_move.rail_axis none; or frontal, held to the plane facing him).
+Only the movement's part in the plane facing him is scored -- depth (toward or away from him) is free. A
+reach ENDS when that part has gone free_reach.distance_m from where it started (a circle is crossed).
 
-    shaping   any direction: every crossing is rewarded (the whole ring lights at the go cue)
-    jump      cued: one quarter of the ring lights, the direction to pull. On a fraction of trials
-              (perturb.probability) the apple JUMPS perturb.jump_m before he has gripped it, a set delay
-              after the go cue; he then pulls from where it landed. The other trials are standard.
-    bump      cued, as jump; on perturbed trials, once he has pulled perturb.bump_at_m along the cued
-              direction, the apple is BUMPED perturb.bump_m across it (perpendicular by default), and he
-              must correct to finish inside the target.
-
-A cued pull is correct when the crossing point lies within pull.cone_deg of the cued direction; a
-crossing outside it ends the trial without reward (pull_wrong). The cone is checked at the crossing
-only, so a path may curve -- the bump's correction is the point.
+The cue (free_reach.cue, the card's tabs, live):
+    either    any direction: every reach is rewarded (the whole ring lights)
+    cued      one quarter of the ring lights, the direction to go; a reach within free_reach.cone_deg of it
+              is correct, one outside it is not. The cone is checked at the crossing only, so a path may
+              curve -- the correction after a bump is the point.
+The perturbation (perturb.kind, live; cued only), on perturb.probability of trials:
+    none      standard cued reaches
+    jump      the apple JUMPS perturb.jump_m before he has gripped it; he reaches from where it landed
+    bump      once he has gone perturb.bump_at_m along the cue, the apple is BUMPED perturb.bump_m across it
+              and, in 3-D, perturb.bump_depth_m in depth (depth_sign); the target stays, so he must correct
 
 Directions are named from the monkey's side, in the frontal plane: right (+Y), up (+Z), left, down.
 Angles are degrees in that plane, 0 = right, 90 = up. A perturbation's angle is relative to the cued
 direction: 90 = a quarter turn counter-clockwise as he sees it (right -> up), 270 = clockwise.
 
-THE SCHEDULE (PullSchedule) draws trials in shuffled blocks: every direction pull.block_trials times; of
-those, round(probability x block_trials) are perturbed, cycling through the perturbation angles, so
-directions, perturbed trials and angles stay balanced however long the run. A perturbed trial never
-follows more than perturb.max_in_row perturbed trials, so each one stays unexpected. Any change of mode or
-settings starts a new block.
+THE SCHEDULE (ReachSchedule) draws trials in shuffled blocks: every direction free_reach.block_trials times;
+of those, round(probability x block_trials) are perturbed, cycling through the perturbation angles (and
+the bump's depth rules), so directions, perturbed trials and angles stay balanced however long the run.
+A perturbed trial never follows more than perturb.max_in_row perturbed trials, so each one stays
+unexpected. Any change of cue, perturbation or settings starts a new block.
 """
 from __future__ import annotations
 
@@ -36,17 +35,22 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-MODES = ("shaping", "jump", "bump")
+CUES = ("either", "cued")
+PERTURBS = ("none", "jump", "bump")
 SHAPES = ("none", "frontal")      # free_move.rail_axis: free in 3-D (the default), or held to the frontal plane
 # The bump's DEPTH component (base X, + toward the monkey), relative to how he is moving in depth at its onset:
 # against it, with it, or a fixed toward / away. In 3-D only (none with the frontal plane).
 DEPTH_RULES = ("against", "with", "toward", "away")
 DEPTH_MOVED_M = 0.005     # moving slower than bump_depth_still_mps: his depth movement so far must be this much to count
-CUED = ("jump", "bump")
 # Frontal-plane unit vectors (base Y, base Z) and the ring quarter that lights for each direction.
 DIRECTIONS: Dict[str, Tuple[float, float]] = {"right": (1.0, 0.0), "up": (0.0, 1.0),
                                               "left": (-1.0, 0.0), "down": (0.0, -1.0)}
 QUARTER = {"up": 0, "right": 1, "down": 2, "left": 3}
+
+
+def quarter_of(angle_deg: float) -> int:
+    """The ring quarter nearest a frontal-plane direction [deg, 0 = right, 90 = up]."""
+    return (1, 0, 3, 2)[int(round(float(angle_deg) / 90.0)) % 4]
 BOX_MARGIN_M = 0.005      # every point a trial can need stays this far inside the box
 
 
@@ -85,8 +89,8 @@ def to_base(d2: Sequence[float]) -> np.ndarray:
 
 
 def crossing(d: Sequence[float], distance_m: float, direction: Optional[str], cone_deg: float):
-    """The pull's outcome once it has gone distance_m: None before; else (correct, angle, error) --
-    shaping (direction None): always correct; cued: correct within cone_deg of the direction."""
+    """The reach's outcome once it has gone distance_m: None before; else (correct, angle, error) --
+    no cue (direction None): always correct; cued: correct within cone_deg of the direction."""
     if float(np.hypot(d[0], d[1])) < distance_m:
         return None
     ang = round(angle_of(d), 1)
@@ -108,8 +112,9 @@ def min_jerk_peak_speed(size_m: float, duration_sec: float) -> float:
 
 # ---------------------------------------------------------------- settings and their checks
 @dataclass
-class PullSettings:
-    mode: str = "shaping"
+class ReachSettings:
+    cue: str = "either"
+    perturb: str = "none"
     directions: List[str] = field(default_factory=lambda: ["right", "left", "down", "up"])
     distance_m: float = 0.05
     cone_deg: float = 15.0
@@ -129,47 +134,53 @@ class PullSettings:
     bump_depth_rules: List[str] = field(default_factory=lambda: ["against", "with"])
     bump_depth_still_mps: float = 0.02
 
+    def kind(self) -> Optional[str]:
+        """The perturbation in force: jump / bump, or None (none, or no cue to perturb against)."""
+        return self.perturb if self.cue == "cued" and self.perturb in ("jump", "bump") else None
+
     def depth_rules(self) -> List[Optional[str]]:
-        """The bump's depth rules to balance over (bump mode with a depth component), else [None]."""
-        return list(self.bump_depth_rules) if self.mode == "bump" and self.bump_depth_m > 0 and self.bump_depth_rules \
+        """The bump's depth rules to balance over (a bump with a depth component), else [None]."""
+        return list(self.bump_depth_rules) if self.kind() == "bump" and self.bump_depth_m > 0 and self.bump_depth_rules \
             else [None]
 
     def angles(self) -> List[float]:
-        """This mode's perturbation angles (none in shaping)."""
-        return list(self.jump_angles_deg if self.mode == "jump" else
-                    self.bump_angles_deg if self.mode == "bump" else [])
+        """The perturbation's angles (none without one)."""
+        return list(self.jump_angles_deg if self.kind() == "jump" else
+                    self.bump_angles_deg if self.kind() == "bump" else [])
 
     def size(self) -> float:
-        return self.jump_m if self.mode == "jump" else self.bump_m if self.mode == "bump" else 0.0
+        return self.jump_m if self.kind() == "jump" else self.bump_m if self.kind() == "bump" else 0.0
 
 
-def settings_problem(s: PullSettings) -> Optional[str]:
+def settings_problem(s: ReachSettings) -> Optional[str]:
     """None if the settings make sense together, else the reason (geometry is box_problem's)."""
-    if s.mode not in MODES:
-        return f"pull.mode must be one of {list(MODES)}, got {s.mode!r}"
+    if s.cue not in CUES:
+        return f"free_reach.cue must be one of {list(CUES)}, got {s.cue!r}"
+    if s.perturb not in PERTURBS:
+        return f"perturb.kind must be one of {list(PERTURBS)}, got {s.perturb!r}"
     if not s.directions:
-        return "pull.directions needs at least one direction"
+        return "free_reach.directions needs at least one direction"
     bad = [d for d in s.directions if d not in DIRECTIONS]
     if bad:
-        return f"pull.directions: unknown {bad}; use {list(DIRECTIONS)}"
+        return f"free_reach.directions: unknown {bad}; use {list(DIRECTIONS)}"
     if len(set(s.directions)) != len(s.directions):
-        return "pull.directions lists a direction twice"
+        return "free_reach.directions lists a direction twice"
     if not 0.0 < s.cone_deg < 45.0:
-        return "pull.cone_deg must be between 0 and 45 (wider and two directions' targets overlap)"
+        return "free_reach.cone_deg must be between 0 and 45 (wider and two directions' targets overlap)"
     if not 0.0 <= s.probability <= 1.0:
         return "perturb.probability must be 0-1"
     if s.block_trials < 1:
-        return "pull.block_trials must be at least 1"
+        return "free_reach.block_trials must be at least 1"
     if s.jump_delay_min_sec > s.jump_delay_max_sec:
         return "perturb.jump_delay_min_sec must be <= perturb.jump_delay_max_sec"
     if not 0.0 < s.bump_at_m < s.distance_m - 0.01:
         return (f"perturb.bump_at_m ({s.bump_at_m:g}) must be positive and at least 1 cm short of "
-                f"pull.distance_m ({s.distance_m:g}), so there is room to correct")
+                f"free_reach.distance_m ({s.distance_m:g}), so there is room to correct")
     for name, m, sec in (("jump", s.jump_m, s.jump_sec), ("bump", s.bump_m, s.bump_sec)):
         if m > 0.0 and sec <= 0.0:
             return f"perturb.{name}_sec must be positive"
-    if s.mode in CUED and s.probability > 0.0 and not s.angles():
-        return f"perturb.{s.mode}_angles_deg needs at least one angle"
+    if s.kind() and s.probability > 0.0 and not s.angles():
+        return f"perturb.{s.kind()}_angles_deg needs at least one angle"
     bad = [r for r in s.bump_depth_rules if r not in DEPTH_RULES]
     if bad:
         return f"perturb.bump_depth_rules: unknown {bad}; use {list(DEPTH_RULES)}"
@@ -180,7 +191,7 @@ def settings_problem(s: PullSettings) -> Optional[str]:
     return None
 
 
-def needed_points(s: PullSettings) -> List[np.ndarray]:
+def needed_points(s: ReachSettings) -> List[np.ndarray]:
     """Every frontal-plane offset from the start a trial under these settings can need the arm at:
     each direction's end, from the start and after every jump; and where every bump leaves it."""
     pts = []
@@ -194,36 +205,36 @@ def needed_points(s: PullSettings) -> List[np.ndarray]:
     return pts
 
 
-def box_problem(s: PullSettings, lo3: Sequence[float], hi3: Sequence[float]) -> Optional[str]:
+def box_problem(s: ReachSettings, lo3: Sequence[float], hi3: Sequence[float]) -> Optional[str]:
     """None if every point needed_points() lists is inside the box (offsets from the start, base frame),
-    with BOX_MARGIN_M to spare; else which one is not. Every mode is checked, so switching mode mid-run
-    can never ask for a pull the box cuts off."""
+    with BOX_MARGIN_M to spare; else which one is not. Jumps and bumps are checked whatever is in force, so
+    switching mid-run can never ask for a reach the box cuts off."""
     lo, hi = frontal(lo3) + BOX_MARGIN_M, frontal(hi3) - BOX_MARGIN_M
     for p in needed_points(s):
         if np.any(p < lo - 1e-9) or np.any(p > hi + 1e-9):
             where = ", ".join(f"{abs(v) * 100:.1f} cm {name[int(v < 0)]}" for v, name in
                               ((p[0], ("right", "left")), (p[1], ("up", "down"))) if abs(v) > 1e-6)
-            return (f"a pull needs the apple {where} from the start, outside the box (free_move.box, "
-                    f"{BOX_MARGIN_M * 1000:.0f} mm margin): shorten pull.distance_m or the perturbations, "
+            return (f"a reach needs the apple {where} from the start, outside the box (free_move.box, "
+                    f"{BOX_MARGIN_M * 1000:.0f} mm margin): shorten free_reach.distance_m or the perturbations, "
                     f"or drop a direction")
     return None
 
 
-# The parameters (config/cued_pull.yaml) and how they map onto PullSettings.
-_FLOATS = {"pull.distance_m": "distance_m", "pull.cone_deg": "cone_deg", "perturb.probability": "probability",
+# The parameters (config/pretrain_move_free.yaml) and how they map onto ReachSettings.
+_FLOATS = {"free_reach.distance_m": "distance_m", "free_reach.cone_deg": "cone_deg", "perturb.probability": "probability",
            "perturb.jump_m": "jump_m", "perturb.jump_sec": "jump_sec",
            "perturb.jump_delay_min_sec": "jump_delay_min_sec", "perturb.jump_delay_max_sec": "jump_delay_max_sec",
            "perturb.bump_m": "bump_m", "perturb.bump_sec": "bump_sec", "perturb.bump_at_m": "bump_at_m"}
-_INTS = {"pull.block_trials": "block_trials", "perturb.max_in_row": "max_in_row"}
+_INTS = {"free_reach.block_trials": "block_trials", "perturb.max_in_row": "max_in_row"}
 _FLOATS.update({"perturb.bump_depth_m": "bump_depth_m", "perturb.bump_depth_still_mps": "bump_depth_still_mps"})
 _LISTS = {"perturb.jump_angles_deg": "jump_angles_deg", "perturb.bump_angles_deg": "bump_angles_deg"}
-PARAMS = ("pull.mode", "pull.directions", "perturb.bump_depth_rules") + tuple(_FLOATS) + tuple(_INTS) + tuple(_LISTS)
+PARAMS = ("free_reach.cue", "perturb.kind", "free_reach.directions", "perturb.bump_depth_rules") + tuple(_FLOATS) + tuple(_INTS) + tuple(_LISTS)
 
 
-def settings_from(get: Callable[[str], object]) -> PullSettings:
-    """PullSettings from parameter values (get(name) -> value)."""
-    s = PullSettings(mode=str(get("pull.mode")).strip().lower(),
-                        directions=[str(d).strip().lower() for d in (get("pull.directions") or [])])
+def settings_from(get: Callable[[str], object]) -> ReachSettings:
+    """ReachSettings from parameter values (get(name) -> value)."""
+    s = ReachSettings(cue=str(get("free_reach.cue")).strip().lower(), perturb=str(get("perturb.kind")).strip().lower(),
+                      directions=[str(d).strip().lower() for d in (get("free_reach.directions") or [])])
     for name, attr in _FLOATS.items():
         setattr(s, attr, float(get(name)))
     for name, attr in _INTS.items():
@@ -259,30 +270,31 @@ def depth_room(sign: int, x_now: float, lo_x: float, hi_x: float) -> float:
 
 
 def params_problem(values: Dict[str, object]) -> Optional[str]:
-    """None if a full set of Cued Pull parameter values (flat names, the box included) makes sense together
+    """None if a full set of free-reach parameter values (flat names, the box included) makes sense together
     and fits the box; else the reason. What the dashboard checks before a run or a live change; the node
-    checks the same (actions/cued_pull.py)."""
-    if "pull.mode" not in values:
+    checks the same (actions/free_reach.py)."""
+    if "free_reach.cue" not in values:
         return None
     from sinthlab_bringup.helpers.free_move_box import box_bounds
     try:
         s = settings_from(lambda n: values[n])
         lo, hi = box_bounds(lambda n: values[n])
     except (KeyError, TypeError, ValueError) as exc:
-        return f"Cued Pull settings: {exc}"
+        return f"free reach settings: {exc}"
     if str(values.get("free_move.rail_axis", "none")) not in SHAPES:
-        return f"Cued Pull needs free_move.rail_axis {' or '.join(SHAPES)}"
-    lo_d, hi_d = float(values.get("pull.cue_delay_min_sec", 0.0)), float(values.get("pull.cue_delay_max_sec", 0.0))
+        return f"the free reach needs free_move.rail_axis {' or '.join(SHAPES)}"
+    lo_d = float(values.get("free_reach.cue_delay_min_sec", 0.0))
+    hi_d = float(values.get("free_reach.cue_delay_max_sec", 0.0))
     if lo_d > hi_d:
-        return "pull.cue_delay_min_sec must be <= pull.cue_delay_max_sec"
+        return "free_reach.cue_delay_min_sec must be <= free_reach.cue_delay_max_sec"
     return settings_problem(s) or box_problem(s, lo, hi)
 
 
 # ---------------------------------------------------------------- the per-trial plan
 @dataclass
 class TrialPlan:
-    mode: str
-    direction: Optional[str]          # None in shaping (any direction)
+    cue: str                          # either | cued
+    direction: Optional[str]          # None with no cue (any direction)
     perturb: Optional[str] = None     # "jump" | "bump" | None
     angle_deg: Optional[float] = None
     size_m: float = 0.0
@@ -297,14 +309,14 @@ class TrialPlan:
 
     def record(self) -> dict:
         off = self.offset()
-        return {"mode": self.mode, "direction": self.direction, "perturb": self.perturb,
+        return {"cue": self.cue, "direction": self.direction, "perturb": self.perturb,
                 "angle_deg": self.angle_deg, "size_m": self.size_m, "block": self.block,
                 "depth_rule": self.depth_rule,
                 "offset_yz_m": None if off is None else [round(float(v), 4) for v in off]}
 
 
-class PullSchedule:
-    def __init__(self, settings: PullSettings, rng: Optional[random.Random] = None) -> None:
+class ReachSchedule:
+    def __init__(self, settings: ReachSettings, rng: Optional[random.Random] = None) -> None:
         self._rng = rng or random.Random()
         self._s = settings
         self._queue: List[TrialPlan] = []
@@ -312,20 +324,22 @@ class PullSchedule:
         self.block = 0
         self._in_row = 0              # perturbed trials in a row, so far
 
-    def configure(self, settings: PullSettings) -> None:
+    def configure(self, settings: ReachSettings) -> None:
         self._s = settings
 
     def _signature(self):
         s = self._s
-        return (s.mode, tuple(s.directions), s.block_trials, s.probability, s.max_in_row,
+        return (s.cue, s.kind(), tuple(s.directions), s.block_trials, s.probability, s.max_in_row,
                 tuple(s.angles()), s.size(), tuple(s.depth_rules()))
 
-    def _new_block(self) -> None:
+    def _new_block(self, count: bool = True) -> None:
+        """Fill the queue; count it as a new block unless it only refills an unchanged uncued one."""
         s = self._s
-        self.block += 1
+        if count:
+            self.block += 1
         self._key = self._signature()
-        if s.mode not in CUED:
-            self._queue = [TrialPlan(s.mode, None, block=self.block)]
+        if s.cue != "cued":
+            self._queue = [TrialPlan(s.cue, None, block=self.block)]
             return
         n_pert = int(round(s.probability * s.block_trials)) if s.angles() else 0
         trials: List[TrialPlan] = []
@@ -337,9 +351,9 @@ class PullSchedule:
                 if i < n_pert:
                     a, r = combos[k % len(combos)]
                     k += 1
-                    trials.append(TrialPlan(s.mode, name, s.mode, float(a), s.size(), self.block, r))
+                    trials.append(TrialPlan(s.cue, name, s.kind(), float(a), s.size(), self.block, r))
                 else:
-                    trials.append(TrialPlan(s.mode, name, block=self.block))
+                    trials.append(TrialPlan(s.cue, name, block=self.block))
         self._queue = self._shuffled(trials)
 
     def _shuffled(self, trials: List[TrialPlan]) -> List[TrialPlan]:
@@ -373,12 +387,13 @@ class PullSchedule:
         return out
 
     def next(self) -> TrialPlan:
-        """This trial's plan. A changed mode or setting starts a new block."""
-        if not self._queue or self._signature() != self._key:
-            self._new_block()
+        """This trial's plan. A changed cue, perturbation or setting starts a new block."""
+        changed = self._signature() != self._key
+        if changed or not self._queue:
+            self._new_block(count=changed or self._s.cue == "cued")
         plan = self._queue.pop(0)
-        if self._s.mode not in CUED:
-            self._queue = []          # shaping: a fresh one each trial
+        if self._s.cue != "cued":
+            self._queue = []          # no cue: a fresh one each trial
         self._in_row = self._in_row + 1 if plan.perturb else 0
         return plan
 

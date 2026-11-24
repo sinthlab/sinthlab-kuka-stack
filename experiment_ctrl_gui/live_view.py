@@ -34,7 +34,7 @@ import experiments as ex  # noqa: F401  (puts sinthlab_bringup on sys.path)
 import kinematics
 from sinthlab_bringup.helpers.floor import reference_drop
 from sinthlab_bringup.helpers.free_move_box import box_bounds
-from sinthlab_bringup.helpers import pull_task
+from sinthlab_bringup.helpers import free_reach
 from sinthlab_bringup.helpers.rail_shapes import direction_name, frontal_dir as rail_dir, layout_degs  # noqa: E402
 
 # Without a robot model (demo without ROS): the pre-training start, tool along +X.
@@ -154,7 +154,7 @@ class LiveView:
         elif key == "maze":
             self._maze(p, a, add)
         elif key in ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "cued_pull"):
+                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free"):
             self._free_move(p, a, add)
         return {"experiment": key, "shapes": shapes, "anchor": a.tolist(), "start": start.tolist(),
                 "model": real, "version": self._version + 1}
@@ -254,19 +254,19 @@ class LiveView:
                 add({"kind": "marker", "p": end.tolist(), "r": float(p.get("n_choice.end_tol_m", 0.015)), "role": "end",
                      "id": f"end:{direction_name(deg)}", "label": f"{direction_name(deg)} end"})
             return
-        if "pull.distance_m" in p:     # Cued Pull (3-D or the frontal plane): the box, and where a pull ends
+        if "free_reach.distance_m" in p:     # Cued Reaches, free (3-D or frontal): the box, and where a reach ends
             try:
                 lo, hi = box_bounds(p.__getitem__, "free_move.box.")
                 add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "box"})
             except (KeyError, ValueError):
                 pass
-            d = float(p["pull.distance_m"])
+            d = float(p["free_reach.distance_m"])
             ring = [(a + np.array([0.0, d * math.cos(t), d * math.sin(t)])).tolist()
                     for t in np.linspace(0.0, 2 * math.pi, 49)]
-            add({"kind": "poly", "pts": ring, "role": "rail", "label": f"a pull ends at {d * 100:.0f} cm"})
-            for name in p.get("pull.directions") or []:
-                if name in pull_task.DIRECTIONS:
-                    end = a + pull_task.to_base(d * pull_task.unit(name))
+            add({"kind": "poly", "pts": ring, "role": "rail", "label": f"a reach ends at {d * 100:.0f} cm"})
+            for name in p.get("free_reach.directions") or []:
+                if name in free_reach.DIRECTIONS:
+                    end = a + free_reach.to_base(d * free_reach.unit(name))
                     add({"kind": "marker", "p": end.tolist(), "r": 0.01, "role": "end", "id": f"end:{name}",
                          "label": f"{name} target"})
             return

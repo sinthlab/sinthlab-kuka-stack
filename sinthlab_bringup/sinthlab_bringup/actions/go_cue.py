@@ -25,7 +25,7 @@ class GoCue:
         VisualCue.set_result_sink(self._visual_result)
 
     def start(self, light, *, visual_enabled, preview_sec=None):
-        """Light the cue (light(label)), hold it PREVIEW_SEC -- or preview_sec: Cued Pull's instructed
+        """Light the cue (light(label)), hold it PREVIEW_SEC -- or preview_sec: the free reach's instructed
         delay, the cued direction shown before the go -- then release on light-off and the tone."""
         self._preview_sec = self.PREVIEW_SEC if preview_sec is None else max(0.0, float(preview_sec))
         self._sequence += 1

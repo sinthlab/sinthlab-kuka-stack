@@ -22,56 +22,55 @@
       force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
       penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
-    # CUED PULL: grip the apple and pull it, with jump and bump perturbations (Matt's CIHR grant, Aims 1-2).
-    # The arm is free in 3-D inside the box below: he can push or pull it toward or away from himself as
-    # well. Only the movement's part in the plane facing him (sideways, up / down) is scored, against the
-    # cue: depth neither counts toward the pull's length nor against its direction. ONE PULL PER TRIAL: it
-    # ends when that part has gone pull.distance_m from where the pull started. Three modes (pull.mode, the card's tabs, LIVE: switch between trials, no restart):
-    #   shaping  any direction counts; the whole ring lights at the go cue. Every pull is rewarded.
-    #   jump     the cued direction's quarter lights; a pull within pull.cone_deg of it is rewarded, one
-    #            outside it is not (pull_wrong). On perturb.probability of trials the apple JUMPS before
-    #            he grips it, and he pulls from where it lands.
-    #   bump     cued, as jump; on perturbed trials, once he has pulled perturb.bump_at_m, the apple is
-    #            BUMPED across the cued direction, and he must correct to end inside the cone.
-    # Trials come in shuffled blocks: every direction pull.block_trials times, round(probability x
-    # block_trials) of them perturbed, cycling through the angles; never more than perturb.max_in_row
-    # perturbed trials together. A change of mode or settings starts a new block.
+    # CUED REACHES, FREE (3-D): the Cued Reaches card's third variant, beside the horizontal and vertical rails.
+    # The same cue modes as the rails (free_reach.cue, the card's tabs, LIVE: switch between trials):
+    #   either  any direction counts; the whole ring lights. Every reach is rewarded.
+    #   cued    the cued direction's quarter lights; a reach within free_reach.cone_deg of it is rewarded
+    #           (`reach`), one outside it is not (`reach_wrong`), as the rails' cued end.
+    # Instead of a rail, the apple is free in 3-D inside the box below: he can push or pull it toward or away
+    # from himself. Only the movement's part in the plane facing him (sideways, up / down) is scored: depth
+    # neither counts toward the reach's length nor against its direction. A reach ends when that part has
+    # gone free_reach.distance_m from where it started.
+    # The PERTURBATIONS (perturb.kind, LIVE; cued only) are what the free variant adds -- the CIHR grant's
+    # Aims 1-2: none | jump (the apple jumps before he grips it) | bump (it is pushed across the cue, and in
+    # depth, once he has started). Trials come in shuffled blocks: every direction free_reach.block_trials
+    # times, round(probability x block_trials) of them perturbed, cycling through the angles (and the bump's
+    # depth rules); never more than perturb.max_in_row perturbed trials together. A change starts a new block.
     #
-    # HOW: the free-move admittance in its box (actions/admittance_move.py; a jump or bump drives
-    # its equilibrium, displace()) and actions/cued_pull.py, with the trial logic in helpers/pull_task.py.
-    # The same node as the pre-training tasks. Navin's Apple Pluck (apple_pluck_impedance.yaml) is
-    # unchanged: it stays the shaping task on the impedance spring.
+    # HOW: the free-move admittance in its box (actions/admittance_move.py; a jump or bump drives its
+    # equilibrium, displace()) and actions/free_reach.py, with the trial logic in helpers/free_reach.py.
     #
     # >>> SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30 -- as Move Vertical. The stiff
     #     cabinet spring is what makes a jump or bump move the hand: K x offset, ~15 N for 1.5 cm sideways.
     #
     # REACH, holding the tool orientation: it starts where N-Choice and Move Vertical do (5 cm below the
     # maze start), where the arm has about 7 cm up and 7 cm down, and much more sideways. So with all four
-    # directions a pull is 5 cm; drop "up" (mazes descend) and it can be 6 cm; left / right only, 12 cm.
-    # The run refuses settings whose pulls, jumps or bumps need the apple outside the box (with 5 mm to
+    # directions a reach is 5 cm; drop "up" (mazes descend) and it can be 6 cm; left / right only, 12 cm.
+    # The run refuses settings whose reaches, jumps or bumps need the apple outside the box (with 5 mm to
     # spare), at start-up and on every live change. Confirm the box on the rig before a monkey uses it.
-    experiment: "cued_pull"  # the experiment this YAML runs, on the free-move node
+    experiment: "move_free"  # Cued Reaches, free (3-D): the experiment this YAML runs, on the free-move node
     state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
-    session_sec: 0.0  # Session length [s]. Unused: every trial is one pull
+    session_sec: 0.0  # Session length [s]. Unused: every trial is one reach
 
-    # THE PULL (actions/cued_pull.py, helpers/pull_task.py). All live, from the next trial.
-    pull:  # one pull per trial
-      mode: "shaping"  # shaping (any direction, all rewarded) | jump (cued, pre-grip jumps) | bump (cued, mid-pull bumps)
+    # THE REACH (actions/free_reach.py, helpers/free_reach.py). All live, from the next trial.
+    free_reach:  # one reach per trial, free in 3-D
+      cue: "either"  # the card's tabs: either = any direction, all rewarded | cued = the lit quarter's direction
       directions: ["right", "left", "down", "up"]  # cued directions, from the monkey's side (right, left, down, up); each lights its ring quarter
-      distance_m: 0.05  # a pull ends when the apple has gone this far from where the pull started [m]
-      cone_deg: 15.0  # cued modes: the pull is correct if it ends within this angle of the cued direction [deg]
+      distance_m: 0.05  # a reach ends when the apple has gone this far, in the plane facing him, from where it started [m]
+      cone_deg: 15.0  # cued: the reach is correct if it ends within this angle of the cued direction [deg]
       block_trials: 6  # trials per direction in each shuffled block
       cue_delay_min_sec: 0.3  # the cue shows at least this long before the go (light off + tone) [s]; 0.3 = the standard flash
       cue_delay_max_sec: 0.3  # ... and at most this long, drawn per trial: an instructed delay [s]
 
-    # THE PERTURBATIONS (jump and bump modes). Angles are from the cued direction, as the monkey sees the
-    # plane: 90 = a quarter turn counter-clockwise (right -> up), 270 = clockwise; [90, 270] = perpendicular,
-    # both sides. Each is a minimum-jerk move of the apple: 1.5 cm in 0.1 s peaks at 0.28 m/s.
+    # THE PERTURBATIONS (cued only). Angles are from the cued direction, as the monkey sees the plane: 90 = a
+    # quarter turn counter-clockwise (right -> up), 270 = clockwise; [90, 270] = perpendicular, both sides.
+    # Each is a minimum-jerk move of the apple: 1.5 cm in 0.1 s peaks at 0.28 m/s.
     perturb:  # jumps and bumps
-      probability: 0.33  # fraction of trials perturbed (balanced in each block); 0 = cued pulls only
+      kind: "none"  # none | jump (before the grip) | bump (once he has started, across the cue and in depth)
+      probability: 0.33  # fraction of trials perturbed (balanced in each block); 0 = cued reaches only
       max_in_row: 1  # at most this many perturbed trials in a row (0 = no cap)
       jump_m: 0.015  # how far the apple jumps before the grip [m]
       jump_sec: 0.1  # how long the jump takes [s]
@@ -81,7 +80,7 @@
       bump_m: 0.015  # how far the bump pushes the apple [m]
       bump_sec: 0.1  # how long the bump takes [s]
       bump_angles_deg: [90.0, 270.0]  # bump directions, from the cued direction [deg]
-      bump_at_m: 0.025  # the bump comes once he has pulled this far along the cued direction [m]
+      bump_at_m: 0.025  # the bump comes once he has gone this far along the cued direction [m]
       # THE BUMP'S DEPTH (3-D only): the same bump also pushes the apple toward or away from him, set per trial
       # from his depth movement at its onset. Rules, balanced over the bumped trials like the angles: against =
       # opposite to how he is moving in depth, with = the same way, toward / away = fixed. "How he is moving" is
@@ -96,7 +95,7 @@
     grip:  # when he takes hold of the apple
       threshold_n: 3.0  # force on the apple that counts as a grip, every direction, after the tare [N]
       hold_sec: 0.03  # ... held at least this long [s]
-      move_m: 0.005  # or the apple moved this far from where the pull starts [m]
+      move_m: 0.005  # or the apple moved this far from where the reach starts [m]
 
     move_to_start:  # joint-space move to the trial start pose (the middle of the vertical rail)
       update_rate: 200  # Action loop rate [Hz]
@@ -217,15 +216,15 @@
 
     # ---- cues (live) ----
     quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
-    response_timeout_sec: 30.0  # longest time from the go to the end of the pull [s]; shorten over training (the grant: 1 s)
+    response_timeout_sec: 30.0  # longest time from the go to the end of the reach [s]; shorten over training (the grant: 1 s)
     audio_cue:  # Enable audio cues
       enabled: true  # Enable audio cues
     audio_cue_play:  # go cue: free movement starts
       frequency_hz: 1500  # go tone: pitch [Hz]
       duration_ms: 500  # go tone: length [ms]
-    audio_cue_end:  # confirms a pull to the target
+    audio_cue_end:  # confirms a reach (as on the rails)
       frequency_hz: 800  # end tone: pitch [Hz]
-      duration_ms: 350  # confirmation tone: length [ms]; none after a pull outside the target
+      duration_ms: 350  # confirmation tone: length [ms]
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
       enabled: true  # send a pulse at Start (experiment start) and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # Cabinet address for pulse commands (UDP port 30002)
@@ -235,7 +234,7 @@
       pulse_width_ms: 500  # Time each pulse stays high [ms], from 10 to 5000
 
     reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
-      enabled: true  # send the reward pulse at a pull to the target (event pull); a pull outside it, no response, early touch, safety trip and Stop get none
+      enabled: true  # send the reward pulse at a reach to the target (event reach); a reach outside it, no response, early touch, safety trip and Stop get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
       pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
       count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
@@ -246,10 +245,10 @@
       trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
-    # The cue: the cued direction's quarter (the whole ring in shaping), green, for the instructed delay; it
-    # goes dark at the go. A pull to the target turns that quarter red until the hand lets go.
+    # The cue: the cued direction's quarter (the whole ring with no cue), green, for the instructed delay; it
+    # goes dark at the go. A reach turns the quarter it ended toward red (the whole ring with no cue) until the hand lets go.
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # unused here: the trial's cue sets the quarters (0 up, 1 right, 2 down, 3 left)
       colours:  # RGBW, each 0-255
         go: [0, 64, 0, 0]  # the cue -- green
-        reached: [255, 0, 0, 0]  # a pull to the target -- red, until the hand lets go
+        reached: [255, 0, 0, 0]  # a reach ended -- red, until the hand lets go

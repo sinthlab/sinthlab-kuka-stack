@@ -57,7 +57,7 @@ force dipped under the threshold for a moment (free-move recording 26 Oct: 5 of 
 the acceleration limit, as before.
 Orientation is held at the start orientation (rotational stiffness on the SmartPad).
 
-DISPLACING THE APPLE: displace() (the Cued Pull's jump and bump, actions/cued_pull.py). For its duration
+DISPLACING THE APPLE: displace() (the free reach's jump and bump, actions/free_reach.py). For its duration
 the equilibrium is DRIVEN -- from where it is, by a set offset, along a minimum-jerk profile -- and the
 hand's force does not move it; the stiff cabinet spring carries the arm (and a hand holding it) along.
 Then the admittance carries on from the displaced equilibrium, so the apple stays where it was put until
@@ -134,7 +134,7 @@ from sinthlab_bringup.helpers.floor import Floor
 from sinthlab_bringup.helpers import rail_shapes
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
-from sinthlab_bringup.helpers.pull_task import min_jerk
+from sinthlab_bringup.helpers.free_reach import min_jerk
 from sinthlab_bringup.helpers.start_grid import StartGrid
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)

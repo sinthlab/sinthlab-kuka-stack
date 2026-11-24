@@ -43,7 +43,7 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
 ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "cued_pull")
+                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
@@ -102,28 +102,28 @@ def check_admittance_events(report, exp, got, meta):
     """Validate a saved trial that reached park. A pre-cue abort has a shorter sequence."""
     pre_cue = ("early_touch", "smartpad_mismatch")
     endings = pre_cue + ("session_end", "response_timeout", "safety_trip", "reach", "reach_wrong",
-                         "choice", "choice_unrewarded", "pull", "pull_wrong")
+                         "choice", "choice_unrewarded")
     outcomes = [event for event in got if event in endings]
     report.check(len(outcomes) == 1, f"one trial outcome (found {outcomes})")
     task_outcomes = {"free_move": ("session_end",), "n_choice": ("choice", "choice_unrewarded"),
-                     "colour_rule": ("reach", "reach_wrong"), "cued_pull": ("pull", "pull_wrong")}
+                     "colour_rule": ("reach", "reach_wrong"), "move_free": ("reach", "reach_wrong")}
     allowed = pre_cue + ("response_timeout", "safety_trip") + task_outcomes.get(
         exp, ("session_end", "reach", "reach_wrong"))
     report.check(all(event in allowed for event in outcomes), f"outcome is valid for {exp}")
     required = ["trial_start", "at_start", "fixture_active"]
     if not any(event in pre_cue for event in outcomes):
         choice_cue = (["cue_colour", "target"] if exp == "colour_rule" else
-                      ["target"] if exp == "cued_pull" else [])
+                      ["target"] if exp == "move_free" else [])
         # Older recordings marked cue_go before presenting the cue color.
         if choice_cue and "cue_colour" in got and "cue_go" in got and got.index("cue_colour") < got.index("cue_go"):
             required.extend(choice_cue + ["cue_go"])
         else:
             required.extend(["cue_go"] + choice_cue)
         required.append("armed")
-        if exp == "cued_pull":
-            plan = (meta or {}).get("pull")
-            report.check(isinstance(plan, dict) and plan.get("mode") in ("shaping", "jump", "bump"),
-                         "the trial's plan (mode, direction, perturbation) recorded")
+        if exp == "move_free":
+            plan = (meta or {}).get("free_reach")
+            report.check(isinstance(plan, dict) and plan.get("cue") in ("either", "cued"),
+                         "the trial's plan (cue, direction, perturbation) recorded")
         if exp == "n_choice":
             state = (meta or {}).get("n_choice")
             probabilities = state.get("p") if isinstance(state, dict) else None
@@ -298,10 +298,10 @@ def validate(path) -> bool:
         r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t in paid_tokens),
                 "each movement reward (long_move / new_best) comes right after its move_end")
         r.note(f"movements: {ends}, {paid} rewarded")
-    if exp == "cued_pull" and "early_touch" not in got:
-        # Cued Pull (actions/cued_pull.py): one pull per trial; a jump before the grip, a bump after it.
-        outcome = [t for t in got if t in ("pull", "pull_wrong", "response_timeout", "safety_trip")]
-        r.check(len(outcome) <= 1, f"at most one outcome (pull / pull_wrong / response_timeout / safety_trip); found {outcome}")
+    if exp == "move_free" and "early_touch" not in got:
+        # Cued Reaches, free (actions/free_reach.py): one reach per trial; a jump before the grip, a bump after it.
+        outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
+        r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
         for kind in ("jump", "bump"):
             if kind in got:
                 r.check(got.count(kind) == 1, f"one {kind} at most")
@@ -311,8 +311,8 @@ def validate(path) -> bool:
             r.check(got.index("jump") < got.index("grip"), "the jump comes before the grip")
         if "bump" in got and "grip" in got:
             r.check(got.index("grip") < got.index("bump"), "the bump comes after the grip")
-        plan = (meta or {}).get("pull") or {}
-        r.note(f"cued pull: {plan.get('mode')} {plan.get('direction') or 'any'}"
+        plan = (meta or {}).get("free_reach") or {}
+        r.note(f"free reach: {plan.get('cue')} {plan.get('direction') or 'any'}"
                + (f", {plan['perturb']} at {plan.get('angle_deg')} deg" if plan.get("perturb") else "")
                + f", {outcome[0] if outcome else 'no outcome'}")
     if exp == "n_choice" and "early_touch" not in got:

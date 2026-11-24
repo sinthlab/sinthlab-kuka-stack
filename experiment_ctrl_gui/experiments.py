@@ -142,7 +142,7 @@ _CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("cu
 # Cards holding several experiments (Experiment.card): key -> (label, summary).
 CARDS = {
     "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
-    "cued_reach": ("Cued Reaches", "One reach per trial, from the centre to an end of the rail."),
+    "cued_reach": ("Cued Reaches", "One reach per trial: along a rail, or free in 3-D with jumps and bumps."),
 }
 _CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m")
 _CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same three modes on either rail
@@ -225,6 +225,26 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
+    # Cued Reaches, free (3-D): the same cue modes, no rail -- free in 3-D inside a box, only the reach's part in
+    # the plane facing him scored -- with jump and bump perturbations (CIHR grant Aims 1-2; perturb.kind).
+    # It starts where N-Choice and Move Vertical do.
+    Experiment(
+        key="move_free", label="Cued Reaches · Free", group="experiments",
+        summary=CARDS["cued_reach"][1], card="cued_reach", variant="Free (3-D)",
+        launch_file="iiwa7_pretrain_move_free.launch.py",
+        params_yaml="pretrain_move_free.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("move_free"),
+        ros_controller="kuka_clik_controller",
+        paradigms=[("either", "Any direction"), ("cued", "Cued")], paradigm_param="free_reach.cue",
+        task_settings=("free_reach.distance_m", "free_reach.cone_deg", "free_reach.directions",
+                       "free_reach.cue_delay_min_sec", "free_reach.cue_delay_max_sec", "perturb.kind",
+                       "perturb.probability", "perturb.jump_m", "perturb.jump_angles_deg",
+                       "perturb.jump_delay_min_sec", "perturb.jump_delay_max_sec", "perturb.bump_m",
+                       "perturb.bump_angles_deg", "perturb.bump_at_m", "perturb.bump_depth_m",
+                       "perturb.bump_depth_rules"),
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
 ]
 # The Color Rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
 # or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
@@ -259,28 +279,6 @@ EXPERIMENTS += [
         paradigm_param="free_move.ray_layout",
         task_settings=("n_choice.p_max", "n_choice.p_min", "n_choice.deplete", "n_choice.recover", "n_choice.start",
                        "n_choice.end_tol_m", "free_move.ray_length_m"),
-        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
-        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
-    ),
-]
-# Cued Pull (CIHR grant Aims 1-2): grip and pull the apple in the frontal plane; shaping, then cued pulls with
-# pre-grip jumps or mid-pull bumps. On the free-move node; Navin's Apple Pluck stays as it is. The mode
-# (pull.mode) is live, so the tabs switch it during a run, from the next trial.
-EXPERIMENTS += [
-    Experiment(
-        key="cued_pull", label="Cued Pull", group="experiments",
-        summary="Grip the apple and pull it the cued way. Jumps before the grip, or bumps during the pull.",
-        launch_file="iiwa7_cued_pull.launch.py",
-        params_yaml="cued_pull.yaml", node="free_move_orchestrator",
-        stiffness_profile=required_profile("cued_pull"),
-        ros_controller="kuka_clik_controller",
-        paradigms=[("shaping", "Shaping"), ("jump", "Cued jump"), ("bump", "Cued bump")],
-        paradigm_param="pull.mode",
-        task_settings=("pull.distance_m", "pull.cone_deg", "pull.directions", "pull.cue_delay_min_sec",
-                       "pull.cue_delay_max_sec", "perturb.probability", "perturb.jump_m", "perturb.jump_angles_deg",
-                       "perturb.jump_delay_min_sec", "perturb.jump_delay_max_sec", "perturb.bump_m",
-                       "perturb.bump_angles_deg", "perturb.bump_at_m", "perturb.bump_depth_m",
-                       "perturb.bump_depth_rules"),
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
@@ -352,11 +350,12 @@ LABELS: Dict[str, str] = {
     "n_choice.start": "Initial reward probabilities",
     "n_choice.end_tol_m": "End tolerance [m]",
     "free_move.ray_length_m": "Rail length [m]",
-    "pull.distance_m": "Pull length [m]",
-    "pull.cone_deg": "Target cone [deg]",
-    "pull.directions": "Cued directions",
-    "pull.cue_delay_min_sec": "Cue before go, min [s]",
-    "pull.cue_delay_max_sec": "Cue before go, max [s]",
+    "free_reach.distance_m": "Reach length [m]",
+    "free_reach.cone_deg": "Target cone [deg]",
+    "free_reach.directions": "Cued directions",
+    "free_reach.cue_delay_min_sec": "Cue before go, min [s]",
+    "free_reach.cue_delay_max_sec": "Cue before go, max [s]",
+    "perturb.kind": "Perturbation",
     "perturb.probability": "Perturbed trials [fraction]",
     "perturb.jump_m": "Jump size [m]",
     "perturb.jump_angles_deg": "Jump angles from the cue [deg]",
@@ -389,7 +388,7 @@ LABELS: Dict[str, str] = {
     "long_move.reward": "Reward mode (tab)",
     "free_move.rail_axis": "Rail / No rail (tab)",
     "free_move.ray_layout": "Number of choices (tab)",
-    "pull.mode": "Mode (tab)",
+    "free_reach.cue": "Cue (tab)",
     "reward_pulse.pulse_ms": "Valve open [ms]",
     "reward_pulse.count": "Pulses per reward",
     "reward_pulse.gap_ms": "Gap between pulses [ms]",

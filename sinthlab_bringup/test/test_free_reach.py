@@ -1,4 +1,4 @@
-"""Cued Pull: helpers/pull_task.py (scoring, schedule, geometry), actions/cued_pull.py on a fake arm,
+"""Cued Reaches, free (3-D): helpers/free_reach.py (scoring, schedule, geometry), actions/free_reach.py on a fake arm,
 AdmittanceMoveAction.displace(), its trials.csv columns and its card.
 
     python3 -m pytest sinthlab_bringup/test
@@ -18,11 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "experiment_ctrl_gui"))
 
 import test_centre_out_monitor as stubs  # noqa: E402  (ROS stand-ins)
-from sinthlab_bringup.helpers import live_params, outcome_tables as ot, pull_task as pt  # noqa: E402
-from sinthlab_bringup.actions import cued_pull  # noqa: E402
+from sinthlab_bringup.helpers import live_params, outcome_tables as ot, free_reach as pt  # noqa: E402
+from sinthlab_bringup.actions import free_reach as fra  # noqa: E402
 from sinthlab_bringup.actions.admittance_move import AdmittanceMoveAction  # noqa: E402
 
-YAML = ROOT / "sinthlab_bringup/config/cued_pull.yaml"
+YAML = ROOT / "sinthlab_bringup/config/pretrain_move_free.yaml"
 
 
 def yaml_params():
@@ -54,7 +54,7 @@ def test_directions_and_rotation():
 
 def test_a_pull_ends_at_its_distance_and_is_scored_against_the_cone():
     assert pt.crossing([0.03, 0.0], 0.05, "right", 15) is None                   # not there yet
-    assert pt.crossing([0.0, -0.06], 0.05, None, 15) == (True, 270.0, None)      # shaping: any direction pays
+    assert pt.crossing([0.0, -0.06], 0.05, None, 15) == (True, 270.0, None)      # no cue: any direction pays
     ok, ang, err = pt.crossing([0.05, 0.01], 0.05, "right", 15)                  # 11 deg above right
     assert ok and err == pytest.approx(11.3, abs=0.1)
     ok, _, err = pt.crossing([0.05, -0.02], 0.05, "right", 15)                   # 22 deg below: outside
@@ -64,15 +64,15 @@ def test_a_pull_ends_at_its_distance_and_is_scored_against_the_cone():
 
 
 def test_an_uncorrected_bump_misses_the_target():
-    s = pt.PullSettings()
+    s = pt.ReachSettings()
     d = s.bump_m * pt.rotate(pt.unit("right"), 90) + s.distance_m * pt.unit("right")   # bumped, carried on straight
     assert not pt.crossing(d, s.distance_m, "right", s.cone_deg)[0]
 
 
 # ---------------------------------------------------------------- the schedule
 def test_blocks_balance_directions_perturbations_and_angles():
-    s = pt.PullSettings(mode="bump")
-    sched = pt.PullSchedule(s, random.Random(1))
+    s = pt.ReachSettings(cue="cued", perturb="bump")
+    sched = pt.ReachSchedule(s, random.Random(1))
     plans = [sched.next() for _ in range(4 * s.block_trials)]
     assert {p.block for p in plans} == {1}
     for d in s.directions:
@@ -84,7 +84,7 @@ def test_blocks_balance_directions_perturbations_and_angles():
 
 @pytest.mark.parametrize("p", [0.33, 0.5])
 def test_perturbed_trials_never_run_together(p):
-    sched = pt.PullSchedule(pt.PullSettings(mode="jump", probability=p), random.Random(2))
+    sched = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="jump", probability=p), random.Random(2))
     plans = [sched.next() for _ in range(240)]                                   # ten blocks, across their edges
     flags = [x.perturb is not None for x in plans]
     assert not any(a and b for a, b in zip(flags, flags[1:]))
@@ -92,7 +92,7 @@ def test_perturbed_trials_never_run_together(p):
 
 
 def test_too_many_perturbed_trials_raise_the_cap_as_little_as_needed():
-    sched = pt.PullSchedule(pt.PullSettings(mode="bump", probability=0.83), random.Random(5))   # 5 of 6
+    sched = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="bump", probability=0.83), random.Random(5))   # 5 of 6
     flags = [sched.next().perturb is not None for _ in range(24)]
     runs, run = [], 0
     for f in flags:
@@ -101,28 +101,31 @@ def test_too_many_perturbed_trials_raise_the_cap_as_little_as_needed():
     assert sum(flags) == 20 and max(runs) <= 5
 
 
-def test_a_change_starts_a_new_block_and_shaping_has_no_cue():
-    s = pt.PullSettings(mode="jump")
-    sched = pt.PullSchedule(s, random.Random(3))
+def test_a_change_starts_a_new_block_and_either_has_no_cue():
+    s = pt.ReachSettings(cue="cued", perturb="jump")
+    sched = pt.ReachSchedule(s, random.Random(3))
     sched.next()
-    s.mode = "shaping"
+    s.cue = "either"
     p = sched.next()
     assert (p.direction, p.perturb, p.block) == (None, None, 2)
-    s.mode, s.probability = "bump", 0.0
+    assert sched.next().block == 2                                               # no cue: one block until a change
+    s.cue, s.perturb, s.probability = "cued", "bump", 0.0
     assert all(sched.next().perturb is None for _ in range(24))                  # cued pulls only
 
 
 # ---------------------------------------------------------------- settings and the box
 def test_settings_checks():
-    assert pt.settings_problem(pt.PullSettings()) is None
-    assert "bump_at_m" in pt.settings_problem(pt.PullSettings(bump_at_m=0.045))  # no room left to correct
-    assert "unknown" in pt.settings_problem(pt.PullSettings(directions=["sideways"]))
-    assert pt.settings_problem(pt.PullSettings(mode="pluck"))
+    assert pt.settings_problem(pt.ReachSettings()) is None
+    assert "bump_at_m" in pt.settings_problem(pt.ReachSettings(bump_at_m=0.045))  # no room left to correct
+    assert "unknown" in pt.settings_problem(pt.ReachSettings(directions=["sideways"]))
+    assert pt.settings_problem(pt.ReachSettings(cue="pluck"))
+    assert pt.settings_problem(pt.ReachSettings(perturb="shove"))
+    assert pt.ReachSettings(cue="either", perturb="bump").kind() is None     # nothing to perturb against
 
 
 def test_the_default_pulls_fit_the_box_and_longer_ones_need_fewer_directions():
     lo, hi = yaml_box()
-    s = cued_pull.settings_from(lambda n: yaml_params()[n])
+    s = fra.settings_from(lambda n: yaml_params()[n])
     assert pt.settings_problem(s) is None and pt.box_problem(s, lo, hi) is None
     s.distance_m = 0.07
     assert "outside the box" in pt.box_problem(s, lo, hi)                        # up runs out of room
@@ -178,10 +181,10 @@ class FakeArm:
 
 def monitor(monkeypatch, **over):
     clock = Clock()
-    monkeypatch.setattr(cued_pull, "time", clock)
+    monkeypatch.setattr(fra, "time", clock)
     params = {**yaml_params(), **over}
     node, arm, marks = stubs.FakeNode(params), FakeArm(), []
-    mon = cued_pull.CuedPullMonitor(node, arm, lambda e, a=None: marks.append((e, a)), rng=random.Random(4))
+    mon = fra.FreeReachMonitor(node, arm, lambda e, a=None: marks.append((e, a)), rng=random.Random(4))
     return node, arm, mon, marks, clock
 
 
@@ -197,9 +200,9 @@ def run_trial(node, arm, mon, clock, plan):
     return got
 
 
-def test_shaping_rewards_any_pull(monkeypatch):
+def test_no_cue_rewards_any_reach(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch)
-    got = run_trial(node, arm, mon, clock, pt.TrialPlan("shaping", None))
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("either", None))
     assert mon.quarters() == [0, 1, 2, 3] and mon.target() == "any"
     arm.pos = np.array([0.0, -0.03, -0.045])                  # down-left, 5.4 cm
     tick(node)
@@ -208,8 +211,8 @@ def test_shaping_rewards_any_pull(monkeypatch):
 
 
 def test_a_bump_comes_after_the_grip_and_the_target_stays(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
-    plan = pt.TrialPlan("bump", "right", "bump", 90.0, 0.015)
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
+    plan = pt.TrialPlan("cued", "right", "bump", 90.0, 0.015)
     got = run_trial(node, arm, mon, clock, plan)
     assert mon.quarters() == [1]
     arm.force = 5.0
@@ -232,8 +235,8 @@ def test_a_bump_comes_after_the_grip_and_the_target_stays(monkeypatch):
 
 
 def test_a_jump_before_the_grip_moves_where_the_pull_starts(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump"})
-    got = run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "down", "jump", 270.0, 0.015))
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "jump"})
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "down", "jump", 270.0, 0.015))
     clock.t += 0.35                                            # past the latest jump delay
     tick(node)
     assert marks[-1] == ("jump", 270.0)
@@ -247,8 +250,8 @@ def test_a_jump_before_the_grip_moves_where_the_pull_starts(monkeypatch):
 
 
 def test_no_jump_once_he_has_gripped(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump"})
-    run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "left", "jump", 90.0, 0.015))
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "jump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "left", "jump", 90.0, 0.015))
     arm.pos = np.array([0.0, -0.01, 0.0])                      # already moving it
     tick(node)
     tick(node)
@@ -260,16 +263,17 @@ def test_no_jump_once_he_has_gripped(monkeypatch):
 
 def test_live_changes_are_checked_against_the_box(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch)
-    assert mon.check_live("pull.distance_m", 0.09, {}) is not None
-    assert mon.check_live("pull.distance_m", 0.04, {}) is None
-    assert mon.check_live("pull.mode", "bump", {}) is None
-    assert mon.check_live("pull.cue_delay_min_sec", 2.0, {}) is not None        # above the max (0.3)
-    assert mon.check_live("pull.cue_delay_max_sec", 2.0, {}) is None
+    assert mon.check_live("free_reach.distance_m", 0.09, {}) is not None
+    assert mon.check_live("free_reach.distance_m", 0.04, {}) is None
+    assert mon.check_live("perturb.kind", "bump", {}) is None
+    assert mon.check_live("free_reach.cue", "cued", {}) is None
+    assert mon.check_live("free_reach.cue_delay_min_sec", 2.0, {}) is not None        # above the max (0.3)
+    assert mon.check_live("free_reach.cue_delay_max_sec", 2.0, {}) is None
 
 
 def test_depth_is_free_and_not_scored(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "jump", "perturb.probability": 0.0})
-    got = run_trial(node, arm, mon, clock, pt.TrialPlan("jump", "right"))
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "jump", "perturb.probability": 0.0})
+    got = run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right"))
     arm.pos = np.array([0.04, 0.0, 0.0])                       # pushed 4 cm toward himself only
     tick(node)
     assert [e for e, _ in marks] == ["grip"] and not got       # a grip, but no pull yet
@@ -289,7 +293,7 @@ def test_needs_a_box(monkeypatch):
     arm = FakeArm()
     arm.shape = lambda: "y"
     with pytest.raises(ValueError):
-        cued_pull.CuedPullMonitor(stubs.FakeNode(yaml_params()), arm, lambda *a: None)
+        fra.FreeReachMonitor(stubs.FakeNode(yaml_params()), arm, lambda *a: None)
 
 
 # ---------------------------------------------------------------- the admittance's displacement
@@ -330,22 +334,22 @@ def sidecar(k, plan, outcome, events=(), err=None):
     if outcome:
         evs.append(ev(outcome[0], 4, outcome[1]))
     evs.append(ev("trial_end", 4.1, k))
-    return {"experiment": "cued_pull", "trial_index": k, "subject": "M1", "params": {"pull.mode": plan["mode"]},
-            "pull": plan, "pull_result": {"error_deg": err}, "events": evs}
+    return {"experiment": "move_free", "trial_index": k, "subject": "M1", "params": {"free_reach.cue": plan["cue"]},
+            "free_reach": plan, "free_reach_result": {"error_deg": err}, "events": evs}
 
 
 def test_columns_and_session(tmp_path):
-    std = {"mode": "bump", "direction": "right", "perturb": None, "angle_deg": None, "size_m": 0.0, "block": 1,
+    std = {"cue": "cued", "direction": "right", "perturb": None, "angle_deg": None, "size_m": 0.0, "block": 1,
            "cue_delay_sec": 0.3}
     bump = {**std, "perturb": "bump", "angle_deg": 90.0, "size_m": 0.015}
-    metas = [sidecar(1, std, ("pull", 2.0), [("grip", 3.25, 4.0)], err=2.0),
-             sidecar(2, bump, ("pull_wrong", 17.0), [("grip", 3.3, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)],
+    metas = [sidecar(1, std, ("reach", 2.0), [("grip", 3.25, 4.0)], err=2.0),
+             sidecar(2, bump, ("reach_wrong", 17.0), [("grip", 3.3, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)],
                      err=17.0),
-             sidecar(3, bump, ("pull", 5.0), [("grip", 3.2, 4.0), ("bump", 3.45, 90.0), ("bump_end", 3.55, None)],
+             sidecar(3, bump, ("reach", 5.0), [("grip", 3.2, 4.0), ("bump", 3.45, 90.0), ("bump_end", 3.55, None)],
                      err=5.0)]
     row = ot.trial_row(metas[1])
     assert (row["paradigm"], row["target"], row["perturbation"], row["perturbed"], row["correct"]) == \
-        ("bump", "right", "bump", 1, 0)
+        ("cued", "right", "bump", 1, 0)
     assert (row["grip_s"], row["perturb_s"], row["error_deg"], row["success"]) == (0.3, 0.5, 17.0, 0)
     run = tmp_path / "expt_p"
     run.mkdir()
@@ -353,7 +357,7 @@ def test_columns_and_session(tmp_path):
         (run / f"t{m['trial_index']}.meta.json").write_text(json.dumps(m))
         ot.append_trial(run, m)
     s = ot.session_row(run)
-    assert (s["n_pulls"], s["pct_correct"], s["pct_correct_standard"], s["pct_correct_perturbed"]) == \
+    assert (s["n_reaches"], s["pct_correct"], s["pct_correct_standard"], s["pct_correct_perturbed"]) == \
         (3, 66.7, 100.0, 50.0)
     assert s["median_grip_s"] == 0.25
 
@@ -361,16 +365,17 @@ def test_columns_and_session(tmp_path):
 # ---------------------------------------------------------------- the card and the live settings
 def test_card_and_live_settings():
     experiments = pytest.importorskip("experiments")
-    e = experiments.BY_KEY["cued_pull"]
-    assert e.group == "experiments" and e.paradigm_param == "pull.mode"
-    assert [k for k, _ in e.paradigms] == ["shaping", "jump", "bump"]
+    e = experiments.BY_KEY["move_free"]
+    assert e.group == "experiments" and e.card == "cued_reach" and e.paradigm_param == "free_reach.cue"
+    assert [k for k, _ in e.paradigms] == ["either", "cued"]
     assert e.clik_nullspace == "clik_nullspace_pretrain_vertical.yaml"
     for name in yaml_params():
-        if name.split(".")[0] in ("pull", "perturb", "grip"):
-            assert live_params.is_live("cued_pull", name), name                # every task setting, mid-run
-    assert not live_params.is_live("cued_pull", "free_move.box.z_max_m")       # the box is per-run
-    assert live_params.paradigm_of("perturb.bump_at_m") == ("bump",)
-    assert live_params.check_value("pull.mode", "jump") is None
+        if name.split(".")[0] in ("free_reach", "perturb", "grip"):
+            assert live_params.is_live("move_free", name), name                # every task setting, mid-run
+    assert not live_params.is_live("move_free", "free_move.box.z_max_m")       # the box is per-run
+    assert live_params.paradigm_of("perturb.bump_at_m") == ("cued",)
+    assert live_params.check_value("perturb.kind", "jump") is None
+    assert live_params.check_value("free_reach.cue", "cued") is None
     assert live_params.check_value("perturb.jump_sec", 0.01) is not None        # too fast
     start = yaml_params()["move_to_start.target_joint_position"]
     nchoice = yaml.safe_load((ROOT / "sinthlab_bringup/config/n_choice.yaml").read_text())["/**"]["ros__parameters"]
@@ -380,9 +385,9 @@ def test_card_and_live_settings():
 def test_the_dashboard_check_matches_the_node():
     p = yaml_params()
     assert pt.params_problem(p) is None
-    assert "outside the box" in pt.params_problem({**p, "pull.distance_m": 0.09})
-    assert pt.params_problem({**p, "pull.cue_delay_min_sec": 1.0})          # above the max
-    assert pt.params_problem({"free_move.damping_ns_per_m": 50}) is None     # not a Cued Pull: nothing to check
+    assert "outside the box" in pt.params_problem({**p, "free_reach.distance_m": 0.09})
+    assert pt.params_problem({**p, "free_reach.cue_delay_min_sec": 1.0})          # above the max
+    assert pt.params_problem({"free_move.damping_ns_per_m": 50}) is None     # not a free reach: nothing to check
 
 
 # ---------------------------------------------------------------- the bump's depth component
@@ -398,20 +403,20 @@ def test_depth_sign_follows_his_depth_movement():
 
 
 def test_bump_blocks_balance_angles_and_depth_rules():
-    sched = pt.PullSchedule(pt.PullSettings(mode="bump"), random.Random(6))
+    sched = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="bump"), random.Random(6))
     plans = [p for p in (sched.next() for _ in range(24)) if p.perturb]
     combos = sorted((p.angle_deg, p.depth_rule) for p in plans)
     assert len(plans) == 8 and all(combos.count(c) == 2 for c in set(combos)) and len(set(combos)) == 4
-    jumps = pt.PullSchedule(pt.PullSettings(mode="jump"), random.Random(6))
+    jumps = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="jump"), random.Random(6))
     assert all(p.depth_rule is None for p in (jumps.next() for _ in range(24)))     # jumps stay in the plane
-    flat = pt.PullSchedule(pt.PullSettings(mode="bump", bump_depth_m=0.0), random.Random(6))
+    flat = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="bump", bump_depth_m=0.0), random.Random(6))
     assert all(p.depth_rule is None for p in (flat.next() for _ in range(24)))
-    assert "unknown" in pt.settings_problem(pt.PullSettings(bump_depth_rules=["sideways"]))
+    assert "unknown" in pt.settings_problem(pt.ReachSettings(bump_depth_rules=["sideways"]))
 
 
 def test_a_bump_against_his_depth_movement(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
-    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "down", "bump", 90.0, 0.015, depth_rule="against"))
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "down", "bump", 90.0, 0.015, depth_rule="against"))
     arm.pos, arm.vel = np.array([0.01, 0.0, -0.026]), np.array([0.06, 0.0, -0.2])   # pulling down and toward himself
     tick(node)
     tick(node)
@@ -422,8 +427,8 @@ def test_a_bump_against_his_depth_movement(monkeypatch):
 
 
 def test_the_depth_is_cut_short_at_the_box(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
-    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "right", "bump", 270.0, 0.015, depth_rule="with"))
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 270.0, 0.015, depth_rule="with"))
     arm.pos, arm.vel = np.array([0.02, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])     # 2 cm toward him, 3 cm room
     tick(node)
     tick(node)
@@ -431,9 +436,9 @@ def test_the_depth_is_cut_short_at_the_box(monkeypatch):
 
 
 def test_no_depth_in_the_frontal_plane(monkeypatch):
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
     arm.shape = lambda: "frontal"
-    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "right", "bump", 90.0, 0.015, depth_rule="with"))
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 90.0, 0.015, depth_rule="with"))
     arm.pos, arm.vel = np.array([0.0, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])
     tick(node)
     tick(node)
@@ -441,10 +446,19 @@ def test_no_depth_in_the_frontal_plane(monkeypatch):
 
 
 def test_depth_columns():
-    plan = {"mode": "bump", "direction": "down", "perturb": "bump", "angle_deg": 90.0, "size_m": 0.015, "block": 1,
+    plan = {"cue": "cued", "direction": "down", "perturb": "bump", "angle_deg": 90.0, "size_m": 0.015, "block": 1,
             "cue_delay_sec": 0.3, "depth_rule": "against"}
-    meta = sidecar(1, plan, ("pull", 268.0), [("grip", 3.2, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)])
-    meta["pull_result"].update(depth_dir="away", depth_m=0.01, depth_basis="velocity", depth_speed_mps=0.06)
+    meta = sidecar(1, plan, ("reach", 268.0), [("grip", 3.2, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)])
+    meta["free_reach_result"].update(depth_dir="away", depth_m=0.01, depth_basis="velocity", depth_speed_mps=0.06)
     row = ot.trial_row(meta)
     assert (row["depth_rule"], row["depth_dir"], row["depth_m"], row["depth_basis"], row["depth_speed_mps"]) == \
         ("against", "away", 0.01, "velocity", 0.06)
+
+
+def test_the_ring_shows_where_the_reach_ended(monkeypatch):
+    assert [pt.quarter_of(a) for a in (0, 80, 175, 260, 350)] == [1, 0, 3, 2, 1]
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued"})
+    mon.plan = pt.TrialPlan("cued", "right")
+    assert mon.reached_quarters(95.0) == [0]                     # a wrong reach upward: the top quarter red
+    mon.plan = pt.TrialPlan("either", None)
+    assert mon.reached_quarters(95.0) == [0, 1, 2, 3]            # no cue: the whole ring, as the rails' either

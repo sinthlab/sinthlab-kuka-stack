@@ -34,7 +34,8 @@ def test_pretraining_cards_and_their_variants():
         "restricted_move": [("Horizontal", "restricted_move_horizontal"), ("Vertical", "restricted_move_vertical")],
     }
     # Anything organised in trials sits under Experiments, Cued Reaches included.
-    assert {e.key for e in experiments.EXPERIMENTS if e.card == "cued_reach"} == {"move_horizontal", "move_vertical"}
+    assert [e.key for e in experiments.EXPERIMENTS if e.card == "cued_reach"] == ["move_horizontal", "move_vertical",
+                                                                                   "move_free"]
     assert all(e.group == "experiments" for e in experiments.EXPERIMENTS if e.card == "cued_reach")
     assert set(experiments.CARDS) == {"restricted_move", "cued_reach"}
 
@@ -67,6 +68,9 @@ def test_cued_reaches_keep_their_modes():
         e = experiments.BY_KEY[key]
         assert e.card == "cued_reach" and e.paradigm_param == "centre_out.target"
         assert params(e)["centre_out"]["enabled"] is True
+    free = experiments.BY_KEY["move_free"]                     # the free variant: the same tabs' meaning
+    assert free.card == "cued_reach" and free.variant == "Free (3-D)" and free.paradigm_param == "free_reach.cue"
+    assert [k for k, _ in free.paradigms] == ["either", "cued"]
 
 
 def test_validator_and_live_view_know_every_free_move_task():

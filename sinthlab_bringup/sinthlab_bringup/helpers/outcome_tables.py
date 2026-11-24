@@ -114,12 +114,11 @@ TRIALS_CSV = "trials.csv"
 SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
-OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "pull", "pull_wrong",
-            "session_end",
+OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
             "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "go_cue_failed", "stop_requested")
 # A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
-SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "pull", "session_end")
-FAILURE = ("timeout", "reach_wrong", "pull_wrong", "response_timeout", "early_touch")
+SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
+FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
 # safety_trip, smartpad_mismatch, go_cue_failed, stop_requested: aborted -- neither (success left blank)
 
 COMMON = {
@@ -622,12 +621,12 @@ class NChoiceTables(TaskTables):
                 "choice_counts": "; ".join(f"{k}={v}" for k, v in sorted(counts.items()))}
 
 
-@register("cued_pull")
-class CuedPullTables(TaskTables):
-    """Cued Pull (actions/cued_pull.py, helpers/pull_task.py): the pull, its cue and its perturbation."""
-    paradigm_param = "pull.mode"
+@register("move_free")
+class FreeReachTables(TaskTables):
+    """Cued Reaches, free (actions/free_reach.py, helpers/free_reach.py): the reach, its cue, its perturbation."""
+    paradigm_param = "free_reach.cue"
     trial_columns = {
-        "target": "the cued direction (right / left / down / up), or any in shaping",
+        "target": "the cued direction (right / left / down / up), or any with no cue",
         "perturbation": "the trial's planned perturbation: jump, bump, or blank for a standard trial",
         "perturb_angle_deg": "its direction from the cued direction [deg]: 90 = counter-clockwise as he sees it, 270 = clockwise",
         "perturb_m": "its size [m]",
@@ -635,21 +634,21 @@ class CuedPullTables(TaskTables):
         "cue_delay_s": "how long the cue showed before the go [s]",
         "grip_s": "the grip (force or first movement), from the go cue [s]: the reaction time",
         "perturb_s": "the jump or bump onset, from the go cue [s]",
-        "crossing_deg": "the direction the pull ended in [deg]: 0 = right, 90 = up",
-        "error_deg": "how far that was from the cued direction [deg], + = counter-clockwise; blank in shaping",
-        "correct": "1 = a pull to the target (rewarded), 0 = outside it, blank = no pull",
-        "block": "the schedule's block (a new one at every change of mode or settings)",
+        "crossing_deg": "the direction the reach ended in [deg]: 0 = right, 90 = up",
+        "error_deg": "how far that was from the cued direction [deg], + = counter-clockwise; blank with no cue",
+        "correct": "1 = a reach to the target (rewarded), 0 = outside it, blank = no reach",
+        "block": "the schedule's block (a new one at every change of cue, perturbation or settings)",
         "depth_rule": "the bump's depth rule: against / with his depth movement, toward / away (fixed); blank = none",
         "depth_dir": "the bump's depth direction as delivered: toward / away (from the monkey)",
         "depth_m": "the bump's depth component as delivered [m] (less than set if the box was short of room)",
         "depth_basis": "what set it: velocity / displacement (his depth movement), random (he was not moving in depth), fixed",
         "depth_speed_mps": "his depth velocity at the bump's onset [m/s], + toward himself",
     }
-    settings = ["pull.mode", "pull.directions", "pull.distance_m", "pull.cone_deg", "perturb.probability",
+    settings = ["free_reach.cue", "perturb.kind", "free_reach.directions", "free_reach.distance_m", "free_reach.cone_deg", "perturb.probability",
                 "perturb.jump_m", "perturb.bump_m", "perturb.bump_at_m", "perturb.bump_depth_m",
                 "perturb.bump_depth_rules", "response_timeout_sec", "reward_pulse.pulse_ms", "free_move.rail_axis"]
-    session_columns = {"n_pulls": "trials ending in a pull",
-                       "pct_correct": "pulls to the target over all pulls [%]",
+    session_columns = {"n_reaches": "trials ending in a reach",
+                       "pct_correct": "reaches to the target over all reaches [%]",
                        "pct_correct_standard": "the same, unperturbed trials [%]",
                        "pct_correct_perturbed": "the same, trials with a jump or bump [%]",
                        "pct_correct_depth_against": "the same, bumps against his depth movement [%]",
@@ -657,12 +656,12 @@ class CuedPullTables(TaskTables):
                        "median_grip_s": "median grip time from the go cue [s]"}
 
     def trial_fields(self, tr):
-        plan = tr.meta.get("pull") or {}
-        res = tr.meta.get("pull_result") or {}
+        plan = tr.meta.get("free_reach") or {}
+        res = tr.meta.get("free_reach_result") or {}
         go = tr.t("cue_go")
         since = lambda tok: _num(tr.t(tok) - go, 3) if go is not None and tr.has(tok) else ""   # noqa: E731
         kind = plan.get("perturb") or ""
-        pulled = tr.arg("pull") if tr.has("pull") else tr.arg("pull_wrong")
+        reached = tr.arg("reach") if tr.has("reach") else tr.arg("reach_wrong")
         return {"target": plan.get("direction") or ("any" if plan else ""),
                 "perturbation": kind,
                 "perturb_angle_deg": "" if plan.get("angle_deg") is None else plan["angle_deg"],
@@ -670,25 +669,25 @@ class CuedPullTables(TaskTables):
                 "perturbed": (1 if tr.has(kind) else 0) if kind else "",
                 "cue_delay_s": plan.get("cue_delay_sec", ""),
                 "grip_s": since("grip"), "perturb_s": since(kind) if kind else "",
-                "crossing_deg": "" if pulled is None else pulled,
+                "crossing_deg": "" if reached is None else reached,
                 "error_deg": "" if res.get("error_deg") is None else res["error_deg"],
-                "correct": 1 if tr.has("pull") else 0 if tr.has("pull_wrong") else "",
+                "correct": 1 if tr.has("reach") else 0 if tr.has("reach_wrong") else "",
                 "block": plan.get("block", ""),
                 "depth_rule": plan.get("depth_rule") or "",
                 **{k: ("" if res.get(k) is None else res[k]) for k in ("depth_dir", "depth_m", "depth_basis",
                                                                      "depth_speed_mps")}}
 
     def session_fields(self, trials):
-        pulled = [r for r in trials if r.get("correct") in ("0", "1")]
+        reached = [r for r in trials if r.get("correct") in ("0", "1")]
         pct = lambda rows: (round(100.0 * sum(r["correct"] == "1" for r in rows) / len(rows), 1)   # noqa: E731
                             if rows else "")
         grips = sorted(float(r["grip_s"]) for r in trials if r.get("grip_s") not in ("", None))
-        return {"n_pulls": len(pulled), "pct_correct": pct(pulled),
-                "pct_correct_standard": pct([r for r in pulled if r.get("perturbed") != "1"]),
-                "pct_correct_perturbed": pct([r for r in pulled if r.get("perturbed") == "1"]),
-                "pct_correct_depth_against": pct([r for r in pulled if r.get("perturbed") == "1"
+        return {"n_reaches": len(reached), "pct_correct": pct(reached),
+                "pct_correct_standard": pct([r for r in reached if r.get("perturbed") != "1"]),
+                "pct_correct_perturbed": pct([r for r in reached if r.get("perturbed") == "1"]),
+                "pct_correct_depth_against": pct([r for r in reached if r.get("perturbed") == "1"
                                                   and r.get("depth_rule") == "against"]),
-                "pct_correct_depth_with": pct([r for r in pulled if r.get("perturbed") == "1"
+                "pct_correct_depth_with": pct([r for r in reached if r.get("perturbed") == "1"
                                                and r.get("depth_rule") == "with"]),
                 "median_grip_s": (round((grips[(len(grips) - 1) // 2] + grips[len(grips) // 2]) / 2, 3)
                                   if grips else "")}
