@@ -453,12 +453,3 @@ def test_depth_columns():
     row = ot.trial_row(meta)
     assert (row["depth_rule"], row["depth_dir"], row["depth_m"], row["depth_basis"], row["depth_speed_mps"]) == \
         ("against", "away", 0.01, "velocity", 0.06)
-
-
-def test_the_ring_shows_where_the_reach_ended(monkeypatch):
-    assert [pt.quarter_of(a) for a in (0, 80, 175, 260, 350)] == [1, 0, 3, 2, 1]
-    node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued"})
-    mon.plan = pt.TrialPlan("cued", "right")
-    assert mon.reached_quarters(95.0) == [0]                     # a wrong reach upward: the top quarter red
-    mon.plan = pt.TrialPlan("either", None)
-    assert mon.reached_quarters(95.0) == [0, 1, 2, 3]            # no cue: the whole ring, as the rails' either

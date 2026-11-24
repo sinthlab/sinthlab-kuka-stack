@@ -150,18 +150,13 @@ def test_either_keeps_the_whole_rail_and_rewards_both():
     assert run_to(node, arm, mon, 0.15) == ("right", True)
 
 
-def test_either_turns_the_whole_ring_red_and_one_end_modes_their_quarter():
+def test_the_cue_lights_the_goal_quarter_or_the_whole_ring():
     node, arm, mon = horizontal(target="either")
     mon.pick_target()
-    assert mon.reached_quarters("left") == [0, 1, 2, 3] == mon.reached_quarters("right")
+    assert mon.quarters() == [0, 1, 2, 3]
     node, arm, mon = horizontal(target="cued")
     goal = mon.pick_target()
     assert mon.quarters() == [mon.quarter_of(goal)]
-    assert mon.reached_quarters("left") == [3] and mon.reached_quarters("right") == [1]
-    node, arm, mon = horizontal(target="restricted")
-    goal = mon.pick_target()
-    assert mon.reached_quarters(goal) == [mon.quarter_of(goal)]
-
 
 def test_no_outcome_short_of_an_end():
     node, arm, mon = horizontal(target="cued")

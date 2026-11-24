@@ -190,9 +190,9 @@
       # keeps the board's current colour.
       colours:  # RGBW colour per cue site, each channel 0-255
         play: [0, 64, 0, 0]       # go -- green
-        reward: [0, 0, 255, 0]     # checkpoint reward -- blue
-        goal: [255, 0, 0, 0]       # maze solved (end) -- red
-        timeout: [255, 0, 0, 0]    # timed out (end) -- red
+        reward: [0, 0, 0, 255]     # checkpoint reward -- white: the reward cue, the same in every task
+        goal: [0, 0, 0, 255]       # maze solved (end), the reward -- white: the reward cue
+        timeout: [0, 0, 0, 0]      # timed out (end) -- dark: no reward, so no reward cue
 
     # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
     # are OFFSETS (metres) from the anchored start, EXACTLY matching the relative maze rails below

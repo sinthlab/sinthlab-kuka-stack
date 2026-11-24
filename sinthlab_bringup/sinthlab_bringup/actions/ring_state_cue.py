@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Quarter-ring STATE cue for the pre-training experiments -- e.g. the up and down quarters green
-while the arm may travel, red once the threshold is reached, dark between trials.
+"""Quarter-ring STATE cue for the free-move experiments -- e.g. a quarter green for the cue, the whole ring
+white for the reward, dark between trials.
+
+THE REWARD CUE is the same in every task: the whole ring in ring_cue.colours.reward (white), shown with
+every reward that is actually given (reward()). Nothing else uses white, so it never looks like a cue.
 
 Unlike VisualCue (a timed flash the board runs on a trigger), this sets what the ring SHOWS and it
 stays that way until the next state. It is expressed as the board's `/segments` request:
@@ -90,6 +93,10 @@ class RingStateCue:
                     sender.show(path, label)
         except Exception as exc:
             self._node.get_logger().warn(f"Ring cue '{state}' not sent: {exc}")
+
+    def reward(self, *, label: Optional[str] = None) -> None:
+        """The reward cue: the whole ring in ring_cue.colours.reward, until the next state."""
+        self.show("reward", list(range(_QUARTERS)), label=label)
 
     def state(self) -> Optional[str]:
         return self._state

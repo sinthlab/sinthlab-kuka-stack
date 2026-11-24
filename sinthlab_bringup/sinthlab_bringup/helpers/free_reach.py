@@ -46,11 +46,6 @@ DEPTH_MOVED_M = 0.005     # moving slower than bump_depth_still_mps: his depth m
 DIRECTIONS: Dict[str, Tuple[float, float]] = {"right": (1.0, 0.0), "up": (0.0, 1.0),
                                               "left": (-1.0, 0.0), "down": (0.0, -1.0)}
 QUARTER = {"up": 0, "right": 1, "down": 2, "left": 3}
-
-
-def quarter_of(angle_deg: float) -> int:
-    """The ring quarter nearest a frontal-plane direction [deg, 0 = right, 90 = up]."""
-    return (1, 0, 3, 2)[int(round(float(angle_deg) / 90.0)) % 4]
 BOX_MARGIN_M = 0.005      # every point a trial can need stays this far inside the box
 
 

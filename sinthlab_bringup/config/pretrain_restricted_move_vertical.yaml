@@ -189,9 +189,9 @@
       trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
-    # The ring is GREEN along the rail while the arm is free to move, dark otherwise.
+    # The ring is GREEN along the rail while the arm is free to move, dark otherwise. A reward lights the whole ring white (the reward cue, the same in every task).
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 2]  # the up and down quarters, 0-3
       colours:  # RGBW, each 0-255
         go: [0, 64, 0, 0]  # free to move -- green
-        reached: [255, 0, 0, 0]  # unused here (no reach target in Restricted Move)
+        reward: [0, 0, 0, 255]  # the reward cue, the same in every task: the whole ring white with every reward given, until the hand lets go (1 s for a reward mid-session)

@@ -126,6 +126,11 @@ class ExperimentControl:
         self._reward_events = tuple(tokens)
         self._sequence_rewards = sequence
 
+    def pays(self, token: str) -> bool:
+        """Whether this event sends the reward pulse (reward_pulse.enabled and one of the reward events): the
+        moment the reward cue shows."""
+        return self._reward is not None and token in self._reward_events
+
     def on_reload(self, fn: Callable[[], None]) -> None:
         """Register a function that re-reads live parameters. Called at a trial boundary."""
         self._reloaders.append(fn)

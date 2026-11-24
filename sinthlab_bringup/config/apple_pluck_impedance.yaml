@@ -323,4 +323,4 @@
       # keeps the board's current colour.
       colours:  # RGBW colour per cue site, each channel 0-255
         play: [0, 64, 0, 0]       # trial start -- green
-        snap: [255, 0, 0, 0]       # pull threshold reached -- red
+        snap: [0, 0, 0, 255]       # pull threshold reached, the reward -- white: the reward cue, the same in every task

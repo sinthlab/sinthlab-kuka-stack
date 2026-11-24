@@ -128,7 +128,7 @@
       # while the ring is off so the dashboard can change it live.
       colours:  # RGBW colour per cue site, each channel 0-255
         play: [0, 64, 0, 0]       # trial start -- green
-        snap: [255, 0, 0, 0]       # pull threshold reached -- red
+        snap: [0, 0, 0, 255]       # pull threshold reached, the reward -- white: the reward cue, the same in every task
 
     # Runaway safety-stop (backstop for a gravity-driven fall on the free pull axis, which the FRI
     # velocity guard does not halt). On a trip the trial aborts straight to park.

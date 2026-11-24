@@ -844,7 +844,7 @@ visual_cue:
   remote_board: "192.168.4.1"   # wifi only
   colours:                      # optional: [r, g, b, w] per cue site
     play: [0, 255, 0, 0]        # green
-    snap: [255, 0, 0, 0]        # red
+    snap: [0, 0, 0, 255]        # white: the reward cue
 ```
 
 The cue sites are `play` and `snap` in apple pluck and perturb, and `play`, `reward`, `goal` and
