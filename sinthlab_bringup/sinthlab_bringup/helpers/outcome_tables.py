@@ -639,13 +639,21 @@ class CuedPullTables(TaskTables):
         "error_deg": "how far that was from the cued direction [deg], + = counter-clockwise; blank in shaping",
         "correct": "1 = a pull to the target (rewarded), 0 = outside it, blank = no pull",
         "block": "the schedule's block (a new one at every change of mode or settings)",
+        "depth_rule": "the bump's depth rule: against / with his depth movement, toward / away (fixed); blank = none",
+        "depth_dir": "the bump's depth direction as delivered: toward / away (from the monkey)",
+        "depth_m": "the bump's depth component as delivered [m] (less than set if the box was short of room)",
+        "depth_basis": "what set it: velocity / displacement (his depth movement), random (he was not moving in depth), fixed",
+        "depth_speed_mps": "his depth velocity at the bump's onset [m/s], + toward himself",
     }
     settings = ["pull.mode", "pull.directions", "pull.distance_m", "pull.cone_deg", "perturb.probability",
-                "perturb.jump_m", "perturb.bump_m", "perturb.bump_at_m", "response_timeout_sec", "reward_pulse.pulse_ms"]
+                "perturb.jump_m", "perturb.bump_m", "perturb.bump_at_m", "perturb.bump_depth_m",
+                "perturb.bump_depth_rules", "response_timeout_sec", "reward_pulse.pulse_ms", "free_move.rail_axis"]
     session_columns = {"n_pulls": "trials ending in a pull",
                        "pct_correct": "pulls to the target over all pulls [%]",
                        "pct_correct_standard": "the same, unperturbed trials [%]",
                        "pct_correct_perturbed": "the same, trials with a jump or bump [%]",
+                       "pct_correct_depth_against": "the same, bumps against his depth movement [%]",
+                       "pct_correct_depth_with": "the same, bumps with his depth movement [%]",
                        "median_grip_s": "median grip time from the go cue [s]"}
 
     def trial_fields(self, tr):
@@ -665,7 +673,10 @@ class CuedPullTables(TaskTables):
                 "crossing_deg": "" if pulled is None else pulled,
                 "error_deg": "" if res.get("error_deg") is None else res["error_deg"],
                 "correct": 1 if tr.has("pull") else 0 if tr.has("pull_wrong") else "",
-                "block": plan.get("block", "")}
+                "block": plan.get("block", ""),
+                "depth_rule": plan.get("depth_rule") or "",
+                **{k: ("" if res.get(k) is None else res[k]) for k in ("depth_dir", "depth_m", "depth_basis",
+                                                                     "depth_speed_mps")}}
 
     def session_fields(self, trials):
         pulled = [r for r in trials if r.get("correct") in ("0", "1")]
@@ -675,6 +686,10 @@ class CuedPullTables(TaskTables):
         return {"n_pulls": len(pulled), "pct_correct": pct(pulled),
                 "pct_correct_standard": pct([r for r in pulled if r.get("perturbed") != "1"]),
                 "pct_correct_perturbed": pct([r for r in pulled if r.get("perturbed") == "1"]),
+                "pct_correct_depth_against": pct([r for r in pulled if r.get("perturbed") == "1"
+                                                  and r.get("depth_rule") == "against"]),
+                "pct_correct_depth_with": pct([r for r in pulled if r.get("perturbed") == "1"
+                                               and r.get("depth_rule") == "with"]),
                 "median_grip_s": (round((grips[(len(grips) - 1) // 2] + grips[len(grips) // 2]) / 2, 3)
                                   if grips else "")}
 

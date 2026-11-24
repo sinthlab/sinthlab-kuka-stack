@@ -31,7 +31,11 @@ proximity trigger can replace it later.
 THE BUMP (mode bump, perturbed trials). Once he has pulled perturb.bump_at_m along the cued direction,
 the apple is pushed perturb.bump_m at perturb.bump_angles_deg (90 / 270 = perpendicular) in
 perturb.bump_sec: events `bump` (angle, at its onset) and `bump_end`. The target does not move: he has
-to correct to finish inside the cone.
+to correct to finish inside the cone. In 3-D the same bump also has a DEPTH component, perturb.bump_depth_m
+toward or away from him, set by the trial's rule (perturb.bump_depth_rules, balanced like the angles)
+from his depth movement at the onset: `against` it or `with` it -- his depth velocity if at least
+perturb.bump_depth_still_mps, else the depth he has moved the apple so far, else at random -- or a fixed
+`toward` / `away` (helpers/pull_task.depth_sign). Cut short if the box has less room that way.
 
 Both are AdmittanceMoveAction.displace(): the equilibrium is driven, the hand's force does not move it
 meanwhile, and the admittance carries on from there. The pull's outcome is not judged during one.
@@ -157,7 +161,8 @@ class CuedPullMonitor:
         self._jump_at = (now + self._rng.uniform(s.jump_delay_min_sec, s.jump_delay_max_sec)
                          if self.plan.perturb == "jump" else None)
         self._result = {"perturbed": 0, "t_grip_s": None, "t_perturb_s": None,
-                        "crossing_deg": None, "error_deg": None}
+                        "crossing_deg": None, "error_deg": None,
+                        "depth_dir": None, "depth_m": None, "depth_basis": None, "depth_speed_mps": None}
 
     def stop(self) -> None:
         self._on_outcome = None
@@ -168,9 +173,28 @@ class CuedPullMonitor:
         self._blank_until = time.monotonic() + GRIP_BLANK_SEC
         self._mark(token, None)
 
-    def _perturb(self, kind: str) -> None:
+    def _depth(self, p) -> float:
+        """The bump's depth component [m, base X, + toward the monkey] for this trial's rule, from his depth
+        movement at this moment (helpers/pull_task.depth_sign); kept inside the box. Recorded in the result."""
+        plan, s = self.plan, self._settings
+        if plan.depth_rule is None or self._adm.shape() != "none":
+            return 0.0
+        v = float(self._adm.arm_velocity()[0])
+        moved = float(p[0] - self._baseline[0])
+        sign, basis = pt.depth_sign(plan.depth_rule, v, moved, s.bump_depth_still_mps, self._rng)
+        lo, hi = self._adm.box()
+        size = min(s.bump_depth_m, pt.depth_room(sign, float(p[0]), float(lo[0]), float(hi[0])))
+        if size < s.bump_depth_m - 1e-4:
+            self._node.get_logger().warn(f"Cued Pull: only {size * 1000:.0f} mm of the bump's depth fits in the box.")
+        self._result.update(depth_dir="toward" if sign > 0 else "away", depth_m=round(size, 4),
+                            depth_basis=basis, depth_speed_mps=round(v, 3))
+        return sign * size
+
+    def _perturb(self, kind: str, p) -> None:
         plan, s = self.plan, self._settings
         off = pt.to_base(plan.offset())
+        if kind == "bump":                    # across the cue, and in depth with or against his movement
+            off = off + np.array([self._depth(p), 0.0, 0.0])
         sec = s.jump_sec if kind == "jump" else s.bump_sec
         if not self._adm.displace(off, sec, on_done=lambda: self._done_displacing(kind + "_end")):
             self._node.get_logger().warn(f"Cued Pull: the {kind} could not start (the arm is not free to move).")
@@ -203,10 +227,10 @@ class CuedPullMonitor:
                 self._jump_at = None
                 self._mark("jump_skipped", None)
             elif now >= self._jump_at:
-                self._perturb("jump")
+                self._perturb("jump", p)
                 return
         if plan.perturb == "bump" and not self._fired and float(d @ pt.unit(plan.direction)) >= s.bump_at_m:
-            self._perturb("bump")
+            self._perturb("bump", p)
             return
         out = pt.crossing(d, s.distance_m, plan.direction, s.cone_deg)
         if out is None:

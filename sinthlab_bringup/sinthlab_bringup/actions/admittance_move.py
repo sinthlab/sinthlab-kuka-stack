@@ -334,6 +334,10 @@ class AdmittanceMoveAction:
     def displacing(self) -> bool:
         return self._disp is not None
 
+    def arm_velocity(self) -> np.ndarray:
+        """The arm's velocity [m/s, base frame], smoothed over ARM_V_TAU_SEC; zeros before the go cue."""
+        return self._v_arm.copy()
+
     def hand_force_n(self) -> float:
         """The hand's force on the apple [N]: tared, filtered, in EVERY direction (not only along the rail or
         plane), so a pull toward the monkey counts too. 0 before the go cue."""

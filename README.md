@@ -1541,6 +1541,16 @@ started. Same start, posture and SmartPad profile as N-Choice
 | **Cued jump** | the cued direction's quarter (0 up, 1 right, 2 down, 3 left) | a pull within `pull.cone_deg` (15°) of it | on `perturb.probability` of trials (0.33), the apple **jumps** `perturb.jump_m` (1.5 cm) before he grips it, `jump_delay_min_sec`..`max_sec` (0.1-0.3 s) after the go cue; he pulls from where it landed. If he grips first, no jump (`jump_skipped`). |
 | **Cued bump** | as Cued jump | as Cued jump | once he has pulled `perturb.bump_at_m` (2.5 cm) along the cue, the apple is **bumped** `perturb.bump_m` (1.5 cm) across it; the target stays, so he has to correct |
 
+**The bump's depth** (3-D only). The same bump also pushes the apple `perturb.bump_depth_m` (1 cm) toward or
+away from him, so it disrupts both the direction toward the cue and his ongoing movement in depth. Which way
+is set per trial by a rule (`perturb.bump_depth_rules`, balanced over the bumped trials with the angles):
+`against` his depth movement at the bump's onset or `with` it (the defaults), or a fixed `toward` / `away`.
+His depth movement is his depth velocity if at least `perturb.bump_depth_still_mps` (0.02 m/s), else the depth
+he has moved the apple so far (5 mm or more), else toward or away at random. If the box has less room that
+way, the depth is cut short and the log says so. Recorded per trial: the rule, the direction and size
+delivered, what set it (velocity / displacement / random / fixed) and his depth velocity at the onset;
+`sessions.csv` has % correct for bumps against and with his depth movement.
+
 Perturbation angles (`perturb.jump_angles_deg`, `perturb.bump_angles_deg`, default `[90, 270]` =
 perpendicular, both sides) are from the cued direction, counter-clockwise as he sees the plane. Each
 jump or bump drives the admittance's equilibrium along a minimum-jerk path (`perturb.jump_sec`,

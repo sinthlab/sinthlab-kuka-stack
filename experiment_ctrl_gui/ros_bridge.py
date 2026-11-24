@@ -442,6 +442,11 @@ class DemoBridge:
                     ok = abs(err) <= s.cone_deg
                 if self._meta is not None:
                     self._meta["pull_result"] = {"perturbed": int(hit), "crossing_deg": ang, "error_deg": err}
+                    if plan.perturb == "bump" and plan.depth_rule:
+                        v = round(random.gauss(0.0, 0.04), 3)
+                        sign, basis = pull_task.depth_sign(plan.depth_rule, v, 0.0, s.bump_depth_still_mps, random)
+                        self._meta["pull_result"].update(depth_dir="toward" if sign > 0 else "away",
+                                                         depth_m=s.bump_depth_m, depth_basis=basis, depth_speed_mps=v)
                 if ok:
                     self._phase_to("pull", ang, "Cued Pull: pull to the target -- reward.")
                     self._reward("pull")

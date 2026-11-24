@@ -145,6 +145,7 @@ class Clock:
 class FakeArm:
     def __init__(self):
         self.pos, self.force, self.disp, self.box_ = np.zeros(3), 0.0, None, yaml_box()
+        self.vel = np.zeros(3)
 
     def shape(self):
         return "none"
@@ -160,6 +161,9 @@ class FakeArm:
 
     def hand_force_n(self):
         return self.force
+
+    def arm_velocity(self):
+        return self.vel
 
     def displace(self, off, sec, on_done=None):
         self.disp = (np.asarray(off), on_done)
@@ -379,3 +383,68 @@ def test_the_dashboard_check_matches_the_node():
     assert "outside the box" in pt.params_problem({**p, "pull.distance_m": 0.09})
     assert pt.params_problem({**p, "pull.cue_delay_min_sec": 1.0})          # above the max
     assert pt.params_problem({"free_move.damping_ns_per_m": 50}) is None     # not a Cued Pull: nothing to check
+
+
+# ---------------------------------------------------------------- the bump's depth component
+def test_depth_sign_follows_his_depth_movement():
+    rng = random.Random(0)
+    assert pt.depth_sign("against", 0.05, 0.0, 0.02, rng) == (-1, "velocity")     # moving toward himself -> away
+    assert pt.depth_sign("with", -0.05, 0.0, 0.02, rng) == (-1, "velocity")
+    assert pt.depth_sign("against", 0.01, -0.012, 0.02, rng) == (1, "displacement")  # slow: where it has gone
+    assert pt.depth_sign("with", 0.0, 0.001, 0.02, rng)[1] == "random"
+    assert pt.depth_sign("toward", -0.3, 0.0, 0.02, rng) == (1, "fixed")
+    assert pt.depth_room(1, 0.02, -0.05, 0.03) == pytest.approx(0.005)              # 3 cm box face, 5 mm margin
+    assert pt.depth_room(-1, -0.05, -0.05, 0.03) == 0.0
+
+
+def test_bump_blocks_balance_angles_and_depth_rules():
+    sched = pt.PullSchedule(pt.PullSettings(mode="bump"), random.Random(6))
+    plans = [p for p in (sched.next() for _ in range(24)) if p.perturb]
+    combos = sorted((p.angle_deg, p.depth_rule) for p in plans)
+    assert len(plans) == 8 and all(combos.count(c) == 2 for c in set(combos)) and len(set(combos)) == 4
+    jumps = pt.PullSchedule(pt.PullSettings(mode="jump"), random.Random(6))
+    assert all(p.depth_rule is None for p in (jumps.next() for _ in range(24)))     # jumps stay in the plane
+    flat = pt.PullSchedule(pt.PullSettings(mode="bump", bump_depth_m=0.0), random.Random(6))
+    assert all(p.depth_rule is None for p in (flat.next() for _ in range(24)))
+    assert "unknown" in pt.settings_problem(pt.PullSettings(bump_depth_rules=["sideways"]))
+
+
+def test_a_bump_against_his_depth_movement(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "down", "bump", 90.0, 0.015, depth_rule="against"))
+    arm.pos, arm.vel = np.array([0.01, 0.0, -0.026]), np.array([0.06, 0.0, -0.2])   # pulling down and toward himself
+    tick(node)
+    tick(node)
+    assert marks[-1] == ("bump", 90.0)
+    assert np.allclose(arm.disp[0], [-0.01, 0.015, 0.0])        # away from him, and right of down
+    r = mon.result()
+    assert (r["depth_dir"], r["depth_m"], r["depth_basis"], r["depth_speed_mps"]) == ("away", 0.01, "velocity", 0.06)
+
+
+def test_the_depth_is_cut_short_at_the_box(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
+    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "right", "bump", 270.0, 0.015, depth_rule="with"))
+    arm.pos, arm.vel = np.array([0.02, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])     # 2 cm toward him, 3 cm room
+    tick(node)
+    tick(node)
+    assert arm.disp[0][0] == pytest.approx(0.005) and mon.result()["depth_m"] == pytest.approx(0.005)
+
+
+def test_no_depth_in_the_frontal_plane(monkeypatch):
+    node, arm, mon, marks, clock = monitor(monkeypatch, **{"pull.mode": "bump"})
+    arm.shape = lambda: "frontal"
+    run_trial(node, arm, mon, clock, pt.TrialPlan("bump", "right", "bump", 90.0, 0.015, depth_rule="with"))
+    arm.pos, arm.vel = np.array([0.0, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])
+    tick(node)
+    tick(node)
+    assert arm.disp[0][0] == 0.0 and mon.result()["depth_dir"] is None
+
+
+def test_depth_columns():
+    plan = {"mode": "bump", "direction": "down", "perturb": "bump", "angle_deg": 90.0, "size_m": 0.015, "block": 1,
+            "cue_delay_sec": 0.3, "depth_rule": "against"}
+    meta = sidecar(1, plan, ("pull", 268.0), [("grip", 3.2, 4.0), ("bump", 3.5, 90.0), ("bump_end", 3.6, None)])
+    meta["pull_result"].update(depth_dir="away", depth_m=0.01, depth_basis="velocity", depth_speed_mps=0.06)
+    row = ot.trial_row(meta)
+    assert (row["depth_rule"], row["depth_dir"], row["depth_m"], row["depth_basis"], row["depth_speed_mps"]) == \
+        ("against", "away", 0.01, "velocity", 0.06)

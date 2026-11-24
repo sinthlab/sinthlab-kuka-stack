@@ -219,6 +219,8 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "perturb.jump_delay_min_sec": (0.0, 3.0),
     "perturb.jump_delay_max_sec": (0.0, 3.0),
     "perturb.bump_at_m": (0.005, 0.14),
+    "perturb.bump_depth_m": (0.0, 0.03),
+    "perturb.bump_depth_still_mps": (0.0, 0.3),
     "grip.threshold_n": (1.0, 30.0),
     "grip.hold_sec": (0.0, 0.5),
     "grip.move_m": (0.002, 0.03),

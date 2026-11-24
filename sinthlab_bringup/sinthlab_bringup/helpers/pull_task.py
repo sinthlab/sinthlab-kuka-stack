@@ -38,6 +38,10 @@ import numpy as np
 
 MODES = ("shaping", "jump", "bump")
 SHAPES = ("none", "frontal")      # free_move.rail_axis: free in 3-D (the default), or held to the frontal plane
+# The bump's DEPTH component (base X, + toward the monkey), relative to how he is moving in depth at its onset:
+# against it, with it, or a fixed toward / away. In 3-D only (none with the frontal plane).
+DEPTH_RULES = ("against", "with", "toward", "away")
+DEPTH_MOVED_M = 0.005     # moving slower than bump_depth_still_mps: his depth movement so far must be this much to count
 CUED = ("jump", "bump")
 # Frontal-plane unit vectors (base Y, base Z) and the ring quarter that lights for each direction.
 DIRECTIONS: Dict[str, Tuple[float, float]] = {"right": (1.0, 0.0), "up": (0.0, 1.0),
@@ -121,6 +125,14 @@ class PullSettings:
     bump_sec: float = 0.1
     bump_angles_deg: List[float] = field(default_factory=lambda: [90.0, 270.0])
     bump_at_m: float = 0.025
+    bump_depth_m: float = 0.01
+    bump_depth_rules: List[str] = field(default_factory=lambda: ["against", "with"])
+    bump_depth_still_mps: float = 0.02
+
+    def depth_rules(self) -> List[Optional[str]]:
+        """The bump's depth rules to balance over (bump mode with a depth component), else [None]."""
+        return list(self.bump_depth_rules) if self.mode == "bump" and self.bump_depth_m > 0 and self.bump_depth_rules \
+            else [None]
 
     def angles(self) -> List[float]:
         """This mode's perturbation angles (none in shaping)."""
@@ -158,6 +170,13 @@ def settings_problem(s: PullSettings) -> Optional[str]:
             return f"perturb.{name}_sec must be positive"
     if s.mode in CUED and s.probability > 0.0 and not s.angles():
         return f"perturb.{s.mode}_angles_deg needs at least one angle"
+    bad = [r for r in s.bump_depth_rules if r not in DEPTH_RULES]
+    if bad:
+        return f"perturb.bump_depth_rules: unknown {bad}; use {list(DEPTH_RULES)}"
+    if len(set(s.bump_depth_rules)) != len(s.bump_depth_rules):
+        return "perturb.bump_depth_rules lists a rule twice"
+    if s.bump_depth_m < 0.0 or s.bump_depth_still_mps < 0.0:
+        return "perturb.bump_depth_m and perturb.bump_depth_still_mps must not be negative"
     return None
 
 
@@ -196,8 +215,9 @@ _FLOATS = {"pull.distance_m": "distance_m", "pull.cone_deg": "cone_deg", "pertur
            "perturb.jump_delay_min_sec": "jump_delay_min_sec", "perturb.jump_delay_max_sec": "jump_delay_max_sec",
            "perturb.bump_m": "bump_m", "perturb.bump_sec": "bump_sec", "perturb.bump_at_m": "bump_at_m"}
 _INTS = {"pull.block_trials": "block_trials", "perturb.max_in_row": "max_in_row"}
+_FLOATS.update({"perturb.bump_depth_m": "bump_depth_m", "perturb.bump_depth_still_mps": "bump_depth_still_mps"})
 _LISTS = {"perturb.jump_angles_deg": "jump_angles_deg", "perturb.bump_angles_deg": "bump_angles_deg"}
-PARAMS = ("pull.mode", "pull.directions") + tuple(_FLOATS) + tuple(_INTS) + tuple(_LISTS)
+PARAMS = ("pull.mode", "pull.directions", "perturb.bump_depth_rules") + tuple(_FLOATS) + tuple(_INTS) + tuple(_LISTS)
 
 
 def settings_from(get: Callable[[str], object]) -> PullSettings:
@@ -210,7 +230,32 @@ def settings_from(get: Callable[[str], object]) -> PullSettings:
         setattr(s, attr, int(get(name)))
     for name, attr in _LISTS.items():
         setattr(s, attr, [float(a) for a in (get(name) or [])])
+    s.bump_depth_rules = [str(r).strip().lower() for r in (get("perturb.bump_depth_rules") or [])]
     return s
+
+
+def depth_sign(rule: str, speed_mps: float, moved_m: float, still_mps: float, rng: random.Random):
+    """The bump's depth direction, +1 toward the monkey (+X) or -1 away, and what it was based on:
+      toward / away  fixed ("fixed")
+      against / with his depth movement at the onset: its velocity if at least still_mps ("velocity"); if
+                     slower, where his depth movement has taken the apple so far, if at least DEPTH_MOVED_M
+                     ("displacement"); if neither, toward or away at random ("random").
+    """
+    if rule in ("toward", "away"):
+        return (1 if rule == "toward" else -1), "fixed"
+    if abs(speed_mps) >= still_mps:
+        motion, basis = (1 if speed_mps > 0 else -1), "velocity"
+    elif abs(moved_m) >= DEPTH_MOVED_M:
+        motion, basis = (1 if moved_m > 0 else -1), "displacement"
+    else:
+        return rng.choice((1, -1)), "random"
+    return (motion if rule == "with" else -motion), basis
+
+
+def depth_room(sign: int, x_now: float, lo_x: float, hi_x: float) -> float:
+    """How far the apple can still go in depth that way inside the box, keeping BOX_MARGIN_M [m]."""
+    room = (hi_x - BOX_MARGIN_M - x_now) if sign > 0 else (x_now - (lo_x + BOX_MARGIN_M))
+    return max(0.0, room)
 
 
 def params_problem(values: Dict[str, object]) -> Optional[str]:
@@ -242,6 +287,7 @@ class TrialPlan:
     angle_deg: Optional[float] = None
     size_m: float = 0.0
     block: int = 0
+    depth_rule: Optional[str] = None  # the bump's depth component: against | with | toward | away | None
 
     def offset(self) -> Optional[np.ndarray]:
         """The perturbation as a frontal-plane offset (y, z) [m], or None."""
@@ -253,6 +299,7 @@ class TrialPlan:
         off = self.offset()
         return {"mode": self.mode, "direction": self.direction, "perturb": self.perturb,
                 "angle_deg": self.angle_deg, "size_m": self.size_m, "block": self.block,
+                "depth_rule": self.depth_rule,
                 "offset_yz_m": None if off is None else [round(float(v), 4) for v in off]}
 
 
@@ -271,7 +318,7 @@ class PullSchedule:
     def _signature(self):
         s = self._s
         return (s.mode, tuple(s.directions), s.block_trials, s.probability, s.max_in_row,
-                tuple(s.angles()), s.size())
+                tuple(s.angles()), s.size(), tuple(s.depth_rules()))
 
     def _new_block(self) -> None:
         s = self._s
@@ -283,13 +330,14 @@ class PullSchedule:
         n_pert = int(round(s.probability * s.block_trials)) if s.angles() else 0
         trials: List[TrialPlan] = []
         k = 0
-        angles = s.angles()
+        # Every perturbed trial cycles through angle x depth rule, so both stay balanced in each block.
+        combos = [(a, r) for r in s.depth_rules() for a in s.angles()]
         for name in s.directions:
             for i in range(s.block_trials):
                 if i < n_pert:
-                    a = angles[k % len(angles)]
+                    a, r = combos[k % len(combos)]
                     k += 1
-                    trials.append(TrialPlan(s.mode, name, s.mode, float(a), s.size(), self.block))
+                    trials.append(TrialPlan(s.mode, name, s.mode, float(a), s.size(), self.block, r))
                 else:
                     trials.append(TrialPlan(s.mode, name, block=self.block))
         self._queue = self._shuffled(trials)

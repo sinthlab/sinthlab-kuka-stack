@@ -82,6 +82,14 @@
       bump_sec: 0.1  # how long the bump takes [s]
       bump_angles_deg: [90.0, 270.0]  # bump directions, from the cued direction [deg]
       bump_at_m: 0.025  # the bump comes once he has pulled this far along the cued direction [m]
+      # THE BUMP'S DEPTH (3-D only): the same bump also pushes the apple toward or away from him, set per trial
+      # from his depth movement at its onset. Rules, balanced over the bumped trials like the angles: against =
+      # opposite to how he is moving in depth, with = the same way, toward / away = fixed. "How he is moving" is
+      # his depth velocity if at least bump_depth_still_mps, else the depth he has moved it so far (5 mm or more),
+      # else toward or away at random. Cut short if the box has less room that way. 1 cm with 1.5 cm across: 1.8 cm.
+      bump_depth_m: 0.01  # the depth component of the bump [m]; 0 = none
+      bump_depth_rules: ["against", "with"]  # against | with (his depth movement at the onset) | toward | away (fixed)
+      bump_depth_still_mps: 0.02  # slower than this in depth counts as not moving in depth [m/s]
 
     # THE GRIP (event `grip`, its time the reaction time). No touch sensor is read: it is the hand's force
     # on the apple from the joint torques, or the apple being moved.
