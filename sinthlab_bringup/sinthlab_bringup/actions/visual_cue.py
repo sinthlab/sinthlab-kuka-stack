@@ -97,7 +97,7 @@ class VisualCue:
             sink = lambda lbl, ok, ms: cls._result_sink(lbl, ok, ms) if cls._result_sink else None
             if trigger == "serial":
                 port = str(get_required_param(node, "visual_cue.serial_port"))
-                cls._senders[trigger] = SerialCueTrigger(node, port, on_result=sink)
+                cls._senders[trigger] = SerialCueTrigger.shared(node, port, on_result=sink)
             else:
                 board = str(get_required_param(node, "visual_cue.remote_board"))
                 cls._senders[trigger] = RemoteCueTrigger(node, board, on_result=sink)

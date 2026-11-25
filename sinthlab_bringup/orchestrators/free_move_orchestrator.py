@@ -13,6 +13,7 @@ from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
+from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -89,8 +90,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
+        self.haptic = None                 # Move Vertical / Horizontal: buzz harder nearing the goal end
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
+            if self.has_parameter("haptic.enabled"):
+                self.haptic = HapticGuidance(self, self.centre_out.distance_to_goal)
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -169,6 +173,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = True
         if self._centre_out_on():
             self.centre_out.start(self.on_reach)
+            if self.haptic is not None:
+                self.haptic.start()
             self.get_logger().info("Centre-out: reach to the lit end of the rail.")
         elif self._session_sec > 0:
             self.session.start()
@@ -241,6 +247,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         lit = self.centre_out.quarters() if self.centre_out is not None else None
         if self.centre_out is not None:
             self.centre_out.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -318,6 +326,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.quiet_window.stop()
         if self.centre_out is not None:
             self.centre_out.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -346,6 +356,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.admittance.reload()
         if self.centre_out is not None:
             self.centre_out.reload()
+        if self.haptic is not None:
+            self.haptic.reload()
         self._set_reward_events()
 
 

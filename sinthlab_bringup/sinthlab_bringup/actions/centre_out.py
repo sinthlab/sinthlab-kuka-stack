@@ -90,6 +90,19 @@ class CentreOutMonitor:
         self._on_end = None
         self._target = None
 
+    def distance_to_goal(self) -> Optional[float]:
+        """For haptic guidance: how far the arm is, along the rail, from the goal end [m] -- the nearer
+        end with `either`, the cued end with `cued`. None outside a reach (before start, after the end)."""
+        if self._on_end is None or self._target is None:
+            return None
+        x = self._adm.rail_position()
+        if x is None:
+            return None
+        lo, hi = self._adm.rail_ends()
+        to = {self._ends[0]: x - lo, self._ends[1]: hi - x}
+        d = min(to.values()) if self._target == "either" else to.get(self._target)
+        return None if d is None else max(0.0, float(d))
+
     def _tick(self) -> None:
         if self._on_end is None:
             return

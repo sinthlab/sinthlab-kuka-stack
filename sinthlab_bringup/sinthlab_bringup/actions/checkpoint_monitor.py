@@ -69,6 +69,7 @@ class CheckpointMonitor:
 
         self._visited: set[int] = set()
         self._completed = False
+        self._last_p: Optional[np.ndarray] = None     # the EE at the last tick (haptic guidance)
 
         self._tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, node)
@@ -85,6 +86,7 @@ class CheckpointMonitor:
             return
         self._visited = set()
         self._completed = False
+        self._last_p = None
         self._origin = None  # re-capture the start EE for this trial (relative mode)
         self._ready = True
         self._node.get_logger().info("CheckpointMonitor activated for new trial.")
@@ -92,6 +94,17 @@ class CheckpointMonitor:
     def stop(self) -> None:
         """Halt monitoring (e.g. on a whole-experiment timeout)."""
         self._ready = False
+
+    def distance_to_next_reward(self) -> Optional[float]:
+        """For haptic guidance: how far the EE is from the nearest reward point NOT yet passed this
+        trial -- an unvisited checkpoint or the goal -- to the edge of its sphere [m] (0 inside it).
+        None while not monitoring, or before the checkpoints are anchored."""
+        if not self._ready or self._last_p is None or (self._relative and self._origin is None):
+            return None
+        off = self._origin if self._relative else np.zeros(3)
+        targets = [(c, r) for i, (c, r) in enumerate(self._checkpoints) if i not in self._visited]
+        targets.append((self._goal, self._goal_radius))
+        return min(max(0.0, float(np.linalg.norm(self._last_p - (c + off))) - r) for c, r in targets)
 
     def _ee_pos(self) -> Optional[np.ndarray]:
         try:
@@ -131,6 +144,7 @@ class CheckpointMonitor:
                 f"EE is {np.round(p - self._origin, 3)} from it."
             )
         off = self._origin if (self._relative and self._origin is not None) else np.zeros(3)
+        self._last_p = p
 
         # Checkpoints — any order, reward once each on first entry.
         for i, (c, r) in enumerate(self._checkpoints):
