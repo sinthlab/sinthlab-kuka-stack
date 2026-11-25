@@ -18,6 +18,7 @@ from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
 from sinthlab_bringup.actions.long_move import LongMoveMonitor
 from sinthlab_bringup.actions.n_choice import NChoiceMonitor
+from sinthlab_bringup.actions.free_reach import FreeReachMonitor
 from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
@@ -38,7 +39,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
     restricted_move_horizontal / _vertical (the same admittance on one rail through the start,
     free_move.rail_axis, a session per trial); move_horizontal / move_vertical (the Cued Reaches card: that
     rail with one centre-out reach per trial); colour_rule; n_choice; reach_map (Free Move in the frontal
-    plane, rewarding long movements or each new best reach per direction: maps how far the monkey reaches).
+    plane, rewarding long movements or each new best reach per direction: maps how far the monkey reaches);
+    move_free (the Cued Reaches card's free variant: one reach per trial, free in 3-D, with jump and bump
+    perturbations: actions/free_reach.py).
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
@@ -89,6 +92,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.centre_out = None             # Move Vertical / Horizontal: the centre-out reach, created below
         self.long_move = None              # Free Move: the long-movement reward, created below
         self.n_choice = None               # N-Choice: one choice per trial on the asterisk, created below
+        self.free_reach = None             # Cued Reaches, free: one reach per trial in 3-D, created below
         self.response_timeout = WaitAction(
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
@@ -127,6 +131,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.has_parameter("n_choice.p_max"):
             self.n_choice = NChoiceMonitor(self, self.admittance)
             self.control.add_validator(self.n_choice.check_live)
+        # Cued Reaches, free (actions/free_reach.py): one reach per trial in 3-D, jumps and bumps.
+        if self.has_parameter("free_reach.cue"):
+            self.free_reach = FreeReachMonitor(self, self.admittance, self.recorder.mark)
+            self.control.add_validator(self.free_reach.check_live)
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -196,6 +204,13 @@ class FreeMoveOrchestratorNode(rclpyNode):
             state, quarters = self.centre_out.ring_cue()
             self.go.start(lambda label: self.ring.show(state, quarters, label=label),
                           visual_enabled=self.ring.enabled())
+        elif self._free_reach_on():        # this trial's plan: direction and any perturbation, lit with the go cue
+            plan = self.free_reach.pick()
+            self.recorder.annotate(free_reach={**plan.record(), "cue_delay_sec": self.free_reach.cue_delay()})
+            self.recorder.mark("target", self.free_reach.target())
+            quarters = self.free_reach.quarters()
+            self.go.start(lambda label: self.ring.show("go", quarters, label=label),
+                          visual_enabled=self.ring.enabled(), preview_sec=self.free_reach.cue_delay())
         else:
             if self._n_choice_on():        # every direction's reward probability, before the choice
                 self.recorder.annotate(n_choice=self.n_choice.state())
@@ -208,9 +223,18 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _n_choice_on(self) -> bool:
         return self.n_choice is not None
 
+    def _free_reach_on(self) -> bool:
+        return self.free_reach is not None
+
     def _choice_on(self) -> bool:
-        """One choice per trial (centre-out, the colour rule, N-choice), rather than a free session."""
-        return self._centre_out_on() or self._n_choice_on()
+        """One choice per trial (centre-out, the colour rule, N-choice, the free reach), rather than a free session."""
+        return self._centre_out_on() or self._n_choice_on() or self._free_reach_on()
+
+    def on_free_reach(self, correct: bool, angle_deg: float):
+        """The free reach went its distance -- the trial's outcome, as a rail reach's: `reach` (the reward) or
+        `reach_wrong`, with the direction it ended in [deg]."""
+        self.recorder.annotate(free_reach_result=self.free_reach.result())
+        self._end_trial("reach" if correct else "reach_wrong", angle_deg)
 
     def on_choice(self, direction: str, rewarded: bool):
         """N-choice: the arm reached the end of a ray -- the trial's outcome. `choice` sends the reward."""
@@ -222,7 +246,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _set_reward_events(self):
         """Centre-out on: the reach to a goal end gives the reward, not the session's end. Long moves on:
         each long movement does."""
-        self.control.set_reward_events(("reach",) if self._centre_out_on() else
+        self.control.set_reward_events(("reach",) if self._centre_out_on() or self._free_reach_on() else
                                        ("choice",) if self._n_choice_on() else
                                        ("long_move", "new_best") if self._long_move_on() else REWARD_EVENTS)
 
@@ -252,6 +276,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         elif self._n_choice_on():
             self.n_choice.start(self.on_choice)
             self.get_logger().info("N-choice: reach out along one of the rails.")
+        elif self._free_reach_on():
+            self.free_reach.start(self.on_free_reach)
+            self.get_logger().info(f"Free reach: reach {self.free_reach.target()}.")
         elif self._session_sec > 0:
             self.session.start()
             self.get_logger().info(f"Free move: the arm follows the hand for {self._session_sec:.0f} s.")
@@ -315,10 +342,13 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._trial_ending = True
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip", arg)
-        lit = self.centre_out.quarters() if self.centre_out is not None else None
+        lit = (self.centre_out.quarters() if self.centre_out is not None else
+               self.free_reach.quarters() if self.free_reach is not None else None)
         # At a reach the ring turns red: the reached end's quarter (one-end modes), the whole ring (either).
         if self.centre_out is not None and reason in ("reach", "reach_wrong") and isinstance(arg, str):
             lit = self.centre_out.reached_quarters(arg)
+        elif self.free_reach is not None and reason in ("reach", "reach_wrong"):
+            lit = self.free_reach.reached_quarters(arg)
         # The colour rule shows no red "reached" ring: red is one of its cues. Only the outcome tells.
         rule = self.centre_out is not None and self.centre_out.rule_on()
         if self.centre_out is not None:
@@ -327,6 +357,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move.stop()
         if self.n_choice is not None:
             self.n_choice.stop()
+        if self.free_reach is not None:
+            self.free_reach.stop()
         if self.haptic is not None:
             self.haptic.stop()
         self.session.stop()
@@ -418,6 +450,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move.stop()
         if self.n_choice is not None:
             self.n_choice.stop()
+        if self.free_reach is not None:
+            self.free_reach.stop()
         if self.haptic is not None:
             self.haptic.stop()
         self.session.stop()
@@ -453,6 +487,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.reward_cue.reload()
         if self.n_choice is not None:
             self.n_choice.reload()
+        if self.free_reach is not None:
+            self.free_reach.reload()
         if self.haptic is not None:
             self.haptic.reload()
         self._set_reward_events()

@@ -43,7 +43,7 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
 ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map")
+                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
@@ -106,19 +106,24 @@ def check_admittance_events(report, exp, got, meta):
     outcomes = [event for event in got if event in endings]
     report.check(len(outcomes) == 1, f"one trial outcome (found {outcomes})")
     task_outcomes = {"free_move": ("session_end",), "n_choice": ("choice", "choice_unrewarded"),
-                     "colour_rule": ("reach", "reach_wrong")}
+                     "colour_rule": ("reach", "reach_wrong"), "move_free": ("reach", "reach_wrong")}
     allowed = pre_cue + ("response_timeout", "safety_trip") + task_outcomes.get(
         exp, ("session_end", "reach", "reach_wrong"))
     report.check(all(event in allowed for event in outcomes), f"outcome is valid for {exp}")
     required = ["trial_start", "at_start", "fixture_active"]
     if not any(event in pre_cue for event in outcomes):
-        choice_cue = ["cue_colour", "target"] if exp == "colour_rule" else []
+        choice_cue = (["cue_colour", "target"] if exp == "colour_rule" else
+                      ["target"] if exp == "move_free" else [])
         # Older recordings marked cue_go before presenting the cue color.
         if choice_cue and "cue_colour" in got and "cue_go" in got and got.index("cue_colour") < got.index("cue_go"):
             required.extend(choice_cue + ["cue_go"])
         else:
             required.extend(["cue_go"] + choice_cue)
         required.append("armed")
+        if exp == "move_free":
+            plan = (meta or {}).get("free_reach")
+            report.check(isinstance(plan, dict) and plan.get("cue") in ("either", "cued"),
+                         "the trial's plan (cue, direction, perturbation) recorded")
         if exp == "n_choice":
             state = (meta or {}).get("n_choice")
             probabilities = state.get("p") if isinstance(state, dict) else None
@@ -293,6 +298,23 @@ def validate(path) -> bool:
         r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t in paid_tokens),
                 "each movement reward (long_move / new_best) comes right after its move_end")
         r.note(f"movements: {ends}, {paid} rewarded")
+    if exp == "move_free" and "early_touch" not in got:
+        # Cued Reaches, free (actions/free_reach.py): one reach per trial; a jump before the grip, a bump after it.
+        outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
+        r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
+        for kind in ("jump", "bump"):
+            if kind in got:
+                r.check(got.count(kind) == 1, f"one {kind} at most")
+                r.check(got.count(kind + "_end") == 1 and got.index(kind + "_end") > got.index(kind),
+                        f"{kind}_end follows the {kind}")
+        if "jump" in got and "grip" in got:
+            r.check(got.index("jump") < got.index("grip"), "the jump comes before the grip")
+        if "bump" in got and "grip" in got:
+            r.check(got.index("grip") < got.index("bump"), "the bump comes after the grip")
+        plan = (meta or {}).get("free_reach") or {}
+        r.note(f"free reach: {plan.get('cue')} {plan.get('direction') or 'any'}"
+               + (f", {plan['perturb']} at {plan.get('angle_deg')} deg" if plan.get("perturb") else "")
+               + f", {outcome[0] if outcome else 'no outcome'}")
     if exp == "n_choice" and "early_touch" not in got:
         # N-choice (actions/n_choice.py): one choice per trial, paid or not, or none.
         outcome = [t for t in got if t in ("choice", "choice_unrewarded", "response_timeout", "safety_trip")]

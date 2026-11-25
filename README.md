@@ -642,6 +642,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 5 | Color Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 7 | Cued Reaches, free (3-D; jumps and bumps) | `iiwa7_pretrain_move_free.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1521,19 +1522,98 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 (the diagonals especially); then push out along each rail and check the junction at the start is smooth,
 with no snag when committing to a rail.
 
+### Scenario 7 — Cued Reaches, free (3-D), with jump and bump perturbations
+The **Free (3-D)** variant of the **Cued Reaches** card (beside Horizontal and Vertical), on the free-move
+node, for reaches perturbed by jumps and bumps ([`pretrain_move_free.yaml`](sinthlab_bringup/config/pretrain_move_free.yaml),
+[`actions/free_reach.py`](sinthlab_bringup/sinthlab_bringup/actions/free_reach.py),
+[`helpers/free_reach.py`](sinthlab_bringup/sinthlab_bringup/helpers/free_reach.py); experiment `move_free`).
+Navin's Apple Pluck (Scenarios 1 and 3) is unchanged.
+
+**The reach.** The same cue modes as the rails, without the rail: the apple is free in 3-D inside the box
+(`free_move.rail_axis: none`; `frontal` holds it to the plane facing him, per-run). He may push or pull it
+toward or away from himself (the box gives 3 cm toward him, 5 cm away), but only the movement's part in the
+plane facing him, sideways and up / down, is scored: depth neither counts toward the reach's length nor
+against its direction. A reach ends when that part has gone `free_reach.distance_m` (5 cm) from where it
+started. Same start, posture and SmartPad profile as N-Choice ("Z lock 2500, X/Y 1000, rot 120", damping
+0.7, elbow 30).
+
+**The cue** (`free_reach.cue`, the card's tabs, **live**):
+
+| Tab | Cue | Rewarded (`reach`) | Not rewarded (`reach_wrong`) |
+|---|---|---|---|
+| **Any direction** | the whole ring | any reach | – |
+| **Cued** | the cued direction's quarter (0 up, 1 right, 2 down, 3 left) | a reach ending within `free_reach.cone_deg` (15°) of it | a reach ending outside it |
+
+As on the rails, the ring turns red where the reach ended (that way's quarter; the whole ring with no
+cue) and the end tone plays; only the juice differs. The `reach` / `reach_wrong` argument is the direction
+the reach ended in (degrees, 0 = right, 90 = up). The cone is checked where the reach ends, not along the
+way, so a correction after a bump counts.
+
+**The perturbation** (`perturb.kind`, **live**; with Cued only), on `perturb.probability` of trials (0.33):
+
+- `none`: standard cued reaches.
+- `jump`: the apple jumps `perturb.jump_m` (1.5 cm) before he grips it, `jump_delay_min_sec`..`max_sec`
+  (0.1-0.3 s) after the go cue; he reaches from where it landed. If he grips first, no jump (`jump_skipped`).
+- `bump`: once he has gone `perturb.bump_at_m` (2.5 cm) along the cue, the apple is pushed `perturb.bump_m`
+  (1.5 cm) across it, and in 3-D also `perturb.bump_depth_m` (1 cm) in depth; the target stays, so he has
+  to correct.
+
+Angles (`perturb.jump_angles_deg`, `perturb.bump_angles_deg`, default `[90, 270]` = perpendicular, both
+sides) are from the cued direction, counter-clockwise as he sees the plane. Each jump or bump drives the
+admittance's equilibrium along a minimum-jerk path (`perturb.jump_sec`, `bump_sec`, 0.1 s), so the stiff
+cabinet spring carries the arm and his hand with it (`AdmittanceMoveAction.displace()`); then the
+admittance carries on from there.
+
+**The bump's depth.** Which way is set per trial by a rule (`perturb.bump_depth_rules`, balanced with the
+angles): `against` his depth movement at the bump's onset or `with` it (the defaults), or a fixed `toward` /
+`away`. His depth movement is his depth velocity if at least `perturb.bump_depth_still_mps` (0.02 m/s), else
+the depth he has moved the apple so far (5 mm or more), else toward or away at random. If the box has less
+room that way, the depth is cut short and the log says so.
+
+**The cue and the go.** The trial's cue shows for `free_reach.cue_delay_min_sec`..`max_sec` (0.3 s = the
+standard flash) before the go (light off + tone); longer values give an instructed delay. The quiet
+window's guard runs through it, so moving early is an early touch.
+
+**The schedule.** Shuffled blocks: every direction `free_reach.block_trials` (6) times, `round(probability ×
+block_trials)` of them perturbed, cycling through the angles (and depth rules); never more than
+`perturb.max_in_row` (1) perturbed trials together. Any change of cue, perturbation or settings starts a
+new block.
+
+**The grip** (event `grip`, the reaction time): the hand's force on the apple, every direction, tared,
+at least `grip.threshold_n` (3 N) for `grip.hold_sec`, or the apple moved `grip.move_m` (5 mm). No touch
+sensor is read yet.
+
+**Reach and the box.** From this start the arm has about 7 cm up and down and much more sideways. With
+all four directions the reach is 5 cm; without up, 6 cm; left and right only, 12 cm. The dashboard and the
+node refuse any setting whose reaches, jumps or bumps need the apple outside the box (5 mm margin), before a
+run and on every live change.
+
+**Recorded:** events `target`, `grip`, `jump` / `jump_end` / `jump_skipped`, `bump` / `bump_end`, `reach` /
+`reach_wrong`. The sidecar has `free_reach` (cue, direction, perturbation, angle, depth rule, block, cue
+delay) and `free_reach_result` (perturbed, depth delivered and its basis, crossing angle, error).
+`trials.csv` adds the target, the perturbation and whether it happened, grip and perturbation times from
+the go cue, the crossing angle and error, the bump's depth, correct and block; `sessions.csv` adds % correct
+overall, on standard and on perturbed trials, against / with his depth movement, and the median grip time.
+
+**On the rig, before a subject:** confirm the box start-up check passes at this start; with the arm
+held lightly, run a few bump and jump trials and check the displacement is felt but not violent (lower
+`bump_m` / `bump_depth_m` or lengthen `bump_sec` if needed); check the grip time against the recorded force.
+
 ### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
-Short tasks that get a subject used to the arm before the real experiments. In the dashboard they are
-four cards under the **Pre-training** tab:
+Short tasks that get a subject used to the arm before the real experiments, all on the free-move node.
+In the dashboard, Free Move, Reach Map and Restricted Move are under **Pre-training**; Cued Reaches is under
+**Experiments**, where every task organised in trials sits:
 
 | Card | Tabs | Experiments (each its own YAML and launch file) |
 |---|---|---|
 | **Free Move** | Session · Long moves | `free_move` |
 | **Reach Map** | Long moves · New best | `reach_map`: measures reach by direction for the monkey’s profile ([below](#reach-map--how-far-this-monkey-reaches)) |
 | **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
-| **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Restricted cued · Cued end | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
+| **Cued Reaches** | Horizontal · Vertical: Either end · Restricted cued · Cued end; Free (3-D): Any direction · Cued | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial on a rail (the keys are main's, so recordings stay comparable); `move_free`: the same free in 3-D, with jump and bump perturbations ([Scenario 7](#scenario-7--cued-reaches-free-3-d-with-jump-and-bump-perturbations)) |
 
-A card with a **Rail** row holds two experiments, one per rail, each with its own settings and start
-pose; the rail is fixed during a run, and the card reopens on the rail last used. All of them:
+A card with a variant row holds one experiment per variant (Restricted Move: two rails; Cued Reaches: two
+rails and Free), each with its own settings and start pose; the variant is fixed during a run, and the card
+reopens on the one last used. The rail tasks:
 
 - start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject, with the
   CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except the **vertical**

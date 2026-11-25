@@ -34,6 +34,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+from sinthlab_bringup.helpers import free_reach  # noqa: E402  (on the path via experiments)
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
 import reward_volume  # noqa: E402
@@ -661,6 +662,11 @@ def make_handler(app: App):
                                                         **(st.get("pending") or {}), **values})
                     if problem:
                         raise ValueError(problem)
+                # Cued Reaches, free: the reach, its perturbations and the box, together (the node checks the same).
+                problem = free_reach.params_problem({**p.current(), **(st.get("live") or {}),
+                                                    **(st.get("pending") or {}), **values})
+                if problem:
+                    raise ValueError(problem)
                 ok, msg = app.bridge.set_params(exp, values)
                 app.runner.emit(f"Live {', '.join(values)} = {value}: {msg}", "gui" if ok else "warn")
                 if not ok:
@@ -688,11 +694,11 @@ def make_handler(app: App):
                     return {"ok": True}
                 before = dict(p.edits)
                 value = p.set_edit(body["name"], body["value"])
-                if body["name"].startswith(kinematics.FLOOR_RELEVANT):
-                    problem = kinematics.floor_problem(p.current())
-                    if problem:
-                        p.edits = before         # refused: the edit is not kept
-                        raise ValueError(problem)
+                problem = (kinematics.floor_problem(p.current()) if body["name"].startswith(kinematics.FLOOR_RELEVANT)
+                           else None) or free_reach.params_problem(p.current())
+                if problem:
+                    p.edits = before             # refused: the edit is not kept
+                    raise ValueError(problem)
                 app.broadcast("state", app.state())
                 return {"ok": True, "value": value}
             if path == "/api/post/scan":

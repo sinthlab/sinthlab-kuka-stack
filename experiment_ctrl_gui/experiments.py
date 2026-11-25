@@ -51,7 +51,7 @@ class Experiment:
     ros_controller: str
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
-    group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
+    group: str = "experiments"     # dashboard tab: "experiments" (organised in trials) or "pretraining"
     # Variants of one experiment, chosen per run by its `paradigm_param` parameter and shown as nested
     # tabs on its card: [(value, label), ...]. A live paradigm_param (the rails' centre_out.target) can
     # also be switched by those tabs during a run, from the next trial. Parameters that belong to one
@@ -142,7 +142,7 @@ _CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("cu
 # Cards holding several experiments (Experiment.card): key -> (label, summary).
 CARDS = {
     "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
-    "cued_reach": ("Cued Reaches", "One reach per trial, from the centre to an end of the rail."),
+    "cued_reach": ("Cued Reaches", "One reach per trial: along a rail, or free in 3-D with jumps and bumps."),
 }
 _CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m")
 _CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same three modes on either rail
@@ -198,11 +198,11 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
-    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, restricted cued (the
+    # Cued Reaches: under Experiments, like every task organised in trials. One reach per trial from the centre of a rail to an end -- either end, restricted cued (the
     # cue's direction only), or cued end (both directions open, only the cued end pays). The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
     # their recordings stay comparable with earlier ones.
     Experiment(
-        key="move_horizontal", label="Cued Reaches · Horizontal", group="pretraining",
+        key="move_horizontal", label="Cued Reaches · Horizontal", group="experiments",
         summary=CARDS["cued_reach"][1], card="cued_reach", variant="Horizontal",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
@@ -213,7 +213,7 @@ EXPERIMENTS += [
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
-        key="move_vertical", label="Cued Reaches · Vertical", group="pretraining",
+        key="move_vertical", label="Cued Reaches · Vertical", group="experiments",
         summary=CARDS["cued_reach"][1], card="cued_reach", variant="Vertical",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
@@ -225,8 +225,28 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
+    # Cued Reaches, free (3-D): the same cue modes, no rail -- free in 3-D inside a box, only the reach's part in
+    # the plane facing him scored -- with jump and bump perturbations (perturb.kind).
+    # It starts where N-Choice and Move Vertical do.
+    Experiment(
+        key="move_free", label="Cued Reaches · Free", group="experiments",
+        summary=CARDS["cued_reach"][1], card="cued_reach", variant="Free (3-D)",
+        launch_file="iiwa7_pretrain_move_free.launch.py",
+        params_yaml="pretrain_move_free.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("move_free"),
+        ros_controller="kuka_clik_controller",
+        paradigms=[("either", "Any direction"), ("cued", "Cued")], paradigm_param="free_reach.cue",
+        task_settings=("free_reach.distance_m", "free_reach.cone_deg", "free_reach.directions",
+                       "free_reach.cue_delay_min_sec", "free_reach.cue_delay_max_sec", "perturb.kind",
+                       "perturb.probability", "perturb.jump_m", "perturb.jump_angles_deg",
+                       "perturb.jump_delay_min_sec", "perturb.jump_delay_max_sec", "perturb.bump_m",
+                       "perturb.bump_angles_deg", "perturb.bump_at_m", "perturb.bump_depth_m",
+                       "perturb.bump_depth_rules"),
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
 ]
-# The Color Rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# The Color Rule with unsignaled reversals: a task of its own, on the free-move node. Rail
 # or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
 EXPERIMENTS += [
     Experiment(
@@ -330,6 +350,23 @@ LABELS: Dict[str, str] = {
     "n_choice.start": "Initial reward probabilities",
     "n_choice.end_tol_m": "End tolerance [m]",
     "free_move.ray_length_m": "Rail length [m]",
+    "free_reach.distance_m": "Reach length [m]",
+    "free_reach.cone_deg": "Target cone [deg]",
+    "free_reach.directions": "Cued directions",
+    "free_reach.cue_delay_min_sec": "Cue before go, min [s]",
+    "free_reach.cue_delay_max_sec": "Cue before go, max [s]",
+    "perturb.kind": "Perturbation",
+    "perturb.probability": "Perturbed trials [fraction]",
+    "perturb.jump_m": "Jump size [m]",
+    "perturb.jump_angles_deg": "Jump angles from the cue [deg]",
+    "perturb.jump_delay_min_sec": "Jump after go, earliest [s]",
+    "perturb.jump_delay_max_sec": "Jump after go, latest [s]",
+    "perturb.bump_m": "Bump size [m]",
+    "perturb.bump_angles_deg": "Bump angles from the cue [deg]",
+    "perturb.bump_at_m": "Bump after pulling [m]",
+    "perturb.bump_depth_m": "Bump depth [m]",
+    "perturb.bump_depth_rules": "Bump depth vs his movement",
+    "perturb.bump_depth_still_mps": "Still in depth below [m/s]",
     "reach_map.margin_m": "Minimum improvement for a new best [m]",
     "reach_map.min_m": "Minimum reach to include [m]",
     "reach_map.percentile": "Comfortable reach percentile",
@@ -351,6 +388,7 @@ LABELS: Dict[str, str] = {
     "long_move.reward": "Reward mode (tab)",
     "free_move.rail_axis": "Rail / No rail (tab)",
     "free_move.ray_layout": "Number of choices (tab)",
+    "free_reach.cue": "Cue (tab)",
     "reward_pulse.pulse_ms": "Valve open [ms]",
     "reward_pulse.count": "Pulses per reward",
     "reward_pulse.gap_ms": "Gap between pulses [ms]",
