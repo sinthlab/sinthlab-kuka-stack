@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * TtlPulser
  *
- * TTL pulses on the four 5 V outputs of the EL2124 in the Beckhoff stack on the cabinet's EtherCAT
+ * TTL pulses on the four 5 V outputs of the EL2124 in the Beckhoff stack (inside the reward and sync box), on the cabinet's EtherCAT
  * (EK1100 -> EL9505 -> EL2124 -> EL9011), for neural sync with the Blackrock NSP. See the README,
  * "Neural synchronisation".
  *

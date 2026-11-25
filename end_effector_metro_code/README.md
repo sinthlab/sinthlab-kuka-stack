@@ -79,6 +79,8 @@ link. Nothing is wired to it: tool pins 9/10 now carry the link.
 | **Ring data** | `board.D5` → **Pixel Shifter** ([6066](https://www.adafruit.com/product/6066), 3.3 V → 5 V) → ring `DIN` |
 | **Cue input** | `board.D2`, internal pull-up, active low. Nothing is wired to it: tool pins 9/10 carry the serial link |
 | **Serial link** | UART **TX `board.D0`** → MikroE RS485 3 Click RX, **RX `board.D8`** ← click TX, 115200 baud; click RX± ← tool pins 9/10, TX± → tool pins 12/13, GND ← tool pin 15 |
+| **Haptics** | **DRV2605L** ([2305](https://www.adafruit.com/product/2305)) on I²C (`board.SCL` / `board.SDA`), powered from the Metro's **3V3**, driving the coin **ERM** ([1201](https://www.adafruit.com/product/1201)) in the apple, in real-time playback |
+| **Force sensor** | **FSR** ([5475](https://www.adafruit.com/product/5475)) in the apple, read on **`board.A2`**: 3V3 → FSR → A2 → 10 kΩ → GND, 0.22 µF A2 → GND |
 | **Power** | cabinet 24 V via the X650/X651 data cable → tool pins 1/2 → Tobsun 24 V→5 V → board **and** ring (5 V injected at all 4 quarter joints) |
 
 ```
@@ -96,7 +98,13 @@ link. Nothing is wired to it: tool pins 9/10 now carry the link.
    └─ tool pin 15     ── CTR3, signal ground ───────────────── MikroE GND ─┘       Metro D8 (RX)
 
    Metro D5 ── 3.3 V data ──► Pixel Shifter ── 5 V data ──► ring DIN
+   Metro SCL/SDA, 3V3 ──► DRV2605L ── + / − ──► ERM motor (apple)
+   Metro 3V3 ──► FSR (apple) ──► A2 ──┬── 10 kΩ ──► GND
+                                      └── 0.22 µF ─► GND
 ```
+
+The full wiring, the parts and where each goes in the apple are in the
+[end-effector README, "Haptics and force sensor"](../end_effector_design/README.md#haptics-and-force-sensor).
 
 > **⚡ Current is not capped in firmware — see [Power](#power--read-before-raising-brightness).**
 > `brightness` is settable to 1.0, and at 1.0 the ring can draw up to **~4.8 A at 5 V**. The
@@ -418,9 +426,10 @@ only the files listed here.
 | `neopixel.mpy` | Drives the ring. (`adafruit_pixelbuf` is built into the CircuitPython core on this board.) |
 | `adafruit_esp32spi/` | ESP32 co-processor driver + the `socketpool` shim the HTTP server sits on. |
 | `adafruit_httpserver/` | The routing / request / response layer. |
-| `adafruit_bus_device/` | SPI transaction helper — a dependency of `adafruit_esp32spi`. |
+| `adafruit_bus_device/` | SPI and I²C transaction helper — a dependency of `adafruit_esp32spi` and `adafruit_drv2605`. |
+| `adafruit_drv2605.mpy` | The haptic driver (DRV2605L). Copy it from the CircuitPython library bundle matching the firmware version. Without it the board runs as before and answers `HAP` with `ERR HAP: no haptic driver`. |
 
-`lib/` holds exactly these four. Leave everything *inside* `adafruit_esp32spi/` as it
+`lib/` holds exactly these five. Leave everything *inside* `adafruit_esp32spi/` as it
 is — the package imports its own submodules internally, so its apparent duplicates (`socketpool` vs
 `adafruit_esp32spi_socketpool`, `wifimanager` vs `adafruit_esp32spi_wifimanager`) are not spare
 copies to prune.
@@ -612,13 +621,13 @@ dependencies, nothing to install:
 python3 end_effector_metro_code/test_code.py     # exits non-zero on failure
 ```
 
-It stubs CircuitPython's modules in-process (`board`, `neopixel`, `digitalio`, the ESP32 driver,
+It stubs CircuitPython's modules in-process (`board`, `neopixel`, `digitalio`, `analogio`, the DRV2605L driver, the ESP32 driver,
 the HTTP server, `microcontroller.nvm`) and replaces `time.monotonic_ns` with a virtual clock, so
 a 2.5 s cue costs no real time and the suite cannot flake on a slow machine. `code.py` is then
 executed up to — but not including — its `while True:` loop, which leaves every function and route
 handler callable directly.
 
-**121 checks**, covering the things that are painful to discover on hardware:
+**220 checks**, covering the things that are painful to discover on hardware:
 
 | | |
 |---|---|
@@ -632,6 +641,8 @@ handler callable directly.
 | Cue hygiene | a cue restores what the ring was showing; a manual command cancels it and wins |
 | LED test | exactly one LED lit per step, every LED through all four colours in order, `from`/`to`/`loop`, and a cue or manual command stops it without leaving a test pixel behind |
 | File access | read-only, refuses `settings.toml`, refuses traversal, no write route |
+| Haptics | the driver set up for an ERM in real-time mode, `HAP` strength scaling, the 0.5 s watchdog (and a refresh keeping it on), bad values refused, cues and `OFF` leave the motor alone, a missing driver refused with the reason |
+| Force sensor | `FSR` starts and stops the stream, one sample per period with `t_ms`, the raw value and the haptic strength, a late sample taken once with no catch-up burst, samples and replies interleaved line by line, a missing ADC input refused with the reason |
 | Surface | the HTTP endpoints are exactly the documented set, and `/status` reports every documented field |
 
 **What it does not cover:** anything physical — the flange wiring, the real ESP32, LED timing,
@@ -780,6 +791,8 @@ troubleshooting — is in [`in_electric_flange_data_path/`](../in_electric_flang
 | `OFF` | stop any cue or LED test, ring dark | `ACK OFF` |
 | `SEG f colors` | static arcs, exactly as `/segments?factor=f&colors=colors` (the pre-training ring states) | `ACK SEG` |
 | `PING` | link check | `PONG` |
+| `HAP pct` | haptic strength 0–100 %, held for 0.5 s (see below) | `ACK HAP <pct>` |
+| `FSR rate` | stream force samples at `rate` per second, 0–200; `0` stops | `ACK FSR <rate>`, then `S` lines |
 | `GET /route?query` | any [HTTP route](#http-api) except `/fs`, running the very same function: `GET /status`, `GET /config?r=0&g=255&b=0&w=0`, `GET /led_test?from=0&to=59`. The query is URL-encoded (`,` may be sent as `%2C`) | `OK <the route's text, lines joined by tabs>` |
 | anything else | nothing | `ERR <reason>` |
 
@@ -797,8 +810,31 @@ lit about 1 ms (wire time at 115200 baud) before the ack arrived.
 **A failed UART is not fatal.** If the port cannot be opened, the board boots without it, prints
 why on the serial console, and reports `serial=unavailable`; the access point keeps working.
 
-**Adding a function** (haptics, the pressure sensor) is one more entry in `SERIAL_COMMANDS`: a
-handler that takes the command's arguments and returns its reply line.
+**Haptics never run unattended.** `HAP` sets the ERM's strength through the DRV2605L's real-time
+playback (100 % = real-time value 127, the driver's signed format). A `HAP` that is not refreshed
+within **0.5 s** falls back to 0, so a dead link, a crashed experiment or an unplugged adapter cannot
+leave the motor buzzing; the ROS side re-sends the strength every 0.2 s while it is above 0. A cue or
+`OFF` does not touch the motor.
+
+**Force samples share the link.** After `FSR <rate>` the board sends, between replies, one line per
+sample:
+
+```
+S <t_ms> <raw> <hap>     t_ms = the board's clock at the sample [ms]; raw = AnalogIn.value on A2
+                         (0-65535); hap = the haptic strength [%] driven at that sample
+```
+
+Each sample carries the haptic strength at that moment, so motor leakage into the force reading can be
+measured and masked offline. A sample that falls due during a blocking ring update is taken late
+rather than skipped, and the next stays on the grid; `t_ms` says when each was taken. At 100
+samples/s the stream uses about 2 kB/s of the link's ~11.5 kB/s.
+
+`/status` reports `haptic=up|unavailable`, `haptic_pct`, `fsr=up|unavailable`, `fsr_rate` and
+`fsr_raw` (a fresh reading). If the driver or the ADC input cannot be opened the board boots without
+it and says so.
+
+**Adding a function** is one more entry in `SERIAL_COMMANDS`: a handler that takes the command's
+arguments and returns its reply line.
 
 Check the link from the ROS computer (after `usbipd attach` on Windows):
 
@@ -851,9 +887,12 @@ The cue sites are `play` and `snap` in apple pluck and perturb, and `play`, `rew
 `timeout` in the maze. The trigger is a live parameter, read at every cue.
 
 - **[`visual_cue_serial.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py)**
-  writes the [serial commands](#the-serial-link) and waits for each reply. It opens the port on first
-  use and reopens it after an error, so re-attaching the adapter recovers without a restart, and it
-  warns at startup if the FTDI `latency_timer` is not 1 ms.
+  is the one serial link per port, shared by the visual cue, the haptic guidance and the force sensor.
+  One thread writes the [serial commands](#the-serial-link) and waits for each reply; one thread reads
+  every line, keeping `S` samples apart from replies. It sends the haptic strength only when it changes
+  and every 0.2 s while above 0, restarts the sample stream if no sample has arrived for 1 s, opens the
+  port on first use and reopens it after an error, so re-attaching the adapter recovers without a
+  restart, and warns at startup if the FTDI `latency_timer` is not 1 ms.
 - **[`visual_cue_remote.py`](../sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py)**
   sends the HTTP requests. A cue with a colour first sets it with `/config?r=0&g=255&b=0&w=0` (in RAM;
   no `save=1`), then sends `/cue`; the board keeps that colour until the next one. Join the ROS

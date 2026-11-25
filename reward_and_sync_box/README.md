@@ -215,7 +215,7 @@ the `FRONT` and `REAR` tables at its top, and the printed stand-in's `PB_*` tabl
 |---|---|---|
 | [`front_panel.stl`](front_panel.stl), [`rear_panel.stl`](rear_panel.stl) | `front`, `rear` | The 1.6 mm panels with every cut-out and the labels engraved 0.3 mm |
 | [`reward_and_sync_box.stl`](reward_and_sync_box.stl) | `assembly` | The whole 2U box — frame, rack ears, both panels, rough bodies of the panel parts, the SSR and the Beckhoff stack on its DIN rail |
-| [`print_box.stl`](print_box.stl), [`print_lid.stl`](print_lid.stl) | `print_box`, `print_lid` | The [3D-printed stand-in](#3d-printed-stand-in) box and lid |
+| [`print_box.stl`](print_box.stl), [`print_lid.stl`](print_lid.stl), [`print_caddy.stl`](print_caddy.stl) | `print_box`, `print_lid`, `print_caddy` | The [3D-printed stand-in](#3d-printed-stand-in) box, lid and side caddy (the StarTech adapter) |
 
 Regenerate after editing the tables (from this folder; on this dev box OpenSCAD is the Windows install,
 `"/mnt/c/Program Files/OpenSCAD/openscad.com"`):
@@ -226,6 +226,7 @@ openscad -D 'part="rear"'      -o rear_panel.stl           reward_and_sync_box.s
 openscad -D 'part="assembly"'  -o reward_and_sync_box.stl  reward_and_sync_box.scad
 openscad -D 'part="print_box"' -o print_box.stl            reward_and_sync_box.scad
 openscad -D 'part="print_lid"' -o print_lid.stl            reward_and_sync_box.scad
+openscad -D 'part="print_caddy"' -o print_caddy.stl        reward_and_sync_box.scad
 ```
 
 The file stops with an error if a hole strays into a keep-out margin.
@@ -278,16 +279,17 @@ The box is 180 (wide) × 170 (deep) × 85 (tall) mm plus the lid, so it fits an 
 | Front wall, lower row | ETHERCAT X65, SYNC 1–4 |
 | Rear wall | 24 V IN, BREAKER VALVE, BREAKER SYNC (wall thinned to 1.5 mm around each breaker, so the W28 latches), VALVE socket (key notch down) |
 | Lid | plain cover, four M3 screws |
+| Left side | the **side caddy** for the StarTech USB ↔ RS-422 adapter, held by the lid's two left-hand screws (below) |
 | Floor | SSR (two M4 holes, 47.6 mm apart) on the left; DIN rail (two M4 holes, 80 mm apart) on the right, running front to back, with the Beckhoff stack on it |
 
 #### Printing
 
-| | Box | Lid |
-|---|---|---|
-| File | `print_box.stl` | `print_lid.stl` |
-| Orientation | open side up, as exported | flat, as exported |
-| Footprint × height | 180 × 170 mm × 85 mm | 180 × 170 mm × 2.5 mm |
-| Supports | none | none |
+| | Box | Lid | Side caddy |
+|---|---|---|---|
+| File | `print_box.stl` | `print_lid.stl` | `print_caddy.stl` |
+| Orientation | open side up, as exported | flat, as exported | as used, as exported: the tray floor on the bed |
+| Footprint × height | 180 × 170 mm × 85 mm | 180 × 170 mm × 2.5 mm | 138 × 170 mm × 30.5 mm |
+| Supports | none | none | **under the lip only** (it reaches 13 mm in over the lid); everything else stands on the floor |
 
 Settings for both: **PETG** (or PLA), 0.4 mm nozzle, 0.2 mm layers, **4 perimeters** (walls solid
 around the connector holes), 30 % infill, 5 top/bottom layers.
@@ -295,6 +297,37 @@ around the connector holes), 30 % infill, 5 top/bottom layers.
 After printing: clear the holes of strings, check the BNC flats and the VALVE key notch with the
 parts, and run an M3 screw into each corner post once before fitting the lid. Lid: four M3 × 10
 self-tapping screws.
+
+#### The side caddy — the StarTech adapter
+
+The StarTech ICUSB422IS (118 × 64 × 23 mm) sits in a caddy on the box's **left** side (seen from the
+front panel). It needs no new holes: its **lip** lies on top of the lid's left edge, and the lid's two
+left-hand screws go through lip, lid and into the corner posts — **M3 × 14** for those two (the lip adds
+3 mm), M3 × 10 for the other two as before.
+
+```
+   seen from the front                          seen from above
+                ┌─ lip on the lid ────┐          front   USB cable
+   ┌────────────┤─────────────────────┤               │
+   │ ▕ tray  ▏  │ box                 │          ┌────┴────────────┐┌──────────
+   │ ▕StarTech▏ │                     │          │ StarTech, flat  ││  box
+   └────────────┘                     │          │ 118 out × 64    ││
+                │                     │          └────┬────────────┘└──────────
+                └─────────────────────┘               │
+                                                 back  RS-422 cable
+```
+
+- **The adapter lies flat**, its 118 mm length running out from the box, so its cables leave its long
+  edges straight: the **USB** cable out of the **front**, the **RS-422** terminal cable out of the
+  **back**.
+- **Each end wall** has a 40 mm cable notch open at the top: the cable drops in. Beyond each, a
+  **tongue** with a pair of cable-tie slots is the **strain relief**: loop a tie down through one slot,
+  under the tongue and up through the other, round the cable, so a tug pulls on the caddy, not on the
+  adapter.
+- **Open top**, with a lip along the outer end: tuck the adapter's outer edge under it, then drop the
+  inner edge in.
+- **Fitting:** with the lid on, take out its two left-hand screws, lay the caddy's lip on the lid's left
+  edge (the side plate against the box wall), and screw through with the two M3 × 14.
 
 - **No chassis ground** in a plastic box. The isolated BNC jacks still keep the +24 V jack shells
   apart.
@@ -471,7 +504,7 @@ If FLUSH clicks the valve but no trigger does, the fault is on the SSR side.
 Trial events reach the Blackrock NSP as **5 V TTL pulses on BNC lines**, sent by the Sunrise cabinet
 through a small Beckhoff EtherCAT stack. Each event type has its own line, so nothing has to be
 decoded: **output 1 = trial start, output 2 = trial end, output 3 = experiment start** (one pulse
-when Start is pressed on the dashboard), output 4 spare. The NSP records each line on an analog input,
+per run, before trial 1), output 4 spare. The NSP records each line on an analog input,
 and the rising edge is the time reference for aligning the trial data.
 
 ```
@@ -560,7 +593,8 @@ Part numbers and links: [Sync side](#sync-side-nsp-sync-beckhoff) in the parts l
 
 ### The NSP side
 
-- **Output 1 → analog input 3, output 2 → analog input 4.** Record both at 30 kHz with filtering off.
+- **SYNC 1 (trial start) → analog input 2, SYNC 2 (trial end) → analog input 3, SYNC 3 (experiment
+  start) → analog input 4.** Record them at 30 kHz with filtering off.
   Analog inputs land in the continuous data (`.ns5` / NSx), **not** the `.nev` event file; the
   `.nev` takes events only through the NSP's digital input port.
 - **Level.** A line is 0 V idle and 5 V during a pulse.
@@ -669,8 +703,8 @@ All in [`sunrise_controller_code/`](../sunrise_controller_code/); deploy it like
 **From ROS**, a successful trial also sends the reward pulse, `PULSE 4 500` by default, on SYNC 4, cabled
 to the reward box's NSP jack ([Reward pulse](../README.md#reward-pulse)).
 
-Each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and the
-dashboard sends one the moment **Start** is pressed (experiment start), with the cabinet address, the
+Each experiment sends `PULSE <output> <width ms>` at trial start and trial end, and one once per run
+before trial 1 (experiment start), with the cabinet address, the
 three outputs and the width set in its `nsp_sync` parameters (defaults `172.31.1.147`, outputs 1, 2
 and 3, 500 ms): see
 [Sync to the Blackrock NSP](../README.md#sync-to-the-blackrock-nsp).
@@ -696,8 +730,8 @@ I/O cycles.
    ```
    The dashboard's *Diagnostics → TTL sync* tab sends the same commands
    ([its section](../experiment_ctrl_gui/README.md#ttl-sync)).
-5. **NSP.** Connect the BNCs, start a Central recording, and run *All*, *100 ms*: analog input 3 shows
-   one pulse, analog input 4 two.
+5. **NSP.** Connect the BNCs, start a Central recording, and run *All*, *100 ms*: analog input 2 shows
+   one pulse, analog input 3 two, analog input 4 three.
 
 ### Troubleshooting
 
