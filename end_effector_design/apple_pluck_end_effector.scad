@@ -28,6 +28,8 @@
 //                  + (3b) TPU BALL  sits on the seat; solid floor; OPEN top loads the ERM + sensor
 //                  + (3c) RETAINER  PETG ring glued onto the tip, clamping the ball's floor
 //                  + (3d) TPU CAP   press-fit dome that closes the ball; wires / FSR tail / tube exit the bore
+//                  + (3e) FSR PLATFORM  PETG disc glued on the retainer hub: the FSR's flat backing
+//                  + (3f) FSR FILLER    TPU 90A low-infill spring filling the lower cup, its pad on the FSR
 //        ( + ) CLEAR CASING BOX   5-sided clear box (OPEN on the flange side) shrouding the whole
 //                                  electronics stack; top covers the ring, clamps 3x M3 into the cover
 //
@@ -40,7 +42,7 @@
 //     openscad -D 'part="base_tier1"'  -o base_tier1.stl  apple_pluck_end_effector.scad
 // =====================================================================
 
-part = "assembly"; // [assembly, flange_plate, base_tier1, base_tier2, cover, apple_stem, apple_ball, apple_cap, apple_retainer, apple, apple_section, section, electronics_mock, casing]
+part = "assembly"; // [assembly, flange_plate, base_tier1, base_tier2, cover, apple_stem, apple_ball, apple_cap, apple_retainer, apple_fsr_platform, apple_fsr_filler, apple, apple_section, section, electronics_mock, casing]
 
 /* [Robot media flange — MEASURED: 8x M6 on a Ø51 bolt circle, Ø34 central electric bore]
     THE ONE NUMBER THAT MUST MATCH THE ROBOT IS THE PITCH CIRCLE: 51 mm, centre-to-centre across two
@@ -400,6 +402,27 @@ ret_hub_d      = 16;   // retainer hub Ø [mm] -- the hub doubles the glue lengt
 ret_hub_h      = 3;    // retainer hub height [mm] (the tip runs up to the hub top)
 ret_glue_clear = 0.1;  // retainer bore clearance per side on the tip [mm] -- a glue fit
 ret_recess_clear = 0.3; // clearance per side round the retainer in the ball floor [mm]
+
+/* [Apple FORCE SENSOR — the FSR (Adafruit 5475) lies FACE UP on a PETG PLATFORM glued on the retainer hub
+    (the rigid backing), under a TPU 90A FILLER that fills the lower cup. Squeezing the ball loads the
+    filler, whose solid pad presses on the FSR. The platform covers the Ø9 bore (the FSR's centre must not
+    sit over a hole) and carries two channels underneath: the FSR tail down the bore, the motor pair up
+    to the cap, apart. The motor stays under the cap, clear of the filler. README "Haptics and force sensor". */
+fsr_head_d     = 18;   // FSR head Ø [mm] (Alpha MF01A); its active area is ~Ø15
+fsr_t          = 0.56; // FSR head thickness [mm]
+fsr_tail_w     = 7;    // FSR tail width + clearance [mm] -- MEASURE yours; sets the tail channel and notch
+plat_d         = 20;   // platform Ø [mm]: a full flat seat under the Ø18 head
+plat_t         = 3;    // platform thickness [mm]
+plat_recess_h  = 1;    // locating recess under the platform: it drops over the Ø16 hub [mm]
+plat_ch_h      = 1.6;  // depth of the two wire channels under the platform [mm] (1.4 mm roof left)
+erm_ch_w       = 3.5;  // motor-pair channel width [mm] (toward -X; the FSR tail's goes toward +X)
+fill_pre       = 0.4;  // filler oversize against the cup wall and the skirt [mm]: its built-in preload
+pad_d          = 14;   // the filler's solid pad that bears on the FSR's active area [mm]
+pad_pre        = 0.3;  // the pad presses this far into the FSR at rest [mm]: a small, steady reading
+fill_pocket_clear = 1; // clearance round the platform in the filler's pocket [mm]
+fill_top_below_split = 1; // the filler's flat top sits this far below the cap split [mm]; above it, air
+                       // up to the motor under the cap
+erm_hole_d     = 3.5;  // vertical hole through the filler for the motor pair [mm]
 
 /* [Clear casing BOX — a 5-sided clear box, OPEN on the arm-flange side, that shrouds the whole
     electronics stack. Built by hand from acrylic sheet (the STL is a dimensional build reference, not a
@@ -865,12 +888,65 @@ module apple_cap() {
     }
 }
 
+// (3e) FSR PLATFORM — PETG disc glued on the retainer hub: the FSR's rigid, flat backing. Print it
+//      upside down (recess and channels up). Underneath: a recess that drops over the Ø16 hub, and two
+//      channels from the bore out to the edge -- +X for the FSR tail (down the bore), -X for the motor pair
+//      (up to the cap).
+function plat_bottom_z() = tip_top_z() - plat_recess_h;                 // it sits on the hub top
+function plat_top_z()    = plat_bottom_z() + plat_t;
+function fsr_top_z()     = plat_top_z() + fsr_t;
+module apple_fsr_platform() {
+    translate([0, 0, plat_bottom_z()])
+        difference() {
+            cylinder(h = plat_t, d = plat_d);
+            translate([0, 0, -eps]) cylinder(h = plat_recess_h + eps, d = ret_hub_d + 0.4);      // hub recess
+            translate([0, -fsr_tail_w/2, -eps]) cube([plat_d, fsr_tail_w, plat_ch_h + eps]);      // FSR tail: +X
+            translate([-plat_d, -erm_ch_w/2, -eps]) cube([plat_d, erm_ch_w, plat_ch_h + eps]);    // motor pair: -X
+            translate([0, 0, -eps]) cylinder(h = plat_ch_h + eps, d = sensor_bore_d);             // over the bore
+        }
+}
+
+// (3f) FSR FILLER — TPU 90A at low infill: a printed spring filling the lower cup, from the floor to just
+//      under the cap split, oversize by fill_pre so it sits preloaded against the wall and the cap's skirt.
+//      A pocket underneath clears the hub, the platform and the FSR; inside it the solid pad presses
+//      pad_pre into the FSR. A notch at +X takes the tail's fold over the platform edge; a hole at -X takes
+//      the motor pair up. Print it upside down (flat top on the bed); stiffness is the slicer's infill.
+module apple_fsr_filler() {
+    ball_c  = apple_ball_c();
+    floor_z = arm_top_z();
+    top_z   = ball_c + cap_split - fill_top_below_split;
+    skirt_id = (apple_d - 2 * apple_wall) - 2 * cap_lip_clear - 4;      // the cap skirt's inner Ø
+    r_in    = (apple_d - 2 * apple_wall) / 2;
+    pocket_r = plat_d / 2 + fill_pocket_clear;
+    ceil_z  = fsr_top_z() + 0.8;                                          // the pocket's roof, round the pad
+    difference() {
+        union() {
+            intersection() {                                              // the cup, below the skirt
+                translate([0, 0, ball_c]) sphere(r = r_in + fill_pre);
+                translate([0, 0, floor_z]) cylinder(h = ball_c - floor_z, r = r_in + fill_pre + 1);
+            }
+            translate([0, 0, ball_c - eps])                               // inside the skirt, to the top
+                cylinder(h = top_z - ball_c + eps, r = skirt_id/2 + fill_pre);
+        }
+        difference() {                                                    // the pocket, less the pad
+            translate([0, 0, floor_z - eps]) cylinder(h = ceil_z - floor_z + eps, r = pocket_r);
+            translate([0, 0, fsr_top_z() - pad_pre]) cylinder(h = ceil_z, d = pad_d);
+        }
+        translate([plat_d/2 - 1, -(fsr_tail_w + 2)/2, floor_z - eps])                  // tail notch, +X
+            cube([4, fsr_tail_w + 2, ceil_z - floor_z + eps]);
+        translate([-(pocket_r + erm_hole_d/2 - 0.5), 0, floor_z - eps])                 // motor-pair hole, -X
+            cylinder(h = top_z - floor_z + 2*eps, d = erm_hole_d, $fn = 32);
+    }
+}
+
 // Apple stem + ball + retainer + press-fit cap assembled (preview / section). One frame.
 module apple_assembled() {
     apple_stem();
     apple_ball();
     apple_retainer();
     apple_cap();
+    apple_fsr_platform();
+    apple_fsr_filler();
 }
 
 // =====================================================================
@@ -943,6 +1019,9 @@ else if (part == "apple_stem")       apple_stem();
 else if (part == "apple_ball")       apple_ball();
 else if (part == "apple_cap")        apple_cap();
 else if (part == "apple_retainer")   apple_retainer();
+else if (part == "apple_fsr_platform") translate([0, 0, plat_top_z()]) mirror([0, 0, 1]) apple_fsr_platform();   // upside down, on the bed
+else if (part == "apple_fsr_filler")   let(t = apple_ball_c() + cap_split - fill_top_below_split)
+                                           translate([0, 0, t]) mirror([0, 0, 1]) apple_fsr_filler();     // flat top on the bed
 else if (part == "apple")            apple_assembled();
 else if (part == "electronics_mock") electronics_mock();
 else if (part == "casing")           casing();

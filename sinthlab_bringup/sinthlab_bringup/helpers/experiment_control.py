@@ -18,7 +18,9 @@ park. Only then does the dashboard end the launch, so FRI always closes with the
 reach. Stop is not a safety function -- the arm stays under control and compliant throughout.
 
 NSP SYNC. `on_event` is what TrialRecorder calls synchronously inside mark(); with
-`nsp_sync.enabled`, trial_start and trial_end each send the cabinet one UDP datagram,
+`nsp_sync.enabled`, trial_start and trial_end each send the cabinet one UDP datagram, and so does
+experiment_start, which TrialRecorder sends once when the run begins (its time goes into the run
+folder's experiment_start.json and every sidecar),
 "PULSE <output> <width ms>" to <nsp_sync.cabinet_ip>:30002, and the cabinet's TtlPulser
 (sunrise_controller_code/) pulses that EL2124 output -- one BNC line per event to the Blackrock NSP.
 The send never blocks or raises; the cabinet's replies are read on a background thread, and a
@@ -57,6 +59,7 @@ from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 # clock, and the fitted map carries it along. Each event has its own line, so a dropped pulse shows
 # as a missing edge on that line instead of mispairing every later trial.
 NSP_OUTPUTS: Dict[str, str] = {
+    "experiment_start": "nsp_sync.experiment_start_output",     # once per run, before trial 1
     "trial_start": "nsp_sync.trial_start_output",
     "trial_end": "nsp_sync.trial_end_output",
 }
@@ -192,6 +195,11 @@ class ExperimentControl:
             return None  # playback telemetry must not replace the current trial phase
         if self._nsp_enabled and token in NSP_OUTPUTS:
             self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
+        if token == "experiment_start":          # not a phase: the status stays "starting" until trial 1
+            if self._nsp_enabled:
+                self._log.info(f"NSP sync: experiment start pulse, PULSE {self._nsp_cfg[token]} "
+                               f"{self._nsp_cfg['width_ms']} (SYNC {self._nsp_cfg[token]}).")
+            return
         reward = None
         if self._reward is not None and token in self._reward_events:
             output, ms, count, gap = self._reward
