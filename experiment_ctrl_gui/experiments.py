@@ -227,6 +227,21 @@ EXPERIMENTS += [
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
+    # Cued Reaches, Rails (switchable): one rail, horizontal or vertical (rails.axis, live), switched between
+    # trials with no restart. Both run from Move Vertical's start (and its CLIK posture), checked at start-up
+    # (helpers/switch_rails.py). Horizontal and Vertical stay as they are.
+    Experiment(
+        key="move_rails", label="Cued Reaches · Rails (switchable)", group="experiments",
+        summary=CARDS["cued_reach"][1], card="cued_reach", variant="Rails (switchable)",
+        launch_file="iiwa7_pretrain_move_rails.launch.py",
+        params_yaml="pretrain_move_rails.yaml", node="free_move_orchestrator",
+        stiffness_profile=required_profile("move_rails"),
+        ros_controller="kuka_clik_controller",
+        paradigms=list(_CENTRE_OUT), paradigm_param="centre_out.target",
+        task_settings=("rails.axis",) + _CUED_TASK,
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
+    ),
     # Cued Reaches, free (3-D): the same cue modes, no rail -- free in 3-D inside a box, only the reach's part in
     # the plane facing him scored -- with jump and bump perturbations (CIHR grant Aims 1-2; perturb.kind).
     # It starts where N-Choice and Move Vertical do.
@@ -358,6 +373,11 @@ LABELS: Dict[str, str] = {
     "centre_out.max_repeats": "Max repeats at the same end",
     "centre_out.end_tol_m": "End tolerance [m]",
     "centre_out.wrong_timeout_sec": "Time-out after a wrong choice [s]",
+    "rails.axis": "Rail",
+    "rails.left_m": "Horizontal rail, left end [m]",
+    "rails.right_m": "Horizontal rail, right end [m]",
+    "rails.down_m": "Vertical rail, lower end [m]",
+    "rails.up_m": "Vertical rail, upper end [m]",
     "centre_out.free_reach_m": "No-rail choice distance [m]",
     "rule.red_end": "Red target in the first block",
     "rule.window": "Criterion window [choices]",

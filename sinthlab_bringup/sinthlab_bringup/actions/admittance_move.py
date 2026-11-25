@@ -90,7 +90,8 @@ unstable when hand stiffness * delay / damping exceeds ~pi/2; a resting hand mea
 the damping rises linearly to low_force_damping_ns_per_m at the threshold (100: margin x2), and
 deliberate pushes above low_force_n feel exactly as before.
 
-ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal): the same, along one base axis through
+ON A RAIL (rail_axis x | y | z, Move Vertical / Move Horizontal; or switch, Cued Reaches Rails: the rail
+rails.axis names, horizontal or vertical, changed between trials, helpers/switch_rails.py): the same, along one base axis through
 the start. Only the hand's force ALONG the rail counts, the equilibrium only moves along it, between
 rail_min_m and rail_max_m from the start, and across it stays on the rail -- so the cabinet spring
 holds the arm on the rail. rail_axis none = free in every direction (Free Move); frontal = free in the
@@ -138,7 +139,7 @@ import optas
 
 from sinthlab_bringup.helpers.node_utils import DebugTicker, get_required_param, get_launch_param
 from sinthlab_bringup.helpers.floor import Floor
-from sinthlab_bringup.helpers import rail_shapes
+from sinthlab_bringup.helpers import rail_shapes, switch_rails
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
 from sinthlab_bringup.helpers.free_reach import min_jerk
@@ -184,6 +185,21 @@ class AdmittanceMoveAction:
             np.eye(3)["xyz".index(axis)],
             float(get_required_param(node, self._p + "rail_min_m")),
             float(get_required_param(node, self._p + "rail_max_m")))
+        if axis == switch_rails.SWITCH:
+            # Cued Reaches, Rails (switchable): BOTH rails checked here, once; rails.axis then picks one per
+            # trial (reload), with no restart (helpers/switch_rails.py).
+            start = get_required_param(node, "move_to_start.target_joint_position")
+            get = lambda name: get_required_param(node, name)   # noqa: E731
+            for which in ("y", "z"):
+                lo, hi = switch_rails.rail(which, get)
+                problem = StartGrid(model, self.ee_link).rail_problem(start, which, lo, hi)
+                if problem:
+                    raise ValueError(f"The {'horizontal' if which == 'y' else 'vertical'} rail is not safe at this "
+                                     f"start pose, so the experiment does not run: {problem}. Shorten it "
+                                     f"(rails.{'left_m / right_m' if which == 'y' else 'down_m / up_m'}).")
+            node.get_logger().info("Both rails, horizontal and vertical, checked safe at the start pose; "
+                                   "rails.axis switches between them from the next trial.")
+            self._rail = self._switch_rail()
         # The frontal plane (colour rule, "No rail") and the asterisk (N-choice) both lock the arm to the
         # plane facing the monkey (helpers/rail_shapes.py).
         self._plane_n = rail_shapes.FRONTAL_NORMAL if axis in ("frontal", "rays") else None
@@ -267,9 +283,21 @@ class AdmittanceMoveAction:
                  f"(Jacobian damping {self._jac_damping:g})")
 
     # ------------------------------------------------------------------ parameters
+    def _switch_rail(self):
+        """The rail rails.axis puts in force (switchable rails): (unit, min, max)."""
+        axis, lo, hi = switch_rails.current(lambda name: get_required_param(self._node, name))
+        return np.eye(3)["xyz".index(axis)], lo, hi
+
     def reload(self) -> None:
         """Re-read the live feel parameters. Called at a trial boundary."""
         n, p = self._node, self._p
+        if getattr(self, "_shape", None) == switch_rails.SWITCH:
+            before = self.rail_axis()
+            self._rail = self._switch_rail()
+            self._open = None
+            if self.rail_axis() != before:
+                n.get_logger().info(f"Rails: the {'horizontal' if self.rail_axis() == 'y' else 'vertical'} rail "
+                                    f"from this trial, {self._rail[1]:+.3f} to {self._rail[2]:+.3f} m.")
         self._damping = max(1.0, float(get_required_param(n, p + "damping_ns_per_m")))
         self._deadband = max(0.0, float(get_required_param(n, p + "deadband_n")))
         self._max_speed = max(0.0, float(get_required_param(n, p + "max_speed_mps")))
@@ -428,7 +456,7 @@ class AdmittanceMoveAction:
         return None if self._rail is None else (self._rail[1], self._rail[2])
 
     def shape(self) -> str:
-        """free_move.rail_axis: none | x | y | z | frontal | rays (helpers/rail_shapes.py)."""
+        """free_move.rail_axis: none | x | y | z | frontal | rays | switch (helpers/rail_shapes.py)."""
         return self._shape
 
     def rays(self) -> Tuple[list, float]:

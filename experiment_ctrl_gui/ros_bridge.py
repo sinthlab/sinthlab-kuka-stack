@@ -33,6 +33,7 @@ from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
 from sinthlab_bringup.helpers.rail_shapes import direction_name, layout_degs
 from sinthlab_bringup.helpers import free_reach
 from sinthlab_bringup.helpers import forage
+from sinthlab_bringup.helpers import switch_rails
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -538,8 +539,9 @@ class DemoBridge:
                 # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
                 # (none with the other half of the rail closed: actions/centre_out.py).
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
-                ends = ("down", "up") if self._exp.key == "move_vertical" else ("left", "right")
-                if self._picker is None:
+                rail = switch_rails.effective({**self._params, **self._effective})
+                ends = ("down", "up") if (rail and rail[0] == "z") else ("left", "right")
+                if self._picker is None or tuple(self._picker.ends) != ends:      # Rails, switchable: a new rail
                     self._picker = TargetPicker(ends)
                 if mode == RULE:
                     # The Color Rule: a simulated learner, right more often the longer the block runs, so
@@ -639,9 +641,10 @@ class DemoBridge:
         moving = self._phase in ("armed", "checkpoint")
         t = time.time() - self._phase_t if moving else 0.0
         import math
-        axis = str(self._params.get("free_move.rail_axis", "none"))
+        rail = switch_rails.effective({**self._params, **self._effective})
+        axis = rail[0] if rail else "none"
         if self._exp.node == "free_move_orchestrator" and axis in ("y", "z"):
-            lo, hi = float(self._params.get("free_move.rail_min_m", -0.1)), float(self._params.get("free_move.rail_max_m", 0.1))
+            lo, hi = rail[1], rail[2]
             v = (hi if math.sin(0.8 * t) >= 0 else -lo) * math.sin(0.8 * t)
             off = [0.0, v, 0.0] if axis == "y" else [0.0, 0.0, v]
         else:

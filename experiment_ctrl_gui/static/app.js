@@ -28,7 +28,7 @@ STEPS.forage = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", 
                 "trial_end", "release_wait", "released"];
 STEPS.move_free = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "grip", "reach",
                    "trial_end", "release_wait", "released"];
-STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
+STEPS.move_vertical = STEPS.move_horizontal = STEPS.move_rails = STEPS.colour_rule =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
 const STEP_LABEL = {
@@ -71,6 +71,8 @@ const PHASE_TEXT_BY_EXP = {
                long_move: "Long movement rewarded" },
   move_vertical: { session_end: "Session ended. Waiting for release",
                    release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
+  move_rails: { session_end: "Session ended. Waiting for release",
+                release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   move_horizontal: { session_end: "Session ended. Waiting for release",
                      release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   n_choice: { release_wait: "Waiting for release", armed: "Waiting for a choice",
@@ -1389,9 +1391,12 @@ function renderMonitor() {
   } else if (key.startsWith("restricted_move_")) {
     row2.push(["Rail", esc(exp(key)?.variant || "–")]);
   } else if (last.paradigm) row2.push(["Mode", esc(paradigmLabel(key, last.paradigm))]);
-  if (key === "move_horizontal" || key === "move_vertical") {
-    const end = key === "move_horizontal" ? "left" : "up";
-    const reaches = rows.filter((r) => r.chosen_end).slice(-LAST_N);
+  if (key === "move_horizontal" || key === "move_vertical" || key === "move_rails") {
+    // Rails (switchable): the rail of the last trial, and the side bias on that rail only.
+    const rail = key === "move_rails" ? (last.rail || "horizontal") : key === "move_horizontal" ? "horizontal" : "vertical";
+    const end = rail === "horizontal" ? "left" : "up";
+    if (key === "move_rails") row2.push(["Rail", rail === "horizontal" ? "Horizontal" : "Vertical"]);
+    const reaches = rows.filter((r) => r.chosen_end && (key !== "move_rails" || r.rail === rail)).slice(-LAST_N);
     row2.push([`${end === "left" ? "Left" : "Up"} reaches · last 20`, pct(reaches.filter((r) => r.chosen_end === end).length, reaches.length)]);
     if (last.paradigm === "cued" || last.paradigm === "retry") {
       // The first end reached is the choice in both cued modes (can correct: before any correction).

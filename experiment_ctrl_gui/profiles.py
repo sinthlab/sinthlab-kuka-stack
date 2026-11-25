@@ -250,7 +250,9 @@ def _ray_reach(deg: float, left: float, right: float, down: float, up: float) ->
 def reach_values(exp: ex.Experiment, reach: Dict[str, float], context: Dict[str, object]) -> Dict[str, float]:
     """The rail ends the reach sets, given the task's other values in effect (context): a vertical rail (z)
     runs from down to up, any other (the horizontal rail; the Color Rule, whose Rail is horizontal) from
-    left to right."""
+    left to right. Rails (switchable): all four ends, rails.left_m .. up_m (positive, from the start)."""
+    if "rails.left_m" in context:
+        return {f"rails.{name.split('.')[1]}": float(reach[name]) for name in REACH}
     if "free_move.rail_min_m" not in context:
         return {}
     vertical = str(context.get("free_move.rail_axis")) == "z"
@@ -285,6 +287,8 @@ def mapped(exp: ex.Experiment, context: Dict[str, object]) -> Dict[str, str]:
     if not applies_to(exp):
         return {}
     out = {f.param: f.name for f in FIELDS if f.param and f.param in context}
+    if "rails.left_m" in context:
+        out.update({f"rails.{name.split('.')[1]}": name for name in REACH})
     if "free_move.rail_min_m" in context:
         vertical = str(context.get("free_move.rail_axis")) == "z"
         out["free_move.rail_min_m"] = REACH[2] if vertical else REACH[0]
@@ -329,6 +333,9 @@ def from_task(exp: ex.Experiment, values: Dict[str, object]) -> Dict[str, object
     """The profile fields a task's values imply: one-to-one fields, and the reach from a rail's ends."""
     out = {f.name: values[f.param] for f in FIELDS if f.param and f.param in values}
     axis = str(values.get("free_move.rail_axis", ""))
+    for name in REACH:                                                # Rails (switchable): all four ends
+        if f"rails.{name.split('.')[1]}" in values:
+            out[name] = round(float(values[f"rails.{name.split('.')[1]}"]), 4)
     if "free_move.rail_min_m" in values and axis in ("y", "z"):       # not the Color Rule's No rail
         lo, hi = (REACH[0], REACH[1]) if axis == "y" else (REACH[2], REACH[3])
         out[lo] = round(-float(values["free_move.rail_min_m"]), 4)

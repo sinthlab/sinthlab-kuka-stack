@@ -495,7 +495,7 @@ def _split_kv(arg) -> dict:
     return out
 
 
-@register("move_vertical", "move_horizontal")
+@register("move_vertical", "move_horizontal", "move_rails")
 class CentreOutTables(TaskTables):
     """Centre-out reach on a rail (actions/centre_out.py)."""
     paradigm_param = "centre_out.target"
@@ -507,9 +507,10 @@ class CentreOutTables(TaskTables):
         "first_correct": "1 = the FIRST end reached was a goal end, 0 = it was the other end (cued, can correct: "
                          "before he corrected), blank = no reach",
         "n_wrong_end": "cued, can correct: arrivals at the wrong end before the trial ended (0 otherwise)",
+        "rail": "the rail: horizontal or vertical (Rails, switchable: rails.axis; else the task's own)",
         "end_tol_m": "how close to an end counted as reaching it [m]",
     }
-    settings = ["centre_out.target", "centre_out.max_repeats", "centre_out.wrong_timeout_sec",
+    settings = ["centre_out.target", "rails.axis", "centre_out.max_repeats", "centre_out.wrong_timeout_sec",
                 "centre_out.end_tol_m", "reward_pulse.pulse_ms"]
     session_columns = {"n_reaches": "trials ending in a reach (either end)",
                        "pct_correct": "reaches to a goal end over all reaches [%]",
@@ -524,6 +525,8 @@ class CentreOutTables(TaskTables):
                 "correct": correct,
                 "first_correct": "" if correct == "" else 0 if wrong else correct,
                 "n_wrong_end": wrong,
+                "rail": tr.param("rails.axis") or {"y": "horizontal", "z": "vertical"}.get(
+                    str(tr.param("free_move.rail_axis", "")), ""),
                 "end_tol_m": tr.param("centre_out.end_tol_m", "")}
 
     def session_fields(self, trials):

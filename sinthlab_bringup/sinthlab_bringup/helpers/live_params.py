@@ -129,6 +129,9 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
     "move_vertical": _FREE,
     "move_horizontal": _FREE,
+    # Cued Reaches, Rails (switchable): the same, and which rail is in force (rails.axis); the rails' ends are
+    # per-run (both are checked at start-up, helpers/switch_rails.py).
+    "move_rails": _FREE + ["rails.axis"],
     # Restricted Move: Free Move on one rail, a session per trial (no centre-out reach).
     "restricted_move_horizontal": _FREE,
     "restricted_move_vertical": _FREE,
@@ -287,6 +290,10 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "resistance.base_stiffness_n_per_m": (50.0, 5000.0),
     # Pre-training. A rail's ends, from the start (the vertical one is limited upward by reach).
     "free_move.rail_min_m": (-0.30, 0.0),
+    "rails.left_m": (0.02, 0.30),
+    "rails.right_m": (0.02, 0.30),
+    "rails.down_m": (0.02, 0.30),
+    "rails.up_m": (0.02, 0.30),
     "free_move.rail_max_m": (0.0, 0.30),
     "ring_cue.colours.*": (0, 255),
     "ring_cue.quarters": (0, 3),
@@ -372,6 +379,7 @@ _K, _K_BASE = "resistance.stiffness_n_per_m", "resistance.base_stiffness_n_per_m
 
 # Parameters with a fixed set of values. The dashboard renders these as a drop-down.
 CHOICES: Dict[str, List[str]] = {
+    "rails.axis": ["horizontal", "vertical"],                            # helpers/switch_rails.AXES
     "perturb_start.polar_plane": ["frontal", "horizontal", "sagittal"],
     "*.cartesian_axis": ["norm", "x", "y", "z"],
     "*.restricted_axis": ["x", "y", "z"],
@@ -382,7 +390,7 @@ CHOICES: Dict[str, List[str]] = {
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
-    "free_move.rail_axis": ["none", "x", "y", "z", "frontal", "rays"],   # helpers/rail_shapes.SHAPES
+    "free_move.rail_axis": ["none", "x", "y", "z", "frontal", "rays", "switch"],   # helpers/rail_shapes.SHAPES
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
     "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
