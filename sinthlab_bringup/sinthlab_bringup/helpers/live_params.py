@@ -311,6 +311,10 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "free_move.force_filter_tau_sec": (0.0, 0.5),
     "free_move.tare_sec": (0.2, 5.0),
     "free_move.tare_tol_n": (0.0, 10.0),            # 0 = off: every trial's own tare
+    # The pre-task calibration (per-run; helpers/tare_check.py).
+    "tare_calibration.hold_sec": (1.0, 30.0),
+    "tare_calibration.settle_sec": (0.0, 10.0),
+    "tare_calibration.steady_n": (0.3, 10.0),
     "force_release.snatch_after_sec": (0.0, 5.0),
     "free_move.trail_m": (0.0, 0.03),               # at most the leash
     "free_move.low_force_n": (0.0, 30.0),

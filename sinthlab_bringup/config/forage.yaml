@@ -201,6 +201,16 @@
       debug_log_enabled: false  # Enable periodic debug logging for this action
       debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
+    # THE PRE-TASK CALIBRATION (per-run): at Start, before the monkey is brought in, the arm goes to the start
+    # pose and holds there untouched; that reading is the force "zero" (the tare) for the whole run, instead of
+    # one measured in each quiet window, where an early grab spoils it. It must be the start pose: the
+    # reading's error depends on the arm's posture. helpers/tare_check.py.
+    tare_calibration:  # measure the force reading at rest once, at Start, before the monkey is there
+      enabled: true  # false = measure it in each trial's quiet window instead (checked with free_move.tare_tol_n)
+      hold_sec: 4.0  # how long the arm holds at the start pose, untouched [s]
+      settle_sec: 1.0  # the first part of the hold, while the arm settles, is not used [s]
+      steady_n: 1.5  # every 0.25 s of the reading must stay this close to its mean, else it was touched: pause, Resume redoes it [N]
+      wait_for_resume: true  # true = then hold at park until Resume (bring the monkey in first); false = start the first trial at once
     force_release:  # waits for the hand to let go before parking
       update_rate: 100  # Action loop rate [Hz]
       release_force_threshold_newton: 3.0  # released when the external force stays below this [N]

@@ -81,7 +81,8 @@ def test_every_free_move_task_has_the_check_and_the_new_trial_end_settings(path)
 
 
 # ---------------------------------------------------------------- the real admittance loop
-def rail_run(monkeypatch, trials, tol=2.0, sec=1.5, rate=100.0, after_go=(0.0, 0.0, 0.0), on_go=None):
+def rail_run(monkeypatch, trials, tol=2.0, sec=1.5, rate=100.0, after_go=(0.0, 0.0, 0.0), on_go=None,
+             calibrate=None):
     """The admittance on the horizontal rail through several trials: in each, the quiet window's hold (the
     tare) with the hand force given for it, then the go and `sec` of nobody touching. The arm follows its
     equilibrium with a short lag. Returns how far the arm went in each trial [m] and the adm."""
@@ -106,6 +107,7 @@ def rail_run(monkeypatch, trials, tol=2.0, sec=1.5, rate=100.0, after_go=(0.0, 0
     adm._rail, adm._shape, adm._rays, adm._box, adm._plane_n = (np.eye(3)[1], -0.15, 0.15), "y", None, None, None
     adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
     adm._tare, adm._tare_history, adm._tare_rec, adm._rest_offset = np.zeros(3), [], {}, np.zeros(3)
+    adm._cal_tare = None
     adm._f_used, adm._debug = np.zeros(3), False
     adm._f_filt, adm._v, adm._v_arm, adm._f_hand = np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
     start = np.array([0.38, 0.01, 1.03])
@@ -116,6 +118,15 @@ def rail_run(monkeypatch, trials, tol=2.0, sec=1.5, rate=100.0, after_go=(0.0, 0
     adm._publish = lambda eq: None
     msg = SimpleNamespace(measured_joint_position=[0.1] * 7, commanded_joint_position=[0.0] * 7)
     went, dt = [], 1.0 / rate
+    if calibrate is not None:                                # the pre-task calibration, before any trial
+        arm["p"] = start.copy()
+        adm.start(calibrate=True)
+        hand["f"] = np.asarray(calibrate, float)             # what touches it during the hold (nothing, normally)
+        for _ in range(int(4.0 * rate)):
+            clock.t += dt
+            adm._on_state(msg)
+        adm.cal_rec = adm.finish_calibration(1.0, 1.5)
+        adm.stop()
     for resting in trials:
         arm["p"] = start.copy()
         adm.start()
@@ -158,3 +169,111 @@ def test_notify_moved_fires_once_when_he_starts_and_stop_drops_it(monkeypatch):
     adm.notify_moved(0.01, lambda: fired.append(1))
     adm.stop()
     assert adm._moved_cb is None
+
+
+# ---------------------------------------------------------------- the pre-task calibration
+def held(forces, rate=100.0):
+    return [(k / rate, np.asarray(f, float)) for k, f in enumerate(forces)]
+
+
+def test_calibration_takes_the_steady_reading_after_the_settle():
+    rng = np.random.default_rng(1)
+    settle = [ARM + [0, 0, 3.0 * (1 - k / 100)] for k in range(100)]       # 1 s settling transient
+    still = [ARM + rng.normal(0, 0.4, 3) for _ in range(300)]                # then 3 s at rest, sample noise
+    rec = tc.calibrate(held(settle + still), 1.0, 10.0, 1.5)
+    assert rec["ok"] and np.linalg.norm(np.array(rec["tare_n"]) - ARM) < 0.1 and rec["n"] == 300
+
+
+def test_calibration_refuses_a_touch_too_few_readings_and_a_hard_press():
+    touched = [ARM] * 200 + [ARM + HAND] * 50 + [ARM] * 150                  # a hand for 0.5 s mid-hold
+    rec = tc.calibrate(held(touched), 1.0, 10.0, 1.5)
+    assert not rec["ok"] and "touched" in rec["why"]
+    assert not tc.calibrate(held([ARM] * 110), 1.0, 10.0)["ok"]              # 10 readings after the settle
+    assert not tc.calibrate(held([ARM + [0, 12.0, 0]] * 400), 1.0, 10.0)["ok"]
+
+
+def test_a_calibrated_run_ignores_the_quiet_window_even_on_its_first_trial(monkeypatch):
+    """The monkey grabs early from the very first trial: the per-trial check has nothing to compare with yet,
+    so the arm creeps; calibrated before he came in, it stays put, and the trial's record says so."""
+    went, _ = rail_run(monkeypatch, [HAND])
+    assert went[0] > 0.04
+    went, adm = rail_run(monkeypatch, [HAND, np.zeros(3), HAND], calibrate=np.zeros(3))
+    assert adm.cal_rec["ok"] and max(went) < 0.002
+    rec = adm.tare_record()
+    assert rec["kept"] == "calibrated" and rec["hand_likely"] and rec["off_n"] > 4.0
+
+
+def test_a_touched_calibration_is_not_used(monkeypatch):
+    went, adm = rail_run(monkeypatch, [np.zeros(3)], calibrate=[0.0, 0.0, 0.0])
+    assert adm.calibrated()
+    # Pressed throughout the hold: steady but over tare_max_n -> refused, no calibrated tare.
+    went, adm = rail_run(monkeypatch, [np.zeros(3)], calibrate=[0.0, 15.0, 0.0])
+    assert not adm.cal_rec["ok"] and not adm.calibrated() and adm.tare_record()["kept"] != "calibrated"
+
+
+def test_pause_at_park_holds_before_the_next_trial_with_a_note():
+    import test_reward_burst  # noqa: F401  (ROS stand-ins for experiment_control)
+    from sinthlab_bringup.helpers.experiment_control import ExperimentControl
+    c = ExperimentControl.__new__(ExperimentControl)
+    c._stopped = c._paused = c._held = False
+    c._pause_note, c._resume_fn, c._phase = None, None, None
+    c._log = SimpleNamespace(info=lambda m: None, warn=lambda m: None, error=lambda m: None)
+    c._publish = lambda: None
+    c._set_phase = lambda phase, arg=None: setattr(c, "_phase", phase)
+    c._sequence_rewards, c._reward_ready_at, c._pending = False, 0.0, {}
+    started = []
+    c.pause_at_park("calibrated", "Calibrated.")
+    c.begin_trial(lambda: started.append(1))
+    assert started == [] and c._held and c._paused and c._pause_note == "calibrated"
+    c._on_resume(None, SimpleNamespace())
+    assert started == [1] and c._pause_note is None and not c._paused
+    c._stopped = True
+    c.pause_at_park("calibrated", "x")                       # never over a Stop
+    assert not c._paused
+
+
+def test_the_orchestrator_calibrates_parks_then_waits_for_resume(monkeypatch):
+    from unittest.mock import Mock
+    import test_trial_guards as tg
+    cls = tg._free_move_node_class(monkeypatch)
+    node = Mock()
+    node._stopping, node._calibrating = False, False
+    params = {"tare_calibration.enabled": True, "tare_calibration.hold_sec": 4.0, "tare_calibration.settle_sec": 1.0,
+              "tare_calibration.steady_n": 1.5, "tare_calibration.wait_for_resume": True}
+    node.has_parameter = lambda n: n in params
+    node.get_parameter = lambda n: SimpleNamespace(value=params[n])
+    for name in ("_start_calibration", "_calibration_hold", "on_calibration_done", "_calibration_parked",
+                 "on_move_complete", "on_switched_to_fixture", "on_park_complete", "_stop_now", "_next_trial"):
+        setattr(node, name, getattr(cls, name).__get__(node))
+    node.admittance.finish_calibration.return_value = {"ok": True, "tare_n": [0.4, -1.2, 4.8], "spread_n": 0.2,
+                                                       "rest_offset_mm": [0, 0, -3], "why": ""}
+    node._start_calibration()
+    node.move_to_start.start.assert_called_once()
+    node.on_move_complete()
+    node.recorder.mark.assert_not_called()                    # no trial: nothing recorded
+    node.on_switched_to_fixture()
+    node.admittance.start.assert_called_once_with(calibrate=True)
+    node.calibration_wait.start.assert_called_once()
+    node.on_calibration_done()
+    node.switch_to_joint.start.assert_called_once()
+    node.on_park_complete()
+    node.control.pause_at_park.assert_called_once()
+    assert node.control.pause_at_park.call_args.args[0] == "calibrated"
+    assert node.control.begin_trial.call_args.args[0] == node._next_trial
+    node.recorder.stop_and_save.assert_not_called()
+    # Stop during the hold: back to park, nothing measured; Resume (begin_trial) redoes the calibration.
+    node.reset_mock()
+    node._start_calibration()
+    node.on_move_complete()
+    node.on_switched_to_fixture()
+    node.move_to_start.active.return_value = False
+    node.switch_to_fixture.active.return_value = node.switch_to_joint.active.return_value = False
+    node.move_park.active.return_value = False
+    node._stop_now()
+    node.calibration_wait.stop.assert_called_once()
+    node.switch_to_joint.start.assert_called_once()
+    node.on_calibration_done()                                # a late timer: ignored
+    node.admittance.finish_calibration.assert_not_called()
+    node.on_park_complete()
+    assert node.control.begin_trial.call_args.args[0] == node._start_calibration
+    node.control.pause_at_park.assert_not_called()

@@ -70,6 +70,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 
 .banner { margin: 10px 18px 0; padding: 10px 14px; border-radius: 8px; font-weight: 500;
   background: color-mix(in srgb, var(--warn) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.banner.ok { background: color-mix(in srgb, var(--ok) 12%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .banner.demo { background: color-mix(in srgb, var(--live) 12%, var(--panel)); border-color: color-mix(in srgb, var(--live) 45%, transparent); }
 
 /* ---------- layout ---------- */

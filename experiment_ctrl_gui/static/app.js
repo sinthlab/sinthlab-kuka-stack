@@ -54,6 +54,10 @@ const PHASE_TEXT = {
   response_timeout: "Response timed out. Trial unrewarded. Moving to park",
   stopped: "Stopped. Holding at park", cue_audio_end: null,
   paused: "Pausing. Ending the trial and moving to park", paused_held: "Paused at park. Press Resume to continue",
+  // The pre-task calibration (tare_calibration): at Start, before the monkey is in.
+  tare_calibration: "Calibrating at the start pose. Keep clear of the apple",
+  paused_calibrated: "Calibrated. Bring the monkey in, then press Resume",
+  paused_calibration_failed: "Calibration failed. Keep clear of the apple, then press Resume to retry",
   threshold: "Pull threshold reached. Returning",
   session_end: "Session ended. Waiting for release",
   grasp_wait: "Waiting for grasp", grasp: "Grasp detected. Waiting to apply perturbation",
@@ -398,6 +402,7 @@ function renderControls() {
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
+  else if (s && s.held && s.paused && s.pause_note === "calibrated") { pl.className = "pill pause"; pl.textContent = `Calibrated, waiting · ${expLabel(s.experiment)}`; }
   else if (s && s.held && s.paused) { pl.className = "pill pause"; pl.textContent = `Paused · ${expLabel(s.experiment)}`; }
   else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Parked · ${expLabel(s.experiment)}`; }
   else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${expLabel(s.experiment)} · trial ${s.trial}`; }
@@ -411,6 +416,9 @@ function renderControls() {
   else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop are available. Live edits and robot status require ROS.`;
   if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). You can edit live settings here. To stop the experiment, press Ctrl-C in its terminal.`;
   if (s && s.phase === "safety_trip") { msg = "Safety abort. The runaway monitor tripped. The arm is moving to the park pose."; }
+  if (s && s.held && s.paused && s.pause_note === "calibrated") { msg = "Calibrated: the force reading was measured at the start pose with nobody touching it. Bring the monkey in, then press Resume to start the first trial."; cls = "banner ok"; }
+  if (s && s.held && s.paused && s.pause_note === "calibration_failed") { msg = "Calibration failed: the force reading was not steady at the start pose (someone touched the apple, or the arm had not settled). Keep clear of it and press Resume to try again. The log has the reading."; }
+  if (s && s.phase === "tare_calibration" && !s.held) { msg = "Calibrating: the arm goes to the start pose and holds still for a few seconds. Keep clear of the apple."; }
   if (s && s.phase === "early_touch") { msg = "Early touch. The apple moved before the go cue. The trial ends without reward. The arm parks and waits before the next trial."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
 
@@ -452,7 +460,7 @@ function renderStatus() {
   renderRunStats();
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
-  const phaseName = s ? (s.held ? (s.paused ? "paused_held" : "stopped") : s.phase) : null;
+  const phaseName = s ? (s.held ? (s.paused ? (s.pause_note ? `paused_${s.pause_note}` : "paused_held") : "stopped") : s.phase) : null;
   const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "Not running";
   $("#st-phase").textContent = text;
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
@@ -1390,15 +1398,14 @@ function renderMonitor() {
   const juice = juiceOf(d);
   const latency = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
   const misses = rows.filter((r) => ["response_timeout", "timeout", "early_touch"].includes(r.outcome)).length;
-  // The experiment clock: since Start while the run goes (the run bar's ⏱, ticking: renderRunStats), else the
-  // finished run's first trial to its last.
-  const started = d.running && S.app && S.app.runner.started_at;
-  const t0 = started || num(all[0].t_start), tEnd = d.running ? NaN : num(last.t_end);
+  // The experiment clock: from the run's first trial (not Start: the pre-task calibration and bringing the
+  // monkey in come before it), ticking while the run goes (renderRunStats), else to its last trial's end.
+  const t0 = num(all[0].t_start), tEnd = d.running ? NaN : num(last.t_end);
   const clock = Number.isFinite(t0)
     ? `<span class="exp-clock" data-t0="${t0}"${d.running ? "" : ` data-t1="${Number.isFinite(tEnd) ? tEnd : t0}"`}>${
       fmtDur((d.running ? Date.now() / 1000 : (Number.isFinite(tEnd) ? tEnd : t0)) - t0)}</span>` : "–";
   const row1 = [
-    ["Experiment time", clock, "", "Since Start was pressed (a finished run: its first trial to its last)"],
+    ["Experiment time", clock, "", "Since the first trial started (a finished run: its first trial to its last)"],
     [session ? "Sessions" : "Trials", rows.length],
     session ? ["Rewards", rows.reduce((sum, r) => sum + (num(r.n_rewards) || 0), 0)]
             : ["Rewarded · last 20", recent.length ? `${rewarded}/${recent.length}` : "–"],

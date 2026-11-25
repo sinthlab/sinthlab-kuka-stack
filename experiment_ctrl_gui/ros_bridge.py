@@ -231,7 +231,7 @@ class DemoBridge:
             self._stopped = False
             self._held = False
             self._stop_now = False
-            self._paused = False
+            self._paused, self._pause_note = False, None
             self._in_trial = False
             self._trial = 0
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
@@ -266,6 +266,7 @@ class DemoBridge:
             "experiment": self._exp.key, "node": f"/lbr/{self._exp.node}", "trial": self._trial,
             "phase": self._phase, "phase_arg": self._phase_arg, "phase_t": self._phase_t,
             "t": time.time(), "held": self._held, "paused": getattr(self, "_paused", False),
+            "pause_note": getattr(self, "_pause_note", None) if getattr(self, "_paused", False) else None,
             "pending": dict(self._pending), "live": dict(self._effective),
             "nsp_sync": bool(self._effective.get("nsp_sync.enabled", False)), "_rx": time.time(),
             # As the real app would report it, set up as the checklist says.
@@ -318,9 +319,24 @@ class DemoBridge:
         self._phase_to("parking", None, "First move: to the park pose at speed scale 0.25, from wherever the arm is.")
         if not self._sleep(run_id, 3.0):
             return
-        while run_id == self._run_id:
-            if not self._trial_once(run_id):
+        if self._params.get("tare_calibration.enabled"):
+            # The pre-task calibration: to the start pose, hold untouched, park; then wait for Resume.
+            self._phase_to("tare_calibration", None, "Pre-task calibration: moving to the start pose to measure the "
+                           "force reading at rest. Keep clear of the apple.")
+            if not self._sleep(run_id, 2.0 + float(self._params.get("tare_calibration.hold_sec", 4.0)) + 2.0):
                 return
+            self._log("Pre-task calibration done: tare [0.41, -1.18, 4.83] N (steady within 0.2 N). Parking.")
+            if self._params.get("tare_calibration.wait_for_resume") and not self._stopped:
+                with self._lock:
+                    self._paused, self._pause_note = True, "calibrated"
+                self._log("Calibrated. Holding at park: bring the monkey in, then press Resume to start the first trial.")
+        first = True
+        while run_id == self._run_id:
+            if first and self._paused and not self._stopped:
+                pass                       # calibrated: hold below before the first trial
+            elif not self._trial_once(run_id):
+                return
+            first = False
             if self._paused and not self._stopped:
                 self._held = True
                 self._phase_to("paused", None, "Paused: holding at park until Resume.")
@@ -704,7 +720,7 @@ class DemoBridge:
                 return False, "stopping: the run is ending"
             if self._paused:
                 return True, "already paused"
-            self._paused = True
+            self._paused, self._pause_note = True, None
             if not self._held:
                 self._stop_now = True
         self._log("PAUSE requested: ending the trial now and parking; then holding until Resume.", "WARN")
@@ -718,6 +734,7 @@ class DemoBridge:
             if not self._paused:
                 return True, "not paused"
             self._paused = False
+            self._pause_note = None
             self._stop_now = False
         self._publish()
         return True, "resumed: the next trial starts now"

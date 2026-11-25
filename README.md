@@ -1743,7 +1743,21 @@ does the IK; ROS only moves the target point.
     the median of the run's last 9 is taken for a hand and the median is used instead, with a warning in
     the log ([`tare_check.py`](sinthlab_bringup/sinthlab_bringup/helpers/tare_check.py)). The first two
     trials of a run use their own. Each trial's sidecar records it (`tare`: measured, used, the usual one,
-    which was kept). 0 = off.
+    which was kept). 0 = off. It is the fallback: with the pre-task calibration (below, the default) the
+    quiet window is not used for the tare at all.
+  - **The pre-task calibration** (`tare_calibration.*`, per-run, on in every free-move task). A monkey early
+    in training grabs early, so the quiet window is a poor time to measure the tare. Instead, at **Start**,
+    before the monkey is brought in, the arm goes to the **start pose** and holds there untouched for
+    `hold_sec` (4 s); the mean reading after `settle_sec` (1 s) is the tare, and the resting sag, for the
+    whole run. It has to be the start pose, not park: the reading's error comes from the arm's own model
+    and depends on its posture (park bends the elbow ~95°, the start ~49°). The reading must be steady
+    (every 0.25 s within `steady_n`, 1.5 N, of the mean) and under `free_move.tare_max_n`; otherwise the
+    run pauses at park ("Calibration failed") and **Resume** redoes it. Once done, with `wait_for_resume`
+    the run pauses at park ("Calibrated. Bring the monkey in, then press Resume"), so Start can be pressed
+    before he arrives. Each trial still records its quiet-window reading and how far it was from the
+    calibration (`tare.off_n`, `hand_likely`): a record of early grabs, never used for the tare. Pause or
+    Stop during the calibration park the arm; Resume redoes it. A run lasts one calibration: to redo it
+    (e.g. a long session in which the arm has warmed up), Stop and Start again without the monkey.
   - `max_speed_mps`: speed cap, 0.35 m/s by default.
   - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 4 m/s²; 0 = off).
     The force reading is noisy and flickers across the threshold; without this the speed follows

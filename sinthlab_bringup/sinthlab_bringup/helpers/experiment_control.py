@@ -105,6 +105,7 @@ class ExperimentControl:
         self._held = False                                  # stopped or paused, and parked
         self._paused = False                                # pause: hold at park until resume
         self._resume_fn: Optional[Callable[[], None]] = None  # the next trial, kept while paused
+        self._pause_note: Optional[str] = None              # why the node paused itself (pause_at_park)
         self._pending: Dict[str, object] = {}               # accepted, applies at the next trial
         self._reloaders: List[Callable[[], None]] = []
         self._stop_hooks: List[Callable[[], None]] = []
@@ -181,6 +182,16 @@ class ExperimentControl:
             self._stopped = True
             self._log.error(f"Holding at park: {why}. Press Stop to end the run.")
             self._publish()
+
+    def pause_at_park(self, note: str, message: str) -> None:
+        """Pause from the orchestrator itself, before the next trial, with no trial to end: the next
+        begin_trial holds at park until Resume. `note` tells the dashboard why (e.g. `calibrated`: the
+        pre-task calibration is done and the run waits for the monkey); `message` goes to the log."""
+        if self._stopped:
+            return
+        self._paused, self._pause_note = True, note
+        self._log.info(message)
+        self._publish()
 
     def smartpad(self) -> SmartPadLink:
         """What the SmartPad app reports it runs with (helpers/smartpad_link.py)."""
@@ -303,6 +314,7 @@ class ExperimentControl:
             "t": time.time(),
             "held": self._held,
             "paused": self._paused,
+            "pause_note": self._pause_note if self._paused else None,
             "pending": self._pending,
             "live": self._effective,
             "nsp_sync": self._nsp_enabled,
@@ -351,7 +363,7 @@ class ExperimentControl:
         elif self._paused:
             response.message = "already paused" + (" at park" if self._held else "; parking")
         else:
-            self._paused = True
+            self._paused, self._pause_note = True, None
             if not self._held:
                 self._log.warn("PAUSE requested: ending the trial now and parking; then holding until Resume.")
                 for fn in self._stop_hooks:
@@ -370,7 +382,7 @@ class ExperimentControl:
         elif not self._paused:
             response.message = "not paused"
         else:
-            self._paused = False
+            self._paused, self._pause_note = False, None
             fn, self._resume_fn = self._resume_fn, None
             if self._held and fn is not None:
                 self._held = False

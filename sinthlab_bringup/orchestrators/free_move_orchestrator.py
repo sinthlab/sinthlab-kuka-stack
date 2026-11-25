@@ -58,6 +58,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
     with the reward tone, and the session's end pays nothing.
 
     [first: move_park, slowly, from wherever the arm is]
+    [then, with tare_calibration.enabled: THE PRE-TASK CALIBRATION, before the monkey is there: move_to_start ->
+     CLIK -> hold untouched tare_calibration.hold_sec (the reading after settle_sec, if steady, is the tare
+     for the whole run; helpers/tare_check.py) -> JOINT -> park; then, with wait_for_resume, the run pauses
+     at park ("calibrated") until Resume. A reading that was not steady pauses it too, and Resume redoes it.]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
     -> session ended or a reach / choice (end tone; with a reward, the reward cue: the whole ring WHITE, the same
@@ -170,6 +174,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint")
         self.move_park = ParkMove(self, on_complete=self.on_park_complete)
+        self._calibrating, self._cal_rec = False, None
+        self.calibration_wait = WaitAction(self, duration_sec=4.0, on_complete=self.on_calibration_done,
+                                           name="tare_calibration")
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
@@ -182,7 +189,63 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.get_logger().info(f"=== PRE-TRAINING: {self.experiment.replace('_', ' ').upper()} INITIALIZED ===")
         # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
         self.control.on_event("parking")
-        self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
+        first = self._start_calibration if self._calibration_on() else self._next_trial
+        self.move_park.start_first(lambda: self.control.begin_trial(first))
+
+    # ------------------------------------------------------------------ the pre-task calibration
+    def _calibration_on(self) -> bool:
+        return self.has_parameter("tare_calibration.enabled") and bool(
+            get_required_param(self, "tare_calibration.enabled"))
+
+    def _start_calibration(self):
+        """At park, before the first trial (or on Resume after one that failed): to the start pose, to hold
+        there untouched while the force reading is measured. No trial: nothing is recorded."""
+        self._stopping = False
+        self._calibrating, self._cal_rec = True, None
+        self.control.on_event("tare_calibration")
+        self.get_logger().info("Pre-task calibration: moving to the start pose to measure the force reading at "
+                               "rest. Keep clear of the apple.")
+        self.ring.show("off")
+        self.move_to_start.start()
+
+    def _calibration_hold(self):
+        self.admittance.start(calibrate=True)
+        self.calibration_wait.set_duration(max(0.5, float(get_required_param(self, "tare_calibration.hold_sec"))))
+        self.calibration_wait.start()
+
+    def on_calibration_done(self):
+        if self._stopping:
+            return
+        self._cal_rec = self.admittance.finish_calibration(
+            float(get_required_param(self, "tare_calibration.settle_sec")),
+            float(get_required_param(self, "tare_calibration.steady_n")))
+        self.admittance.stop()
+        r = self._cal_rec
+        if r["ok"]:
+            self.get_logger().info(f"Pre-task calibration done: tare {r['tare_n']} N (steady within "
+                                   f"{r['spread_n']:g} N), resting sag {r['rest_offset_mm']} mm. Parking.")
+        else:
+            self.get_logger().error(f"Pre-task calibration not usable: {r['why']} Parking.")
+        self.switch_to_joint.start()
+
+    def _calibration_parked(self):
+        """Back at park after the calibration (or after Stop / Pause during it)."""
+        self._calibrating = False
+        self._stopping = False
+        r = self._cal_rec
+        if r is None:                                  # cut short: Resume redoes it
+            self.control.begin_trial(self._start_calibration)
+            return
+        if not r["ok"]:
+            self.control.pause_at_park("calibration_failed",
+                                       f"Calibration failed ({r['why']}) Keep clear of the apple and press Resume "
+                                       "to try again.")
+            self.control.begin_trial(self._start_calibration)
+            return
+        if bool(get_required_param(self, "tare_calibration.wait_for_resume")):
+            self.control.pause_at_park("calibrated", "Calibrated. Holding at park: bring the monkey in, then press "
+                                       "Resume to start the first trial.")
+        self.control.begin_trial(self._next_trial)
 
     def _read_trial_end(self):
         """The live settings of the go cue's light and of the end of a trial (snatch or release wait)."""
@@ -202,12 +265,16 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_to_start.start()
 
     def on_move_complete(self):
-        self.recorder.mark("at_start")
+        if not self._calibrating:
+            self.recorder.mark("at_start")
         self.switch_to_fixture.start()
 
     def on_switched_to_fixture(self):
         if self._stopping:                 # Stop came during the switch: straight back
             self.switch_to_joint.start()
+            return
+        if self._calibrating:
+            self._calibration_hold()
             return
         # Hold still and measure the resting force while the quiet window runs; the arm only
         # starts following the hand at the go cue (the tare is the mean over the window so far, up to free_move.tare_sec).
@@ -339,7 +406,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
             return
         self.recorder.mark("armed")
         self.admittance.enable_motion()
-        self.recorder.annotate(tare=self.admittance.tare_record())
+        tare = self.admittance.tare_record()
+        if self._cal_rec is not None and self._cal_rec.get("ok"):
+            tare["calibration"] = self._cal_rec
+        self.recorder.annotate(tare=tare)
         if self._off_at == "move" and self._keep_lit() and not self._forage_on():
             self.admittance.notify_moved(MOVE_ONSET_M, self._cue_out)
         self.safety.start()
@@ -503,6 +573,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.start()
 
     def on_park_complete(self):
+        if self._calibrating:
+            self._calibration_parked()
+            return
         self.get_logger().info(f"--- {'TRIAL' if self._choice_on() else 'SESSION'} {self.trial_count} COMPLETE ---")
         self._mark_end()                # normally sent already, at the outcome
         self.recorder.stop_and_save()
@@ -538,6 +611,18 @@ class FreeMoveOrchestratorNode(rclpyNode):
         wait. No further trial starts, so the arm then holds at park and the launch can end."""
         self._end_tone_pending = False
         if self._stopping:
+            return
+        if self._calibrating:                      # the pre-task calibration: no trial to end; back to park
+            if self._cal_rec is not None:          # measured already, on its way to park: let it finish
+                return
+            self._stopping = True
+            self.calibration_wait.stop()
+            self.admittance.stop()
+            if self.move_to_start.active():
+                self.move_to_start.cancel()
+                self.move_park.start()
+            elif not (self.switch_to_fixture.active() or self.switch_to_joint.active() or self.move_park.active()):
+                self.switch_to_joint.start()
             return
         if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
             self._trial_over(self.control.stop_token())

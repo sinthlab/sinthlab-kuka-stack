@@ -32,7 +32,9 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    tare_sec at the start of each trial and subtracted, so a resting arm does not creep.
                    Checked against the run's usual tare (tare_tol_n, helpers/tare_check.py): a hand
                    resting on the apple during the quiet window would otherwise become the zero, and the
-                   arm would creep off by itself once he lets go.
+                   arm would creep off by itself once he lets go. With the PRE-TASK CALIBRATION
+                   (start(calibrate=True), then finish_calibration(): the run's first hold at the start
+                   pose, before the monkey is there) its tare is used for the whole run instead.
   * deadband_n     a THRESHOLD to START: a (tared) force below it moves a resting arm nothing, so
                    force-reading noise cannot creep it. Above it the WHOLE force counts -- it is not
                    subtracted from every push -- with a short ramp (one dead band wide) so the start is
@@ -263,6 +265,9 @@ class AdmittanceMoveAction:
         self._tare_history = []                         # the run's recent tares (helpers/tare_check.py)
         self._tare_rec = {}                             # this trial's tare, for its sidecar
         self._moved_cb = None                           # notify_moved(): (distance [m], callback), one-shot
+        self._cal_tare: Optional[np.ndarray] = None     # the pre-task calibration's tare, once done
+        self._calibrating = False                       # start(calibrate=True): collecting its samples
+        self._cal_samples = []                          # [(seconds since start(), force [N])]
         self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
         self._pushing = False
         self._v_arm = np.zeros(3)                       # the arm's velocity, smoothed (the trail)
@@ -324,8 +329,10 @@ class AdmittanceMoveAction:
             f"debug log {'ON' if self._debug else 'off'}")
 
     # ------------------------------------------------------------------ lifecycle
-    def start(self) -> None:
-        """Hold the start pose and measure the resting force (tare). Motion starts at enable_motion()."""
+    def start(self, calibrate: bool = False) -> None:
+        """Hold the start pose and measure the resting force (tare). Motion starts at enable_motion().
+        calibrate: the pre-task calibration's hold instead -- no trial; finish_calibration() ends it."""
+        self._calibrating, self._cal_samples = bool(calibrate), []
         self._active, self._moving = True, False
         self._anchor = self._eq = None
         self._tare_samples = []
@@ -349,9 +356,18 @@ class AdmittanceMoveAction:
     def enable_motion(self) -> None:
         """Finish the tare and let the arm move. Call at the go cue."""
         raw = np.mean(self._tare_samples, axis=0) if self._tare_samples else None
-        self._tare, self._tare_rec = tare_check.choose(raw, self._tare_history, self._tare_tol, self._tare_max,
-                                                       self._tare)
-        if self._tare_rec.get("over_max"):   # someone was pushing during the tare: do not learn the push
+        if self._cal_tare is not None:      # calibrated before the task: that tare, whatever the hand does now
+            self._tare = self._cal_tare
+            self._tare_rec = tare_check.against_calibration(raw, self._cal_tare, self._tare_tol)
+        else:
+            self._tare, self._tare_rec = tare_check.choose(raw, self._tare_history, self._tare_tol,
+                                                           self._tare_max, self._tare)
+        if self._cal_tare is not None:
+            if self._tare_rec.get("hand_likely"):
+                self._node.get_logger().info(
+                    f"Free move: quiet-window reading {self._tare_rec['off_n']:g} N from the calibration (a hand "
+                    "on the apple?): the calibration's tare is used, as always.")
+        elif self._tare_rec.get("over_max"):   # someone was pushing during the tare: do not learn the push
             self._node.get_logger().warn(
                 f"Free move: resting force {np.round(raw, 1)} N exceeds tare_max_n ({self._tare_max:g} N) -- was "
                 f"the arm being touched? Using {np.round(self._tare, 1)} N.")
@@ -360,8 +376,9 @@ class AdmittanceMoveAction:
                 f"Free move: resting force {np.round(raw, 1)} N is {self._tare_rec['off_n']:g} N from this run's "
                 f"usual {np.round(self._tare, 1)} N (tare_tol_n {self._tare_tol:g}) -- a hand on the apple? "
                 "Using the usual one.")
-        if self._eq is not None and self._p_meas is not None:
-            off = self._eq - self._p_meas                 # the resting sag under the gravity residual
+        # The resting sag under the gravity residual: the calibration's (measured untouched), else this trial's.
+        if self._cal_tare is None and self._eq is not None and self._p_meas is not None:
+            off = self._eq - self._p_meas
             n = float(np.linalg.norm(off))
             self._rest_offset = off if n <= self._leash else off * (self._leash / n)
         self._node.get_logger().info(f"Free move: tare {np.round(self._tare, 2)} N (base frame), resting offset "
@@ -371,6 +388,25 @@ class AdmittanceMoveAction:
         self._p_go = None if self._p_meas is None else self._p_meas.copy()
         self._max_exc = 0.0
         self._moving = True
+
+    def finish_calibration(self, settle_sec: float, steady_n: float) -> dict:
+        """End the pre-task calibration's hold: if its reading was steady, its mean is the tare for every
+        trial from now on. Returns the record (helpers/tare_check.calibrate). The arm keeps holding until
+        stop()."""
+        rec = tare_check.calibrate(self._cal_samples, settle_sec, self._tare_max, steady_n)
+        self._calibrating = False
+        if rec["ok"]:
+            self._cal_tare = np.array(rec["tare_n"], dtype=float)
+            self._tare = self._cal_tare.copy()
+            if self._eq is not None and self._p_meas is not None:   # the resting sag, measured untouched
+                off = self._eq - self._p_meas
+                n = float(np.linalg.norm(off))
+                self._rest_offset = off if n <= self._leash else off * (self._leash / n)
+        rec["rest_offset_mm"] = [round(float(v) * 1000, 1) for v in self._rest_offset]
+        return rec
+
+    def calibrated(self) -> bool:
+        return self._cal_tare is not None
 
     def tare_record(self) -> dict:
         """This trial's tare for its sidecar: measured, used, the run's usual one and which was kept."""
@@ -577,6 +613,8 @@ class AdmittanceMoveAction:
         f_base = self._hand_force(msg, q, T)
 
         if not self._moving:
+            if self._calibrating:
+                self._cal_samples.append((now - self._t_start, f_base))
             if now - self._t_start <= max(self._tare_sec, 0.1) or not self._tare_samples:
                 self._tare_samples.append(f_base)
             self._publish(self._eq)
