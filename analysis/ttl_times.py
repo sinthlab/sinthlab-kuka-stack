@@ -7,9 +7,10 @@
           counts samples from the start of the recording; the file header holds the date and time the
           recording started (TimeOrigin, by the Central computer's clock), so each edge is shown as
           start + seconds into the recording.
-2) Robot: when SYNC 1 / SYNC 2 / SYNC 3 were sent, by the robot computer's clock: the trial_start /
-          trial_end events in the trial sidecars, and the run's experiment_start.json (runs recorded
-          before the robot sent SYNC 3 have none; the script says so).
+2) Robot: when SYNC 1 / SYNC 2 / SYNC 3 / SYNC 4 were sent, by the robot computer's clock: the
+          trial_start / trial_end events in the trial sidecars, the run's experiment_start.json (runs
+          recorded before the robot sent SYNC 3 have none; the script says so), and the sidecars'
+          rewards (SYNC 4, the reward pulse; it goes to the reward box, not the NSP).
 
 All times are shown in this computer's time zone. The NSP and the robot are separate computers' clocks,
 so their times differ by however far those clocks are apart; the pulses themselves line them up.
@@ -30,7 +31,7 @@ from neo.rawio import BlackrockRawIO
 
 NSP_CHANNELS = {"ainp2": "trial start", "ainp3": "trial end", "ainp4": "experiment start"}
 ROBOT_EVENTS = {"trial_start": "SYNC 1 (trial start)", "trial_end": "SYNC 2 (trial end)",
-                "experiment_start": "SYNC 3 (experiment start)"}
+                "experiment_start": "SYNC 3 (experiment start)", "reward": "SYNC 4 (reward)"}
 THRESHOLD_V = 2.5
 FIRST_ANALOG_ID = 257          # Blackrock electrode id of ainp1
 
@@ -76,9 +77,11 @@ def robot_pulses(folder):
     sent each pulse [Unix s]."""
     out = {e: [] for e in ROBOT_EVENTS}
     for meta in sorted(glob.glob(os.path.join(folder, "robot_trajectory_*.meta.json"))):
-        for ev in json.load(open(meta)).get("events", []):
+        side = json.load(open(meta))
+        for ev in side.get("events", []):
             if ev["event"] in out:
                 out[ev["event"]].append(ev["t_wall"])
+        out["reward"] += [r["t_wall"] for r in side.get("rewards") or []]
     start = os.path.join(folder, "experiment_start.json")
     if os.path.isfile(start):
         rec = json.load(open(start))
@@ -97,7 +100,7 @@ def panel(ax, rows, title, xlabel):
     ax.set_ylim(-0.7, len(rows) - 0.3)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S", tz=dt.datetime.now().astimezone().tzinfo))
 
 
@@ -122,7 +125,7 @@ def main():
             print(f"    {stamp(d)}")
 
     tz = dt.datetime.now().astimezone().tzname()
-    fig, axes = plt.subplots(2, 1, figsize=(14, 6))
+    fig, axes = plt.subplots(2, 1, figsize=(16, 6))
     panel(axes[0], [(f"{n} ({NSP_CHANNELS[n]})", t) for n, t in nsp.items()],
           f"Pulses recorded on the NSP (recording started {stamp(start)})", f"NSP clock [{tz}]")
     panel(axes[1], [(ROBOT_EVENTS[e], t) for e, t in robot.items()],
