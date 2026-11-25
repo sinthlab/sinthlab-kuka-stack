@@ -72,10 +72,16 @@ class QuietGate:
         self._base_p, self._base_f = [], []
         self._p0 = self._f0 = None
         self._active = True
+        self._waiting_for_go = False
         self._node.get_logger().info(
             f"Quiet window: {self._duration:.2f} s" + (
                 f", broken off if the apple moves > {self._move_m * 100:.1f} cm or is pushed > {self._force_n:g} N"
                 if self._enabled else " (not guarded)"))
+
+    def continue_until_go(self) -> None:
+        """Keep the same quiet-window baseline while the target is visible."""
+        self._waiting_for_go = True
+        self._active = True
 
     def active(self) -> bool:
         return self._active
@@ -118,6 +124,6 @@ class QuietGate:
                         self._node.get_logger().warn(f"Quiet window broken at {elapsed:.2f} s: {why}.")
                         self._on_broken(why)
                         return
-        if elapsed >= self._duration:
+        if not self._waiting_for_go and elapsed >= self._duration:
             self._active = False
             self._on_complete()

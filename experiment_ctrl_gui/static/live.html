@@ -12,7 +12,7 @@
     <span class="logo" aria-hidden="true"></span>
     <div>
       <h1>Live view</h1>
-      <p class="sub" id="live-sub">the running experiment's bounds and the arm — nothing here moves the arm</p>
+      <p class="sub" id="live-sub">Arm position and trial bounds</p>
     </div>
   </div>
   <div class="pills">
@@ -23,22 +23,22 @@
 <main class="live-main">
   <div class="live-views">
     <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
-    <canvas id="cv-top" class="live-canvas" aria-label="Top view: Y to the right, X toward the subject down"></canvas>
+    <canvas id="cv-top" class="live-canvas" aria-label="Top view with Y pointing right and X pointing down toward the subject"></canvas>
   </div>
   <p class="live-status" id="live-status"></p>
   <p class="live-legend muted small">
-    <span class="key" style="background:var(--ink)"></span> arm (trail: last 8 s)
-    <span class="key ring" style="border-color:var(--accent)"></span> pull point (where the spring pulls it)
+    <span class="key" style="background:var(--ink)"></span> Arm trajectory (last 8 s)
+    <span class="key ring" style="border-color:var(--accent)"></span> Pull point (spring target)
     <span class="key line" style="background:var(--info)"></span> rail
     <span class="key line" style="background:var(--warn)"></span> wall / box
     <span class="key line dash" style="border-color:var(--accent)"></span> threshold
-    <span class="key line dash" style="border-color:var(--err)"></span> floor · dotted: safety trip
+    <span class="key line dash" style="border-color:var(--err)"></span> floor and safety threshold (dotted)
     <span class="key ring" style="border-color:var(--live)"></span> fork (filled once passed)
-    <span class="key ring" style="border-color:var(--ok)"></span> goal / rail end (filled: lit; red: reached)
+    <span class="key ring" style="border-color:var(--ok)"></span> goal or rail end (filled when lit, red when reached)
   </p>
-  <p class="muted small">Front: as seen from the front of the arm (the subject's side), Y to the right, Z up.
-    Top: from above, Y to the right, X toward the subject downward. Start-relative bounds sit where the arm
-    was when the trial was armed, so they can be a few mm off the experiment's own anchor.</p>
+  <p class="muted small">The front view is from the subject’s side, with Y to the right and Z up. The top view shows
+    Y to the right and X down toward the subject. Bounds measured from the start use the arm position
+    when the trial was armed and may differ from the experiment’s anchor by a few millimetres.</p>
 </main>
 
 <script src="live_view.js"></script>
@@ -54,8 +54,8 @@ async function load() {
     const m = await (await fetch("/api/live_view", { cache: "no-store" })).json();
     view.setGeometry(m.geometry); version = m.geometry ? m.geometry.version : null;
     view.setLive(m.live);
-    sub.textContent = m.geometry ? `${m.geometry.experiment.replace(/_/g, " ")} — bounds and the arm, live`
-                                 : "no experiment running";
+    sub.textContent = m.geometry ? `${m.geometry.experiment.replace(/_/g, " ")}`
+                                 : "No experiment running";
   } catch { /* the stream below fills in */ }
 }
 function onLive(l) {
@@ -69,7 +69,7 @@ if (new URLSearchParams(location.search).has("nostream")) {
 } else {
   const es = new EventSource("/api/events");
   es.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "live") onLive(m.data); };
-  es.onerror = () => { sub.textContent = "dashboard disconnected"; };
+  es.onerror = () => { sub.textContent = "Dashboard disconnected"; };
   es.onopen = load;
 }
 </script>

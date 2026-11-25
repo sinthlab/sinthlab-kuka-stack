@@ -60,7 +60,7 @@ function defaultOut() {
   const robot = $("#robot").value.trim().replace(/\/+$/, "");
   if (!robot) return;
   const sub = (meta().subject_id || "SUBJECT").replace(/[^A-Za-z0-9-]/g, "-");
-  const ses = (P.robot && P.robot.session_id) || robot.split("/").pop().replace(/^expt_/, "");
+  const ses = (P.robot && P.robot.session_id) || robot.split("/").pop();
   if (!$("#out").dataset.edited) $("#out").value = `${robot}/sub-${sub}_ses-${ses.replace(/[^A-Za-z0-9-]/g, "-")}.nwb`;
 }
 
@@ -68,7 +68,7 @@ function defaultOut() {
 
 async function scan() {
   const robot = $("#robot").value.trim(), nsp = $("#nsp").value.trim();
-  if (!robot) return toast("Choose the robot run first.", "warn");
+  if (!robot) return toast("Select a robot run first.", "warn");
   $("#btn-scan").disabled = true;
   kv($("#robot-info"), [["…", "reading"]]);
   if (nsp) kv($("#nsp-info"), [["…", "reading the header"]]);
@@ -81,11 +81,11 @@ async function scan() {
       ["Duration", `${r.duration_s} s`], ["Started (UTC)", r.start],
       ["trial_start / trial_end events", `${r.trial_start_events} / ${r.trial_end_events}`]]);
     const n = j.nsp;
-    if (!nsp) kv($("#nsp-info"), [["–", "none: the NWB holds the robot data alone"]]);
+    if (!nsp) kv($("#nsp-info"), [["–", "Exporting robot data only"]]);
     else if (n.error) kv($("#nsp-info"), [["Problem", n.error]]);
     else {
       P.nspBase = n.base;
-      const rows = [["Recording", n.base], ["Started (UTC)", n.start || "not in the files"], ["Segments", n.segments]];
+      const rows = [["Recording", n.base], ["Started (UTC)", n.start || "Unavailable"], ["Segments", n.segments]];
       for (const s of n.streams)
         rows.push([s.name, `${s.rate_hz} Hz · ${s.neural_channels} neural · ${s.duration_s} s` +
                    (s.analog_inputs.length ? ` · ${s.analog_inputs.join(", ")}` : "")]);
@@ -165,13 +165,13 @@ function showJob(job) {
       const r = job.result, s = r.sync;
       kv($("#result"), [["File", r.out], ["Size", mb(r.bytes)], ["Trials", r.trials], ["Time base", r.time_base],
         ["Session start (UTC)", r.session_start],
-        ...(s ? [["Sync matched", Object.entries(s.matched).map(([k, v]) => `${k} ${v}`).join(" · ")],
+        ...(s ? [["Matched sync pulses", Object.entries(s.matched).map(([k, v]) => `${k} ${v}`).join(" · ")],
                  ["Sync fit", `rms ${s.rms_ms} ms · max ${s.max_ms} ms · drift ${s.drift_ppm} ppm`]] : []),
         ...(r.experiment_start_edges_s == null ? [] : [["Experiment start", Array.isArray(r.experiment_start_edges_s)
           ? (r.experiment_start_edges_s.length ? r.experiment_start_edges_s.map((t) => `${t.toFixed(3)} s`).join(", ")
-                                                : "no pulse found") : r.experiment_start_edges_s]])]);
+                                                : "No pulse found") : r.experiment_start_edges_s]])]);
       $("#up-src").value = r.out;
-      $("#upload-prompt").innerHTML = "<strong>The archive is ready. Upload it to the server folder below.</strong>";
+      $("#upload-prompt").innerHTML = "<strong>NWB file created. Choose a server folder to upload it.</strong>";
       $("#upload-card").classList.add("pp-attention");
       $("#upload-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
     } else {
@@ -184,7 +184,7 @@ function showJob(job) {
     $("#upload-prompt").textContent = "Uploaded and verified.";
   } else {
     kv($("#up-result"), [["Not uploaded", job.error]]);
-    $("#upload-prompt").textContent = job.state === "cancelled" ? "Upload cancelled: nothing was left on the server." : "Upload failed (see below).";
+    $("#upload-prompt").textContent = job.state === "cancelled" ? "Upload cancelled." : "Upload failed. See the error below.";
   }
 }
 

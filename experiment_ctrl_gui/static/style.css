@@ -338,14 +338,7 @@ input[type=color] { width: 30px; height: 26px; padding: 0; border: 1px solid var
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.mon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px; }
-.mon-grid h3, .session-card h3 { font-size: 13px; margin: 0 0 6px; }
-.bars { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.bars .b { display: grid; grid-template-columns: 70px 1fr 40px; gap: 8px; align-items: center; }
-.bars .b > span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bars .track { height: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
-.bars .fill { height: 100%; background: var(--o-success); }
-.bars .n { text-align: right; font-family: var(--mono, ui-monospace, monospace); }
+.session-card h3 { font-size: 13px; margin: 0 0 6px; }
 .hist-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .hist-tools input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); font: inherit; }
 .hist-wrap { overflow-x: auto; }
@@ -532,11 +525,19 @@ details.card > summary { cursor: pointer; list-style: revert; }
 }
 
 /* The arm (live view) inside the trial card, folded like Trial events. */
-.live-in > summary { cursor: pointer; margin-top: 10px; font-weight: 600; font-size: 13px; }   /* the browser's own triangle, as Trial events */
+.live-in > summary { cursor: pointer; margin-top: 0; font-weight: 600; font-size: 13px; }   /* the browser's own triangle, as Trial events */
 .live-in .live-pop { float: right; color: var(--muted); font-weight: 500; }
 .live-in .live-views { margin-top: 8px; }
-.live-in .live-canvas { height: min(32vh, 300px); }
+.live-in .live-canvas { height: min(28vh, 260px); }
 .live-in .live-status { font-size: 12.5px; margin: 6px 0 2px; }
 .live-in .live-legend { margin: 0; }
 .start-dlg .controls.three { grid-template-columns: 1fr 1fr 1fr; }
 .start-dlg .controls.three .btn.primary { font-size: 14px; padding: 6px; }
+
+/* The Run pane: row 1 the same five tiles on every task, row 2 the task's own (tinted, so it reads apart). */
+.tiles.row1 { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 6px; }
+.tiles.row2 { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-top: 0; }
+.tiles.row2 .tile { background: color-mix(in srgb, var(--info) 6%, var(--panel)); border-color: color-mix(in srgb, var(--info) 25%, var(--line)); }
+.tile.warn .v { color: var(--warn); }
+.o-stop { background: transparent; border: 1.5px dashed var(--o-none); box-sizing: border-box; }
+@media (max-width: 600px) { .tiles.row1 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

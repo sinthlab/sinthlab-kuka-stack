@@ -143,7 +143,7 @@ class SerialCueTrigger:
         if cmd is None:
             self._log.warn(f"Visual cue '{label}': {path} has no serial equivalent; not sent.")
             return
-        self._jobs.put((cmd, label, time.monotonic(), False))
+        self._jobs.put((cmd, label, time.monotonic(), label.startswith("go_")))
 
     def set_haptic(self, pct: int) -> None:
         """The haptic strength wanted, 0-100 %. Returns immediately; the writer sends it (see the
@@ -233,7 +233,7 @@ class SerialCueTrigger:
               quiet: bool = False) -> bool:
         """Write one command and wait for its reply. True if the board confirmed it."""
         waited = time.monotonic() - queued_at
-        if droppable and waited > STALE_SEC:
+        if droppable and waited > (0.25 if label and label.startswith("go_") else STALE_SEC):
             self._log.warn(
                 f"Visual cue '{label}' DROPPED: it waited {waited * 1000:.0f} ms behind a slow "
                 "command and would have lit late.")
@@ -270,7 +270,7 @@ class SerialCueTrigger:
                            throttle_duration_sec=5.0)
             return False
 
-        if cmd.startswith("CUE") and self._on_result is not None and label is not None:
+        if self._on_result is not None and label is not None and (cmd.startswith("CUE") or label.startswith("go_")):
             try:
                 self._on_result(label, True, ms)
             except Exception:

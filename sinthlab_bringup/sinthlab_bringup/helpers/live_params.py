@@ -272,11 +272,10 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "grasp.*": ("perturb_bump",),
     "random_start.*": ("random_start",),
     # Move Vertical / Horizontal, whose paradigm is centre_out.target.
-    "centre_out.max_repeats": ("cued",),
-    "centre_out.block_other_end": ("cued", "left", "right", "down", "up"),
+    "centre_out.max_repeats": ("cued", "restricted"),
     # The colour rule, whose paradigm is Rail / No rail (free_move.rail_axis).
     "centre_out.free_reach_m": ("frontal",),
-    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "left", "right", "down", "up"),
+    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "restricted"),
     # Free Move, whose paradigm is long_move.reward.
     "long_move.*": ("each_move", "new_best"),
 }
@@ -333,7 +332,7 @@ CHOICES: Dict[str, List[str]] = {
     "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
     # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
     # does not have (left / right on the vertical rail, down / up on the horizontal one).
-    "centre_out.target": ["either", "cued", "left", "right", "down", "up", "rule"],
+    "centre_out.target": ["either", "restricted", "cued", "rule"],   # helpers/reach_targets.modes_for
     "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move", "new_best"],  # actions/long_move.MODES (new_best: the Reach Map only)

@@ -1,9 +1,10 @@
 __pycache__/
-# Recorded trial data -- never version-controlled. One folder per launch (analysis/expt_<run>_<timestamp>/),
+# Recorded trial data -- never version-controlled. One folder per launch (analysis/YYYYMMDD_subject_task_HHMMSS/),
 # plus any loose CSV / sidecar in analysis/ (the restricted-plane fixture writes its CSV there).
 analysis/*.csv
 analysis/*.meta.json
 analysis/expt_*/
+analysis/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/
 # Monkey profiles (experiment_ctrl_gui/profiles.py): one per subject, beside the recordings, with their change logs.
 analysis/subjects/
 docs/

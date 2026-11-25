@@ -12,7 +12,7 @@
     <span class="logo" aria-hidden="true"></span>
     <div>
       <h1>Diagnostics</h1>
-      <p class="sub">sinthlab · hardware checks — nothing here moves the arm</p>
+      <p class="sub">Test the visual cue and TTL outputs without moving the arm.</p>
     </div>
   </div>
   <div class="pills">
@@ -30,11 +30,11 @@
     <!-- ---------------- the board, and which path reaches it ---------------- -->
     <div class="card">
       <h2>Cue board</h2>
-      <p class="note">The NeoPixel ring is driven by the Metro board in the end effector. Every control on this
-        tab works on either path, with the same tests and the same replies — pick how to reach the board:</p>
-      <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Path to the board">
-        <button class="tab active" role="tab" data-path="wifi">Wi-Fi — the board's access point</button>
-        <button class="tab" role="tab" data-path="serial">Serial — RS-422 through X76</button>
+      <p class="note">Choose how to connect to the Metro board that controls the NeoPixel ring in the end effector.
+        The same tests are available over Wi-Fi and serial.</p>
+      <div class="tabs paradigm-tabs diag-path" role="tablist" aria-label="Board connection">
+        <button class="tab active" role="tab" data-path="wifi">Wi-Fi (board access point)</button>
+        <button class="tab" role="tab" data-path="serial">Serial (RS-422 via X76)</button>
       </div>
       <p class="note" id="path-note"></p>
       <div class="diag-row">
@@ -49,7 +49,7 @@
     <!-- ---------------- the controls: the same on both paths ---------------- -->
     <div id="board-controls">
       <div class="card">
-        <h2>What a cue looks like</h2>
+        <h2>Cue settings and tests</h2>
         <div class="diag-grid">
           <label>Red <input type="number" id="r" min="0" max="255" value="0"></label>
           <label>Green <input type="number" id="g" min="0" max="255" value="0"></label>
@@ -62,12 +62,12 @@
           <label>Brightness <input type="number" id="brightness" min="0" max="1" step="0.05" value="0.2"></label>
           <label class="chk"><input type="checkbox" id="enabled"> Enabled</label>
         </div>
-        <p class="note warn-text" id="bright-warn">Brightness is not capped on the board. Above ~0.3 with
-          colour (not white) the ring can draw more than the effector's 5 V converter supplies — see the
-          POWER note in end_effector_metro_code/code.py.</p>
+        <p class="note warn-text" id="bright-warn">The board has no brightness limit. Colour cues above about 0.3 can exceed the capacity of
+          the end effector’s 5 V converter. See the POWER note in
+          <code>end_effector_metro_code/code.py</code>.</p>
         <div class="row-actions">
           <button class="btn primary" id="btn-apply">Apply to board</button>
-          <button class="btn" id="btn-fire">▶ Fire cue</button>
+          <button class="btn" id="btn-fire">▶ Trigger cue</button>
           <button class="btn" id="btn-solid">Solid colour</button>
           <button class="btn" data-quarter="0">Quarter 0</button>
           <button class="btn" data-quarter="1">Quarter 1</button>
@@ -80,8 +80,8 @@
       </div>
       <div class="card">
         <h2>LED-by-LED test</h2>
-        <p class="note">Lights each LED red, green, blue, white in turn. Where the ring goes dark is the fault:
-          the ring is 4 arcs of 15 (pixels 0–14, 15–29, 30–44, 45–59). Watch the pixel number below.</p>
+        <p class="note">The test lights each LED in red, green, blue, and white. If an LED stays dark, note the pixel
+          number below. The ring has four sections of 15 LEDs (0–14, 15–29, 30–44, and 45–59).</p>
         <div class="diag-row">
           <label>From <input type="number" id="lt-from" min="0" max="59" value="0"></label>
           <label>To <input type="number" id="lt-to" min="0" max="59" value="59"></label>
@@ -105,10 +105,10 @@
     <!-- ---------------- the cabinet ---------------- -->
     <div class="card">
       <h2>Cabinet</h2>
-      <p class="note">The sync lines are the EL2124 outputs, driven by the cabinet app. Run
-        <strong>PulseTestServer</strong> on the SmartPad (it never moves the arm), or
-        LbrImpedanceControlServer. This page sends the same UDP commands (port 30002) the experiments
-        send at trial start and end. Pulses are refused while an experiment runs.</p>
+      <p class="note">The cabinet app drives the EL2124 sync outputs. On the SmartPad, run
+        <strong>PulseTestServer</strong> or <strong>LbrImpedanceControlServer</strong>.
+        This page uses the same UDP commands on port 30002 as the trial start and end pulses.
+        Test pulses are disabled during experiments.</p>
       <div class="diag-row">
         <label>Cabinet address <input id="ttl-addr" value="172.31.1.147" size="14" spellcheck="false"></label>
         <button class="btn" id="btn-ttl-check">Check outputs</button>
@@ -119,24 +119,24 @@
 
     <!-- ---------------- fire ---------------- -->
     <div class="card">
-      <h2>Fire pulses</h2>
+      <h2>Test pulses</h2>
       <div class="diag-grid">
         <label>Output
           <select id="ttl-out">
             <option value="1">1 · SYNC 1</option><option value="2">2 · SYNC 2</option>
             <option value="3">3 · SYNC 3</option><option value="4">4 · SYNC 4</option>
-            <option value="all">All · output N as N pulses</option>
+            <option value="all">All outputs in sequence</option>
           </select>
         </label>
-        <label>Width [ms] <input type="number" id="ttl-width" min="10" max="5000" step="10" value="500"></label>
-        <label>Times <input type="number" id="ttl-times" min="1" max="1000" value="1"></label>
-        <label>Every [s] <input type="number" id="ttl-every" min="0.1" max="60" step="0.1" value="1"></label>
+        <label>Pulse width [ms] <input type="number" id="ttl-width" min="10" max="5000" step="10" value="500"></label>
+        <label>Repetitions <input type="number" id="ttl-times" min="1" max="1000" value="1"></label>
+        <label>Repeat interval [s] <input type="number" id="ttl-every" min="0.1" max="60" step="0.1" value="1"></label>
       </div>
-      <p class="note">Each pulse lights the output's channel LED on the EL2124 for its width: 500 ms is easy to
-        see, 10 ms (the experiments' default) is a flicker. <em>All</em> fires output 1 once, output 2 twice and
-        so on, so each line identifies itself on the NSP.</p>
+      <p class="note">Each EL2124 channel LED stays lit for the width of its pulse. Use 500 ms to check the LEDs
+        by eye. Experiments use 10 ms by default. <em>All outputs in sequence</em> sends one pulse on
+        output 1, two on output 2, and so on, so you can identify each line in the NSP recording.</p>
       <div class="row-actions">
-        <button class="btn primary" id="btn-ttl-fire">▶ Fire</button>
+        <button class="btn primary" id="btn-ttl-fire">▶ Send pulses</button>
         <button class="btn" id="btn-ttl-stop">■ Stop</button>
         <button class="btn" id="btn-ttl-alloff">All outputs low</button>
         <span class="pill" id="ttl-progress">idle</span>

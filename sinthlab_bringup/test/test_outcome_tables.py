@@ -133,10 +133,26 @@ def test_rebuild_and_session_row(tmp_path):
 def test_rebuild_script(tmp_path, capsys):
     sys.path.insert(0, str(ROOT / "analysis"))
     import outcome_tables as cli
-    write_run(tmp_path / "expt_a_20261123_100000", [good_reach(1)])
+    write_run(tmp_path / "20261123_M1_move-horizontal_100000", [good_reach(1)])
     assert cli.main(["--data-dir", str(tmp_path)]) == 0
-    assert (tmp_path / "expt_a_20261123_100000" / "trials.csv").exists()
+    assert (tmp_path / "20261123_M1_move-horizontal_100000" / "trials.csv").exists()
     assert len(read(tmp_path / "sessions.csv")) == 1
+
+
+def test_recording_folders_use_subject_task_and_start_time(tmp_path):
+    import datetime as dt
+
+    started = dt.datetime(2026, 11, 24, 14, 30, 52)
+    first = ot.create_run_folder(tmp_path, "M_1", "colour_rule", started)
+    other = ot.create_run_folder(tmp_path, "M_1", "colour_rule", started)
+    different = ot.create_run_folder(tmp_path, "M_1", "restricted_move_horizontal", started)
+    no_subject = ot.create_run_folder(tmp_path, None, "move_horizontal", started)
+    assert first.name == "20261124_M_1_color-rule_143052"
+    assert other.name == "20261124_M_1_color-rule_143052-02"
+    assert set(ot.run_folders(tmp_path, "colour_rule", "M_1")) == {first, other}
+    assert ot.run_folders(tmp_path, "move_horizontal") == [no_subject]
+    assert different.name == "20261124_M_1_restricted-move-horizontal_143052"
+    assert no_subject.name == "20261124_unknown_move-horizontal_143052"
 
 
 def test_data_dir_follows_the_environment(monkeypatch, tmp_path):

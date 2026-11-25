@@ -72,16 +72,22 @@ class RingStateCue:
             parts.append(",".join(str(v) for v in c))
         return "/segments?factor=4&colors=" + ".".join(parts)
 
-    def show(self, state: str, quarters: Optional[List[int]] = None) -> None:
-        """Show `state` on the ring until the next show(), on ring_cue.quarters or on `quarters`. Never
-        blocks, never raises."""
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def show(self, state: str, quarters: Optional[List[int]] = None, *, label: Optional[str] = None) -> None:
+        """Show the state on the selected quarters until the next cue."""
         self._state = state
         if not self._enabled:
             return
         try:
             sender = VisualCue.sender(self._node)
             if sender is not None:
-                sender.show(self.path_for(state, quarters), f"ring_{state}")
+                path = self.path_for(state, quarters)
+                if label is None:
+                    sender.show(path, f"ring_{state}")
+                elif path != "/off":
+                    sender.show(path, label)
         except Exception as exc:
             self._node.get_logger().warn(f"Ring cue '{state}' not sent: {exc}")
 

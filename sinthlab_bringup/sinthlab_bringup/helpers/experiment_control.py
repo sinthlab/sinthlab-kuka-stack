@@ -106,6 +106,10 @@ class ExperimentControl:
             name: _plain(node.get_parameter(name).value)
             for name in node._parameters if is_live(experiment, name)}   # noqa: SLF001
         self._reward_events = REWARD_EVENTS
+        self._sequence_rewards = False
+        self._reward_ready_at = 0.0
+        self._reward_timers: List[threading.Timer] = []
+        self._reward_wait = None
         self._nsp = NspPulser(self._log)
         self._read_nsp()
         self._smartpad = SmartPadLink.get(self._log)    # what the SmartPad app reports it runs with
@@ -120,9 +124,10 @@ class ExperimentControl:
 
     # ------------------------------------------------------------------ orchestrator API
 
-    def set_reward_events(self, tokens) -> None:
-        """Which event tokens send the reward pulse, in place of REWARD_EVENTS."""
+    def set_reward_events(self, tokens, *, sequence: bool = False) -> None:
+        """Select reward events. Sequence them when several can occur in one trial."""
         self._reward_events = tuple(tokens)
+        self._sequence_rewards = sequence
 
     def on_reload(self, fn: Callable[[], None]) -> None:
         """Register a function that re-reads live parameters. Called at a trial boundary."""
@@ -165,6 +170,15 @@ class ExperimentControl:
             self._set_phase("stopped")
             self._log.info("Stopped: holding at park.")
             return
+        delay = self._reward_ready_at - time.monotonic() if self._sequence_rewards else 0.0
+        if delay > 0:
+            def after_rewards():
+                self._node.destroy_timer(self._reward_wait)
+                self._reward_wait = None
+                self.begin_trial(start_fn)
+
+            self._reward_wait = self._node.create_timer(delay, after_rewards)
+            return
         self._apply_pending()
         start_fn()
 
@@ -172,6 +186,8 @@ class ExperimentControl:
         """Every trial event: NSP sync pulse first (timing matters), then status. Returns what was
         commanded if the event sent the reward pulse ({"output", "ms"}), else None -- the recorder keeps
         it in the trial's sidecar (`rewards`), from which trials.csv counts rewards and valve time."""
+        if token == "cue_audio_end":
+            return None  # playback telemetry must not replace the current trial phase
         if self._nsp_enabled and token in NSP_OUTPUTS:
             self._nsp.pulse(self._nsp_cfg[token], self._nsp_cfg["width_ms"], token)
         if token == "experiment_start":          # not a phase: the status stays "starting" until trial 1
@@ -182,16 +198,30 @@ class ExperimentControl:
         reward = None
         if self._reward is not None and token in self._reward_events:
             output, ms, count, gap = self._reward
-            self._nsp.pulse(output, ms, f"reward on {token}")
-            # A burst: the later pulses on timers, each after the one before has ended and gap_ms passed.
-            for k in range(1, count):
-                t = threading.Timer(k * (ms + gap) / 1000.0, self._nsp.pulse,
-                                    args=(output, ms, f"reward {k + 1}/{count} on {token}"))
-                t.daemon = True
-                t.start()
+            now = time.monotonic()
+            spacing = (ms + gap) / 1000.0
+            delay = 0.0
+            sequence = self._sequence_rewards
+            if sequence:
+                delay = max(0.0, self._reward_ready_at - now)
+                self._reward_ready_at = now + delay + count * spacing
+                self._reward_timers = [t for t in self._reward_timers if t.is_alive()]
+            for k in range(count):
+                label = f"reward on {token}" if k == 0 else f"reward {k + 1}/{count} on {token}"
+                wait = delay + k * spacing
+                if wait == 0:
+                    self._nsp.pulse(output, ms, label)
+                else:
+                    timer = threading.Timer(wait, self._nsp.pulse, args=(output, ms, label))
+                    timer.daemon = True
+                    timer.start()
+                    if sequence:
+                        self._reward_timers.append(timer)
             self._log.info(f"Reward: PULSE {output} {ms} (SYNC {output}, valve open {ms} ms)"
                            + (f" x {count}, {gap} ms apart" if count > 1 else "") + f" on {token}.")
             reward = {"output": output, "ms": ms, "count": count, "gap_ms": gap}
+            if delay > 0:
+                reward["delay_ms"] = round(delay * 1000, 1)
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
@@ -233,6 +263,13 @@ class ExperimentControl:
 
     def _on_stop(self, request, response):
         self._stopped = True
+        for timer in self._reward_timers:
+            timer.cancel()
+        self._reward_timers.clear()
+        if self._reward_wait is not None:
+            self._node.destroy_timer(self._reward_wait)
+            self._reward_wait = None
+            self.begin_trial(lambda: None)  # already parked, with the trial saved
         if not self._held:
             self._log.warn("STOP requested: ending the trial now and parking; then holding.")
             for fn in self._stop_hooks:

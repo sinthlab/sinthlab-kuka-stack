@@ -1,50 +1,115 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
+import queue
+import select
 import subprocess
-import time
 import threading
+import time
 from typing import Callable, Optional
 
 from rclpy.node import Node as rclpyNode
-import rclpy
 
 from sinthlab_bringup.helpers.node_utils import get_required_param
 
 
+# Keep one Windows audio process ready so starting a tone does not spawn PowerShell.
+_BEEP_LOOP = """
+$ready = $true
+try { [Console]::Beep(37, 10) } catch { $ready = $false }
+while ($null -ne ($line = [Console]::ReadLine())) {
+    $values = $line.Split(' ')
+    try {
+        if (-not $ready) { throw 'Audio startup failed' }
+        [Console]::WriteLine('START')
+        [Console]::Beep([int]$values[0], [int]$values[1])
+        [Console]::WriteLine('OK')
+    } catch {
+        [Console]::WriteLine('ERROR')
+    }
+}
+"""
+_BEEP_COMMAND = base64.b64encode(_BEEP_LOOP.encode("utf-16le")).decode("ascii")
+_MAX_QUEUE_AGE_SEC = 0.15
+_TIMING_CUES = {"audio_cue_play", "audio_cue_end"}
+
+
+class _BeepPlayer:
+    """Run Windows tones off the ROS executor. Drop a tone that would start late."""
+
+    def __init__(self):
+        self.jobs = queue.SimpleQueue()
+        threading.Thread(target=self._run, name="audio_cues", daemon=True).start()
+
+    def _run(self):
+        proc = None
+        while True:
+            queued_at, frequency, duration, started, finished, log = self.jobs.get()
+            try:
+                if proc is None or proc.poll() is not None:
+                    proc = subprocess.Popen(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", _BEEP_COMMAND],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0,
+                    )
+                if frequency is None:
+                    continue
+                if time.monotonic() - queued_at > _MAX_QUEUE_AGE_SEC:
+                    log.warn("Audio cue skipped because playback was delayed.")
+                    continue
+                proc.stdin.write(f"{frequency} {duration}\n".encode("ascii"))
+                proc.stdin.flush()
+                if (not select.select([proc.stdout], [], [], 1.0)[0]
+                        or proc.stdout.readline().strip() != b"START"):
+                    raise OSError("Windows audio did not start playback")
+                if started is not None:
+                    # The worker enters Windows Beep immediately after sending START.
+                    # This timestamp is a software estimate of acoustic onset.
+                    started()
+                timeout = duration / 1000.0 + 3.0
+                if not select.select([proc.stdout], [], [], timeout)[0]:
+                    raise TimeoutError("Windows audio did not respond")
+                if proc.stdout.readline().strip() != b"OK":
+                    raise OSError("Windows audio did not confirm playback")
+            except Exception as exc:
+                if log is not None:
+                    log.warn(f"Console beep failed: {exc}")
+                if proc is not None:
+                    if proc.poll() is None:
+                        proc.kill()
+                    proc.wait()
+                    proc = None
+                continue
+            if finished is not None:
+                try:
+                    finished(time.monotonic() - queued_at)
+                except Exception as exc:
+                    log.warn(f"Audio cue completion callback failed: {exc}")
+
+
 class AudioCue:
-    """Plays a single audio cue when start() is called."""
+    """Queue a tone and continue the trial without waiting for playback."""
 
-    @staticmethod
-    def warmup(node: Optional[rclpyNode] = None) -> None:
-        """Wake the Windows/WSL2 audio driver once at startup so the first real cue isn't delayed.
+    _players: dict[str, _BeepPlayer] = {}
 
-        One-shot side effect (a near-inaudible 37 Hz / 10 ms beep); safe no-op on non-WSL2 hosts.
-        Orchestrators call this once in __init__ instead of issuing the subprocess inline.
-        """
-        try:
-            subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "[console]::Beep(37, 10)"])
-        except Exception:
-            if node is not None:
-                node.get_logger().debug("Audio warmup beep failed (non-WSL2 host?).")
+    @classmethod
+    def warmup(cls, channel="audio_cue_play") -> None:
+        """Start the shared Windows player while the experiment initializes."""
+        if channel not in cls._players:
+            player = cls._players[channel] = _BeepPlayer()
+            player.jobs.put((time.monotonic(), None, None, None, None, None))
 
     def __init__(self, node: rclpyNode, *, param_prefix: str = "", on_complete: Callable[[], None],
-                 on_finished: Callable[[float], None] = None) -> None:
-        # on_finished(duration_s) fires when the beep process EXITS -- i.e. when the sound actually
-        # stopped. `[console]::Beep` blocks for exactly duration_ms, so the sound's START is
-        # (finish - duration_ms) and can be recovered from it.
-        #
-        # This matters because on_complete() fires the instant Popen returns, which on WSL2 is
-        # ~49 ms in and roughly 290 ms BEFORE any sound comes out (the Windows process itself takes
-        # ~340 ms to spawn). Nothing else in the system observes the audio at all, so without this
-        # the trial record has no idea when the animal was actually cued.
+                 on_finished: Optional[Callable[[float], None]] = None) -> None:
         self._on_finished = on_finished
+        self._channel = param_prefix.rstrip(".")
+        if self._channel in _TIMING_CUES:
+            self.warmup(self._channel)
         self._node = node
         self._on_complete = on_complete
         self._param_prefix = param_prefix + "." if param_prefix and not param_prefix.endswith(".") else param_prefix
 
         self.reload()
-        self._played = False
 
     def reload(self) -> None:
         """Re-read this cue's parameters. All three are live: an orchestrator calls this at a trial
@@ -58,45 +123,24 @@ class AudioCue:
         self._duration = int(get_required_param(node, self._param_prefix + "duration_ms"))
         self._enabled = bool(get_required_param(node, "audio_cue.enabled"))
 
-    def start(self) -> None:
-        if self._played:
-            self._played = False # allow replay
+    @classmethod
+    def play_early_touch(cls, node: rclpyNode) -> None:
+        cls._players["early_touch"].jobs.put((time.monotonic(), 220, 350, None, None, node.get_logger()))
+
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def start(self, *, on_started: Optional[Callable[[], None]] = None) -> None:
         if self._enabled:
-            self._play_sound()
-        self._shutdown()
-    
-    # This is a very specific implementation for WSL2
-    # using powershell to play a beep sound.
-    # For other OSes, this method should be modified accordingly.
-    def _play_sound(self) -> None:
-        try:
-            # Popen is non-blocking
-            proc = subprocess.Popen(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-Command",
-                    f"[console]::Beep({self._frequency},{self._duration})"
-                ]
-            )
-            if self._on_finished is not None:
-                # Wait off-thread: the orchestrator must never block on a sound.
-                t0 = time.monotonic()
-                threading.Thread(target=self._await_exit, args=(proc, t0),
-                                 name="audio_cue_wait", daemon=True).start()
-        except Exception as exc:
-            self._node.get_logger().warn(f"Console beep failed: {exc}")
-
-    def _await_exit(self, proc, t0: float) -> None:
-        try:
-            proc.wait(timeout=30.0)
-        except Exception:
-            return
-        try:
-            self._on_finished(time.monotonic() - t0)
-        except Exception as exc:
-            self._node.get_logger().warn(f"audio on_finished failed: {exc}")
-
-    def _shutdown(self) -> None:
+            if self._channel in _TIMING_CUES:
+                self._players[self._channel].jobs.put((time.monotonic(), self._frequency, self._duration,
+                                                      on_started, self._on_finished, self._node.get_logger()))
+            else:
+                # Keep task-specific feedback independent of the go tone.
+                try:
+                    subprocess.Popen(["powershell.exe", "-NoProfile", "-Command",
+                                      f"[console]::Beep({self._frequency},{self._duration})"])
+                except OSError as exc:
+                    self._node.get_logger().warn(f"Console beep failed: {exc}")
         if self._on_complete is not None:
             self._on_complete()

@@ -9,7 +9,7 @@ form you can open and read. These tables are views of it:
     <data folder>/sessions.csv    one row per run (a Start-to-Stop session), across every run: the
                                   history "today vs recent sessions" reads
 
-where the data folder is analysis/ (data_dir() below) and a run folder is analysis/expt_<run>_<time>/.
+where the data folder is analysis/ (data_dir() below) and a run folder is named YYYYMMDD_subject_task_HHMMSS.
 
 THE SIDECAR IS THE RECORD; THESE ARE VIEWS. Every row is computed from the sidecars by the functions
 here, so a table can be rebuilt at any time, for any run, including runs recorded before it existed:
@@ -55,6 +55,7 @@ import datetime as dt
 import glob
 import json
 import os
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -69,16 +70,56 @@ def data_dir() -> Path:
     return Path(os.environ.get(DATA_DIR_ENV) or DEFAULT_DATA_DIR).expanduser()
 
 
+_RUN_FOLDER = re.compile(r"[0-9]{8}_([A-Za-z0-9_-]+)_([a-z0-9-]+)_[0-9]{6}(?:-[0-9]+)?")
+
+
+def task_slug(experiment: str) -> str:
+    """The task field of the folder name. Hyphens keep it distinct from an ID with underscores."""
+    return experiment.lower().replace("colour", "color").replace("_", "-")
+
+
+def run_folder_name(subject: Optional[str], experiment: str, started: dt.datetime) -> str:
+    subject_id = re.sub(r"[^A-Za-z0-9_-]", "-", subject or "unknown")
+    return f"{started:%Y%m%d}_{subject_id}_{task_slug(experiment)}_{started:%H%M%S}"
+
+
+def create_run_folder(parent: Path, subject: Optional[str], experiment: str, started: dt.datetime) -> Path:
+    """Reserve a folder for this launch, including when launches share the same second."""
+    name = run_folder_name(subject, experiment, started)
+    parent.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        folder = parent / (name if number == 1 else f"{name}-{number:02d}")
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            number += 1
+        else:
+            return folder
+
+
+def is_run_folder(folder: Path, experiment: Optional[str] = None, subject: Optional[str] = None) -> bool:
+    match = _RUN_FOLDER.fullmatch(folder.name)
+    return bool(match and (experiment is None or match[2] == task_slug(experiment))
+                and (subject is None or match[1] == subject) and folder.is_dir())
+
+
+def run_folders(parent: Path, experiment: Optional[str] = None, subject: Optional[str] = None) -> List[Path]:
+    if not parent.is_dir():
+        return []
+    return [folder for folder in parent.iterdir() if is_run_folder(folder, experiment, subject)]
+
+
 TRIALS_CSV = "trials.csv"
 SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
 OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
-            "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "stop_requested")
+            "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "go_cue_failed", "stop_requested")
 # A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
 SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
 FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
-# safety_trip, smartpad_mismatch, stop_requested: aborted -- neither (success left blank)
+# safety_trip, smartpad_mismatch, go_cue_failed, stop_requested: aborted -- neither (success left blank)
 
 COMMON = {
     "run": "the run folder (one Start-to-Stop session)",
@@ -458,12 +499,12 @@ class CentreOutTables(TaskTables):
     paradigm_param = "centre_out.target"
     trial_columns = {
         "target": "the goal: an end's name, or either",
-        "closed_end": "the end closed off this trial (one-direction trials with block_other_end), else blank",
+        "closed_end": "the end closed off this trial (restricted cued), else blank",
         "chosen_end": "the end the arm reached, blank if none",
         "correct": "1 = reached a goal end, 0 = the other end, blank = no reach",
         "end_tol_m": "how close to an end counted as reaching it [m]",
     }
-    settings = ["centre_out.target", "centre_out.block_other_end", "centre_out.max_repeats",
+    settings = ["centre_out.target", "centre_out.max_repeats",
                 "centre_out.end_tol_m", "reward_pulse.pulse_ms"]
     session_columns = {"n_reaches": "trials ending in a reach (either end)",
                        "pct_correct": "reaches to a goal end over all reaches [%]"}

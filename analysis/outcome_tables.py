@@ -5,7 +5,7 @@
     python3 analysis/outcome_tables.py <run folder> [...]       # these runs
     python3 analysis/outcome_tables.py --data-dir /path/to/analysis
 
-For each run folder (expt_<run>_<time>/) it rewrites trials.csv (one row per trial), any task's extra
+For each run folder (YYYYMMDD_subject_task_HHMMSS/) it rewrites trials.csv (one row per trial), any task's extra
 tables, and tables.md (what each column means); then it adds or replaces each run's row in sessions.csv
 (one row per run, in the data folder).
 
@@ -28,12 +28,12 @@ from sinthlab_bringup.helpers import outcome_tables as ot  # noqa: E402
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("runs", nargs="*", help="run folders (default: every expt_* folder in the data folder)")
+    ap.add_argument("runs", nargs="*", help="run folders (default: every recording folder in the data folder)")
     ap.add_argument("--data-dir", default=None,
                     help=f"the data folder (default: ${ot.DATA_DIR_ENV}, else {ot.DEFAULT_DATA_DIR})")
     args = ap.parse_args(argv)
     data = Path(args.data_dir).expanduser() if args.data_dir else ot.data_dir()
-    runs = [Path(r) for r in args.runs] or sorted(p for p in data.glob("expt_*") if p.is_dir())
+    runs = [Path(r) for r in args.runs] or sorted(ot.run_folders(data))
     if not runs:
         print(f"No run folders in {data}.")
         return 1

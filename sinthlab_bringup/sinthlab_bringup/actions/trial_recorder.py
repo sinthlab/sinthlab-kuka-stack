@@ -33,10 +33,12 @@ Usage from an orchestrator:
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 import numpy as np
@@ -99,16 +101,10 @@ class TrialRecorder:
                  on_event: Optional[Callable[[str, object], None]] = None) -> None:
         self._node = node
         self._experiment = experiment
-        # One folder per launch, not a flat dump. `run_name` comes from a ROS param when the launch
-        # file sets one; otherwise the node name, which is already experiment-specific.
-        run = str(get_launch_param(node, "run_name", "") or "").strip()
-        if not run:
-            run = node.get_name().replace("_orchestrator", "")
-        # The data folder is shared with the dashboard (helpers/outcome_tables.data_dir:
-        # $SINTHLAB_DATA_DIR, else ~/lbr-stack/src/sinthlab-kuka-stack/analysis), so a test checkout
-        # records where the dashboard looks.
-        self._save_dir = os.path.join(os.path.expanduser(save_dir) if save_dir else str(outcome_tables.data_dir()),
-                                      f"expt_{run}_{time.strftime('%Y%m%d_%H%M%S')}")
+        # Set at launch (the dashboard asks for a subject ID under Start).
+        self._subject = str(get_launch_param(node, "subject", "") or "").strip() or None
+        started = dt.datetime.now()
+        parent = Path(save_dir).expanduser() if save_dir else outcome_tables.data_dir()
         self._extra_header = list(extra_header) if extra_header else []
         self._extra_fn = extra_fn
         # The end effector's force sensor and haptic strength, in every experiment that streams it
@@ -116,7 +112,7 @@ class TrialRecorder:
         from sinthlab_bringup.helpers import end_effector
         ee = end_effector.record_columns(node)
         self._ee_header, self._ee_fn = ee if ee is not None else ([], None)
-        self._session_id = session_id or time.strftime("%Y%m%d_%H%M%S")
+        self._session_id = session_id or started.strftime("%Y%m%d_%H%M%S")
         # Called synchronously inside mark(), BEFORE anything else, so a hardware sync pulse leaves
         # at the same instant the event is logged. The orchestrators pass ExperimentControl.on_event,
         # which sends the NSP sync pulses (helpers/experiment_control.py).
@@ -144,9 +140,8 @@ class TrialRecorder:
         self._last_msg: Optional[LBRState] = None
         self._sidecar: dict = {}
         self._docs_written = False
-        # Set at launch (the dashboard asks for it at Start: subject:=<id>), if at all.
-        self._subject = str(get_launch_param(node, "subject", "") or "").strip() or None
         # What the SmartPad app runs with: one file per run, beside the trials (helpers/smartpad_link.py).
+        self._save_dir = str(outcome_tables.create_run_folder(parent, self._subject, experiment, started))
         SmartPadLink.get(node.get_logger()).write_to(self._save_dir)
         self._experiment_start = self._send_experiment_start()
 

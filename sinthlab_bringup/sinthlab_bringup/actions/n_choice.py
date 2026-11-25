@@ -8,8 +8,8 @@ PER TRIAL: at the go cue the whole ring lights (no cue: nothing says which direc
 trial ends when the arm reaches the end of a ray (within n_choice.end_tol_m). That direction pays with its
 current probability; then it depletes and the others recover (helpers/bandit_schedule.py).
 
-Events: `choice` (the direction, rewarded: the reward pulse and tone follow) or `choice_unrewarded` (the
-direction, no reward), as the trial's outcome. Each trial's sidecar has `n_choice`: every direction's
+Events: `choice` (rewarded) or `choice_unrewarded`, each with the chosen direction.
+The orchestrator confirms both outcomes with the same tone. Each trial's sidecar has `n_choice`: every direction's
 probability before the choice. No choice within response_timeout_sec ends the trial too (no reward).
 
 It only watches and reports: the motion is the admittance's.

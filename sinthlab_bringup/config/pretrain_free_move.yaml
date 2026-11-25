@@ -6,9 +6,9 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.88  # the floor, height above the ground [m]
-      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
-      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+      height_m: 0.88  # Floor height above ground [m]
+      reference: apple_bottom  # Point kept above the floor (apple_bottom or base_edge, the lowest edge of the Ø188 base)
+      trip_margin_m: 0.03  # Distance below the floor that triggers a trial abort and park [m]
 
     # ---- THE QUIET WINDOW IS GUARDED (live) ----
     # Moving or pushing the apple during the quiet window (before the go cue) ends the trial with no
@@ -16,11 +16,11 @@
     # "wait for the go cue". Compared with the window's first 0.2 s, so resting sag and force don't
     # count. An untouched arm still settles by up to 16 mm (Uniform 100) and its force reading wanders
     # by up to 3 N; an early pull moved it 74 mm with 31 N. See actions/quiet_gate.py.
-    quiet_gate:  # breaking off a trial when the apple is touched before the go cue
-      enabled: true  # false = the quiet window is a plain timed wait
-      move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
-      force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+    quiet_gate:  # Early-touch detection before the go cue
+      enabled: true  # End the trial if an early touch crosses the movement or force threshold
+      move_m: 0.03  # Displacement that ends the trial during the quiet window [m]
+      force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
+      penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
     # is let go, within a box around the start (free_move.box_*). No goal -- for getting used to holding and moving the arm. It
@@ -52,7 +52,7 @@
     base_link: "lbr_link_0"  # URDF base link the motion is computed in
     end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
 
-    session_sec: 0.0  # session length [s]; 0 = until Stop. > 0: ends by itself, then the next starts
+    session_sec: 0.0  # Session length [s]. Use 0 to run until Stop. With a timed session, the next session starts automatically.
     # LONG MOVES (actions/long_move.py): with reward each_move (the card's "Long moves" tab), every
     # movement of at least min_m pays as it ends, with the reward tone; the session's end then pays
     # nothing. A movement runs from rest to rest; it counts once it has gone confirm_m (a resting hand's
@@ -68,20 +68,20 @@
       confirm_m: 0.02  # a movement counts (event move_start) once it has gone this far from where it started [m]
 
     move_to_start:  # joint-space move to the trial start pose (the maze start)
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       # The pre-training start is the MAZE START: EE ~ (0.38, 0.01, 1.03) m, tool along +X toward the
       # subject. Keep equal to nullspace_desired_configuration in config/clik_nullspace_pretrain.yaml.
       target_joint_position: [1.4, 45.1, 1.1, 49.2, 0.6, 90.5, 2.0]  # start pose, joint angles A1..A7 [deg]
-      joint_move_tolerance: 0.03  # done when every joint is within this of its target [rad]
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      joint_move_tolerance: 0.03  # Maximum joint error at the target [rad]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+      speed_scale: 0.7  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      physical_arrival_timeout_sec: 0.0  # Wait this long for the measured arm position to reach the target [s]. Use 0 for no timeout.
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
     # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
     # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
@@ -92,20 +92,20 @@
     # The SmartPad app leaves the arm at its ready pose, elbow NEGATIVE: so the run's first move (ready ->
     # park) passes the straight elbow once. It runs slowly for that (first_move_speed_scale).
     move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       target_joint_position: [-3.6, 45.0, -3.6, 95.0, 0.7, 90.0, -15.7]  # park pose A1..A7 [deg] (per-run)
-      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
-      cartesian_move_tolerance: 0.05  # apple within this of the park pose counts as arrived [m]
+      joint_move_tolerance: 0.15  # Maximum joint error at the target [rad]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
+      cartesian_move_tolerance: 0.05  # Maximum distance from the park target at arrival [m]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      first_move_speed_scale: 0.5  # speed scale of the run's FIRST move here (per-run); slower than normal: ready -> park crosses the straight elbow
-      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
+      speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      first_move_speed_scale: 0.5  # Speed multiplier for the initial move from ready to park. This move crosses a straight elbow posture.
+      hold_sec: 2.0  # Time at park before moving to the next trial’s start [s]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      physical_arrival_timeout_sec: 10.0  # Wait this long for the measured arm position to reach the target before issuing a warning [s]
 
     # ---- THE FEEL (live: change between trials from the dashboard) ----
     free_move:  # admittance: the equilibrium moves at force / damping
@@ -114,11 +114,11 @@
       # that much delay is stable only if the damping is high enough for how firmly the hand holds:
       # at 30 it rang (stop-go bursts), at 20 it trembled; 50 is smooth (recordings 26 Oct). At 50,
       # 5 N moves the arm 0.1 m/s, 10 N 0.2 m/s. Go below ~40 only with care.
-      damping_ns_per_m: 50.0  # force per speed [N s/m]: LOWER = LIGHTER, but below ~40 the arm rings or trembles
+      damping_ns_per_m: 50.0  # Damping [N s/m]. Lower values make the arm easier to move. Below about 40 N s/m, it can oscillate.
       # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
       # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
       # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
-      deadband_n: 2.5  # force below this is ignored, so a resting arm never creeps or oscillates [N]; 0 = none
+      deadband_n: 2.5  # Forces below this threshold are ignored [N]. Use 0 to disable the threshold.
       max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
       # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
       # target speed follows every jolt. But it also delays the arm behind the hand, and too low a cap
@@ -164,29 +164,29 @@
       debug_log_rate_hz: 2.0  # how often that line prints [Hz]
 
     # Runaway stop: the speed, and a distance well past the box's farthest corner (0.24 m from the start).
-    free_move_safety:  # runaway stop
-      update_rate: 100  # loop rate of this action [Hz]
+    free_move_safety:  # Runaway motion limits
+      update_rate: 100  # Action loop rate [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       max_displacement_m: 0.32  # abort if the EE is dragged this far from the start: 8 cm past the box's farthest corner, against the spring (~80 N at 1000 N/m) [m]
       max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
       speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
-      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      state_timeout_sec: 0.5  # Stop if no robot state arrives within this time [s]. Normally lbr_state arrives every 10 ms. Use 0 to disable.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
     force_release:  # waits for the hand to let go before parking
-      update_rate: 100  # loop rate of this action [Hz]
+      update_rate: 100  # Action loop rate [Hz]
       release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
       release_duration_sec: 1.0  # ... continuously for this long [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
     # ---- cues (live) ----
     quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
     response_timeout_sec: 30.0  # the arm not moved more than quiet_gate.move_m within this long after the go cue -> the session ends (event response_timeout), park [s]
-    audio_cue:  # switch for every beep
-      enabled: true  # false = no beeps at all; the trial sequence is unchanged
+    audio_cue:  # Enable audio cues
+      enabled: true  # Enable audio cues
     audio_cue_play:  # go cue: free movement starts
       frequency_hz: 1500  # go tone: pitch [Hz]
       duration_ms: 800  # go tone: length [ms]
@@ -204,12 +204,12 @@
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once per run, before trial 1
       pulse_width_ms: 500  # how long each pulse stays high [ms], 10-5000
 
-    reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
+    reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
       enabled: true  # send the reward pulse when a session runs its full session_sec (needs session_sec > 0), or with long_move.reward each_move for every long movement; no response, early touch, safety trip and Stop get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
-      pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
-      count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
-      gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
+      pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
+      count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
+      gap_ms: 300  # Time the valve stays closed between pulses [ms], from 100 to 5000
 
     # THE APPLE'S FORCE SENSOR (FSR), streamed by the end-effector board over the serial link (visual_cue.serial_port)
     # into four columns of every trial file: fsr_raw, fsr_t_ms, fsr_age_ms, haptic_pct (README, "Haptics and force sensor").
@@ -225,4 +225,4 @@
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # all four quarters (ring quarters 0-3 = pixels 0-14, 15-29, 30-44, 45-59)
       colours:  # RGBW, each 0-255
-        go: [0, 255, 0, 0]  # free to move -- green
+        go: [0, 64, 0, 0]  # free to move -- green

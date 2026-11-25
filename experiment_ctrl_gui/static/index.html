@@ -15,7 +15,7 @@
     <div class="rb-lab">Monkey</div>
     <div class="monkey-row">
       <select id="monkey" aria-label="Monkey"></select>
-      <button id="btn-profile" class="btn small" title="See and edit this monkey's profile">Profile…</button>
+      <button id="btn-profile" class="btn small" title="View or edit this monkey's profile">Profile…</button>
     </div>
     <div class="rb-sub" id="monkey-info"></div>
   </div>
@@ -28,7 +28,7 @@
   <div class="rb-run">
     <div class="rb-btns">
       <button id="btn-start" class="btn primary">▶ Start</button>
-      <button id="btn-stop" class="btn danger" title="Ends the trial, parks the arm out of reach, then Ctrl-Cs the launch (press again to skip parking). Not an emergency stop: the SmartPad E-stop is the E-stop.">■ Stop</button>
+      <button id="btn-stop" class="btn danger" title="Ends the trial, parks the arm out of reach, and stops the launch. Press again to skip parking. In an emergency, use the SmartPad emergency stop.">■ Stop</button>
       <div class="run-stats" id="run-stats"></div>
     </div>
   </div>
@@ -38,7 +38,7 @@
     <span class="pill" id="pill-robot" title="FRI session state and lbr_state rate">Robot …</span>
     <span class="pill" id="pill-run" title="Experiment state">Idle</span>
     <a class="pill link" href="/postprocess.html" title="Archive a session as NWB and upload it to the server">Post-processing</a>
-    <a class="pill link" href="/diagnostics.html" title="Hardware checks: the end-effector cue ring, TTL outputs">Diagnostics</a>
+    <a class="pill link" href="/diagnostics.html" title="Check the end-effector cue ring and TTL outputs">Diagnostics</a>
   </div>
 </header>
 
@@ -52,31 +52,11 @@
       <div class="status-head">
         <div class="big"><span class="label">Trial</span><span id="st-trial" class="num">–</span></div>
         <div class="big grow"><span class="label">Phase</span><span id="st-phase" class="phase">not running</span></div>
-        <div class="big"><span class="label">In phase</span><span id="st-phase-t" class="num">–</span></div>
+        <div class="big"><span class="label">Time in phase</span><span id="st-phase-t" class="num">–</span></div>
       </div>
       <ol class="steps" id="steps"></ol>
       <div id="pending" class="pending hidden"></div>
       <div class="sp-report" id="smartpad-report"></div>
-      <!-- The arm in the experiment's bounds (live_view.js, as on /live.html), part of what is happening now:
-           folded with its heading, remembered per browser. -->
-      <details class="live-in" id="live-card" open>
-        <summary>Arm <span class="muted small" id="live-sub"></span>
-          <a class="small live-pop" href="/live.html" target="_blank" title="Open it on its own page (bigger)">pop out ↗</a></summary>
-        <div class="live-views">
-          <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
-          <canvas id="cv-top" class="live-canvas" aria-label="Top view: Y to the right, X toward the subject down"></canvas>
-        </div>
-        <p class="live-status" id="live-status"></p>
-        <p class="live-legend muted small">
-          <span><span class="key" style="background:var(--ink)"></span>arm (last 8 s)</span>
-          <span><span class="key ring" style="border-color:var(--accent)"></span>pull point</span>
-          <span><span class="key line" style="background:var(--info)"></span>rail</span>
-          <span><span class="key line" style="background:var(--warn)"></span>wall / box</span>
-          <span><span class="key line dash" style="border-color:var(--err)"></span>floor</span>
-          <span><span class="key ring" style="border-color:var(--ok)"></span>goal / rail end</span>
-          <span>Front: Y right, Z up · Top: Y right, X toward the subject down</span>
-        </p>
-      </details>
       <details class="events">
         <summary>Trial events <span class="muted" id="ev-count"></span></summary>
         <ol id="events" class="event-list"></ol>
@@ -87,11 +67,12 @@
     <div class="card session-card">
       <div class="tabs" role="tablist" aria-label="Session views">
         <button class="tab" data-view="monitor" role="tab">Run</button>
-        <button class="tab" data-view="history" role="tab">Today vs recent</button>
+        <button class="tab" data-view="history" role="tab">Session history</button>
         <span class="muted small session-sub" id="session-sub"></span>
       </div>
       <div id="session-view"></div>
     </div>
+
 
     <!-- Before a run: the SmartPad selections and the launch, folded to one line. -->
     <details class="card checklist-card" id="checklist-card">
@@ -108,6 +89,29 @@
 
   <!-- ============ right: settings ============ -->
   <section class="col">
+    <!-- While a run goes, above the settings: the arm in the experiment's bounds (live_view.js, as on /live.html),
+         folded with its heading, remembered per browser. -->
+    <div class="card arm-card hidden" id="arm-card">
+        <details class="live-in" id="live-card" open>
+          <summary>Arm <span class="muted small" id="live-sub"></span>
+            <a class="small live-pop" href="/live.html" target="_blank" title="Open a larger view in a new tab">Open live view ↗</a></summary>
+          <div class="live-views">
+            <canvas id="cv-front" class="live-canvas" aria-label="Front view: Y to the right, Z up"></canvas>
+            <canvas id="cv-top" class="live-canvas" aria-label="Top view with Y pointing right and X pointing down toward the subject"></canvas>
+          </div>
+          <p class="live-status" id="live-status"></p>
+          <p class="live-legend muted small">
+            <span><span class="key" style="background:var(--ink)"></span>arm (last 8 s)</span>
+            <span><span class="key ring" style="border-color:var(--accent)"></span>pull point</span>
+            <span><span class="key line" style="background:var(--info)"></span>rail</span>
+            <span><span class="key line" style="background:var(--warn)"></span>wall / box</span>
+            <span><span class="key line dash" style="border-color:var(--err)"></span>floor</span>
+            <span><span class="key ring" style="border-color:var(--ok)"></span>goal / rail end</span>
+            <span>Front view shows Y to the right and Z up. Top view shows Y to the right and X down toward the subject.</span>
+          </p>
+        </details>
+    </div>
+
     <div class="card params-card">
       <!-- Task: today's few settings. Monkey: the profile's, as this task uses them. All settings: everything. -->
       <div class="tabs" role="tablist" aria-label="Settings">
@@ -116,7 +120,7 @@
         <button class="tab" data-pview="all" role="tab">All settings</button>
         <div class="tab-tools">
           <input id="param-filter" type="search" placeholder="Filter" aria-label="Filter settings">
-          <button id="btn-reset-edits" class="btn small" title="Clear today's edits: back to the profile and the task defaults">Reset edits</button>
+          <button id="btn-reset-edits" class="btn small" title="Discard unsaved edits and restore profile values and task defaults">Reset edits</button>
         </div>
       </div>
       <div class="tabs subtabs" id="all-tabs" role="tablist" aria-label="All settings">
@@ -145,7 +149,7 @@
       <input id="log-filter" type="search" placeholder="Search log" aria-label="Search log">
       <label class="chk"><input type="checkbox" id="log-follow" checked> Follow</label>
       <button id="btn-log-clear" class="btn small">Clear view</button>
-      <button id="btn-log-tall" class="btn small" title="Taller / shorter">⤢</button>
+      <button id="btn-log-tall" class="btn small" title="Resize the log">⤢</button>
     </div>
   </div>
   <div id="log" class="log" role="log" aria-live="polite"></div>
@@ -166,7 +170,7 @@
     <input id="start-subject" list="start-subjects" autocomplete="off" spellcheck="false" required
            pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,31}" maxlength="32">
     <datalist id="start-subjects"></datalist>
-    <p class="muted small" id="start-dlg-profile">Recorded with every trial. Use <code>test</code> for a run without an animal.</p>
+    <p class="muted small" id="start-dlg-profile">The subject ID is saved with each trial. Use <code>test</code> for a run without an animal.</p>
     <div class="controls">
       <button type="button" class="btn" id="start-cancel">Cancel</button>
       <button type="submit" class="btn primary" id="start-go">▶ Start</button>
@@ -209,14 +213,14 @@
 <!-- Changing the monkey with edits made today: keep them, clear them, or don't change. -->
 <dialog id="switch-dlg" class="start-dlg wide-dlg" aria-labelledby="switch-dlg-title">
   <form method="dialog">
-    <h3 id="switch-dlg-title">Change the monkey to <span id="switch-dlg-subject"></span>?</h3>
-    <p class="muted small">These settings were changed today for the next Start. They were made for the monkey before:</p>
+    <h3 id="switch-dlg-title">Switch to <span id="switch-dlg-subject"></span>?</h3>
+    <p class="muted small">These edits are pending for the next run.</p>
     <ul class="small" id="switch-dlg-list"></ul>
-    <p class="muted small">Clear them to start from the new monkey's profile and the task defaults.</p>
+    <p class="muted small">Clear the edits to load the new monkey's profile and task defaults.</p>
     <div class="controls three">
-      <button value="cancel" class="btn">Don't change</button>
-      <button value="keep" class="btn">Keep the edits</button>
-      <button value="clear" class="btn primary">Clear the edits</button>
+      <button value="cancel" class="btn">Cancel</button>
+      <button value="keep" class="btn">Keep edits</button>
+      <button value="clear" class="btn primary">Clear edits</button>
     </div>
   </form>
 </dialog>

@@ -9,6 +9,7 @@ from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.cartesian_impedance_displacement_monitor import CartesianImpedanceDisplacementMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.audio_cue import AudioCue
+from sinthlab_bringup.actions.go_cue import GoCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
@@ -39,7 +40,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             "restricted_plane_orchestrator",
             automatically_declare_parameters_from_overrides=True,
         )
-        AudioCue.warmup(self)  # wake the WSL2 audio driver so the first cue isn't delayed
+        AudioCue.warmup()
         VisualCue.warmup(self)  # logs which visual-cue trigger is active (serial or Wi-Fi)
 
         self.trial_count = 0
@@ -61,7 +62,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
         self.audio_cue = AudioCue(
-            self, param_prefix="audio_cue_play", on_complete=self.on_audio_complete,
+            self, param_prefix="audio_cue_play", on_complete=None,
             on_finished=lambda secs: self.recorder.mark("cue_audio_end", round(secs, 4)),
         )
         self.audio_cue_snap = AudioCue(
@@ -104,8 +105,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
             extra_fn=lambda _T: [f"{self.monitor.current_disp():.6f}"],
             on_event=self.control.on_event,
         )
-        VisualCue.set_result_sink(
-            lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
+        self.go = GoCue(self, self.recorder, self.quiet_window, self.audio_cue, self.on_audio_complete)
 
         # Move speed sliders act at once, from each move's next start (live_params.IMMEDIATE).
         self.control.apply_immediately({
@@ -137,14 +137,13 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
 
     def on_quiet_window_complete(self):
         self.get_logger().info("Quiet window complete. Sounding audio cue.")
-        self.recorder.mark("cue_go")
-        self.audio_cue.start()
-        self.visual_cue.start()
+        self.go.start(self.visual_cue.preview,
+                      visual_enabled=self.visual_cue.enabled())
 
     def on_audio_complete(self):
         if self._stopping:
             return
-        self.get_logger().info("Audio cue played. Virtual fixtures + displacement monitor + safety active.")
+        self.get_logger().info("Go cue confirmed. Virtual fixtures + displacement monitor + safety active.")
         self.recorder.mark("armed")
         self.restricted_plane.start()
         self.monitor.start()
@@ -162,6 +161,8 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the penalty wait before the next trial."""
+        self.go.cancel()
+        self.go.warn_early_touch()
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self._trial_over("early_touch")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
@@ -225,6 +226,7 @@ class RestrictedPlaneOrchestratorNode(rclpyNode):
     def _trial_over(self, why: str, arg=None):
         """The trial's outcome -- success or failure: log it and send trial_end (NSP sync), once a trial.
         The park move that follows is still in the trial's file."""
+        self.go.cancel()
         self.recorder.mark(why, arg)
         self._mark_end()
 

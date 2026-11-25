@@ -33,10 +33,10 @@ def horizontal_dz(params: dict) -> Tuple[float, str]:
             qh = ExperimentParams(ex.BY_KEY["move_horizontal"]).defaults[ex.START_POSE]
             th, tm = kinematics.ee_pose(np.radians(qh)), kinematics.ee_pose(np.radians(params[ex.START_POSE]))
             if th is not None and tm is not None:
-                return float(th[2, 3] - tm[2, 3]), "from the two start poses"
+                return float(th[2, 3] - tm[2, 3]), "calculated from the start poses"
     except Exception:
         pass
-    return HORIZONTAL_DZ_M, "the YAMLs' 5 cm (no arm model here)"
+    return HORIZONTAL_DZ_M, "5 cm from the task configuration. Robot model unavailable"
 
 
 def _segmenter(params: dict) -> MovementSegmenter:

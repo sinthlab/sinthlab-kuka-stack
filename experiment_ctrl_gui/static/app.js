@@ -30,61 +30,63 @@ STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
 const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
-  perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
-  goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
-  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach", choice: "choice",
+  perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze active", checkpoint: "checkpoint",
+  goal: "goal / timeout", release_wait: "wait for release", released: "released", threshold: "threshold",
+  session_end: "session ended", grasp_wait: "wait for grasp", grasp: "grasped", reach: "reach", choice: "choice",
 };
 const PHASE_TEXT = {
-  starting: "starting up", trial_start: "at park — then to the start pose", at_start: "quiet window", quiet_end: "go cue",
-  cue_go: "go cue", armed: "waiting for the pull", snap: "threshold reached — plucked", freeze: "plucked — no pull-back",
-  cue_snap: "threshold reached — plucked", release_wait: "waiting for the arm to come to rest", recover_start: "moving to park", trial_end: "trial over",
-  parking: "first move: to the park pose (slow)",
-  perturb_delay_start: "delay before perturbation", perturb_applied: "perturbed — settling",
-  fixture_active: "fixture on — quiet window", maze_armed: "in the maze", checkpoint: "in the maze",
-  goal: "goal — waiting for release", timeout: "timed out — waiting for release",
-  safety_trip: "SAFETY ABORT — parking", released: "moving to park",
-  early_touch: "EARLY TOUCH — no reward, parking, then a penalty wait",
-  response_timeout: "NO RESPONSE in time — no reward, parking",
-  stopped: "stopped — holding at park until the launch ends", cue_audio_end: null, cue_visual_ack: null,
-  threshold: "threshold reached — coming back",
-  session_end: "session over — waiting for release",
-  grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
-  grasp_timeout: "no grasp — resetting",
-  stop_requested: "STOP — ending the trial, parking",
+  starting: "Starting", trial_start: "At park, before moving to start", at_start: "Quiet window", quiet_end: "Go cue",
+  cue_preview: "Showing cue preview", cue_visual_ack: "Cue lit. Waiting for the go tone",
+  cue_visual_off: "Go cue", cue_audio_start: "Go cue", cue_go: "Go cue", armed: "Waiting for pull", snap: "Pull threshold reached", freeze: "Plucked. Pull-back disabled",
+  cue_snap: "Pull threshold reached", release_wait: "Waiting for the arm to settle", recover_start: "Moving to park", trial_end: "Trial ended",
+  parking: "Moving slowly to park",
+  perturb_delay_start: "Waiting to apply perturbation", perturb_applied: "Perturbation applied. Settling",
+  fixture_active: "Fixture active. Quiet window", maze_armed: "Navigating maze", checkpoint: "Navigating maze",
+  goal: "Goal reached. Waiting for release", timeout: "Timed out. Waiting for release",
+  go_cue_failed: "Go cue not confirmed. Press Stop to end the run",
+  safety_trip: "Safety abort. Moving to park", released: "Moving to park",
+  early_touch: "Early touch. Trial unrewarded. Parking before the penalty wait",
+  response_timeout: "Response timed out. Trial unrewarded. Moving to park",
+  stopped: "Stopped. Holding at park", cue_audio_end: null,
+  threshold: "Pull threshold reached. Returning",
+  session_end: "Session ended. Waiting for release",
+  grasp_wait: "Waiting for grasp", grasp: "Grasp detected. Waiting to apply perturbation",
+  grasp_timeout: "No grasp detected. Resetting",
+  stop_requested: "Stop requested. Ending trial and moving to park",
   closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
-  cue_colour: null, reversal: null,   // the colour rule's cue and reversal marks, just before `target`
+  cue_colour: null, reversal: null,   // the Color Rule's cue and reversal marks, just before `target`
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
-  free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release",
-               release_wait: "waiting for release",
+  free_move: { armed: "Free movement within the workspace", session_end: "Session ended. Waiting for release",
+               release_wait: "Waiting for release",
                // Long moves (long_move.reward each_move): each movement is reported as it starts and ends.
-               move_start: "moving", move_end: "free move — the arm follows the hand",
-               long_move: "long movement — reward" },
-  move_vertical: { session_end: "session over — waiting for release",
-                   release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
-  move_horizontal: { session_end: "session over — waiting for release",
-                     release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
-  n_choice: { release_wait: "waiting for release", armed: "reach out along a rail",
-              choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
-  colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
-                 reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
-  reach_map: { armed: "mapping — he moves the arm freely in the plane", session_end: "session over — waiting for release",
-               release_wait: "waiting for release", move_start: "moving", move_end: "mapping — he moves the arm freely in the plane",
-               long_move: "long movement — reward", new_best: "new best reach — reward" },
-  restricted_move_horizontal: { armed: "free move on the rail", session_end: "session over — waiting for release",
-                                release_wait: "waiting for release" },
-  restricted_move_vertical: { armed: "free move on the rail", session_end: "session over — waiting for release",
-                              release_wait: "waiting for release" },
-  maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
-  restricted_plane: { release_wait: "waiting for release" },
+               move_start: "moving", move_end: "Free movement within the workspace",
+               long_move: "Long movement rewarded" },
+  move_vertical: { session_end: "Session ended. Waiting for release",
+                   release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+  move_horizontal: { session_end: "Session ended. Waiting for release",
+                     release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+  n_choice: { release_wait: "Waiting for release", armed: "Waiting for a choice",
+              choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
+  colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
+                 reach: "Correct choice rewarded. Waiting for release", reach_wrong: "Incorrect choice. No reward. Waiting for release" },
+  reach_map: { armed: "Mapping reach in the frontal plane", session_end: "Session ended. Waiting for release",
+               release_wait: "Waiting for release", move_start: "moving", move_end: "Mapping reach in the frontal plane",
+               long_move: "Long movement rewarded", new_best: "New longest reach in this direction rewarded" },
+  restricted_move_horizontal: { armed: "Free movement along the rail", session_end: "Session ended. Waiting for release",
+                                release_wait: "Waiting for release" },
+  restricted_move_vertical: { armed: "Free movement along the rail", session_end: "Session ended. Waiting for release",
+                              release_wait: "Waiting for release" },
+  maze: { release_wait: "Waiting for release", response_timeout: "Timed out. Waiting for release" },
+  restricted_plane: { release_wait: "Waiting for release" },
 };
 // The reward: on every task's front page (Task view), first, since it is the setting changed most over
 // training (started large, rolled back). Also in the Monkey view, with the rest of the profile.
 const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
 const REWARD_STEP_MS = 10;
 // Task view group headings.
-const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Colour rule", n_choice: "Choices", long_move: "Movements",
+const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Color Rule", n_choice: "Choices", long_move: "Movements",
                       reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
                       apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
                       grasp: "Grasp", virtual_fixtures: "Fixture" };
@@ -105,35 +107,35 @@ function rewardVolume(ms, count = 1, gap = 0) {
   return { ml: Math.max(ul, 0) / 1000, status, note };
 }
 function fmtMl(v) { return v == null ? "–" : v === 0 ? "0 mL" : v >= 100 ? `${Math.round(v)} mL` : `${v.toFixed(v < 10 ? 2 : 1)} mL`; }
-// Set a parameter of the selected experiment: live while it runs (if live), else for the next Start.
+// Set a parameter of the selected experiment: live while it runs (if live), else for the next run.
 async function setParam(name, value) {
   const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
   const live = isRunningSelected() && p && p.tier === "live";
   const r = await act(() => live ? api("/api/live", { name, value }) : api(`/api/params/${S.selected}`, { name, value }),
-                      `${name} = ${value}${live ? " from the next trial" : " for the next Start"}`);
+                      `${name} = ${value}${live ? " from the next trial" : " for the next run"}`);
   if (!live) await loadParams(S.selected, true);
   return r;
 }
 const TAB_HELP = {
   task: {
-    running: "The reward and today's settings for this task. The reward and other live settings change from the next trial; the rest are locked for this run. The monkey's other settings are under Monkey, everything else under All settings.",
-    idle: "The reward, then the few settings this task needs today. The monkey's other settings (feel, reach, pacing) are under Monkey; everything else under All settings. Edits apply to the next Start.",
+    running: "Live settings apply from the next trial. Per-run settings are locked until the run ends.",
+    idle: "Changes apply when you start the next run.",
   },
   monkey: {
-    running: "The monkey's profile, as this task uses it. Tune the feel live (from the next move or trial); when it feels right, Save to profile and every task gets it from its next Start.",
-    idle: "The monkey's profile, as this task uses it: the feel, the reach (as this task's rail ends), the pacing and the reward. A change here is for the next Start only, until you Save to profile.",
+    running: "Live edits apply from the next move or trial. Save them to the profile to use them in future runs.",
+    idle: "Changes here apply to the next run. Save them to the profile to use them in future runs.",
   },
   live: {
-    running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
-    idle: "These can also be changed while the experiment runs. Edits made now set the values it starts with.",
+    running: "Purple marks changes queued for the next trial. Move speed applies from the next move and each speed change is logged in the trial sidecar.",
+    idle: "Set initial values here. You can also edit these settings during a run.",
   },
   run: {
-    running: "Locked for this run: the orchestrator read these once at start-up. Stop, edit, and Start again.",
-    idle: "Everything else in the experiment YAML, poses and maze geometry included. Edits apply to the next Start and are then locked for the run. The package YAML is never changed: the dashboard runs an edited copy (runs/…yaml), and every trial's sidecar records the values used. Amber notes flag parameters that other things depend on.",
+    running: "These settings are locked during a run. Stop the run before editing them.",
+    idle: "These settings apply when the next run starts. The dashboard uses a copy of the task YAML and saves the values used in each trial’s sidecar.",
   },
   fixed: {
-    running: "Shared by every experiment and not in the experiment YAML: the SmartPad (FRI) selections, launch arguments, the controller configuration and the CLIK posture. Change these at the SmartPad or in the files named.",
-    idle: "Shared by every experiment and not in the experiment YAML: the SmartPad (FRI) selections, launch arguments, the controller configuration and the CLIK posture. Change these at the SmartPad or in the files named.",
+    running: "To change these settings, use the SmartPad or edit the listed configuration files.",
+    idle: "To change these settings, use the SmartPad or edit the listed configuration files.",
   },
 };
 
@@ -273,12 +275,12 @@ function renderExperiments() {
   }
   if (sel) renderParadigmTabs(sel, box, rk);
   const edits = S.app && sel ? (S.app.edited[sel.key] || 0) : 0;
-  $("#task-sub").textContent = card ? `${card.summary}${edits ? ` · ${edits} edit${edits > 1 ? "s" : ""} for the next Start` : ""}` : "";
+  $("#task-sub").textContent = card ? `${card.summary}${edits ? ` · ${edits} edit${edits > 1 ? "s" : ""} for the next run` : ""}` : "";
   $("#task-sub").title = card ? card.summary : "";
 }
 function renderParadigmTabs(e, box, rk) {
   // The paradigm chips (apple pluck: normal / perturb / ...; the rails: either / cued / one end only). They set the
-  // paradigm parameter for the next Start. While that experiment runs they are locked -- unless the parameter is
+  // paradigm parameter for the next run. While that experiment runs they are locked -- unless the parameter is
   // live (the rails, the Reach Map's reward): then they switch it from the next trial, and the one waiting is marked.
   if (!(e.paradigms || []).length || !S.params[e.key]) return;
   const running = rk === e.key, live = running && paradigmIsLive(e.key);
@@ -313,7 +315,7 @@ function renderParadigmTabs(e, box, rk) {
 }
 async function select(key) {
   const rk = runningKey();
-  if (rk && key !== rk) { toast(`Stop ${expLabel(rk)} first: the page stays on the running task`, "err"); key = rk; }
+  if (rk && key !== rk) { toast(`Stop ${expLabel(rk)} before selecting another task.`, "err"); key = rk; }
   S.selected = key; store.set("exp", key);
   if (exp(key)?.card) store.set(`variant.${exp(key).card}`, key);   // the card reopens on this rail
   if (!runningKey()) { SV.data = SV.hist = null; setTimeout(() => refreshSession(true), 0); }
@@ -328,10 +330,10 @@ function renderChecklist() {
   const sp = Object.entries(e.smartpad).map(([k, v]) => `<li>${esc(k)}: <code>${esc(v)}</code></li>`).join("");
   $("#checklist-sum").textContent = `SmartPad: ${e.smartpad["Cartesian stiffness (K diagonal)"]} · damping 0.7 · elbow 30 · ${e.launch_file}`;
   $("#checklist").innerHTML = `
-    <li>On the SmartPad start the app and choose:<ul>${sp}</ul></li>
-    <li>The app waits ~60 s for ROS — press <strong>Start</strong> here within that window.</li>
-    <li>Visual cue over Wi-Fi? Join this computer to <code>KUKA_NEOPIXEL</code> first.</li>
-    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>; data goes to <code>analysis/expt_${esc(e.run_name)}_&lt;time&gt;/</code>.</li>`;
+    <li>Start the app on the SmartPad and select the following settings.<ul>${sp}</ul></li>
+    <li>Press <strong>Start</strong> within about 60 seconds, while the app is waiting for ROS.</li>
+    <li>For visual cues over Wi-Fi, first connect this computer to <code>KUKA_NEOPIXEL</code>.</li>
+    <li>Runs <code>ros2 launch sinthlab_bringup ${esc(e.launch_file)}</code>. Recordings are saved to <code>YYYYMMDD_&lt;subject&gt;_${esc(e.task_slug)}_HHMMSS/</code>.</li>`;
 }
 
 // ---------------------------------------------------------------- controls + status
@@ -350,6 +352,7 @@ function renderControls() {
   const showStatus = !!(s || r.state !== "idle");
   if (showStatus === $("#status-card").classList.contains("hidden")) {
     $("#status-card").classList.toggle("hidden", !showStatus);
+    $("#arm-card").classList.toggle("hidden", !showStatus);
     liveToggled(false);
   }
   $("#checklist-card").classList.toggle("hidden", !!(s || r.state !== "idle"));
@@ -368,7 +371,7 @@ function renderControls() {
   else { pp.className = "pill"; pp.textContent = "Robot: no state"; }
   const pl = $("#pill-run");
   if (stopping) { pl.className = "pill warn"; pl.textContent = "Stopping…"; }
-  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Stopped at park · ${expLabel(s.experiment)}`; }
+  else if (s && s.held) { pl.className = "pill pause"; pl.textContent = `Parked · ${expLabel(s.experiment)}`; }
   else if (s) { pl.className = "pill run"; pl.textContent = `${external ? "External · " : ""}${expLabel(s.experiment)} · trial ${s.trial}`; }
   else if (mine) { pl.className = "pill warn"; pl.textContent = `Starting ${exp(r.experiment)?.label ?? ""}…`; }
   else { pl.className = "pill"; pl.textContent = r.exit_code != null ? `Idle (last exit ${r.exit_code})` : "Idle"; }
@@ -376,11 +379,11 @@ function renderControls() {
   // banner
   const bn = $("#banner");
   let msg = "", cls = "banner";
-  if (a.ros.demo) { msg = "Demo mode — a simulated experiment. Nothing is launched and no robot is connected."; cls += " demo"; }
-  else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop still work; live changes and robot state need ROS.`;
-  if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). Live changes work from here; stop it with Ctrl-C in its terminal.`;
-  if (s && s.phase === "safety_trip") { msg = "SAFETY ABORT — the runaway monitor tripped. The arm is moving to the park pose."; }
-  if (s && s.phase === "early_touch") { msg = "Early touch: the apple was moved before the go cue. No reward; the arm parks and a penalty wait runs before the next trial."; }
+  if (a.ros.demo) { msg = "Demo mode simulates the experiment without connecting to the robot."; cls += " demo"; }
+  else if (!a.ros.available) msg = `ROS is not available: ${a.ros.reason} Start and Stop are available. Live edits and robot status require ROS.`;
+  if (external) msg = `${exp(s.experiment)?.label ?? s.experiment} is running from a terminal (${s.node}). You can edit live settings here. To stop the experiment, press Ctrl-C in its terminal.`;
+  if (s && s.phase === "safety_trip") { msg = "Safety abort. The runaway monitor tripped. The arm is moving to the park pose."; }
+  if (s && s.phase === "early_touch") { msg = "Early touch. The apple moved before the go cue. The trial ends without reward. The arm parks and waits before the next trial."; }
   bn.className = msg ? cls : "banner hidden"; bn.textContent = msg;
 
   // run info
@@ -408,7 +411,7 @@ function renderRunStats() {
   const a = S.app, el = $("#run-stats"); if (!a || !el) return;
   const r = a.runner, on = r.state !== "idle" && r.started_at;
   if (!on) { el.innerHTML = ""; return; }
-  const j = SV.juice;
+  const j = SV.view === "monitor" && sessionKey() !== "reach_map" ? null : SV.juice;
   el.innerHTML = `<span class="k">⏱</span>${fmtDur(Date.now() / 1000 - r.started_at)}` +
     (j && j.ml != null ? ` · <span class="k">juice</span>${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <span class="k">${fmtMl(j.rate)}/h</span>` : ""}` : "");
 }
@@ -417,7 +420,7 @@ function renderStatus() {
   const s = statusLive();
   $("#st-trial").textContent = s ? s.trial || "–" : "–";
   const phaseName = s ? (s.held ? "stopped" : s.phase) : null;
-  const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "not running";
+  const text = s ? ((PHASE_TEXT_BY_EXP[s.experiment] || {})[phaseName] ?? PHASE_TEXT[phaseName] ?? phaseName) : "Not running";
   $("#st-phase").textContent = text;
   $("#st-phase-t").textContent = s ? `${Math.max(0, (Date.now() / 1000 - s.phase_t)).toFixed(0)} s` : "–";
 
@@ -444,7 +447,7 @@ function renderStatus() {
   const pe = $("#pending");
   if (pend.length) {
     pe.classList.remove("hidden");
-    pe.innerHTML = `<strong>Applies from trial ${s.trial + 1}:</strong> ` +
+    pe.innerHTML = `<strong>Changes queued for trial ${s.trial + 1}</strong> · ` +
       pend.map(([k, v]) => `<code>${esc(k)}</code> = ${esc(JSON.stringify(v))}`).join(", ");
   } else pe.classList.add("hidden");
 }
@@ -455,7 +458,7 @@ function renderSmartpadReport(s) {
   if (!r) { box.className = "sp-report"; box.innerHTML = "SmartPad report: shown once the experiment is running."; return; }
   if (!r.received) {
     box.className = "sp-report warn";
-    box.innerHTML = `<strong>No report from the SmartPad app</strong> — ${esc(r.reason)}. Trials record the settings as unavailable.`;
+    box.innerHTML = `<strong>SmartPad report unavailable.</strong> ${esc(r.reason)}. Trial records show these settings as unavailable.`;
     return;
   }
   const g = r.settings, want = e ? e.smartpad : {};
@@ -468,9 +471,9 @@ function renderSmartpadReport(s) {
   if (want["Null-space (elbow) stiffness"] && Math.abs(num(g.nullspace_stiffness) - num(want["Null-space (elbow) stiffness"])) > 1e-6)
     diffs.push(`elbow ${g.nullspace_stiffness}, checklist says ${num(want["Null-space (elbow) stiffness"])}`);
   box.className = `sp-report ${diffs.length ? "warn" : "ok"}`;
-  box.innerHTML = `<strong>SmartPad reports:</strong> ${esc(g.stiffness_profile)} <code>[${(g.stiffness || []).join(", ")}]</code>, ` +
+  box.innerHTML = `<strong>Reported SmartPad settings</strong> ${esc(g.stiffness_profile)} <code>[${(g.stiffness || []).join(", ")}]</code>, ` +
     `damping ${esc(g.damping)}, elbow ${esc(g.nullspace_stiffness)}` +
-    (diffs.length ? `<br><strong>Differs from the checklist:</strong> ${diffs.map(esc).join("; ")}.` : " — matches the checklist.");
+    (diffs.length ? `<br><strong>Differs from the checklist:</strong> ${diffs.map(esc).join("; ")}.` : ". These settings match the checklist.");
 }
 function noteEvent(s) {
   if (!s || s.phase_t === S.lastPhaseT) return;
@@ -648,7 +651,7 @@ function renderParams(force = false) {
       root.appendChild(box);
     }
   }
-  if (!root.children.length) root.innerHTML = `<p class="muted">${view === "task" && !f ? "This task has no settings of its own beyond its tabs above." : `No settings${f ? " match the filter" : ""}.`}</p>`;
+  if (!root.children.length) root.innerHTML = `<p class="muted">${view === "task" && !f ? "This task has no additional settings in this view." : `No settings${f ? " match the filter" : ""}.`}</p>`;
 }
 function fmtVal(v) { return Array.isArray(v) ? `[${v.join(", ")}]` : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v); }
 
@@ -666,7 +669,7 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const compact = S.curView !== "all";     // Task and Monkey views: plain names, no descriptions (the tooltip has them)
   const friendly = compact && p.profile_field;
   const label = friendly ? profileLabel(p.profile_field) : compact && p.label ? p.label : short;
-  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Today only: ${esc(who)}'s profile has ${esc(fmtVal(p.default))}` : "Edited for the next Start"}">${p.layer === "profile" && hasProfile() ? "today only" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile has ${esc(fmtVal(p.default))}: Save to profile keeps this value">not in profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
+  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Unsaved edit. ${esc(who)}'s profile value is ${esc(fmtVal(p.default))}.` : "Edited for the next run"}">${p.layer === "profile" && hasProfile() ? "unsaved edit" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile value is ${esc(fmtVal(p.default))}. Select Save to profile to keep this edit.">differs from profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applies from the next move, including within the current trial">next move</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
     const commit = async (v) => {
@@ -676,7 +679,7 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
       } else {
         const r = await act(() => api(`/api/params/${S.selected}`, { name: p.name, value: v }));
         await loadParams(S.selected, true);
-        if (r) toast(`${p.name} = ${fmtVal(r.value)} for the next Start` +
+        if (r) toast(`${p.name} = ${fmtVal(r.value)} for the next run` +
                      (p.linked && p.linked.length ? ` (and ${p.linked.length} linked)` : ""), "ok");
       }
     };
@@ -708,7 +711,7 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
       for (const dv of [-REWARD_STEP_MS, REWARD_STEP_MS]) {
         const sb = document.createElement("button"); sb.className = "btn small step";
         sb.textContent = dv < 0 ? `−${REWARD_STEP_MS}` : `+${REWARD_STEP_MS}`;
-        sb.title = `${dv < 0 ? "Less" : "More"} juice: ${dv < 0 ? "−" : "+"}${REWARD_STEP_MS} ms valve time${isLiveRunning ? ", from the next trial" : ", for the next Start"}`;
+        sb.title = `${dv < 0 ? "Less" : "More"} juice: ${dv < 0 ? "−" : "+"}${REWARD_STEP_MS} ms valve time${isLiveRunning ? ", from the next trial" : ", for the next run"}`;
         sb.onclick = () => commit(Math.max(p.limits ? p.limits[0] : 10, Number(value) + dv));
         ctl.appendChild(sb);
       }
@@ -721,7 +724,7 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   if (p.caution && !compact) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
   if (p.linked && p.linked.length) {
     const h = document.createElement("div"); h.className = "help linked";
-    h.textContent = `🔗 Editing this also sets: ${p.linked.join(", ")}`; row.appendChild(h);
+    h.textContent = `🔗 This edit also updates ${p.linked.join(", ")}`; row.appendChild(h);
   }
   if (p.name === "move_to_start.target_joint_position" && !locked && !isLiveRunning) row.appendChild(startHeightRow());
   return row;
@@ -745,19 +748,19 @@ function renderRewardBar() {
   const own = prof && (prof.reward_by_task || {})[S.selected];
   const pv = prof && layered ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
   const off = pv && (Number(pv.ms) !== Number(nx ?? ms) || Number(pv.n) !== n);
-  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">no mL</span>`
+  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">Volume unavailable</span>`
     : `<span class="ml ${vol.status}" title="${esc(`${vol.status}${vol.note ? `: ${vol.note}` : ""}${S.cal ? ` · calibration ${S.cal.set}` : ""}`)}">≈ ${fmtMl(vol.ml)}${vol.status === "extrapolated" || vol.note ? " ⚠" : ""}</span>`;
   box.innerHTML = `<div class="rb-lab">Reward${running ? " · live" : ""}</div>
     <div class="rw"><span class="big">${esc(fmt(ms, n))}</span>${volTxt}${nx !== undefined ? `<span class="nxt">→ ${esc(nx)} ms next trial</span>` : ""}
-      <button class="btn small step" data-d="-${REWARD_STEP_MS}" title="Less juice: −${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next Start"}">−${REWARD_STEP_MS}</button>
-      <button class="btn small step" data-d="${REWARD_STEP_MS}" title="More juice: +${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next Start"}">+${REWARD_STEP_MS}</button>
-      <button class="btn small" id="rw-more" title="Set by volume; save to the profile">mL…</button></div>
+      <button class="btn small step" data-d="-${REWARD_STEP_MS}" title="Decrease valve time by ${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next run"}">−${REWARD_STEP_MS}</button>
+      <button class="btn small step" data-d="${REWARD_STEP_MS}" title="Increase valve time by ${REWARD_STEP_MS} ms${running ? ", from the next trial" : ", for the next run"}">+${REWARD_STEP_MS}</button>
+      <button class="btn small" id="rw-more" title="Set reward volume or save it to the profile">mL…</button></div>
     <div class="rb-sub">${pv ? `${esc(who)}'s profile${own ? ` (this task)` : ""}: ${esc(fmt(pv.ms, pv.n))}${off ? " · differs" : ""}` : layered && who && who !== "test" ? "no profile" : "&nbsp;"}</div>` +
     (S.rewardPop ? `<div class="pop">
       ${S.cal && S.cal.profiles.length ? `<div class="row"><label>Set by volume <input type="number" id="rw-ml" step="0.05" min="0.3" max="5" value="${vol.ml != null ? vol.ml.toFixed(2) : ""}"> mL per reward</label><button class="btn small" id="rw-set">Set</button></div>
         ${vol.note ? `<div class="row warn-text">⚠ ${esc(vol.note)}</div>` : ""}<div class="row muted">Calibration ${esc(S.cal.set)} (±10 %)</div>` : `<div class="row muted">No reward calibration found.</div>`}
       ${off ? `<div class="row"><button class="btn small" id="rw-save">Save to ${esc(who)}'s profile…</button></div>` : ""}
-      <div class="row muted">Pulses and the gap: the Task tab.</div></div>` : "");
+      <div class="row muted">Set the pulse count and gap in the Task tab.</div></div>` : "");
   box.querySelectorAll(".step").forEach((b) => b.onclick = () => setParam("reward_pulse.pulse_ms", Math.max(10, Number(nx ?? ms) + Number(b.dataset.d))));
   $("#rw-more").onclick = () => { S.rewardPop = !S.rewardPop; renderRewardBar(); if (S.rewardPop) $("#rw-ml")?.focus(); };
   const set = $("#rw-set");
@@ -777,12 +780,12 @@ function startHeightRow() {
   const box = document.createElement("div"); box.className = "help start-height";
   if (!sh.available) { box.textContent = `Start height: ${sh.reason || "unavailable"}`; return box; }
   const ref = sh.reference.replace("_", " ");
-  box.innerHTML = `Set by height: the ${esc(ref)} at <input type="number" step="0.005" min="${sh.floor_m}" ` +
+  box.innerHTML = `Height of the ${esc(ref)} <input type="number" step="0.005" min="${sh.floor_m}" ` +
     `value="${sh.height_m}"> m above the ground <button>Solve</button> ` +
     `<span class="default">now ${sh.height_m.toFixed(3)} m · floor ${Number(sh.floor_m).toFixed(3)} m</span>`;
   const inp = box.querySelector("input");
   box.querySelector("button").onclick = async () => {
-    const r = await act(() => api(`/api/start_height/${S.selected}`, { height_m: Number(inp.value) }), "Start pose solved");
+    const r = await act(() => api(`/api/start_height/${S.selected}`, { height_m: Number(inp.value) }), "Start pose updated");
     if (r) await loadParams(S.selected, true);
   };
   return box;
@@ -873,10 +876,10 @@ function renderMonkey() {
   const info = $("#monkey-info");
   const p = pr.profile;
   info.title = "";
-  if (!cur) info.textContent = "choose the monkey first";
-  else if (cur === "test") info.textContent = "no animal: task defaults";
+  if (!cur) info.textContent = "Select a monkey";
+  else if (cur === "test") info.textContent = "Test run uses task defaults";
   else if (p) { info.textContent = `profile v${p.version} · ${p.updated.slice(0, 16)}`;
-    info.title = "Applied to the pre-training tasks, the Colour Rule and N-Choice; Navin's experiments keep their own settings."; }
+    info.title = "This profile applies to pre-training tasks, Color Rule, and N-Choice."; }
   else {
     info.innerHTML = `no profile <button class="btn small" id="btn-profile-create" title="Create ${esc(cur)}'s profile from ${esc(exp(S.selected)?.label || "this task")}'s settings">Create</button>`;
     $("#btn-profile-create").onclick = () => createProfileFromTask();
@@ -901,7 +904,7 @@ function askAboutEdits(subject) {
 }
 async function selectSubject(subject) {
   if (subject === "__new") {
-    const id = (prompt("New monkey's ID (letters, digits, _ and -):") || "").trim();
+    const id = (prompt("Enter an ID for the new monkey. Use letters, numbers, underscores, or hyphens.") || "").trim();
     if (!id) { renderMonkey(); return; }
     const clear = await askAboutEdits(id);
     if (clear === null) { renderMonkey(); return; }
@@ -922,7 +925,7 @@ async function selectSubject(subject) {
 }
 async function createProfileFromTask() {
   const e = exp(S.selected);
-  if (!confirm(`Create ${curSubject()}'s profile from ${e.label}'s settings as they are now (feel, reach, pacing, reward)?`)) return;
+  if (!confirm(`Create ${curSubject()}'s profile from ${e.label}'s current settings?`)) return;
   await act(() => api("/api/profile/save", { exp: S.selected, from_task: true, note: `created from ${e.label}` }), `${curSubject()}'s profile created`);
 }
 // The bar above the Monkey view: whose profile, and Save to profile.
@@ -931,15 +934,15 @@ function renderProfileBar(view, layered) {
   if (view !== "monkey" || !layered) { bar.classList.add("hidden"); return; }
   bar.classList.remove("hidden");
   const cur = curSubject(), e = exp(S.selected);
-  if (!cur) { bar.innerHTML = `<span class="grow">No monkey chosen: these are ${esc(e.label)}'s defaults. Choose the monkey at the top left.</span>`; return; }
-  if (cur === "test") { bar.innerHTML = `<span class="grow">test: ${esc(e.label)}'s defaults, no profile.</span>`; return; }
+  if (!cur) { bar.innerHTML = `<span class="grow">Select a monkey to load its profile. ${esc(e.label)} is using task defaults.</span>`; return; }
+  if (cur === "test") { bar.innerHTML = `<span class="grow">Test run using ${esc(e.label)} defaults.</span>`; return; }
   if (!hasProfile()) {
-    bar.innerHTML = `<span class="grow">${esc(cur)} has no profile yet: ${esc(e.label)}'s defaults.</span><button class="btn small" id="pb-create">Create ${esc(cur)}'s profile from these</button>`;
+    bar.innerHTML = `<span class="grow">${esc(cur)} has no profile. ${esc(e.label)} is using task defaults.</span><button class="btn small" id="pb-create">Create profile</button>`;
     $("#pb-create").onclick = () => createProfileFromTask();
     return;
   }
-  bar.innerHTML = `<span class="grow"><strong>${esc(cur)}</strong>'s profile v${S.app.profile.version}, as ${esc(e.label)} uses it.</span>` +
-    `<button class="btn small" id="pb-save" title="Keep the values tuned here (live or for the next Start) in ${esc(cur)}'s profile">Save to ${esc(cur)}'s profile…</button>`;
+  bar.innerHTML = `<span class="grow"><strong>${esc(cur)}</strong>'s profile v${S.app.profile.version} for ${esc(e.label)}</span>` +
+    `<button class="btn small" id="pb-save" title="Save these settings to ${esc(cur)}'s profile">Save to ${esc(cur)}'s profile…</button>`;
   $("#pb-save").onclick = () => openSaveDialog();
 }
 async function openSaveDialog(rewardOnly = false) {
@@ -947,13 +950,13 @@ async function openSaveDialog(rewardOnly = false) {
   let d;
   try { d = await api(`/api/profile/diff?exp=${encodeURIComponent(key)}`); } catch (err) { toast(err.message, "err"); return; }
   if (rewardOnly) d.rows = d.rows.filter((r) => r.reward);
-  if (!d.rows.length) { toast(`Nothing to save: ${e.label} matches ${d.subject}'s profile`, "ok"); return; }
+  if (!d.rows.length) { toast(`${e.label} settings already match ${d.subject}'s profile.`, "ok"); return; }
   $("#save-dlg-subject").textContent = d.subject;
-  $("#save-dlg-sub").textContent = `From ${e.label}${runningKey() === key ? " (live values)" : ""}: these differ from the profile. The ticked ones are saved, and every task uses them from its next Start.`;
-  $("#save-rows").innerHTML = `<tr><th></th><th>Setting</th><th>Profile</th><th>Now</th><th>For</th></tr>` + d.rows.map((r, i) =>
+  $("#save-dlg-sub").textContent = `These ${e.label} settings differ from the profile. Select the changes to save for future runs. You can save reward settings for this task only.`;
+  $("#save-rows").innerHTML = `<tr><th></th><th>Setting</th><th>Profile</th><th>Task value</th><th>Apply to</th></tr>` + d.rows.map((r, i) =>
     `<tr><td><input type="checkbox" id="sv${i}" checked aria-label="Save ${esc(r.label)}"></td><td><label for="sv${i}">${esc(r.label)}</label></td>` +
     `<td class="v">${esc(fmtVal(r.profile))}</td><td class="v">${esc(fmtVal(r.task))}</td><td>` +
-    (r.reward ? `<select id="svs${i}" aria-label="Scope"><option value="all"${r.task_only_now ? "" : " selected"}>every task</option><option value="task"${r.task_only_now ? " selected" : ""}>${esc(e.label)} only</option></select>` : "every task") +
+    (r.reward ? `<select id="svs${i}" aria-label="Scope"><option value="all"${r.task_only_now ? "" : " selected"}>All tasks using this profile</option><option value="task"${r.task_only_now ? " selected" : ""}>${esc(e.label)} only</option></select>` : "All tasks using this profile") +
     `</td></tr>`).join("");
   $("#save-note").value = "";
   $("#save-form").onsubmit = async (ev) => {
@@ -976,8 +979,8 @@ async function openProfileDialog() {
   const vals = (pr.profile && pr.profile.values) || {};
   $("#profile-dlg-subject").textContent = cur;
   $("#profile-dlg-sub").textContent = pr.profile
-    ? `Version ${pr.profile.version}, saved ${pr.profile.updated}. Saving applies it to every free-move task from its next Start (a running one keeps its values until it ends).`
-    : "No profile yet: these are the defaults. Saving creates the profile.";
+    ? `Version ${pr.profile.version}, saved ${pr.profile.updated}. Profile changes apply the next time you start a task that uses profiles.`
+    : "These are the task defaults. Save to create the profile.";
   $("#profile-fields").innerHTML = pr.layout.sections.map((sec) => `<fieldset><legend>${esc(sec.label)}</legend><p class="pf-help">${esc(sec.help)}</p>` +
     sec.fields.map((f) => {
       const v = vals[f.name], id = `pf-${f.name.replace(".", "-")}`;
@@ -993,9 +996,9 @@ async function openProfileDialog() {
   });
   const byTask = (pr.profile && pr.profile.reward_by_task) || {};
   const bt = Object.entries(byTask);
-  $("#profile-by-task").innerHTML = bt.length ? `<div class="by-task"><strong>Rewards for one task only</strong><ul>` + bt.map(([t, d]) =>
+  $("#profile-by-task").innerHTML = bt.length ? `<div class="by-task"><strong>Task-specific rewards</strong><ul>` + bt.map(([t, d]) =>
     `<li>${esc(exp(t)?.label || t)}: ${Object.entries(d).map(([n, v]) => `${esc(profileLabel(n))} ${esc(fmtVal(v))}`).join(", ")} ` +
-    `<button type="button" class="btn small" data-clear="${esc(t)}">Use the profile's</button></li>`).join("") + `</ul></div>` : "";
+    `<button type="button" class="btn small" data-clear="${esc(t)}">Restore profile reward</button></li>`).join("") + `</ul></div>` : "";
   document.querySelectorAll("#profile-by-task [data-clear]").forEach((b) => b.onclick = async () => {
     const t = b.dataset.clear;
     await act(() => api("/api/profile/save", { exp: t, task_only: Object.fromEntries(Object.keys(byTask[t]).map((n) => [n, null])),
@@ -1090,10 +1093,10 @@ async function liveLoad() {
     const m = await api("/api/live_view");
     LV.view.setGeometry(m.geometry); LV.version = m.geometry ? m.geometry.version : null;
     LV.view.setLive(m.live);
-    $("#live-sub").textContent = m.geometry ? "in the experiment's bounds, live" : "no experiment running";
+    $("#live-sub").textContent = m.geometry ? "Live position and trial bounds" : "No experiment running";
   } catch { /* the next message retries */ }
 }
-function liveShown() { return $("#live-card").open && !$("#status-card").classList.contains("hidden"); }
+function liveShown() { return $("#live-card").open && !$("#arm-card").classList.contains("hidden"); }
 function onLive(l) {
   if (!LV.view || !liveShown()) return;
   if ((l.version ?? null) !== LV.version || (l.experiment && !LV.view.geom) || (!l.experiment && LV.view.geom)) liveLoad();
@@ -1160,10 +1163,10 @@ const OUTCOME_CLASS = {
   reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
   choice_unrewarded: "unrewarded", reach_wrong: "wrong",
   response_timeout: "none", timeout: "none", early_touch: "early",
-  safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
+  go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
 };
 const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong end",
-  none: "No response", early: "Early touch", abort: "Aborted (safety, Stop)" };
+  none: "No response", early: "Early touch", abort: "Aborted (safety)", stop: "Stopped by operator" };
 const SV = { view: null, userView: false, data: null, hist: null, lastTrial: null, lastFetch: 0, busy: false };
 
 function sessionKey() { return runningKey() || S.selected; }
@@ -1171,7 +1174,8 @@ function pct(n, d) { return d ? `${Math.round(100 * n / d)}%` : "–"; }
 const num = (v) => (v === "" || v == null ? NaN : Number(v));
 
 function chooseSessionView() {
-  if (!SV.userView) SV.view = runningKey() || sessionKey() === "reach_map" ? "monitor" : "history";
+  // Run while a run goes, and after it ends (SV.ranKey) until another task or tab is chosen; else history.
+  if (!SV.userView) SV.view = runningKey() || SV.ranKey === sessionKey() || sessionKey() === "reach_map" ? "monitor" : "history";
   document.querySelectorAll(".session-card .tab").forEach((t) => {
     const on = t.dataset.view === SV.view;
     t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
@@ -1200,13 +1204,21 @@ async function refreshSession(force = false) {
 
 // Called on every status update: refetch the trials when a trial ends.
 function sessionOnState() {
-  const s = statusLive();
+  const s = statusLive(), rk = runningKey();
+  if (rk !== SV.runKey) {                  // a run started or ended: back to the default view, which is Run
+    if (rk || SV.runKey) SV.userView = false;
+    if (SV.runKey && !rk) SV.ranKey = SV.runKey;
+    SV.runKey = rk;
+  }
   const t = s ? `${s.experiment}:${s.trial}:${["trial_end", "recover_start"].includes(s.phase)}` : null;
   const viewWas = SV.view;
   chooseSessionView();
-  if (t !== SV.lastTrial || SV.view !== viewWas) { SV.lastTrial = t; refreshSession(true); }
-  // The Reach Map grows within its one long session: redraw it every few seconds while it runs.
-  else if (s && s.experiment === "reach_map" && SV.view === "monitor" && Date.now() - SV.lastFetch > 5000) refreshSession(true);
+  if (t !== SV.lastTrial || SV.view !== viewWas) {
+    SV.lastTrial = t; refreshSession(true);
+    setTimeout(() => refreshSession(true), 2500);   // again once the finished trial's row is written
+  }
+  // While a run goes, keep its progress current (a trial's row is written as it ends).
+  else if (rk && Date.now() - SV.lastFetch > 4000) refreshSession(true);
 }
 
 function renderSession() {
@@ -1240,7 +1252,7 @@ function reachSvg(d) {
   const at = { "reach.left_m": (v) => [-v, 0], "reach.right_m": (v) => [v, 0], "reach.down_m": (v) => [0, -v], "reach.up_m": (v) => [0, v] };
   const marks = (vals, cls) => Object.entries(at).map(([k, f]) => vals && vals[k] != null ? (([a, b]) => `<circle class="${cls}" cx="${X(a)}" cy="${Y(b)}" r="5"/>`)(f(vals[k])) : "").join("");
   const propVals = Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, v.value]));
-  return `<svg class="reach-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Reach map: where the hand went and the reach per direction">
+  return `<svg class="reach-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Reach map showing the arm trajectory and reach by direction">
     <rect class="rm-box" x="${X(box[0])}" y="${Y(box[3])}" width="${((box[1] - box[0]) * sc).toFixed(1)}" height="${((box[3] - box[2]) * sc).toFixed(1)}"/>
     <line class="rm-rail" x1="${X(x0)}" x2="${X(x1)}" y1="${Y(dz)}" y2="${Y(dz)}"/><text class="rm-label" x="${X(x0) * 1 + 4}" y="${Y(dz) - 4}">horizontal tasks' rail</text>
     <line class="rm-rail" x1="${X(0)}" x2="${X(0)}" y1="${Y(y1)}" y2="${Y(y0)}"/>
@@ -1250,47 +1262,47 @@ function reachSvg(d) {
     ${d.rows.filter((r) => r.arm_limited).map((r) => `<circle class="rm-limited" cx="${X(r.comfortable_m * Math.cos(r.deg * Math.PI / 180))}" cy="${Y(r.comfortable_m * Math.sin(r.deg * Math.PI / 180))}" r="6"/>`).join("")}
     ${marks(cur, "rm-cur")}${marks(propVals, "rm-prop")}
     <path class="rm-start" d="M${X(-0.006)},${Y(0)}H${X(0.006)}M${X(0)},${Y(-0.006)}V${Y(0.006)}"/>
-    <text class="rm-label" x="${W - 4}" y="${H - 6}" text-anchor="end">box = the arm's limit · right = +Y, as he sees it</text>
+    <text class="rm-label" x="${W - 4}" y="${H - 6}" text-anchor="end">Box marks the workspace limit. +Y is to the subject’s right.</text>
   </svg>`;
 }
 function renderReachMap() {
   const box = $("#session-view"), d = SV.map;
   $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}${d.run_subject ? ` · ${d.run_subject}` : ""}` : "";
   if (d && d.running && (!d.run || !d.n_movements)) {
-    box.innerHTML = `<p class="empty">Mapping ${esc(d.run_subject || d.subject || "")}: waiting for the first movements. The map fills in as he moves the arm.</p>`;
+    box.innerHTML = `<p class="empty">Waiting for the first recorded movements from ${esc(d.run_subject || d.subject || "this session")}.</p>`;
     return;
   }
-  if (!d || !d.run) { box.innerHTML = `<p class="empty">No Reach Map run yet. Start one: the map fills in as he moves the arm.</p>`; return; }
+  if (!d || !d.run) { box.innerHTML = `<p class="empty">Start Reach Map to record movements.</p>`; return; }
   const enough = d.rows.filter((r) => r.comfortable_m != null).length;
   const tiles = [["Monkey", esc(d.run_subject || "?")], ["Movements", d.n_movements], ["Mapped", `${d.minutes} <small>min</small>`],
                  ["Directions", `${enough}/${d.sectors} <small>with ≥5 movements</small>`]];
   const who = d.subject, mine = !!d.run_subject && d.run_subject === who, canSave = who && who !== "test" && mine;
-  const saveWhy = !who || who === "test" ? "Choose the monkey to save" : !d.run_subject ? "This recording has no subject: it cannot be saved"
-    : !mine ? `This is ${d.run_subject}'s map: choose ${d.run_subject} to save it` : "";
+  const saveWhy = !who || who === "test" ? "Select a monkey to save the map" : !d.run_subject ? "This recording has no subject ID"
+    : !mine ? `Select ${d.run_subject} to save these reach values` : "";
   const rows = REACH_DIRS.map(([k, label, where], i) => {
     const p = d.proposal[k], now = d.profile_reach ? d.profile_reach[k] : null;
     const usable = p.value != null;
-    const note = !usable ? p.why : p.arm_limited ? "arm-limited: against the box, he would go farther" : p.why || where;
+    const note = !usable ? p.why : p.arm_limited ? "Reach limited by the workspace boundary" : p.why || where;
     return `<tr><td><input type="checkbox" id="rmv${i}" ${usable && !p.arm_limited ? "checked" : ""} ${usable && canSave ? "" : "disabled"} aria-label="Save ${label}"></td>
       <td><label for="rmv${i}">${label}</label></td><td class="v">${cm(now)}</td><td class="v"><strong>${cm(p.value)}</strong></td>
       <td class="small ${p.arm_limited ? "warn" : "muted"}">${esc(note)}</td></tr>`;
   }).join("");
   box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
     ${reachSvg(d)}
-    <div class="rm-legend small"><span class="lg comf"></span>comfortable reach (${d.percentile}th percentile of each direction's movements)
-      <span class="lg far"></span>farthest <span class="lg reach"></span>a movement's farthest point
-      <span class="lg prop"></span>this map's values <span class="lg cur"></span>${esc(who || "the profile")}'s now</div>
-    <table class="save-rows rm-table"><tr><th></th><th>Reach</th><th>${esc(who || "Profile")} now</th><th>This map</th><th></th></tr>${rows}</table>
-    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save ticked to ${esc(who)}'s reach` : esc(saveWhy)}</button>
-      <span class="muted small">The horizontal rail is ${(d.horizontal_dz * 100).toFixed(1)} cm above this map's start (${esc(d.horizontal_dz_how)}).</span></div>
-    <details class="rm-sectors"><summary class="small">Every direction</summary><table class="save-rows"><tr><th>Direction</th><th>Movements</th><th>Comfortable</th><th>Farthest</th><th>Box</th></tr>
+    <div class="rm-legend small"><span class="lg comf"></span>comfortable reach (${d.percentile}th percentile by direction)
+      <span class="lg far"></span>farthest <span class="lg reach"></span>farthest point of each movement
+      <span class="lg prop"></span>proposed reach <span class="lg cur"></span>current profile</div>
+    <table class="save-rows rm-table"><tr><th></th><th>Reach</th><th>Current profile</th><th>Proposed reach</th><th></th></tr>${rows}</table>
+    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save selected values to ${esc(who)}'s profile` : esc(saveWhy)}</button>
+      <span class="muted small">Horizontal rail height relative to the map start: ${(d.horizontal_dz * 100).toFixed(1)} cm (${esc(d.horizontal_dz_how)}).</span></div>
+    <details class="rm-sectors"><summary class="small">Reach by direction</summary><table class="save-rows"><tr><th>Direction</th><th>Movements</th><th>Comfortable</th><th>Farthest</th><th>Box</th></tr>
       ${d.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td class="v">${cm(r.comfortable_m)}${r.arm_limited ? " ⚠" : ""}</td><td class="v">${cm(r.farthest_m)}</td><td class="v">${cm(r.wall_m)}</td></tr>`).join("")}</table></details>`;
   const b = $("#rm-save");
   if (b) b.onclick = async () => {
     const values = {};
     REACH_DIRS.forEach(([k], i) => { if ($(`#rmv${i}`).checked) values[k] = d.proposal[k].value; });
-    if (!Object.keys(values).length) { toast("Tick at least one direction", "err"); return; }
-    if (!confirm(`Save ${Object.entries(values).map(([k, v]) => `${k.slice(6, -2)} ${cm(v)}`).join(", ")} to ${who}'s reach? The rail tasks use it from their next Start.`)) return;
+    if (!Object.keys(values).length) { toast("Select at least one direction.", "err"); return; }
+    if (!confirm(`Save ${Object.entries(values).map(([k, v]) => `${k.slice(6, -2)} ${cm(v)}`).join(", ")} to ${who}'s reach? The rail tasks use these values in future runs.`)) return;
     await act(() => api("/api/profile/save", { exp: "reach_map", values, reach_map_run: d.run, note: `Reach Map ${d.run}` }), `Saved to ${who}'s reach`);
     refreshSession(true);
   };
@@ -1313,75 +1325,93 @@ function juiceOf(d) {
   const hours = (t1 - t0) / 3600;
   return { ml, unsure, rate: hours > 0.05 ? ml / hours : null };
 }
+// Operator stops stay in the trial strip but are excluded from performance metrics.
+const SESSION_TASKS = ["free_move", "restricted_move_horizontal", "restricted_move_vertical", "reach_map"];
+const LAST_N = 20;
+const isOperatorStop = (r) => r.outcome === "stop_requested";
+const median = (xs) => { const v = xs.filter(Number.isFinite).sort((a, b) => a - b); if (!v.length) return NaN;
+  const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const fmtS = (x) => (Number.isFinite(x) ? (x >= 100 ? `${Math.round(x)} s` : `${x.toFixed(1)} s`) : "–");
+function paradigmLabel(key, value) {
+  const pr = (exp(key)?.paradigms || []).find((x) => x.key === String(value));
+  return pr ? pr.label : String(value || "");
+}
 function renderMonitor() {
-  const box = $("#session-view"), d = SV.data;
-  const rows = (d && d.rows) || [];
+  const box = $("#session-view"), d = SV.data, key = (d && d.experiment) || sessionKey();
+  const all = (d && d.rows) || [];
   $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
-  if (!rows.length) {
+  if (!all.length) {
     box.innerHTML = `<p class="empty">No trials yet${d && d.run ? " in this run" : ` for ${esc(exp(sessionKey())?.label || "")}`}.</p>`;
     return;
   }
-  const last = rows[rows.length - 1];
-  const done = rows.filter((r) => r.success === "0" || r.success === "1" || r.success === 0 || r.success === 1);
-  const ok = done.filter((r) => String(r.success) === "1").length;
-  const rewards = rows.reduce((a, r) => a + (num(r.n_rewards) || 0), 0);
-  const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
-  const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
-                 ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
-  const j = juiceOf(d);
-  if (j.ml != null && rewards) tiles.push(["Juice", `${j.unsure ? "≈ " : ""}${fmtMl(j.ml)}${j.rate ? ` <small>${fmtMl(j.rate)}/h</small>` : ""}`]);
-  const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
-  if (chosen.length) {
-    const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
-    tiles.push(["Correct, last 20", `${pct(c, lastN.length)} <small>${c}/${lastN.length}</small>`]);
+  const rows = all.filter((r) => !isOperatorStop(r));          // the monkey's trials
+  const last = all[all.length - 1], session = SESSION_TASKS.includes(key);
+  const recent = rows.slice(-LAST_N);
+  const rewarded = recent.filter((r) => num(r.n_rewards) > 0).length;
+  const juice = juiceOf(d);
+  const latency = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
+  const misses = rows.filter((r) => ["response_timeout", "timeout", "early_touch"].includes(r.outcome)).length;
+  const row1 = [
+    [session ? "Sessions" : "Trials", rows.length],
+    session ? ["Rewards", rows.reduce((sum, r) => sum + (num(r.n_rewards) || 0), 0)]
+            : ["Rewarded · last 20", recent.length ? `${rewarded}/${recent.length}` : "–"],
+    ["Juice", juice.ml == null ? "–" : `${juice.unsure ? "≈ " : ""}${fmtMl(juice.ml)}`],
+    [session ? "Session length" : "Time to outcome", fmtS(latency), "", "Median of the last 10, from go cue to outcome"],
+    ["Misses", misses, misses ? "warn" : "", "No response or early touch"],
+  ];
+  const row2 = [];
+  if (key === "n_choice") {
+    if (last.n_options || last.paradigm) row2.push(["Options", esc(last.n_options || last.paradigm)]);
+  } else if (key.startsWith("restricted_move_")) {
+    row2.push(["Rail", esc(exp(key)?.variant || "–")]);
+  } else if (last.paradigm) row2.push(["Mode", esc(paradigmLabel(key, last.paradigm))]);
+  if (key === "move_horizontal" || key === "move_vertical") {
+    const end = key === "move_horizontal" ? "left" : "up";
+    const reaches = rows.filter((r) => r.chosen_end).slice(-LAST_N);
+    row2.push([`${end === "left" ? "Left" : "Up"} reaches · last 20`, pct(reaches.filter((r) => r.chosen_end === end).length, reaches.length)]);
+    if (last.paradigm === "cued") {
+      const cued = rows.filter((r) => r.paradigm === "cued" && ["0", "1"].includes(String(r.correct))).slice(-LAST_N);
+      row2.push(["Cued accuracy · last 20", pct(cued.filter((r) => String(r.correct) === "1").length, cued.length)]);
+    }
+  } else if (key === "colour_rule") {
+    row2.push(["Block", esc(last.block || "–")]);
+    if (last.mapping) row2.push(["Mapping", esc(last.mapping)]);
+    const accuracy = num(last.window_pct);
+    row2.push(["Criterion window", Number.isFinite(accuracy) ? `${Math.round(accuracy)}%` : "–"]);
+  } else if (key === "n_choice") {
+    const choices = rows.filter((r) => ["0", "1"].includes(String(r.chose_best))).slice(-LAST_N);
+    row2.push(["Chose best · last 20", pct(choices.filter((r) => String(r.chose_best) === "1").length, choices.length)]);
+  } else if (key === "free_move") {
+    const moves = rows.reduce((sum, r) => sum + (num(r.n_movements) || 0), 0);
+    const long = rows.reduce((sum, r) => sum + (num(r.n_long_moves) || 0), 0);
+    row2.push(["Long moves", moves ? `${long}/${moves}` : "–"]);
+    const longest = Math.max(0, ...rows.map((r) => num(r.max_length_m)).filter(Number.isFinite));
+    row2.push(["Longest move", longest ? `${(longest * 100).toFixed(0)} cm` : "–"]);
   }
-  if (last.block) tiles.push(["Block · mapping", `${esc(last.block)} <small>${esc(last.mapping || "")}</small>`]);
-  if ("choice" in last && !("correct" in last)) {
-    const ch = rows.filter((r) => r.choice), lastN = ch.slice(-20);
-    tiles.push(["Paid, last 20", pct(lastN.filter((r) => String(r.rewarded) === "1").length, lastN.length)]);
-    tiles.push(["Chose best", pct(ch.filter((r) => String(r.chose_best) === "1").length, ch.length)]);
-  }
-  if ("n_long_moves" in last) {
-    const mv = rows.reduce((a, r) => a + (num(r.n_movements) || 0), 0), lm = rows.reduce((a, r) => a + (num(r.n_long_moves) || 0), 0);
-    tiles.push(["Long moves", `${lm} <small>of ${mv}</small>`]);
-  }
-  const cls = (r) => OUTCOME_CLASS[r.outcome] || "none";
-  const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.cue_colour && `cue ${r.cue_colour}`,
-    r.chosen_end && `chose ${r.chosen_end}`, r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
-    r.reversal == 1 && "first trial after a reversal"].filter(Boolean).join(" · ");
-  // The strip: the last 120 trials, grouped by block when the task has blocks (the colour rule).
-  const shown = rows.slice(-120);
+  // ---- the strip: the last 120 trials, in segments by Color Rule block, or wherever the mode changed
+  const shown = all.slice(-120);
+  const modes = new Set(all.map((r) => r.paradigm).filter(Boolean));
   const groups = [];
   for (const r of shown) {
-    const g = r.block ? `B${r.block} · ${r.mapping || ""}` : "";
+    const g = r.block ? `B${r.block} · ${r.mapping || ""}` : modes.size > 1 ? paradigmLabel(key, r.paradigm) : "";
     if (!groups.length || groups[groups.length - 1].label !== g) groups.push({ label: g, rows: [] });
     groups[groups.length - 1].rows.push(r);
   }
+  const cls = (r) => (isOperatorStop(r) ? "stop" : OUTCOME_CLASS[r.outcome] || "none");
+  const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.paradigm && paradigmLabel(key, r.paradigm),
+    r.cue_colour && `cue ${r.cue_colour}`, r.target && r.target !== "either" && `cued ${r.target}`, r.chosen_end && `reached ${r.chosen_end}`,
+    r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
+    r.outcome_latency_s && `${num(r.outcome_latency_s).toFixed(1)} s`, String(r.reversal) === "1" && "first trial after a reversal"].filter(Boolean).join(" · ");
   const strip = groups.map((g) => `<div class="blk">${g.label ? `<span class="blk-l">${esc(g.label)}</span>` : ""}<div class="cells">` +
     g.rows.map((r) => `<span class="cell o-${cls(r)}" title="${esc(title(r))}"></span>`).join("") + "</div></div>").join("");
   const counts = {};
-  rows.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
+  all.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
   const present = Object.keys(OUTCOME_LABEL).filter((k) => counts[k]);
   const legend = present.map((k) => `<span><i class="o-${k}"></i>${OUTCOME_LABEL[k]}</span>`).join("");
-  const bars = (items, max) => `<div class="bars">` + items.map(([k, v]) =>
-    `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
-  const panels = [`<div><h3>Outcomes</h3>${bars(present.map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`];
-  if (rows.some((r) => r.block)) {      // the colour rule: choices to criterion, block by block
-    const per = {};
-    rows.forEach((r) => { if (r.block && (String(r.correct) === "0" || String(r.correct) === "1")) per[r.block] = (per[r.block] || 0) + 1; });
-    const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);
-    const items = blocks.map((b) => [`B${b}${b === Math.max(...blocks) ? " (now)" : ""}`, per[b]]);
-    panels.push(`<div><h3>Choices per block</h3><p class="muted small">Completed blocks ended at criterion: falling counts mean faster reversals.</p>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
-  }
-  if (rows.some((r) => r.choice)) {     // N-choice: how often each direction was chosen
-    const per = {};
-    rows.forEach((r) => { if (r.choice) per[r.choice] = (per[r.choice] || 0) + 1; });
-    const items = Object.entries(per).sort((a, b) => b[1] - a[1]);
-    panels.push(`<div><h3>Choices per direction</h3>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
-  }
-  box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>` +
-    `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>` +
-    `<div class="mon-grid">${panels.join("")}</div>`;
+  const tiles = (row, cls) => `<div class="tiles ${cls}">${row.map(([label, value, state = "", hint = ""]) =>
+    `<div class="tile ${state}"${hint ? ` title="${esc(hint)}"` : ""}><div class="k">${label}</div><div class="v">${value}</div></div>`).join("")}</div>`;
+  box.innerHTML = tiles(row1, "row1") + (row2.length ? tiles(row2, "row2") : "") +
+    `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>`;
 }
 
 // Values as sessions.csv writes them (Python str / json.dumps) and as the dashboard holds them: compare loosely.
@@ -1407,17 +1437,16 @@ function renderHistory() {
   const running = !!runningKey(), sessions = (h && h.sessions) || [];
   $("#session-sub").textContent = h ? `${label}${subject ? ` · ${subject}` : ""}` : "";
   const sameWhy = running ? "Stop the run to change per-run settings" : !sessions.length ? "No earlier session to copy"
-    : other ? `These are ${subject}'s sessions: choose ${subject} as the monkey to copy them` : "";
-  const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Sessions of</label>
-    <input id="hist-subject" list="hist-subjects" value="${esc(subject)}" size="10" spellcheck="false" title="Look up another subject's sessions (the monkey being run does not change)">
+    : other ? `Select ${subject} in the Monkey menu to copy these settings` : "";
+  const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Subject ID</label>
+    <input id="hist-subject" list="hist-subjects" value="${esc(subject)}" size="10" spellcheck="false" title="View session history for this subject">
     <datalist id="hist-subjects">${((h && h.subjects) || []).map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist>
     ${other ? `<button class="btn small" id="hist-back">Back to ${esc(curSubject())}</button>` : ""}
-    <button class="btn small" id="hist-same" ${sameWhy ? `disabled title="${esc(sameWhy)}"` : ""}>Same as last session</button></div>`;
+    <button class="btn small" id="hist-same" ${sameWhy ? `disabled title="${esc(sameWhy)}"` : ""}>Use last session’s settings</button></div>`;
   if (!h) { box.innerHTML = tools + `<p class="empty">Loading…</p>`; wireHistory(); return; }
   const sess = h.sessions || [];
   if (!sess.length) {
-    box.innerHTML = tools + `<p class="empty">No earlier ${esc(label)} sessions${subject ? ` for ${esc(subject)}` : ""} in sessions.csv. ` +
-      `Each run adds one when it ends.</p>`;
+    box.innerHTML = tools + `<p class="empty">No earlier ${esc(label)} sessions${subject ? ` for ${esc(subject)}` : ""}.</p>`;
     wireHistory(); return;
   }
   const lastS = sess[sess.length - 1];
@@ -1440,11 +1469,11 @@ function renderHistory() {
     "success_pct", "n_rewards", "reward_ms", "settings", "changed", "git_sha"]);
   Object.entries(lastS).forEach(([k, v]) => { if (!common.has(k) && v !== "" && v != null) glance.push([k.replace(/_/g, " "), esc(v)]); });
   box.innerHTML = tools +
-    `<h3>Last session at a glance <span class="muted small">${esc(lastS.date)} ${esc(lastS.start)} · ${esc(lastS.paradigms || "")}</span></h3>` +
+    `<h3>Last session <span class="muted small">${esc(lastS.date)} ${esc(lastS.start)} · ${esc(lastS.paradigms || "")}</span></h3>` +
     `<div class="tiles">${glance.map(([k, v]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("")}</div>` +
     (lastS.changed ? `<p class="muted small">Changed during that session: ${esc(lastS.changed)}</p>` : "") +
     `<h3>Settings <span class="muted small">${nChanged ? `${nChanged} differ from last session (●)` : "same as last session"}` +
-    `${running ? "" : " · click an earlier value to use it today"}</span></h3>` +
+    `${running || other ? "" : " · Select a previous value to use it in the next run"}</span></h3>` +
     `<div class="hist-wrap"><table class="hist"><thead><tr><th>Setting</th>${head}<th>Today</th></tr></thead><tbody>${body}</tbody></table></div>`;
   wireHistory();
 }
@@ -1458,7 +1487,7 @@ function wireHistory() {
   const apply = async (pairs) => {
     for (const [name, val] of pairs) await act(() => api(`/api/params/${sessionKey()}`, { name, value: parseVal(val) }));
     await loadParams(sessionKey(), true); renderExperiments(); renderControls();
-    toast(pairs.length ? `${pairs.length} setting(s) set for the next Start` : "Already the same as last session", "ok");
+    toast(pairs.length ? `${pairs.length} ${pairs.length === 1 ? "setting copied" : "settings copied"} for the next run` : "Already the same as last session", "ok");
     refreshSession(true);
   };
   const same = $("#hist-same");
@@ -1482,9 +1511,9 @@ async function openStartDialog() {
   $("#start-dlg-exp").textContent = expLabel(S.selected);
   inp.value = curSubject() || store.get("subject", "");
   const e = exp(S.selected);
-  $("#start-dlg-profile").innerHTML = !curSubject() ? "Recorded with every trial. Use <code>test</code> for a run without an animal."
-    : hasProfile() && e && e.node === "free_move_orchestrator" ? `With ${esc(curSubject())}'s profile v${S.app.profile.version}, and today's settings. A different ID loads that monkey first, for you to check.`
-    : "Recorded with every trial. A different ID loads that monkey first, for you to check.";
+  $("#start-dlg-profile").innerHTML = !curSubject() ? "The subject ID is saved with each trial. Use <code>test</code> for a run without an animal."
+    : hasProfile() && e && e.node === "free_move_orchestrator" ? `The run will use ${esc(curSubject())}'s profile v${S.app.profile.version} and any pending edits. If you enter a different ID, review that monkey’s settings before starting.`
+    : "The subject ID is saved with each trial. If you enter a different ID, review that monkey’s settings before starting.";
   try {
     const subjects = await api("/api/subjects");
     $("#start-subjects").innerHTML = subjects.map((x) => `<option value="${esc(x)}"></option>`).join("");
@@ -1499,7 +1528,7 @@ $("#start-form").onsubmit = async (ev) => {
   if (!$("#start-subject").checkValidity()) return $("#start-subject").reportValidity();
   $("#start-dlg").close();
   if (subject !== curSubject()) {           // another monkey: load it (and its profile) first, for a look before Start
-    if (await selectSubject(subject)) toast(`Monkey set to ${subject}: check the settings, then press Start again`, "ok");
+    if (await selectSubject(subject)) toast(`${subject} selected. Review the settings, then press Start again.`, "ok");
     return;
   }
   store.set("subject", subject);
@@ -1544,11 +1573,11 @@ async function init() {
   $("#btn-start").onclick = openStartDialog;
   $("#btn-stop").onclick = () => {
     const q = S.app && S.app.stopping_now
-      ? "Skip parking and stop the launch now? FRI closes wherever the arm is."
-      : "Stop? The current trial is cut short (saved, marked stop_requested), the arm parks, then the launch stops.";
+      ? "Skip parking and stop the launch now? The FRI session will close at the arm’s current position."
+      : "End the current trial and stop the run? The trial is saved as stop_requested. The arm moves to park before the launch stops.";
     if (confirm(q)) act(() => api("/api/stop", {}), "Stopping");
   };
-  $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating — see the log");
+  $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating recording. See the log for details.");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });
   document.querySelectorAll(".tab[data-pview]").forEach((t) => t.onclick = () => { S.pview = t.dataset.pview; store.set("pview", S.pview); renderParams(true); });

@@ -7,7 +7,7 @@ Three layers of settings, from the bottom up:
   profile  how the arm fits this monkey: the FEEL of the admittance (damping, threshold, speed, ...), its
            REACH in each direction, the PACING (quiet window, its guard, the response time) and the REWARD.
            One file per subject; applied to every free-move task, so the feel tuned in Free Move is the feel
-           of the Colour Rule.
+           of the Color Rule.
   today    the task's own few settings (Experiment.task_settings) and any one-off edit, made on the dashboard
            for the next Start. A one-off edit wins over the profile, and is not saved to it unless asked.
 
@@ -16,7 +16,7 @@ with every change appended to <ID>.changes.jsonl. Each save bumps its version; t
 names the profile and version it was made from, and the recording folder gets a copy.
 
 Most profile fields map one to one onto a task parameter of the same meaning (FIELDS). REACH sets the ends of
-a horizontal rail (left, right) or a vertical one (down, up): Restricted Move, Cued Reaches, the Colour Rule's
+a horizontal rail (left, right) or a vertical one (down, up): Restricted Move, Cued Reaches, the Color Rule's
 Rail. A value beyond a task's limits is capped there, with a note; the dashboard's and the node's own checks
 still apply on top. The choice distances that are part of a task's design stay task settings -- the Colour
 Rule's No-rail reach, the N-Choice rail length (kept the same as the number of choices grows) -- and Free
@@ -46,39 +46,39 @@ class Field:
     reward: bool = False   # may be overridden for one task (reward_by_task)
 
 
-SECTIONS = [("feel", "Feel", "How heavy and responsive the arm is: tune it in Free Move or Restricted Move, then save."),
-            ("reach", "Reach", "How far this monkey reaches from the start, in each direction. It sets the ends of the "
-                               "rails: left and right on a horizontal rail, down and up on a vertical one."),
-            ("pacing", "Pacing", "The wait before the go cue, its guard against early touches, and the time to respond."),
-            ("reward", "Reward", "The juice per reward. A task can have its own (Save to profile: this task only).")]
+SECTIONS = [("feel", "Feel", "Adjust how the arm responds to force. You can tune these settings in Free Move or Restricted Move."),
+            ("reach", "Reach", "Reach from the start in each direction. These distances set the endpoints of "
+                               "horizontal and vertical rails."),
+            ("pacing", "Pacing", "Timing and early-touch thresholds before the go cue, and the time allowed to respond."),
+            ("reward", "Reward", "Valve timing and pulse count. When saving changes from a task, you can apply them to that task only.")]
 
 FIELDS: List[Field] = [
     Field("feel.damping_ns_per_m", "Damping", "free_move.damping_ns_per_m",
-          "The arm's resistance to motion [N·s/m]: higher = heavier. Below ~40 it rings."),
+          "Higher damping increases resistance to motion. Below about 40 N·s/m, the arm can oscillate."),
     Field("feel.deadband_n", "Force threshold", "free_move.deadband_n",
-          "Push needed before the arm moves at all [N]."),
-    Field("feel.max_speed_mps", "Top speed", "free_move.max_speed_mps", "The fastest the arm will go [m/s]."),
+          "Minimum force needed to move the arm [N]."),
+    Field("feel.max_speed_mps", "Top speed", "free_move.max_speed_mps", "Maximum arm speed [m/s]."),
     Field("feel.accel_limit_mps2", "Acceleration limit", "free_move.accel_limit_mps2",
-          "How quickly it may speed up or slow down [m/s²]; 0 = no limit."),
+          "Maximum rate of change in arm speed [m/s²]. Use 0 to disable the limit."),
     Field("feel.low_force_n", "Light-push range", "free_move.low_force_n",
-          "Pushes below this get the light-push damping [N]: steadier when barely touched."),
+          "Apply light-push damping below this force [N] to reduce oscillation under light contact."),
     Field("feel.low_force_damping_ns_per_m", "Light-push damping", "free_move.low_force_damping_ns_per_m",
           "Damping for light pushes [N·s/m]."),
     Field("reach.left_m", "Left", "", "From the start to the left [m] (−Y)."),
     Field("reach.right_m", "Right", "", "From the start to the right [m] (+Y)."),
     Field("reach.down_m", "Down", "", "From the start downward [m]."),
-    Field("reach.up_m", "Up", "", "From the start upward [m] (the arm allows little: ~7 cm from the vertical tasks' start)."),
+    Field("reach.up_m", "Up", "", "Upward reach from the start [m]. The arm allows about 7 cm from the vertical tasks’ start pose."),
     Field("pacing.quiet_window_sec", "Quiet window", "quiet_window_sec", "The wait at the start before the go cue [s]."),
     Field("pacing.quiet_gate_enabled", "Guard the quiet window", "quiet_gate.enabled",
-          "Touching the arm during the wait: no reward, park, time-out."),
+          "An early touch ends the trial without reward. The arm parks and waits before the next trial."),
     Field("pacing.quiet_move_m", "Guard: movement", "quiet_gate.move_m", "Movement during the wait that counts as a touch [m]."),
     Field("pacing.quiet_force_n", "Guard: force", "quiet_gate.force_n", "Force during the wait that counts as a touch [N]."),
     Field("pacing.quiet_penalty_sec", "Guard: time-out", "quiet_gate.penalty_sec", "Time-out after an early touch [s]."),
     Field("pacing.response_timeout_sec", "Time to respond", "response_timeout_sec",
-          "From the go cue: no choice (or movement) in this time ends the trial unrewarded [s]."),
-    Field("reward.pulse_ms", "Valve open", "reward_pulse.pulse_ms", "Each pulse's valve time [ms].", reward=True),
+          "Time allowed to respond after the go cue [s]. A trial that times out ends without reward."),
+    Field("reward.pulse_ms", "Valve open", "reward_pulse.pulse_ms", "Time the valve stays open during each pulse [ms].", reward=True),
     Field("reward.count", "Pulses", "reward_pulse.count", "Pulses per reward.", reward=True),
-    Field("reward.gap_ms", "Gap between pulses", "reward_pulse.gap_ms", "Valve closed between pulses [ms].", reward=True),
+    Field("reward.gap_ms", "Gap between pulses", "reward_pulse.gap_ms", "Time the valve stays closed between pulses [ms].", reward=True),
 ]
 BY_NAME = {f.name: f for f in FIELDS}
 BY_PARAM = {f.param: f for f in FIELDS if f.param}
@@ -249,7 +249,7 @@ def _ray_reach(deg: float, left: float, right: float, down: float, up: float) ->
 
 def reach_values(exp: ex.Experiment, reach: Dict[str, float], context: Dict[str, object]) -> Dict[str, float]:
     """The rail ends the reach sets, given the task's other values in effect (context): a vertical rail (z)
-    runs from down to up, any other (the horizontal rail; the Colour Rule, whose Rail is horizontal) from
+    runs from down to up, any other (the horizontal rail; the Color Rule, whose Rail is horizontal) from
     left to right."""
     if "free_move.rail_min_m" not in context:
         return {}
@@ -264,7 +264,7 @@ def reach_notes(reach: Dict[str, float], context: Dict[str, object]) -> Dict[str
     notes = {}
     r = context.get("centre_out.free_reach_m")
     if isinstance(r, (int, float)) and r > min(left, right) + 1e-9:
-        notes["centre_out.free_reach_m"] = f"past this monkey's reach (left {left:g} m, right {right:g} m)"
+        notes["centre_out.free_reach_m"] = f"Exceeds this monkey’s reach (left {left:g} m, right {right:g} m)"
     length = context.get("free_move.ray_length_m")
     if isinstance(length, (int, float)):
         try:
@@ -275,7 +275,7 @@ def reach_notes(reach: Dict[str, float], context: Dict[str, object]) -> Dict[str
         short = [(d, r) for d, r in short if length > r + 1e-9]
         if short:
             from sinthlab_bringup.helpers.rail_shapes import direction_name
-            notes["free_move.ray_length_m"] = "past this monkey's reach toward " + ", ".join(
+            notes["free_move.ray_length_m"] = "Exceeds this monkey’s reach toward " + ", ".join(
                 f"{direction_name(d)} ({r:.3f} m)" for d, r in short)
     return notes
 
@@ -318,7 +318,7 @@ def overlay(profile: Optional[dict], exp: ex.Experiment, context: Dict[str, obje
             capped = min(max(v, lim[0]), lim[1])
         capped = round(capped, 4)
         if abs(capped - v) > 1e-9:
-            notes[name] = f"capped by the task's limit ({lim[0]} to {lim[1]} m); the reach gives {v:.3f}"
+            notes[name] = f"Limited to the task’s range ({lim[0]} to {lim[1]} m). Requested value: {v:.3f} m."
         out[name] = capped
     notes.update(reach_notes(vals, ctx))
     return out, notes, mapped(exp, context)
@@ -329,7 +329,7 @@ def from_task(exp: ex.Experiment, values: Dict[str, object]) -> Dict[str, object
     """The profile fields a task's values imply: one-to-one fields, and the reach from a rail's ends."""
     out = {f.name: values[f.param] for f in FIELDS if f.param and f.param in values}
     axis = str(values.get("free_move.rail_axis", ""))
-    if "free_move.rail_min_m" in values and axis in ("y", "z"):       # not the Colour Rule's No rail
+    if "free_move.rail_min_m" in values and axis in ("y", "z"):       # not the Color Rule's No rail
         lo, hi = (REACH[0], REACH[1]) if axis == "y" else (REACH[2], REACH[3])
         out[lo] = round(-float(values["free_move.rail_min_m"]), 4)
         out[hi] = round(float(values["free_move.rail_max_m"]), 4)

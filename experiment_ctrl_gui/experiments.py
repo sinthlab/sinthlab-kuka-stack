@@ -49,7 +49,6 @@ class Experiment:
     node: str                      # orchestrator node name (namespace /<robot_name>)
     stiffness_profile: str         # SmartPad "Cartesian stiffness (K diagonal)" selection
     ros_controller: str
-    run_name: str                  # recording folder prefix: analysis/expt_<run_name>_<ts>/
     launch_args: Dict[str, str] = field(default_factory=dict)
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
@@ -59,7 +58,7 @@ class Experiment:
     # paradigm only (live_params.PARADIGM_ONLY) are shown only under it.
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
     paradigm_param: str = "paradigm"
-    # Parameters fixed by the task itself, not shown in the dashboard (the colour rule: centre_out.target is
+    # Parameters fixed by the task itself, not shown in the dashboard (the Color Rule: centre_out.target is
     # always "rule"). The YAML holds them; the node refuses another value.
     hidden: Tuple[str, ...] = ()
     # One CARD can hold several experiments, one per variant (Restricted Move and Cued Reaches: a horizontal
@@ -89,17 +88,13 @@ class Experiment:
 EXPERIMENTS: List[Experiment] = [
     Experiment(
         key="apple_pluck", label="Apple Pluck",
-        summary="Pull the apple 0.1 m in any direction; snap cue, hold, recover. Normal: from a fixed start. "
-                "Perturb: the apple is first displaced by a polar (r, θ) offset after the go cue. "
-                "Perturb bump: the same perturbation, triggered when the monkey grasps the apple. "
-                "Random start: each trial starts at one of a set of positions in a plane around the start (default: origin + 8 compass directions, 5 cm).",
+        summary="Pull the apple past the displacement threshold. The default threshold is 10 cm.",
         paradigms=[("pluck", "Pluck normal"), ("perturb", "Pluck perturb"),
                    ("perturb_bump", "Pluck perturb bump"), ("random_start", "Pluck random start")],
         launch_file="iiwa7_apple_pluck_impedance_control.launch.py",
         params_yaml="apple_pluck_impedance.yaml", node="apple_pluck_orchestrator",
         stiffness_profile="Uniform 100",
         ros_controller="lbr_joint_position_command_controller",
-        run_name="iiwa7_apple_pluck_impedance_control",
         launch_args={"ctrl": "lbr_joint_position_command_controller"},
         task_settings=("apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m",
                        "resistance.stiffness_n_per_m", "response_timeout_sec", "quiet_window_sec",
@@ -108,12 +103,11 @@ EXPERIMENTS: List[Experiment] = [
     ),
     Experiment(
         key="restricted_plane", label="Restricted Plane",
-        summary="Virtual fixture (sine rail by default): free along the pull axis, walled elsewhere.",
+        summary="Move within a virtual fixture. The default is a sinusoidal rail.",
         launch_file="iiwa7_move_restricted_plane.launch.py",
         params_yaml="virtual_fixtures_params.yaml", node="restricted_plane_orchestrator",
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_move_restricted_plane",
         task_settings=("apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m",
                        "response_timeout_sec", "quiet_window_sec", "virtual_fixture_profile"),
         launch_args={"ctrl": "lbr_joint_position_command_controller",
@@ -122,12 +116,11 @@ EXPERIMENTS: List[Experiment] = [
     ),
     Experiment(
         key="maze", label="Maze",
-        summary="Drive the arm along vertical-plane rails; reward at the forks, goal or timeout ends it.",
+        summary="Follow rails in the vertical plane. Collect rewards at forks.",
         launch_file="iiwa7_maze.launch.py",
         params_yaml="maze_params.yaml", node="maze_orchestrator",
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_maze",
         task_settings=("response_timeout_sec", "quiet_window_sec", "virtual_fixtures.rail_lead_sec", "virtual_fixture_profile"),
         launch_args={"ctrl": "lbr_joint_position_command_controller",
                      "extra_inactive_ctrl": "kuka_clik_controller",
@@ -143,27 +136,24 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
                 "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
-# switch it during a run, from the next trial: one end only -> the other -> cued -> either.
-_CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
+# switch it during a run, from the next trial: restricted cued (the cue's direction only) -> cued end (both
+# directions open, only the cued end pays) -> either end.
+_CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("cued", "Cued end")]
 # Cards holding several experiments (Experiment.card): key -> (label, summary).
 CARDS = {
-    "restricted_move": ("Restricted Move", "Free Move held to one rail, horizontal or vertical: the arm goes along "
-                        "it wherever it is pushed. A session per trial, rewarded when it runs its full length. No target."),
-    "cued_reach": ("Cued Reaches", "One reach per trial along a rail, horizontal or vertical, from the centre to an "
-                   "end: either end, a cued end, or one end only (switchable mid-session). The goal end is rewarded."),
+    "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
+    "cued_reach": ("Cued Reaches", "One reach per trial, from the centre to an end of the rail."),
 }
-_CUED_TASK = ("centre_out.max_repeats", "centre_out.block_other_end", "centre_out.end_tol_m")
-_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
-_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
+_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m")
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same three modes on either rail
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
-        summary="Admittance: the arm goes wherever it is pushed within a box around the start, and holds where it is let go. Rewards the session's end, or each long movement.",
+        summary="Move freely within the workspace. Reward the session or individual movements.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("free_move"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_free_move",
         # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
         paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
         task_settings=("session_sec", "long_move.min_m", "long_move.min_straightness", "long_move.min_gap_sec"),
@@ -173,13 +163,11 @@ EXPERIMENTS += [
     # Reach Map view turns the run into his profile's reach. Run once or twice per animal.
     Experiment(
         key="reach_map", label="Reach Map", group="pretraining",
-        summary="Map how far this monkey reaches: he moves the arm freely in the plane facing him, rewarded for long "
-                "movements or for each new best reach in a direction. Sets the reach in his profile. Once or twice per animal.",
+        summary="Measure reach in each direction and save the results to the monkey’s profile.",
         launch_file="iiwa7_reach_map.launch.py",
         params_yaml="reach_map.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("reach_map"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_reach_map",
         paradigms=[("each_move", "Long moves"), ("new_best", "New best")], paradigm_param="long_move.reward",
         task_settings=("long_move.min_m", "long_move.min_gap_sec", "reach_map.margin_m", "reach_map.min_m",
                        "reach_map.percentile"),
@@ -195,7 +183,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_restricted_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("restricted_move_horizontal"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_restricted_move_horizontal",
         task_settings=("session_sec",),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
@@ -206,14 +193,13 @@ EXPERIMENTS += [
         params_yaml="pretrain_restricted_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("restricted_move_vertical"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_restricted_move_vertical",
         task_settings=("session_sec",),
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
-    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, a cued end, or one
-    # end only. The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
+    # Cued Reaches: one reach per trial from the centre of a rail to an end -- either end, restricted cued (the
+    # cue's direction only), or cued end (both directions open, only the cued end pays). The experiment keys stay move_horizontal / move_vertical (the centre-out tasks on main), so
     # their recordings stay comparable with earlier ones.
     Experiment(
         key="move_horizontal", label="Cued Reaches · Horizontal", group="pretraining",
@@ -222,7 +208,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("move_horizontal"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_move_horizontal",
         paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
         task_settings=_CUED_TASK,
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
@@ -234,7 +219,6 @@ EXPERIMENTS += [
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("move_vertical"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_pretrain_move_vertical",
         paradigms=list(_CENTRE_OUT_VERTICAL), paradigm_param="centre_out.target",
         task_settings=_CUED_TASK,
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
@@ -242,21 +226,20 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
-# The colour rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# The Color Rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
 # or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
 EXPERIMENTS += [
     Experiment(
-        key="colour_rule", label="Colour Rule", group="experiments",
-        summary="Red or blue ring: each colour means left or right; the mapping reverses, unsignaled, at criterion. On a rail or free in the frontal plane.",
+        key="colour_rule", label="Color Rule", group="experiments",
+        summary="Ring color cues left or right. The rule reverses without warning at criterion.",
         launch_file="iiwa7_colour_rule.launch.py",
         params_yaml="colour_rule.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("colour_rule"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_colour_rule",
         paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
         task_settings=("rule.red_end", "rule.window", "rule.criterion_pct", "rule.min_trials", "rule.max_repeats",
                        "centre_out.end_tol_m", "centre_out.free_reach_m"),
-        hidden=("centre_out.enabled", "centre_out.target", "centre_out.block_other_end",
+        hidden=("centre_out.enabled", "centre_out.target",
                 "centre_out.max_repeats", "centre_out.quarter_left", "centre_out.quarter_right"),
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
@@ -266,12 +249,11 @@ EXPERIMENTS += [
 EXPERIMENTS += [
     Experiment(
         key="n_choice", label="N-Choice", group="experiments",
-        summary="An asterisk of rails from the centre: each direction pays with a probability that falls while chosen and recovers while left alone.",
+        summary="Reward probability drops for the chosen rail and recovers for the others.",
         launch_file="iiwa7_n_choice.launch.py",
         params_yaml="n_choice.yaml", node="free_move_orchestrator",
         stiffness_profile=required_profile("n_choice"),
         ros_controller="kuka_clik_controller",
-        run_name="iiwa7_n_choice",
         # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.
         paradigms=[("2", "2 choices"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8")],
         paradigm_param="free_move.ray_layout",
@@ -291,7 +273,7 @@ COMMON_LAUNCH_ARGS = {"robot_type": "iiwa7", "robot_name": "lbr", "startup_delay
 
 # Per-run parameters that are editable but easy to get wrong: shown with this note, never locked.
 CAUTION: Dict[str, str] = {
-    "*update_rate": "Loop rate of the action, tied to the controller and FRI timing. Rarely a tuning knob.",
+    "*update_rate": "Action loop rate. Keep it consistent with the controller and FRI timing.",
     "*.base_frame": "TF frame name. Must exist in the robot description.",
     "*.ee_frame": "TF frame name. Must exist in the robot description.",
     "state_topic": "Topic name. Must match what lbr_state_broadcaster publishes.",
@@ -310,8 +292,8 @@ CAUTION: Dict[str, str] = {
     "checkpoint_monitor.relative_to_start": "Must match the rails' corridor_frame (relative = true).",
     "virtual_fixtures.*.type": "Geometry class of this profile. Normally chosen with virtual_fixture_profile instead.",
     "visual_cue.remote_board": "The board's own access point always serves at 192.168.4.1.",
-    "free_move.rail_axis": "The rail through the start: y = horizontal, z = vertical; none = Free Move's box, frontal = the No-rail plane, rays = the N-Choice asterisk.",
-    "free_move.rail_m??_m": "The rail's end, from the start. With a monkey chosen it comes from the profile's reach (left / right on a horizontal rail, down / up on a vertical one); up is the arm's tight direction.",
+    "free_move.rail_axis": "Workspace geometry. Use y for a horizontal rail, z for a vertical rail, none for the Free Move box, frontal for the no-rail plane, or rays for N-Choice.",
+    "free_move.rail_m??_m": "Rail endpoint relative to the start. A selected monkey’s profile sets the left and right endpoints for a horizontal rail or the lower and upper endpoints for a vertical rail. Upward travel is limited.",
     "resistance.base_stiffness_n_per_m": ("Used only until the SmartPad app reports its profile; from then on the base "
                                           "is the reported stiffness (Uniform 100 = 100, Uniform 400 = 400), and the "
                                           "felt-stiffness slider runs up to it once the run has started."),
@@ -333,24 +315,23 @@ LABELS: Dict[str, str] = {
     "long_move.min_m": "Shortest rewarded move [m]",
     "long_move.min_straightness": "Min straightness (0 = off)",
     "long_move.min_gap_sec": "Min time between rewards [s]",
-    "centre_out.max_repeats": "Max same end in a row",
-    "centre_out.block_other_end": "Close the other half",
+    "centre_out.max_repeats": "Max repeats at the same end",
     "centre_out.end_tol_m": "End tolerance [m]",
     "centre_out.free_reach_m": "No-rail choice distance [m]",
-    "rule.red_end": "Red means (block 1)",
+    "rule.red_end": "Red target in the first block",
     "rule.window": "Criterion window [choices]",
     "rule.criterion_pct": "Criterion [% correct]",
     "rule.min_trials": "Min choices per block",
-    "rule.max_repeats": "Max same colour in a row",
+    "rule.max_repeats": "Max repeats of one color",
     "n_choice.p_max": "Highest reward probability",
     "n_choice.p_min": "Lowest reward probability",
     "n_choice.deplete": "Depletion per choice",
     "n_choice.recover": "Recovery per trial",
-    "n_choice.start": "Probabilities at the start",
+    "n_choice.start": "Initial reward probabilities",
     "n_choice.end_tol_m": "End tolerance [m]",
     "free_move.ray_length_m": "Rail length [m]",
-    "reach_map.margin_m": "New best by at least [m]",
-    "reach_map.min_m": "Ignore reaches under [m]",
+    "reach_map.margin_m": "Minimum improvement for a new best [m]",
+    "reach_map.min_m": "Minimum reach to include [m]",
     "reach_map.percentile": "Comfortable reach percentile",
     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m": "Pull threshold [m]",
     "resistance.stiffness_n_per_m": "Felt stiffness [N/m]",

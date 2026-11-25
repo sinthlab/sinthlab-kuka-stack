@@ -6,9 +6,9 @@
     # trip_margin_m below it, and a check of the start / park poses and the moves between them before
     # the arm goes there. See helpers/floor.py and README "The floor".
     floor:  # lowest height the end effector may reach
-      height_m: 0.88  # the floor, height above the ground [m]
-      reference: apple_bottom  # which point must stay above it: apple_bottom | base_edge (the Ø188 base's lowest edge)
-      trip_margin_m: 0.03  # abort the trial and park if the measured point gets this far below the floor [m]
+      height_m: 0.88  # Floor height above ground [m]
+      reference: apple_bottom  # Point kept above the floor (apple_bottom or base_edge, the lowest edge of the Ø188 base)
+      trip_margin_m: 0.03  # Distance below the floor that triggers a trial abort and park [m]
 
     # ---- THE QUIET WINDOW IS GUARDED (live) ----
     # Moving or pushing the apple during the quiet window (before the go cue) ends the trial with no
@@ -16,11 +16,11 @@
     # "wait for the go cue". Compared with the window's first 0.2 s, so resting sag and force don't
     # count. An untouched arm still settles by up to 16 mm (Uniform 100) and its force reading wanders
     # by up to 3 N; an early pull moved it 74 mm with 31 N. See actions/quiet_gate.py.
-    quiet_gate:  # breaking off a trial when the apple is touched before the go cue
-      enabled: true  # false = the quiet window is a plain timed wait
-      move_m: 0.03  # the apple moving this far in the quiet window ends the trial [m]
-      force_n: 5.0  # the hand force changing by this much in the quiet window ends the trial [N]
-      penalty_sec: 5.0  # penalty wait at park after an early touch, before the next trial [s] (on top of move_to_park.hold_sec)
+    quiet_gate:  # Early-touch detection before the go cue
+      enabled: true  # End the trial if an early touch crosses the movement or force threshold
+      move_m: 0.03  # Displacement that ends the trial during the quiet window [m]
+      force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
+      penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
     pluck_safety:  # the floor trip during a pull (SafetyStopMonitor); distance and speed checks off
       update_rate: 100  # check rate [Hz]
@@ -29,9 +29,9 @@
       max_displacement_m: 0.0  # 0 = off: a pull goes where it goes; the floor is the limit here
       max_speed_mps: 0.0  # 0 = off: a monkey's pull may be fast
       speed_trip_samples: 5  # unused while the speed check is off
-      state_timeout_sec: 0.5  # trip if no robot state (lbr_state, every 10 ms) arrives for this long [s]; 0 = off
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      state_timeout_sec: 0.5  # Stop if no robot state arrives within this time [s]. Normally lbr_state arrives every 10 ms. Use 0 to disable.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
     # ---- RESISTANCE of the pull: the felt stiffness, chosen per trial (dashboard slider) ----
     # The cabinet's stiffness is fixed by the SmartPad profile and ROS cannot change it. ROS SOFTENS it:
@@ -80,7 +80,7 @@
     paradigm: "pluck"  # pluck | perturb | perturb_bump | random_start
 
     apple_pluck_impedance_control_displacement:  # pull monitor: baseline -> threshold (snap) -> hold -> park
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       base_frame: lbr_link_0  # TF frame positions are measured in
       ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
       # How far the apple must be pulled from its start to count as a pluck. `norm` is the straight-line
@@ -89,10 +89,10 @@
       cartesian_axis: norm  # how the pull is measured: norm = 3-D distance; x | y | z = that base axis only
       cartesian_displacement_threshold_m: 0.1  # pull from the baseline that counts as success (snap) [m]
       force_release_shutdown_delay_sec: 0.8  # after the snap, the apple stays plucked (no pull-back) at least this long before parking [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
     move_to_start:  # joint-space move to the trial start pose
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       # START POSE -- the apple points AT the monkey (+X), tilted 13 deg UP. By the iiwa7 URDF
       # (lbr_link_0 -> lbr_link_ee): flange (0.30, 0, 1.02) m, apple centre ~(0.51, 0, 1.06) m, apple
       # bottom 1.04 m (park holds the apple ~32 cm further back, at ~1.09 m), symmetric in-plane posture.
@@ -112,16 +112,16 @@
       #                   ring's dead quarter out of the monkey's view.
       #   height          the dashboard's "Set by height" under this pose (lower = more room for the pull).
       target_joint_position: [0.0, -17.1, 0.0, -65.5, 0.0, 28.5, 0.0]  # start pose, joint angles A1..A7 [deg]
-      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
+      joint_move_tolerance: 0.01  # Maximum joint error at the target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s] (converted to rad/s in code)
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 0.7  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      speed_scale: 0.7  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
       # The arm comes from park (~40 cm) on a soft spring, so it lags the command: wait until it is
       # really there, so the quiet window (and the grasp detector's resting-force tare) starts at rest.
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
       cartesian_move_tolerance: 0.03  # apple within this of the start counts as arrived [m] (the soft spring sags ~cm)
       physical_arrival_timeout_sec: 1.5  # stop waiting for the measured arm after this long, with a warning [s] (the soft spring can sag past the tolerance)
     # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
@@ -132,26 +132,26 @@
     # the same place with the elbow the other way. Start and park must bend the elbow the same way, or
     # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
     move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       target_joint_position: [0.0, -55.0, 0.0, -95.0, 0.0, 10.0, 0.0]  # park pose A1..A7 [deg] (per-run)
-      joint_move_tolerance: 0.15  # done when every joint is within this of its target [rad]
+      joint_move_tolerance: 0.15  # Maximum joint error at the target [rad]
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
       first_move_speed_scale: 1.0  # speed scale of the run's FIRST move here (per-run); this family never crosses the straight elbow, so no need to crawl
-      hold_sec: 2.0  # LIVE: how long the arm waits at park before moving to the next trial's start [s]
-      wait_for_physical_arrival: true  # also wait for the MEASURED arm to arrive, not just the command
-      cartesian_move_tolerance: 0.03  # apple within this of the park pose counts as arrived [m]
-      physical_arrival_timeout_sec: 10.0  # stop waiting for the measured arm after this long, with a warning [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
+      hold_sec: 2.0  # Time at park before moving to the next trial’s start [s]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
+      cartesian_move_tolerance: 0.03  # Maximum distance from the park target at arrival [m]
+      physical_arrival_timeout_sec: 10.0  # Wait this long for the measured arm position to reach the target before issuing a warning [s]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
     # ==== PERTURB PARADIGMS ONLY: the displacement of the apple (live) ====
     # Used when paradigm is "perturb" (after the go cue) or "perturb_bump" (after the grasp); shown on
     # the dashboard only under those tabs. To run unperturbed trials inside a perturb run, set polar_r_m
     # to 0 (live).
     perturb_start:  # the perturbation: polar offset from the start, jerk-limited joint move
-      update_rate: 200  # loop rate of this action [Hz]
+      update_rate: 200  # Action loop rate [Hz]
       # WHERE -- a POLAR offset (r, theta) from the start EE position, re-solved every trial by position
       # IK seeded at the start posture.
       #   polar_r_m        how far [m]. The apple points at the monkey, so keep it small.
@@ -173,7 +173,7 @@
       polar_r_m: 0.10  # perturbation distance from the start [m] (~10 N on a held apple at Uniform 100)
       polar_theta_deg: 0.0  # perturbation direction within polar_plane [deg] (frontal: 0 = +Y, 90 = up)
       polar_plane: frontal  # plane theta turns in: frontal (Y-Z) | horizontal (X-Y) | sagittal (X-Z)
-      joint_move_tolerance: 0.01  # done when every joint is within this of its target [rad]
+      joint_move_tolerance: 0.01  # Maximum joint error at the target [rad]
       # HOW FAST -- a jerk-limited joint trajectory (ruckig) moving the impedance ANCHOR. Set it with
       # speed_scale (live slider, applies from the next move): it scales v/a/j by s, s^2, s^3, so the move takes
       # exactly 1/s as long. At r = 0.05 m from the start pose, with the limits below:
@@ -187,7 +187,7 @@
       move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s], per joint
       move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
       move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
-      speed_scale: 1.0  # LIVE, applies at once, from the next move: time-stretches this move -- 0.5 = twice as slow, 2 = twice as fast (0.25-2)
+      speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
       # WHEN (perturb only) -- the delay after the go cue before the perturbation. Fixed, or drawn per
       # trial so the animal cannot predict it; the delay each trial used is recorded (event
       # perturb_delay_start, its arg). perturb_bump has its own, counted from the grasp: grasp.delay_*.
@@ -199,11 +199,11 @@
       # locks (the monitor starts as soon as the move completes, while the physical arm still lags
       # it). perturb_bump does not wait: its baseline is the perturbed spring position, at once.
       baseline_settle_sec: 1.0  # perturb only: wait after the perturbation before locking the pull baseline [s]
-      debug_log_enabled: false  # print this action's periodic debug line
-      debug_log_rate_hz: 2.0  # how often that debug line prints [Hz]
-      wait_for_physical_arrival: false  # also wait for the MEASURED arm to arrive, not just the command
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      wait_for_physical_arrival: false  # Wait for the measured arm position to reach the target
       cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m] (only when waiting)
-      physical_arrival_timeout_sec: 0.0  # stop waiting for the measured arm after this long [s]; 0 = no limit
+      physical_arrival_timeout_sec: 0.0  # Wait this long for the measured arm position to reach the target [s]. Use 0 for no timeout.
 
     # ==== PERTURB_BUMP PARADIGM ONLY: detecting the grasp that triggers the perturbation (live) ====
     # Used only when paradigm is "perturb_bump"; shown on the dashboard only under Pluck perturb bump.
@@ -237,7 +237,7 @@
       jacobian_damping: 0.02  # damping of the Jacobian inverse in the force estimate: larger = steadier near singularities, but reads force weaker
       ee_frame: lbr_link_ee  # the link the force is estimated at (the flange the apple is mounted on)
       debug_log_enabled: false  # print the measured force periodically while waiting for the grasp
-      debug_log_rate_hz: 5.0  # how often that debug line prints [Hz]
+      debug_log_rate_hz: 5.0  # Debug log frequency [Hz]
 
     # ==== RANDOM_START PARADIGM ONLY: a different start position every trial (per-run) ====
     # Used only when paradigm is "random_start"; shown on the dashboard only under Pluck random start.
@@ -285,8 +285,8 @@
     # sinthlab_bringup/helpers/live_params.py. Everything else is fixed for the run.
     quiet_window_sec: 1.0      # at the start pose, before the go cue [s]; keep >= grasp.tare_sec
     response_timeout_sec: 30.0  # no pluck within this long after armed (perturb bump: no grasp within this long after the go cue) -> the trial ends (event response_timeout), no reward, park [s]
-    audio_cue:  # switch for every beep
-      enabled: true            # false = no beeps at all; the trial sequence is unchanged
+    audio_cue:  # Enable audio cues
+      enabled: true            # Enable audio cues
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
       enabled: true           # send a pulse at experiment start and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
@@ -295,12 +295,12 @@
       experiment_start_output: 3  # EL2124 output (1-4) pulsed once per run, before trial 1
       pulse_width_ms: 500       # how long each pulse stays high [ms], 10-5000
 
-    reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
+    reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
       enabled: true  # send the reward pulse at the snap; failures (timeout, early touch, safety trip, Stop) get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
-      pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
-      count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
-      gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
+      pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
+      count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
+      gap_ms: 300  # Time the valve stays closed between pulses [ms], from 100 to 5000
 
     # THE APPLE'S FORCE SENSOR (FSR), streamed by the end-effector board over the serial link (visual_cue.serial_port)
     # into four columns of every trial file: fsr_raw, fsr_t_ms, fsr_age_ms, haptic_pct (README, "Haptics and force sensor").
@@ -327,5 +327,5 @@
       # the board). The board's own pattern, duration and brightness still apply. A site with no line
       # keeps the board's current colour.
       colours:  # RGBW colour per cue site, each channel 0-255
-        play: [0, 255, 0, 0]       # trial start -- green
+        play: [0, 64, 0, 0]       # trial start -- green
         snap: [255, 0, 0, 0]       # pull threshold reached -- red

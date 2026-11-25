@@ -86,8 +86,8 @@ function setPath(p) {
   $("#addr-label").classList.toggle("hidden", p !== "wifi");
   $("#port-label").classList.toggle("hidden", p !== "serial");
   $("#path-note").textContent = p === "wifi"
-    ? "Over the board's own access point (visual_cue.trigger: wifi): join this computer to KUKA_NEOPIXEL first. The board is always at 192.168.4.1."
-    : "Over the RS-422 link through X76 and the media flange (visual_cue.trigger: serial): attach the StarTech adapter to WSL first (usbipd attach --wsl --busid <id>). Refused while an experiment runs: it owns the port.";
+    ? "Connect this computer to the KUKA_NEOPIXEL network (visual_cue.trigger: wifi). The board address is 192.168.4.1."
+    : "Serial uses RS-422 through X76 and the media flange (visual_cue.trigger: serial). Attach the StarTech adapter to WSL with usbipd attach --wsl --busid <id>. The port is reserved during experiments.";
   $("#reach").className = "pill"; $("#reach").textContent = "not checked";
   check();
 }
@@ -116,7 +116,7 @@ document.querySelectorAll("[data-quarter]").forEach((b) => (b.onclick = () => {
   act("segments", { factor: 4, colors });
 }));
 $("#btn-save").onclick = () => act("config", { save: 1 });
-$("#btn-reset").onclick = () => { if (confirm("Reset every board setting to the firmware defaults?")) act("config", { reset: 1 }); };
+$("#btn-reset").onclick = () => { if (confirm("Restore the firmware defaults for all cue board settings?")) act("config", { reset: 1 }); };
 $("#btn-lt").onclick = async () => {
   await act("led_test", { from: $("#lt-from").value, to: $("#lt-to").value, step: $("#lt-step").value, loop: $("#lt-loop").checked ? 1 : 0 });
   if (!ltTimer) ltTimer = setInterval(ltPoll, 300);

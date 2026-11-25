@@ -44,6 +44,7 @@ def control(reward):
     c = ExperimentControl.__new__(ExperimentControl)     # no ROS: only on_event
     c._nsp, c._nsp_enabled, c._log = FakePulser(), False, Log()
     c._reward, c._reward_events, c._trial = reward, ("reach",), 0
+    c._sequence_rewards = False
     c._set_phase = lambda phase, arg=None: None
     return c
 
@@ -64,6 +65,41 @@ def test_a_burst_is_spaced_by_width_plus_gap():
     times = [s[0] - t0 for s in c._nsp.sent]
     assert len(times) == 3 and all(s[2] == 50 for s in c._nsp.sent)
     assert times[1] == pytest.approx(0.15, abs=0.04) and times[2] == pytest.approx(0.30, abs=0.04)
+
+
+def test_checkpoint_and_goal_pulses_do_not_overlap(monkeypatch):
+    c = control((4, 500, 1, 300))
+    c._reward_ready_at = 0.0
+    c._reward_timers = []
+    c.set_reward_events(("checkpoint", "goal"), sequence=True)
+    now = [10.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    scheduled = []
+
+    class Timer:
+        def __init__(self, delay, callback, args):
+            self.delay, self.callback, self.args = delay, callback, args
+
+        def start(self):
+            scheduled.append(self)
+
+        def is_alive(self):
+            return True
+
+    monkeypatch.setattr("threading.Timer", Timer)
+    c.on_event("checkpoint", 0)
+    now[0] += 0.2
+    second = c.on_event("checkpoint", 1)
+    goal = c.on_event("goal")
+    assert [s[-1] for s in c._nsp.sent] == ["reward on checkpoint"]
+    assert second["delay_ms"] == 600.0
+    assert goal["delay_ms"] == 1400.0
+    assert [timer.delay for timer in scheduled] == pytest.approx([0.6, 1.4])
+    for timer in scheduled:
+        timer.callback(*timer.args)
+    assert [s[-1] for s in c._nsp.sent] == [
+        "reward on checkpoint", "reward on checkpoint", "reward on goal",
+    ]
 
 
 def test_trials_csv_counts_every_pulse():

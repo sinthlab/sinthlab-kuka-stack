@@ -85,7 +85,7 @@ def test_directed_rail_rejects_shallow_elbow_inside_segment():
 
 def test_existing_rail_yaml_keeps_both_halves_open():
     node, arm, _ = stubs.horizontal(target="cued")
-    del node.params["centre_out.block_other_end"], node.params["centre_out.max_repeats"]
+    del node.params["centre_out.max_repeats"]
     monitor = stubs.CentreOutMonitor(node, arm)
     monitor.pick_target()
     assert monitor.open_span() is None

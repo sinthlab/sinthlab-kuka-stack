@@ -7,6 +7,7 @@ stand-ins are installed for the import only -- nothing here talks to ROS.
     python3 -m pytest sinthlab_bringup/test
 """
 import importlib
+import random
 import sys
 import types
 from pathlib import Path
@@ -99,7 +100,7 @@ class FakeArm:
 
 
 def horizontal(**over):
-    params = {"centre_out.enabled": True, "centre_out.target": "either", "centre_out.block_other_end": True,
+    params = {"centre_out.enabled": True, "centre_out.target": "either",
               "centre_out.max_repeats": 3, "centre_out.end_tol_m": 0.02,
               "centre_out.quarter_left": 3, "centre_out.quarter_right": 1}
     params.update({"centre_out." + k: v for k, v in over.items()})
@@ -117,60 +118,81 @@ def run_to(node, arm, mon, x):
     return got[0] if got else None
 
 
-# ---------------------------------------------------------------- one-direction trials
-def test_left_only_lights_left_and_closes_right():
-    node, arm, mon = horizontal(target="left")
-    assert mon.pick_target() == "left"
-    assert mon.quarters() == [3]
-    assert mon.open_span() == (-0.15, 0.0)
-    assert mon.closed_end() == "right"
-    assert run_to(node, arm, mon, -0.14) == ("left", True)
+# ---------------------------------------------------------------- restricted cued and cued end
+@pytest.mark.parametrize("seed", range(6))
+def test_restricted_cued_lights_the_cue_and_closes_the_other_half(seed):
+    random.seed(seed)
+    node, arm, mon = horizontal(target="restricted")
+    goal = mon.pick_target()
+    assert goal in ("left", "right")
+    assert mon.quarters() == [3 if goal == "left" else 1]
+    assert mon.open_span() == ((-0.15, 0.0) if goal == "left" else (0.0, 0.15))
+    assert mon.closed_end() == ("right" if goal == "left" else "left")
+    assert run_to(node, arm, mon, -0.14 if goal == "left" else 0.14) == (goal, True)
 
 
-def test_unblocked_wrong_end_is_not_rewarded():
-    node, arm, mon = horizontal(target="left", block_other_end=False)
-    mon.pick_target()
+@pytest.mark.parametrize("seed", range(6))
+def test_cued_end_leaves_the_rail_open_and_pays_only_the_cue(seed):
+    random.seed(seed)
+    node, arm, mon = horizontal(target="cued")
+    goal = mon.pick_target()
+    assert mon.quarters() == [3 if goal == "left" else 1]
     assert mon.open_span() is None and mon.closed_end() is None
-    assert run_to(node, arm, mon, 0.14) == ("right", False)
+    wrong = "right" if goal == "left" else "left"
+    assert run_to(node, arm, mon, 0.14 if wrong == "right" else -0.14) == (wrong, False)
 
 
 def test_either_keeps_the_whole_rail_and_rewards_both():
     node, arm, mon = horizontal(target="either")
     assert mon.pick_target() == "either"
-    assert sorted(mon.quarters()) == [1, 3]
+    assert mon.quarters() == [0, 1, 2, 3]          # the whole ring: no direction cued
     assert mon.open_span() is None
     assert run_to(node, arm, mon, 0.15) == ("right", True)
 
 
+def test_either_turns_the_whole_ring_red_and_one_end_modes_their_quarter():
+    node, arm, mon = horizontal(target="either")
+    mon.pick_target()
+    assert mon.reached_quarters("left") == [0, 1, 2, 3] == mon.reached_quarters("right")
+    node, arm, mon = horizontal(target="cued")
+    goal = mon.pick_target()
+    assert mon.quarters() == [mon.quarter_of(goal)]
+    assert mon.reached_quarters("left") == [3] and mon.reached_quarters("right") == [1]
+    node, arm, mon = horizontal(target="restricted")
+    goal = mon.pick_target()
+    assert mon.reached_quarters(goal) == [mon.quarter_of(goal)]
+
+
 def test_no_outcome_short_of_an_end():
-    node, arm, mon = horizontal(target="right")
+    node, arm, mon = horizontal(target="cued")
     mon.pick_target()
     assert run_to(node, arm, mon, 0.10) is None
 
 
 # ---------------------------------------------------------------- live switching
 def test_live_switch_between_trials():
-    node, arm, mon = horizontal(target="left")
-    assert mon.pick_target() == "left"
+    node, arm, mon = horizontal(target="restricted")
+    assert mon.pick_target() in ("left", "right") and mon.open_span() is not None
     mon.stop()
-    node.params["centre_out.target"] = "right"
+    node.params["centre_out.target"] = "either"
     mon.reload()                                   # the trial boundary
-    assert mon.pick_target() == "right"
-    assert mon.open_span() == (0.0, 0.15)
+    assert mon.pick_target() == "either"
+    assert mon.open_span() is None
 
 
 def test_validator_refuses_an_end_this_rail_lacks():
     node, arm, mon = horizontal()
     assert mon.check_live("centre_out.target", "up", {}) is not None
-    assert mon.check_live("centre_out.target", "right", {}) is None
+    assert mon.check_live("centre_out.target", "right", {}) is not None   # the one-end modes are gone
+    assert mon.check_live("centre_out.target", "restricted", {}) is None
     assert mon.check_live("centre_out.end_tol_m", 0.01, {}) is None    # not its business
 
 
 def test_bad_value_at_reload_keeps_the_previous_mode():
-    node, arm, mon = horizontal(target="left")
+    node, arm, mon = horizontal(target="restricted")
     node.params["centre_out.target"] = "up"       # slipped past the validator
     mon.reload()
-    assert mon.pick_target() == "left"
+    assert mon.pick_target() in ("left", "right") and mon.open_span() is not None
     assert any(level == "error" for level, _ in node.log.lines)
 
 

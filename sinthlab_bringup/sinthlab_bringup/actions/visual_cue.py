@@ -137,6 +137,23 @@ class VisualCue:
         vals += [0] * (4 - len(vals))
         return tuple(max(0, min(255, v)) for v in vals)
 
+    @classmethod
+    def clear_ring(cls, node: rclpyNode, *, label="ring_off") -> None:
+        sender = cls.sender(node)
+        if sender is not None:
+            sender.show("/off", label)
+
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def preview(self, label: str) -> None:
+        """Show a solid cue until the go controller explicitly turns the ring off."""
+        sender = self.sender(self._node)
+        if self._enabled and sender is not None:
+            colour = self._colour if self._colour is not None else (0, 64, 0, 0)
+            if any(colour):
+                sender.show("/segments?factor=1&colors=" + ",".join(map(str, colour)), label)
+
     def start(self) -> None:
         if self._enabled:
             try:

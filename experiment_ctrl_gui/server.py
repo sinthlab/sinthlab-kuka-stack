@@ -63,6 +63,7 @@ class App:
         # The monkey chosen on the dashboard and its profile (profiles.py), applied to every free-move task.
         self.subject = ""
         self.profile: Optional[dict] = None
+        self._run_subject: Optional[str] = None
         self._run_profile: Optional[dict] = None    # the profile the current run started with
         self._clients: List[queue.Queue] = []
         self._clients_lock = threading.Lock()
@@ -235,8 +236,7 @@ class App:
         if body.get("reach_map_run"):     # the reach from a Reach Map run: keep a record of the map with it
             data = self.reach_map(key or "reach_map", str(body["reach_map_run"]))
             if data.get("run_subject") != self.subject:
-                raise ValueError(f"This map is {data.get('run_subject') or 'an unlabelled'} recording, not {self.subject}'s: "
-                                 f"choose {data.get('run_subject') or 'its monkey'} to save it (or run a Reach Map for {self.subject})")
+                raise ValueError("Select the subject recorded in this Reach Map before saving it to a profile.")
             reach_map = {**reach_view.record(data), "saved": time.strftime("%Y-%m-%d %H:%M")}
         prof = profiles.save(self.subject, values, by,
                              {key: task_only} if task_only else None, str(body.get("note") or ""), reach_map)
@@ -258,8 +258,8 @@ class App:
         if not r.experiment or not r.started_at:
             return None
         exp = ex.BY_KEY[r.experiment]
-        folders = [p for p in ex.DATA.glob(f"expt_{exp.run_name}_*")
-                   if p.is_dir() and p.stat().st_mtime >= r.started_at - 5]
+        folders = [p for p in ex.outcome_tables.run_folders(ex.DATA, exp.key, self._run_subject)
+                   if p.stat().st_mtime >= r.started_at]
         return str(max(folders, key=lambda p: p.stat().st_mtime)) if folders else None
 
     def _on_status(self, status: dict) -> None:
@@ -339,6 +339,7 @@ class App:
             cmd += [f"{k}:={v}" for k, v in overrides.items()]
             cmd += [f"subject:={subject}"]          # recorded with every trial (TrialRecorder)
         self.stopping = False
+        self._run_subject = subject
         self.runner.start(key, cmd, params_file)
         self.runner.emit(f"Subject: {subject}" + (f" (profile {p.profile_tag()})" if p.profile_tag() else ""), "gui")
         self._run_profile = dict(self.profile) if p.profile_tag() else None
@@ -408,9 +409,8 @@ class App:
             rows = self.bridge.run_rows() if getattr(self.bridge, "_exp", None) is exp else []
             return {"experiment": exp.key, "run": getattr(self.bridge, "_run", None), "rows": rows, "running": running}
         folder = self.data_folder() if running else None
-        if folder is None:
-            runs = sorted((p for p in ex.DATA.glob(f"expt_{exp.run_name}_*") if p.is_dir()),
-                          key=lambda p: p.stat().st_mtime)
+        if folder is None and not running:
+            runs = sorted(ex.outcome_tables.run_folders(ex.DATA, exp.key), key=lambda p: p.stat().st_mtime)
             folder = str(runs[-1]) if runs else None
         rows = ex.outcome_tables.read_trials(folder) if folder else []
         return {"experiment": exp.key, "run": Path(folder).name if folder else None, "rows": rows, "running": running}
@@ -445,14 +445,13 @@ class App:
         folder = None
         if run:
             cand = ex.DATA / run
-            if not (run.startswith(f"expt_{exp.run_name}_") and "/" not in run and cand.is_dir()):
+            if cand.name != run or not ex.outcome_tables.is_run_folder(cand, exp.key):
                 raise ValueError(f"no Reach Map run {run!r}")
             folder = str(cand)
         elif running:
             folder = self.data_folder()      # None until the run's first file: then it waits, not the last run's map
         if folder is None and not running:
-            runs = sorted((p for p in ex.DATA.glob(f"expt_{exp.run_name}_*") if p.is_dir()),
-                          key=lambda p: p.stat().st_mtime)
+            runs = sorted(ex.outcome_tables.run_folders(ex.DATA, exp.key), key=lambda p: p.stat().st_mtime)
             folder = str(runs[-1]) if runs else None
         params = dict(self.params[exp.key].current())
         metas = ex.outcome_tables.sidecars(folder) if folder else []
@@ -514,7 +513,7 @@ def make_handler(app: App):
                 return self._json([{
                     "key": e.key, "label": e.label, "summary": e.summary,
                     "launch_file": e.launch_file, "params_yaml": e.params_yaml, "node": e.node,
-                    "run_name": e.run_name, "smartpad": e.smartpad(), "group": e.group,
+                    "task_slug": ex.outcome_tables.task_slug(e.key), "smartpad": e.smartpad(), "group": e.group,
                     "paradigms": [{"key": k, "label": lab} for k, lab in e.paradigms],
                     "paradigm_param": e.paradigm_param,
                     # Cards holding several experiments (experiments.CARDS): the card and this one's variant.
@@ -639,7 +638,7 @@ def make_handler(app: App):
             if path == "/api/live":
                 exp = app.running_experiment()
                 if exp is None:
-                    raise RuntimeError("no experiment is running -- edit it under Per-run instead")
+                    raise RuntimeError("No experiment is running. Set values for the next run under All settings.")
                 p = app.params[exp.key]
                 name = body["name"]
                 if name not in p.defaults:
@@ -671,7 +670,7 @@ def make_handler(app: App):
                 key = path.rsplit("/", 1)[1]     # solve the start pose for a height, as a per-run edit
                 p = app.params[key]
                 if app.runner.running() and app.runner.experiment == key:
-                    raise RuntimeError("the start pose is locked while this experiment runs -- stop it first")
+                    raise RuntimeError("Stop the experiment before editing the start pose.")
                 q, report = kinematics.start_for_height(float(body["height_m"]), p.current())
                 value = p.set_edit(ex.START_POSE, q)
                 app.runner.emit(f"Start height {float(body['height_m']):.3f} m -> {ex.START_POSE} = {value}: "
@@ -707,7 +706,7 @@ def make_handler(app: App):
             if path == "/api/validate":
                 folder = app.data_folder()
                 if not folder:
-                    raise RuntimeError("no recording folder from this run yet")
+                    raise RuntimeError("This run has no recording folder yet.")
                 threading.Thread(target=_validate, args=(app, folder), daemon=True).start()
                 return {"ok": True}
             raise KeyError(f"unknown endpoint {path}")
