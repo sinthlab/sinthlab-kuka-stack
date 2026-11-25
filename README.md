@@ -106,7 +106,7 @@ Demo mode simulates both devices. See the [diagnostics reference](experiment_ctr
 
 Select **Post-processing** to export a session to NWB. Select the robot run and, if available, the Blackrock NSP recording. Enter the subject and session information, then select **Create NWB**. When the file is ready, enter the mounted server folder and select **Upload**. The dashboard verifies the copy by checksum.
 
-With an NSP recording, export aligns the robot data to the NSP clock using the trial start and end pulses (`ainp6` and `ainp7` by default). The experiment start pulse (`ainp8` by default) is stored separately. Export requires `pynwb` and `neo`. See the [post-processing reference](experiment_ctrl_gui/README.md#post-processing-page) for installation and file details.
+With an NSP recording, export aligns the robot data to the NSP clock using the trial start and end pulses (`ainp2` and `ainp3` by default). The experiment start pulse (`ainp4` by default) is stored separately. An input renamed in Central is still found as `ainpN`. Export requires `pynwb` and `neo`. See the [post-processing reference](experiment_ctrl_gui/README.md#post-processing-page) for installation and file details.
 
 ### Running an experiment
 1. **Select a task.** The task menu groups experiments and [pre-training tasks](#pre-training--free-move-reach-map-restricted-move-cued-reaches). Use the tabs beside the task name to choose a mode or rail, if offered.
@@ -202,6 +202,7 @@ from the page; stop it with Ctrl-C in its own terminal.
 | `visual_cue.trigger` | how cues reach the ring: `serial` (the RS-422 link) or `wifi` (the board's access point); the experiment is the same either way |
 | `visual_cue.colours.<site>` | `[r, g, b, w]` per cue site |
 | `nsp_sync.enabled`, `nsp_sync.cabinet_ip`, `nsp_sync.trial_start_output`, `nsp_sync.trial_end_output`, `nsp_sync.pulse_width_ms` | [sync pulses to the Blackrock NSP](#sync-to-the-blackrock-nsp): on/off, the cabinet's address (default `172.31.1.147`), the EL2124 output pulsed at trial start and at trial end (1–4, default 1 and 2, different from each other and from `nsp_sync.experiment_start_output`, default 3, which is per-run), and the pulse width (10–5000 ms, default 500) |
+| `haptic.enabled`, `haptic.min_pct`, `haptic.max_pct`, `haptic.ramp_start_m`, `haptic.ramp_full_m` | maze, Move Vertical / Horizontal: the [haptic guidance](#haptic-guidance-and-the-force-sensor) — on/off, the strength where the buzz starts and at its strongest (0–100 %, min ≤ max), and the distances to the goal where it starts and reaches full strength (full closer than start) |
 | `reward_pulse.enabled`, `reward_pulse.output`, `reward_pulse.pulse_ms` | the [reward pulse](#reward-pulse) on a successful trial — on/off (default on), the EL2124 output cabled to the reward box (1–4, default 4, different from the `nsp_sync` outputs), and how long the valve stays open (10–5000 ms, default 500) |
 | `move_to_start.speed_scale`, `move_to_park.speed_scale` | **move speed** (slider, 0.25–2, default 1): time-stretches the move — 0.5 = twice as slow, 2 = twice as fast. **Applies at once** (badge *next move*), from the next move — even within the current trial; a move already under way finishes at its speed. Each change is logged in the trial sidecar's `live_changes`. See [Move speed](#move-speed). |
 
@@ -1120,6 +1121,9 @@ Y‑Z plane** in front of the robot. It reuses the same fixture engine as Scenar
 (**any order, once each**); reaching the goal — or timing out — stops the fixtures, waits for the
 operator to let go, and resets to the start.
 
+From the go, the apple **buzzes harder as it nears the next reward point not yet passed** — a fork,
+then the goal ([haptic guidance](#haptic-guidance-and-the-force-sensor)).
+
 **The legs are LINES, not corridors.** Each "corridor" in `maze_params.yaml` is a *degenerate*
 rectangle — a horizontal leg has `b_min == b_max`, a vertical leg has `a_min == a_max` — so the fixture
 always projects the equilibrium onto the **nearest segment**, exactly like the sine rail. You slide
@@ -1896,6 +1900,8 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
    - **Restricted cued** (`target: restricted`): the other half of the rail is **closed**, so the arm
      can only move toward the cue. The cue always matches the one open direction: the step before cued.
    - **Cued end** (`target: cued`): the whole rail is **open**; only the cued end pays.
+   From the go tone on, the apple **buzzes harder as it nears the goal end** and is silent around the
+   centre ([haptic guidance](#haptic-guidance-and-the-force-sensor)).
 
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the confirmation tone and the reward pulse.
@@ -2555,6 +2561,45 @@ step.
 > **Full settings reference, wiring, patterns, and the commissioning order are in
 > [`end_effector_metro_code/README.md`](end_effector_metro_code/README.md).**
 
+### Haptic guidance and the force sensor
+
+The apple also carries a **coin ERM motor** and an **FSR**, both on the same serial link as the cue
+(wiring and placement: [end-effector README, "Haptics and force sensor"](end_effector_design/README.md#haptics-and-force-sensor);
+firmware: [`HAP` and `FSR`](end_effector_metro_code/README.md#the-serial-link)). One link object per
+port carries all three ([`visual_cue_serial.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py)),
+whichever path `visual_cue.trigger` picks for the cues: the haptics and the sensor always use the serial
+link on `visual_cue.serial_port`.
+
+**Haptic guidance** ([`haptic_guidance.py`](sinthlab_bringup/sinthlab_bringup/actions/haptic_guidance.py)):
+the apple buzzes harder the closer the hand brings it to the goal. From the go until the trial ends:
+
+| Distance to the goal *d* | Strength |
+|---|---|
+| *d* ≥ `haptic.ramp_start_m` | 0 (silent) |
+| between | `haptic.min_pct` → `haptic.max_pct`, linearly as *d* falls |
+| *d* ≤ `haptic.ramp_full_m` | `haptic.max_pct` |
+
+| Experiment | The goal | Default ramp |
+|---|---|---|
+| **Maze** | the nearest reward point **not yet passed** this trial: an unvisited fork (checkpoint), or the goal; distance to the edge of its sphere. A fork already passed no longer pulls | 0.06 m → 0 m |
+| **Move Horizontal** | the goal end of the rail: with `either` the nearer end, with `cued` the cued end only | 0.10 m → 0.02 m: silent within 5 cm of the centre |
+| **Move Vertical** | the same, on its rail | 0.05 m → 0.02 m: silent within 2 cm of the centre |
+
+`haptic.min_pct` (30) is where the buzz starts: a coin ERM needs some drive before it spins at all.
+All of `haptic.*` is live, read at the next trial. The strength goes to the board 20 times a second;
+the board drops the motor to 0 on its own if it stops hearing from the experiment for 0.5 s, and the
+experiment silences it at the trial's end and at Stop. Free Move and the experiments without a
+`haptic` block do not buzz.
+
+**The force sensor.** With `end_effector.fsr_rate_hz` > 0 (100 by default, in every experiment) the
+board streams the FSR and every trial file gets four more columns (see the
+[data dictionary](#end-effector-force-sensor-all-experiments)). Before the first session, measure how
+much the motor leaks into the reading:
+
+```bash
+ros2 run sinthlab_bringup check_haptic_fsr.py          # no experiment running; prints the reading at 0/30/60/100 %
+```
+
 ---
 
 ## 7. Data Collected
@@ -2565,6 +2610,9 @@ Plus, once per run in the same folder, **`smartpad_params.json`**: what the Smar
 runs with (`settings`: `stiffness_profile`, `stiffness` {X,Y,Z,A,B,C}, `damping`,
 `nullspace_stiffness`, `nullspace_damping`, `send_period_ms`, `tool`; `received`, `from`) — or
 `received: false` and why. See [the settings report](#smartpad-app-close-and-settings-report).
+And **`experiment_start.json`**: when the run's experiment start sync pulse was sent (`t_wall`, `t_ros`;
+`fri_s`/`fri_ns` if the arm's state had arrived), `pulse_sent` (false with `nsp_sync.enabled` off), the
+`output`, the `experiment` and the `session_id`. The same record is in every sidecar as `experiment_start`.
 
 Verified on hardware 2026-09-23: 100 Hz, clean cabinet clock, all 10 apple-pluck events captured in
 order, every trial passing `validate_recording.py`. Every column is defined in the data dictionary
@@ -2770,7 +2818,7 @@ arrives within a few ms of the ring lighting (§6.7).
 
 ### Sync to the Blackrock NSP
 
-The hardware path — the Beckhoff stack on the cabinet's EtherCAT, BNC lines to the NSP, and the
+The hardware path — the Beckhoff stack inside the reward and sync box, on the cabinet's EtherCAT, BNC lines to the NSP, and the
 cabinet code that pulses them — is in [§8 Neural Synchronisation](#8-neural-synchronisation). Every
 orchestrator passes
 `TrialRecorder(..., on_event=self.control.on_event)`, and `mark()` calls it **synchronously, before
@@ -2782,16 +2830,19 @@ sends the cabinet one UDP datagram, `PULSE <output> <width ms>`, to `<nsp_sync.c
 ([the cabinet code](reward_and_sync_box/README.md#the-code)). The send takes well under a millisecond and
 never blocks the trial.
 
-**Experiment start.** The moment **▶ Start** is pressed, before the launch begins, the dashboard
-([`server.py`](experiment_ctrl_gui/server.py)) sends one `PULSE` on `nsp_sync.experiment_start_output`:
-the NSP's marker of when the experiment was started. The cabinet app opens its pulse port as it starts,
-before it waits for ROS, so start the SmartPad app first, as usual. The log records the time the
-pulse was sent and the cabinet's answer (*NSP sync: experiment start pulse sent at …*); with no
-answer it warns. An experiment launched from a terminal sends no experiment start pulse.
+**Experiment start.** Once per run, as the experiment's node comes up and before trial 1, the trial
+recorder ([`trial_recorder.py`](sinthlab_bringup/sinthlab_bringup/actions/trial_recorder.py)) sends one
+`PULSE` on `nsp_sync.experiment_start_output` through the same path: the NSP's marker of when the
+experiment started. Its send time is recorded in the run folder's **`experiment_start.json`** and in
+every trial's sidecar (`experiment_start`), and the log says *NSP sync: experiment start pulse*. It is
+sent whether the experiment is started from the dashboard or a terminal.
+
+All of it applies to **every experiment and pre-training task**: Apple Pluck (every paradigm),
+Restricted Plane, Maze, Free Move, Move Vertical and Move Horizontal, each with the same defaults.
 
 The settings are the `nsp_sync` block of each experiment YAML. All but the experiment start output
 are live (the dashboard's *Live* tab, applied at the next trial boundary); that one is per-run, read at
-Start:
+launch:
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -2799,7 +2850,7 @@ Start:
 | `nsp_sync.cabinet_ip` | `172.31.1.147` | the cabinet's address on the network this computer reaches it by (X66: `172.31.1.147`) |
 | `nsp_sync.trial_start_output` | `1` | EL2124 output (front jack SYNC 1–4) pulsed at trial start |
 | `nsp_sync.trial_end_output` | `2` | EL2124 output pulsed at trial end |
-| `nsp_sync.experiment_start_output` | `3` | EL2124 output pulsed once when Start is pressed (per-run). The three outputs must all differ |
+| `nsp_sync.experiment_start_output` | `3` | EL2124 output pulsed once per run, before trial 1 (per-run). The three outputs must all differ |
 | `nsp_sync.pulse_width_ms` | `500` | how long each pulse stays high, 10–5000 ms |
 
 If the outputs are changed, change the post-processing page's sync channels to the NSP analog inputs
@@ -3027,6 +3078,21 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 `rail_nearest` is the index of the nearest corridor, **always populated** — on-rail or not. Off-rail,
 `corridor` reads −1, and `rail_nearest` says *which* corridor the arm has been pushed off.
 
+#### End-effector force sensor (all experiments)
+
+With `end_effector.fsr_rate_hz` > 0 ([haptic guidance and the force sensor](#haptic-guidance-and-the-force-sensor)),
+four columns after the experiment's own. Each row carries the **latest** force sample when the row was
+written (rows follow `lbr_state`, ~100 Hz); a repeated `fsr_t_ms` is the same sample.
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `fsr_raw` | 0–65535 | The FSR divider on the board's A2 (`AnalogIn.value`). Higher = more force; uncalibrated. |
+| `fsr_t_ms` | ms | The board's own clock when that sample was taken. |
+| `fsr_age_ms` | ms | How long before this row the sample arrived on the ROS computer. Growing values mean the stream stopped. |
+| `haptic_pct` | % | The haptic strength the board was driving **at that sample**: mask or model motor leakage with it. |
+
+All four are blank (`nan`) until the first sample arrives.
+
 #### Sidecar fields
 
 | Field | Meaning |
@@ -3041,6 +3107,7 @@ All maze coordinates are **relative to the anchor** — the EE pose captured aft
 | `fri` | `sample_time_s`, and the session/control mode at trial start. |
 | `controllers_active` | Which ros2_control controllers were running — catches "wrong controller was loaded". |
 | `git` | Commit SHA and dirty flag of the stack that produced the file. |
+| `experiment_start` | The run's experiment start sync pulse, the same in every trial of the run: `t_wall`, `t_ros`, `fri_s`/`fri_ns` (null if the arm's state had not arrived yet), `pulse_sent`, `output`. Also in the run folder's `experiment_start.json`. |
 | `start_pose` | Commanded and measured joint vectors at trial start. |
 | `baseline` | Apple pluck / perturb: the pose `disp_m` is measured from. |
 | `resistance` | Apple pluck / perturb: `base_stiffness_n_per_m` (the SmartPad profile), `felt_stiffness_n_per_m` and `follow_fraction` this trial ran with. |
