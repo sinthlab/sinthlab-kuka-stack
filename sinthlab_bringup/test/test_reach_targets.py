@@ -34,7 +34,7 @@ def longest_run(seq):
 
 # ---------------------------------------------------------------- modes
 def test_modes_are_the_same_on_both_rails():
-    assert modes_for(H) == modes_for(V) == ("either", "restricted", "cued", "rule")
+    assert modes_for(H) == modes_for(V) == ("either", "restricted", "retry", "cued", "rule")
     assert check_mode("restricted", V) is None
     assert check_mode("left", H) is not None        # the one-end modes are gone: restricted cued replaced them
     assert check_mode("sideways", H) is not None
@@ -128,7 +128,7 @@ def test_live_registry_accepts_the_new_settings():
     for name in ("centre_out.target", "centre_out.max_repeats"):
         assert live_params.is_live("move_horizontal", name)
         assert live_params.is_live("move_vertical", name)
-    assert live_params.paradigm_of("centre_out.max_repeats") == ("cued", "restricted")
+    assert live_params.paradigm_of("centre_out.max_repeats") == ("cued", "retry", "restricted")
 
 
 def test_dashboard_tabs_match_each_rail():

@@ -210,6 +210,7 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "centre_out.free_reach_m": (0.03, 0.2),
     # Cued: at most this many trials in a row to the same end (0 = no cap).
     "centre_out.max_repeats": (0, 20),
+    "centre_out.wrong_timeout_sec": (0.0, 60.0),
     # The colour rule (helpers/rule_schedule.py).
     "rule.window": (1, 100),
     "rule.criterion_pct": (50.0, 100.0),
@@ -320,10 +321,11 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "grasp.*": ("perturb_bump",),
     "random_start.*": ("random_start",),
     # Move Vertical / Horizontal, whose paradigm is centre_out.target.
-    "centre_out.max_repeats": ("cued", "restricted"),
+    "centre_out.max_repeats": ("cued", "retry", "restricted"),
+    "centre_out.wrong_timeout_sec": ("cued",),
     # The colour rule, whose paradigm is Rail / No rail (free_move.rail_axis).
     "centre_out.free_reach_m": ("frontal",),
-    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "restricted"),
+    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "retry", "restricted"),
     # Free Move, whose paradigm is long_move.reward.
     "long_move.*": ("each_move", "new_best"),
     # Cued Reaches, free, whose paradigm is free_reach.cue: the cue and the perturbations only when cued.
@@ -386,7 +388,7 @@ CHOICES: Dict[str, List[str]] = {
     "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
     # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
     # does not have (left / right on the vertical rail, down / up on the horizontal one).
-    "centre_out.target": ["either", "restricted", "cued", "rule"],   # helpers/reach_targets.modes_for
+    "centre_out.target": ["either", "restricted", "retry", "cued", "rule"],   # helpers/reach_targets.modes_for
     "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move", "new_best"],  # actions/long_move.MODES (new_best: the Reach Map only)

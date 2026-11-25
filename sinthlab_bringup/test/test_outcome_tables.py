@@ -58,6 +58,22 @@ def test_wrong_end_and_aborted_trials():
     assert (stopped["outcome"], stopped["success"], stopped["correct"]) == ("stop_requested", "", "")
 
 
+def test_can_correct_records_the_first_choice():
+    corrected = ot.trial_row(centre_out(1, [ev("trial_start", 0), ev("cue_go", 4), ev("target", 4, "left"),
+                                            ev("wrong_end", 5, "right"), ev("wrong_end", 6, "right"),
+                                            ev("reach", 8, "left"), ev("trial_end", 8)],
+                                        params={"centre_out.target": "retry"}, rewards=[1]))
+    assert (corrected["correct"], corrected["first_correct"], corrected["n_wrong_end"]) == (1, 0, 2)
+    straight = ot.trial_row(good_reach(2))
+    assert (straight["first_correct"], straight["n_wrong_end"]) == (1, 0)
+    wrong = ot.trial_row(centre_out(3, [ev("trial_start", 0), ev("cue_go", 4), ev("target", 4, "left"),
+                                        ev("reach_wrong", 6, "right"), ev("trial_end", 6)]))
+    assert (wrong["correct"], wrong["first_correct"]) == (0, 0)
+    rows = [{k: str(v) for k, v in r.items()} for r in (corrected, straight, wrong)]
+    sess = ot.tables_for("move_horizontal").session_fields(rows)
+    assert sess["pct_first_correct"] == pytest.approx(33.3) and sess["pct_correct"] == pytest.approx(66.7)
+
+
 def test_an_experiment_without_its_own_tables_gets_the_common_columns():
     row = ot.trial_row({"experiment": "maze", "trial_index": 1, "events": [ev("trial_start", 0), ev("goal", 30)]})
     assert list(row) == list(ot.COMMON) and row["outcome"] == "goal" and row["success"] == 1

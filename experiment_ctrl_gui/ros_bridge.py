@@ -578,6 +578,12 @@ class DemoBridge:
                     if not go() or not self._sleep(run_id, random.uniform(1.0, 3.0)):
                         return False
                     end = target if closed else random.choice(ends)
+                    if mode == "retry" and target in ends and end != target:
+                        # Cued, can correct: the wrong end does nothing; he goes on to the cued end.
+                        self._phase_to("wrong_end", end, f"Centre-out: reached the {end} end, the target is {target}: he can go on.")
+                        if not self._sleep(run_id, random.uniform(1.0, 2.0)):
+                            return False
+                        end = target
                 if target in ("either", end):
                     self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
                     self._reward("reach")

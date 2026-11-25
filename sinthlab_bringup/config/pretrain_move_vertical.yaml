@@ -72,10 +72,11 @@
     # With it on, session_sec does not apply.
     centre_out:  # one rewarded reach per trial, from the centre to an end of the rail
       enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
-      # Work-up, switchable mid-session (the card's tabs): restricted cued -> cued end -> either end.
-      target: "either"  # either = both ends are goals, the whole ring lights (no direction cued) | restricted = restricted cued: one end drawn at random per trial, only its quarter lights, the other half of the rail is closed | cued = cued end: drawn the same way, the whole rail open, only the cued end is rewarded
+      # Work-up, switchable mid-session (the card's tabs): restricted cued -> cued, can correct -> cued, one choice -> either end.
+      target: "either"  # either = both ends are goals, the whole ring lights (no direction cued) | restricted = restricted cued: one end drawn at random per trial, only its quarter lights, the other half of the rail is closed | retry = cued, can correct: drawn the same way, the whole rail open, the other end does nothing (event wrong_end) and he may go on to the cued end | cued = cued, one choice: drawn the same way, the whole rail open, only the cued end is rewarded; the other end ends the trial and parks at once
       max_repeats: 3  # restricted / cued: at most this many trials in a row to the same end (0 = no cap)
       end_tol_m: 0.02  # this close to an end counts as reaching it [m]
+      wrong_timeout_sec: 0.0  # cued, one choice: a wrong choice parks at once; then this long at park before the next trial [s]
       quarter_down: 2  # ring quarter (0-3) lit for the down end (rail_min_m, -Z) (README, "The ring")
       quarter_up: 0  # ring quarter (0-3) lit for the up end (rail_max_m, +Z)
 

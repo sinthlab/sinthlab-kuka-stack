@@ -136,16 +136,18 @@ _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
                 "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
 # Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
-# switch it during a run, from the next trial: restricted cued (the cue's direction only) -> cued end (both
-# directions open, only the cued end pays) -> either end.
-_CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("cued", "Cued end")]
+# switch it during a run, from the next trial: restricted cued (the cue's direction only) -> cued, can correct
+# (both directions open; the wrong end does nothing, he goes on to the cued end) -> cued, one choice (the wrong
+# end ends the trial and parks at once) -> either end.
+_CENTRE_OUT = [("either", "Either end"), ("restricted", "Restricted cued"), ("retry", "Cued, can correct"),
+               ("cued", "Cued, one choice")]
 # Cards holding several experiments (Experiment.card): key -> (label, summary).
 CARDS = {
     "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
     "cued_reach": ("Cued Reaches", "One reach per trial: along a rail, or free in 3-D with jumps and bumps."),
 }
-_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m")
-_CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same three modes on either rail
+_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m", "centre_out.wrong_timeout_sec")
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same modes on either rail
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
@@ -355,6 +357,7 @@ LABELS: Dict[str, str] = {
     "long_move.min_gap_sec": "Min time between rewards [s]",
     "centre_out.max_repeats": "Max repeats at the same end",
     "centre_out.end_tol_m": "End tolerance [m]",
+    "centre_out.wrong_timeout_sec": "Time-out after a wrong choice [s]",
     "centre_out.free_reach_m": "No-rail choice distance [m]",
     "rule.red_end": "Red target in the first block",
     "rule.window": "Criterion window [choices]",

@@ -7,7 +7,9 @@ the arm reaches:
 
     go cue          the ring lights -- event `target` (an end's name, or "either")
     a goal end      `reach` -> the reward pulse, then the release wait and park, as any trial
-    the other end   `reach_wrong` (cued only) -> no reward; the release wait and park
+    the other end   cued, can correct (retry): `wrong_end` -- nothing else happens, he may go on to the cued end
+                    cued, one choice (cued) / the colour rule: `reach_wrong` -> no reward; one choice parks at
+                    once (no release wait, the quick retreat, centre_out.wrong_timeout_sec at park)
     neither within response_timeout_sec -> `response_timeout`, as in every experiment
 
     centre_out.target  either -- both ends are goals; the WHOLE ring lights green at the go cue: no
@@ -16,9 +18,11 @@ the arm reaches:
                                  max_repeats of the same end in a row); only its quarter lights green, and
                                  the other half of the rail is CLOSED, so the arm can only move toward the
                                  cue -- the step before cued
-                       cued   -- CUED END: drawn the same way, but the whole rail is OPEN: only the cued
-                                 end is rewarded, the other end is reach_wrong. Live, so a session can go
-                                 restricted cued -> cued end -> either.
+                       retry  -- CUED, CAN CORRECT: drawn the same way, the whole rail OPEN; the other end
+                                 does nothing (wrong_end) and he may go on to the cued end, which pays
+                       cued   -- CUED, ONE CHOICE: drawn the same way, the whole rail OPEN: only the cued
+                                 end is rewarded; the other end is reach_wrong and ends the trial. Live, so a
+                                 session can go restricted cued -> can correct -> one choice -> either.
                        rule   -- the colour rule (helpers/rule_schedule.py): the whole ring lights red
                                  or blue, each colour means one end, the whole rail is open, and the
                                  mapping reverses without any signal to the animal once he reaches
@@ -51,8 +55,8 @@ from typing import Callable, List, Optional, Tuple
 from rclpy.node import Node as rclpyNode
 
 from sinthlab_bringup.helpers.node_utils import get_required_param, get_launch_param
-from sinthlab_bringup.helpers.reach_targets import (CUED_MODES, RESTRICTED, RULE, TargetPicker, check_mode,
-                                                    open_span as rail_open_span)
+from sinthlab_bringup.helpers.reach_targets import (CUED_MODES, RESTRICTED, RETRY, RULE, TargetPicker, check_mode,
+                                                    open_span as rail_open_span, outcome)
 from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
 
 # The (rail_min_m, rail_max_m) ends' names, by the rail's base axis (an x rail: "min" / "max").
@@ -66,6 +70,8 @@ class CentreOutMonitor:
         self._adm = admittance
         self._p = param_prefix + "."
         self._on_end: Optional[Callable[[str, bool], None]] = None
+        self._on_wrong: Optional[Callable[[str], None]] = None
+        self._at_wrong = False              # can correct: the arm is at the wrong end now (one event per visit)
         self._target: Optional[str] = None
         # No rail (free_move.rail_axis frontal, the colour rule's "No rail"): the arm is free in the plane
         # facing the monkey, and a choice is reaching centre_out.free_reach_m to the left or right.
@@ -116,14 +122,14 @@ class CentreOutMonitor:
             lo, hi = self._ends_m()
             mode = self._picker.mode
             r = self._rule
-            label = {"cued": "cued end", RESTRICTED: "restricted cued"}.get(mode, mode)
+            label = {"cued": "cued, one choice", RETRY: "cued, can correct", RESTRICTED: "restricted cued"}.get(mode, mode)
             how = (f"{label} (at most {self._picker.max_repeats} in a row)" if mode in CUED_MODES and self._picker.max_repeats
                    else f"colour rule, {r.mapping()} (block {r.block}; reverses unsignaled at "
                         f"{r.criterion_pct:g}% of the last {r.window} choices, after at least {r.min_trials})"
                    if mode == RULE else label)
             n.get_logger().info(
                 f"Centre-out: one reach per trial, {how}"
-                + (", the other half of the rail closed" if mode == RESTRICTED else ", the whole rail open" if mode == "cued" else "")
+                + (", the other half of the rail closed" if mode == RESTRICTED else ", the whole rail open" if mode in ("cued", RETRY) else "")
                 + ("; no rail (free in the frontal plane): a choice is reaching" if self._free else
                    "; an end counts within {:.0f} mm of".format(self._end_tol * 1000))
                 + f" the {self._ends[0]} ({lo:+.3f} m) / {self._ends[1]} ({hi:+.3f} m) end.")
@@ -156,6 +162,10 @@ class CentreOutMonitor:
     # ------------------------------------------------------------------ the colour rule
     def rule_on(self) -> bool:
         return self._picker.mode == RULE
+
+    def mode(self) -> str:
+        """centre_out.target in force: either | restricted | retry | cued | rule."""
+        return self._picker.mode
 
     def cue_colour(self) -> Optional[str]:
         """This trial's cue colour (the colour rule), else None."""
@@ -208,14 +218,16 @@ class CentreOutMonitor:
             return [self._quarter[self._target]]
         return [0, 1, 2, 3]
 
-    def start(self, on_end: Callable[[str, bool], None]) -> None:
-        """At the go cue: watch until the arm reaches an end, then call on_end(end, rewarded) once."""
+    def start(self, on_end: Callable[[str, bool], None], on_wrong: Optional[Callable[[str], None]] = None) -> None:
+        """At the go cue: watch until the arm reaches an end, then call on_end(end, rewarded) once. Cued, can
+        correct: each arrival at the wrong end calls on_wrong(end) instead, and the watch goes on."""
         if self._target is None:
             self.pick_target()
-        self._on_end = on_end
+        self._on_end, self._on_wrong, self._at_wrong = on_end, on_wrong, False
 
     def stop(self) -> None:
-        self._on_end = None
+        self._on_end = self._on_wrong = None
+        self._at_wrong = False
         self._target = None
         self._colour = None
 
@@ -230,8 +242,20 @@ class CentreOutMonitor:
         end = (self._ends[0] if x <= lo + tol else
                self._ends[1] if x >= hi - tol else None)
         if end is None:
+            # Back off the wrong end by twice the tolerance before a new arrival there counts again.
+            if self._at_wrong and lo + 2 * tol < x < hi - 2 * tol:
+                self._at_wrong = False
             return
-        rewarded = self._target == "either" or end == self._target
+        result = outcome(self._picker.mode, self._target, end)
+        if result == "retry":
+            if not self._at_wrong:
+                self._at_wrong = True
+                self._node.get_logger().info(f"Centre-out: reached the {end} end, the target is {self._target}: "
+                                             "nothing happens, he can go on to it.")
+                if self._on_wrong is not None:
+                    self._on_wrong(end)
+            return
+        rewarded = result == "reward"
         on_end, self._on_end = self._on_end, None
         self._node.get_logger().info(
             f"Centre-out: reached the {end} end" + (" -- reward." if rewarded else

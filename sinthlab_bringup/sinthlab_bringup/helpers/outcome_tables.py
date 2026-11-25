@@ -504,25 +504,35 @@ class CentreOutTables(TaskTables):
         "closed_end": "the end closed off this trial (restricted cued), else blank",
         "chosen_end": "the end the arm reached, blank if none",
         "correct": "1 = reached a goal end, 0 = the other end, blank = no reach",
+        "first_correct": "1 = the FIRST end reached was a goal end, 0 = it was the other end (cued, can correct: "
+                         "before he corrected), blank = no reach",
+        "n_wrong_end": "cued, can correct: arrivals at the wrong end before the trial ended (0 otherwise)",
         "end_tol_m": "how close to an end counted as reaching it [m]",
     }
-    settings = ["centre_out.target", "centre_out.max_repeats",
+    settings = ["centre_out.target", "centre_out.max_repeats", "centre_out.wrong_timeout_sec",
                 "centre_out.end_tol_m", "reward_pulse.pulse_ms"]
     session_columns = {"n_reaches": "trials ending in a reach (either end)",
-                       "pct_correct": "reaches to a goal end over all reaches [%]"}
+                       "pct_correct": "reaches to a goal end over all reaches [%]",
+                       "pct_first_correct": "trials whose first end reached was a goal end, over all reaches [%]"}
 
     def trial_fields(self, tr):
         chosen = tr.arg("reach") if tr.has("reach") else tr.arg("reach_wrong")
+        wrong = len(tr.all("wrong_end"))
+        correct = 1 if tr.has("reach") else 0 if tr.has("reach_wrong") else ""
         return {"target": tr.arg("target") or "", "closed_end": tr.arg("closed_end") or "",
                 "chosen_end": chosen or "",
-                "correct": 1 if tr.has("reach") else 0 if tr.has("reach_wrong") else "",
+                "correct": correct,
+                "first_correct": "" if correct == "" else 0 if wrong else correct,
+                "n_wrong_end": wrong,
                 "end_tol_m": tr.param("centre_out.end_tol_m", "")}
 
     def session_fields(self, trials):
         reached = [r for r in trials if r.get("correct") in ("0", "1")]
         ok = sum(r["correct"] == "1" for r in reached)
+        first = sum(r.get("first_correct") == "1" for r in reached)
         return {"n_reaches": len(reached),
-                "pct_correct": round(100.0 * ok / len(reached), 1) if reached else ""}
+                "pct_correct": round(100.0 * ok / len(reached), 1) if reached else "",
+                "pct_first_correct": round(100.0 * first / len(reached), 1) if reached else ""}
 
 
 @register("colour_rule")
