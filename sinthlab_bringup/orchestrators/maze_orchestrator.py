@@ -9,6 +9,7 @@ from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.move_in_maze import MoveInMazeAction
 from sinthlab_bringup.actions.checkpoint_monitor import CheckpointMonitor
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
+from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
@@ -103,6 +104,9 @@ class MazeOrchestratorNode(rclpyNode):
             origin_provider=self.maze_fixtures.anchor_position,
         )
         self.safety = SafetyStopMonitor(self, param_prefix="maze_safety", on_trip=self.on_safety_trip)
+        # Haptic guidance: the apple buzzes harder as it nears a reward point not yet passed (a fork,
+        # then the goal) -- actions/haptic_guidance.py.
+        self.haptic = HapticGuidance(self, self.checkpoint_monitor.distance_to_next_reward)
         self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self.goal_cue = AudioCue(self, param_prefix="audio_cue_goal", on_complete=lambda: None)
         self.timeout_cue = AudioCue(self, param_prefix="audio_cue_timeout", on_complete=lambda: None)
@@ -164,6 +168,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.get_logger().info("Go! Maze fixtures + checkpoint monitor active; timeout + safety armed.")
         self.maze_fixtures.start()
         self.checkpoint_monitor.start()
+        self.haptic.start()
         self.timeout.start()
         self.safety.start()
 
@@ -197,6 +202,7 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_ending = True
         # goal | timeout | safety -- whichever won the race
         self._trial_over(reason if reason != "safety" else "safety_trip")
+        self.haptic.stop()
         self.timeout.stop()
         self.checkpoint_monitor.stop()
         self.safety.stop()
@@ -273,6 +279,7 @@ class MazeOrchestratorNode(rclpyNode):
         self._trial_over("stop_requested")
         self._trial_ending = True
         self.quiet_window.stop()
+        self.haptic.stop()
         self.timeout.stop()
         self.checkpoint_monitor.stop()
         self.safety.stop()
@@ -298,6 +305,7 @@ class MazeOrchestratorNode(rclpyNode):
         self.move_park.reload()
         self.timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
         self.maze_fixtures.reload()      # rail_lead_sec: how easy moving along a rail feels
+        self.haptic.reload()
 
 
 def main(args=None) -> None:

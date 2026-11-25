@@ -35,7 +35,7 @@ _COMMON = [
     "visual_cue.trigger",          # serial (the RS-422 link) or wifi (the board's access point)
     "visual_cue.colours.*",
     # TTL sync pulses to the Blackrock NSP: switch, cabinet address, the trial outputs, width. Not
-    # nsp_sync.experiment_start_output: that pulse is sent once, by the dashboard at Start (per-run).
+    # nsp_sync.experiment_start_output: that pulse is sent once, as the run begins (per-run).
     "nsp_sync.enabled", "nsp_sync.cabinet_ip", "nsp_sync.trial_*_output", "nsp_sync.pulse_width_ms",
 ]
 
@@ -71,8 +71,11 @@ _RING = ["ring_cue.quarters", "ring_cue.colours.*"]
 # softens it by letting the equilibrium follow part of the pull -- see actions/resistance_softener.py.
 _RESIST = ["resistance.stiffness_n_per_m"]
 
+# Haptic guidance (actions/haptic_guidance.py): the maze and the rails' centre-out reach.
+_HAPTIC = ["haptic.*"]
+
 # Pre-training: Free Move, and Free Move on a rail (Move Vertical / Horizontal).
-_FREE = _COMMON + _REWARD + _SPEED + _RING + [
+_FREE = _COMMON + _REWARD + _SPEED + _RING + _HAPTIC + [
     # Move Vertical / Horizontal: the centre-out reach (actions/centre_out.py). Free Move has none.
     "centre_out.*",
     "rule.*",                      # the colour rule (helpers/rule_schedule.py; colour_rule.yaml only)
@@ -116,7 +119,7 @@ LIVE_PARAMS: Dict[str, List[str]] = {
         "grasp.delay_max_sec",
     ],
     "restricted_plane": _COMMON + _REWARD + _PULL + _SPEED + ["response_timeout_sec"],
-    "maze": _COMMON + _REWARD + _SPEED + [
+    "maze": _COMMON + _REWARD + _SPEED + _HAPTIC + [
         "response_timeout_sec",    # the trial's time limit from the go cue
         # How easy moving along a rail feels -- see rail_lead_sec in maze_params.yaml. Walls unchanged.
         "virtual_fixtures.rail_lead_sec",
@@ -202,6 +205,11 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "long_move.stop_speed_mps": (0.005, 0.3),
     "long_move.stop_sec": (0.05, 2.0),
     "long_move.confirm_m": (0.005, 0.1),
+    "haptic.min_pct": (0, 100),
+    "haptic.max_pct": (0, 100),
+    "haptic.ramp_start_m": (0.005, 0.3),
+    "haptic.ramp_full_m": (0.0, 0.1),
+    "end_effector.fsr_rate_hz": (0, 200),
     # Assist is capped low: past the real lag the spring pushes the arm ALONG the rail by itself.
     # Drag may go further -- it only ever resists.
     "virtual_fixtures.rail_lead_sec": (-0.15, 0.05),
@@ -484,6 +492,16 @@ def _check_pair(name, value, context) -> Optional[str]:
             if other != name and context is not None and context.get(other) is not None \
                     and int(context[other]) == int(value):
                 return f"{name} and {other} must be different outputs (both {value}): each event has its own line"
+        return None
+    if name in ("haptic.min_pct", "haptic.max_pct", "haptic.ramp_start_m", "haptic.ramp_full_m") and context:
+        ctx = {**context, name: value}
+        if all(k in ctx for k in ("haptic.min_pct", "haptic.max_pct")) and \
+                float(ctx["haptic.min_pct"]) > float(ctx["haptic.max_pct"]):
+            return f"haptic.min_pct ({ctx['haptic.min_pct']}) must not exceed haptic.max_pct ({ctx['haptic.max_pct']})"
+        if all(k in ctx for k in ("haptic.ramp_start_m", "haptic.ramp_full_m")) and \
+                float(ctx["haptic.ramp_full_m"]) >= float(ctx["haptic.ramp_start_m"]):
+            return (f"haptic.ramp_full_m ({ctx['haptic.ramp_full_m']}) must be closer to the goal than "
+                    f"haptic.ramp_start_m ({ctx['haptic.ramp_start_m']})")
         return None
     if name.startswith("random_start.positions."):
         # [a, b] metres in random_start.plane; reach and joint margins are checked when the run solves them
