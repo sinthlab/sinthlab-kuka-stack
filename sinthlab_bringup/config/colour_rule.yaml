@@ -22,7 +22,7 @@
       force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
       penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
 
-    # COLOUR RULE WITH UNSIGNALED REVERSALS (CI2B Aim 3). A task of its own, not training: some days it is
+    # COLOUR RULE WITH UNSIGNALED REVERSALS. A task of its own, not training: some days it is
     # all that runs. Each trial is one choice: at the go cue the whole ring lights red or blue, and each
     # colour means one end (left or right). Once he reaches criterion the mapping reverses WITHOUT ANY
     # SIGNAL TO THE ANIMAL, as often as he reaches criterion (the rule block below; helpers/rule_schedule.py).
