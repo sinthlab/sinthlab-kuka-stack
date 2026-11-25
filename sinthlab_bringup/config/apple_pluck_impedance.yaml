@@ -288,11 +288,11 @@
     audio_cue:  # switch for every beep
       enabled: true            # false = no beeps at all; the trial sequence is unchanged
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
-      enabled: true           # send a pulse at Start (experiment start) and at every trial start and trial end
+      enabled: true           # send a pulse at experiment start and at every trial start and trial end
       cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
       trial_start_output: 1    # EL2124 output (1-4, front jack SYNC 1-4) pulsed at trial start
       trial_end_output: 2      # EL2124 output (1-4) pulsed at trial end
-      experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
+      experiment_start_output: 3  # EL2124 output (1-4) pulsed once per run, before trial 1
       pulse_width_ms: 500       # how long each pulse stays high [ms], 10-5000
 
     reward_pulse:  # opens the juice valve on a successful trial: a pulse on a Beckhoff output, cabled to the reward box's NSP jack
@@ -301,6 +301,11 @@
       pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
       count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
       gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
+
+    # THE APPLE'S FORCE SENSOR (FSR), streamed by the end-effector board over the serial link (visual_cue.serial_port)
+    # into four columns of every trial file: fsr_raw, fsr_t_ms, fsr_age_ms, haptic_pct (README, "Haptics and force sensor").
+    end_effector:  # the apple's sensor
+      fsr_rate_hz: 100  # force samples per second recorded into the trial file; 0 = off
 
     # Visual cue (NeoPixel ring on the end effector) -- see end_effector_metro_code/README.md.
     # What the cue LOOKS like is set on the board over its own Wi-Fi, not here.
