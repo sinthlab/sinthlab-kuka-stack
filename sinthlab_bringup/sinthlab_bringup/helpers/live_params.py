@@ -68,7 +68,8 @@ _SPEED = ["*.speed_scale"]
 _POSE = ["move_to_start.target_joint_position"]
 
 # Pre-training: the quarter-ring colours.
-_RING = ["ring_cue.quarters", "ring_cue.colours.*"]
+_RING = ["ring_cue.quarters", "ring_cue.colours.*",
+         "ring_cue.off_at"]            # when the go cue's light goes out: go | move | end (free-move tasks)
 
 # The felt stiffness of the pull (apple pluck, perturb). ROS cannot change the cabinet's stiffness; it
 # softens it by letting the equilibrium follow part of the pull -- see actions/resistance_softener.py.
@@ -83,6 +84,9 @@ _FREE = _COMMON + _REWARD + _SPEED + _RING + [
     "long_move.*",
     "session_sec",
     "response_timeout_sec",        # not moved in time -> the session ends, park
+    # After the outcome: park at once, taking the apple from the hand (snatch), or wait for the hand to let go.
+    "force_release.snatch",
+    "force_release.snatch_after_sec",
     # The feel of the admittance -- see pretrain_free_move.yaml.
     "free_move.damping_ns_per_m",
     "free_move.deadband_n",
@@ -90,6 +94,7 @@ _FREE = _COMMON + _REWARD + _SPEED + _RING + [
     "free_move.accel_limit_mps2",
     "free_move.force_filter_tau_sec",
     "free_move.tare_sec",
+    "free_move.tare_tol_n",        # a trial's tare this far from the run's usual one is a hand: use the usual one
     "free_move.trail_m",
     "free_move.low_force_n",
     "free_move.low_force_damping_ns_per_m",
@@ -305,6 +310,8 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "free_move.accel_limit_mps2": (0.0, 10.0),
     "free_move.force_filter_tau_sec": (0.0, 0.5),
     "free_move.tare_sec": (0.2, 5.0),
+    "free_move.tare_tol_n": (0.0, 10.0),            # 0 = off: every trial's own tare
+    "force_release.snatch_after_sec": (0.0, 5.0),
     "free_move.trail_m": (0.0, 0.03),               # at most the leash
     "free_move.low_force_n": (0.0, 30.0),
     "free_move.low_force_damping_ns_per_m": (40.0, 300.0),
@@ -407,6 +414,7 @@ CHOICES: Dict[str, List[str]] = {
     "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
     "free_move.ray_layout": ["2", "3", "4", "5", "6", "7", "8"],   # helpers/rail_shapes.LAYOUT_COUNTS
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
+    "ring_cue.off_at": ["go", "move", "end"],                 # free_move_orchestrator: when the go cue's light goes out
 }
 
 

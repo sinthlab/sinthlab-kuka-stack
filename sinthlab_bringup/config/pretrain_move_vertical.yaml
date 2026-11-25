@@ -159,6 +159,7 @@
       jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
+      tare_tol_n: 2.0  # a resting force this far from the run's usual one (the median of the last tares) is a hand on the apple: use the usual one instead; 0 = off [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
       rail_axis: z  # the rail: the base Z axis through the start (none = free in every direction, as Free Move)
@@ -183,6 +184,8 @@
       update_rate: 100  # Action loop rate [Hz]
       release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
       release_duration_sec: 1.0  # ... continuously for this long [s]
+      snatch: true  # true = after the outcome cue the arm parks at once, taking the apple from the hand (the quick retreat); false = it holds until the hand lets go
+      snatch_after_sec: 0.5  # with snatch: how long the arm holds after the outcome (the reward cue and tone) before it leaves [s]
       debug_log_enabled: false  # Enable periodic debug logging for this action
       debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
@@ -220,6 +223,7 @@
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
     # The ring is GREEN for the cue, dark otherwise; a reward lights the whole ring white (the reward cue, the same in every task).
     ring_cue:  # which quarters light, and in what colour
+      off_at: "move"  # when the go cue's light goes out: go (at the go tone) | move (once the arm has moved 1 cm: the cue stays lit until he starts) | end (at the trial's outcome)
       quarters: [0, 2]  # the up and down quarters, 0-3
       colours:  # RGBW, each colour at full value (255): visual_cue.brightness alone sets how bright
         go: [0, 255, 0, 0]  # free to move -- green

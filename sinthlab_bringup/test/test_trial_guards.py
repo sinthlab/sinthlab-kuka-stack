@@ -110,6 +110,55 @@ def test_n_choice_recording_endings(ending, valid, monkeypatch):
     assert (not report.bad) == valid
 
 
+def _free_move_node_class(monkeypatch):
+    """The Free Move orchestrator's class, its hardware actions substituted."""
+    import importlib.util
+    from unittest.mock import MagicMock
+    for module in ("actions.move_to_position_joint_space", "actions.park_move", "actions.switch_controller",
+                   "actions.safety_stop_monitor", "actions.force_release_waiter", "actions.audio_cue",
+                   "actions.visual_cue", "actions.ring_state_cue", "actions.quiet_gate", "actions.trial_recorder",
+                   "helpers.experiment_control"):
+        monkeypatch.setitem(sys.modules, "sinthlab_bringup." + module, MagicMock())
+    path = ROOT / "sinthlab_bringup/orchestrators/free_move_orchestrator.py"
+    spec = importlib.util.spec_from_file_location("trial_timeout_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.FreeMoveOrchestratorNode
+
+
+def test_snatch_parks_after_the_outcome_cue_without_waiting_for_release(monkeypatch):
+    """force_release.snatch: the reward and its cue, snatch_after_sec, then the quick retreat to park."""
+    from unittest.mock import call
+    cls = _free_move_node_class(monkeypatch)
+    node = Mock()
+    node._trial_ending = node._stopping = node._ended = False
+    node._snatch, node._snatch_sec = True, 0.5
+    node.trial_count = 4
+    node.centre_out = Mock(enabled=True)
+    node.centre_out.mode.return_value = "either"
+    node.n_choice = node.long_move = node.free_reach = node.forage = None
+    node.control.pays.return_value = True
+    for name in ("_choice_on", "_centre_out_on", "_n_choice_on", "_end_trial", "_trial_over", "_mark_end"):
+        setattr(node, name, getattr(cls, name).__get__(node))
+    cls.on_reach(node, "right", True)
+    node.ring.reward.assert_called_once()                 # the reward cue shows during the hold
+    node.end_cue.start.assert_called_once()
+    node.force_release.start.assert_not_called()
+    node.snatch_wait.set_duration.assert_called_once_with(0.5)
+    node.snatch_wait.start.assert_called_once()
+    node.switch_to_joint.start.assert_not_called()        # not before the hold is up
+    assert node.recorder.mark.call_args_list[-1] == call("snatch_wait", 0.5)
+    cls.on_snatch(node)
+    node.ring.show.assert_called_with("off")
+    node.move_park.retreat.assert_called_once()
+    node.switch_to_joint.start.assert_called_once()
+    assert node.recorder.mark.call_args_list[-1] == call("snatch")
+    node._stopping = True                                 # Stop during the hold: _stop_now has it in hand
+    node.switch_to_joint.start.reset_mock()
+    cls.on_snatch(node)
+    node.switch_to_joint.start.assert_not_called()
+
+
 @pytest.mark.parametrize("task", ["n_choice", "colour_rule", "move_horizontal"])
 def test_choice_deadline_holds_until_release(task, monkeypatch):
     """Exercise the orchestrator callbacks, substituting the hardware actions at their boundaries."""
@@ -127,6 +176,7 @@ def test_choice_deadline_holds_until_release(task, monkeypatch):
     cls = module.FreeMoveOrchestratorNode
     node = Mock()
     node._trial_ending = node._stopping = node._ended = False
+    node._snatch = False                     # force_release.snatch off: the release wait
     node.trial_count = 2
     node.centre_out = None if task == "n_choice" else Mock(enabled=True)
     node.n_choice = Mock() if task == "n_choice" else None

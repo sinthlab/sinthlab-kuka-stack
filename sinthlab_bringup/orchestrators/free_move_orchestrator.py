@@ -29,6 +29,8 @@ from sinthlab_bringup.helpers.experiment_control import ExperimentControl, REWAR
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
 REWARD_FLASH_SEC = 1.0      # a reward mid-session (Long moves, New best): the reward cue shows this long
+MOVE_ONSET_M = 0.01         # ring_cue.off_at move: the go cue's light goes out once the arm has moved this far [m]
+OFF_AT = ("go", "move", "end")
 
 
 class FreeMoveOrchestratorNode(rclpyNode):
@@ -60,8 +62,14 @@ class FreeMoveOrchestratorNode(rclpyNode):
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
     -> session ended or a reach / choice (end tone; with a reward, the reward cue: the whole ring WHITE, the same
        in every task): the arm holds where it is
-    -> release wait (ring dark at release)
+    -> release wait (ring dark at release); or, with force_release.snatch, force_release.snatch_after_sec
+       and then the arm leaves at once, taking the apple from the hand (ring dark as it goes)
     -> switch to JOINT -> park (out of reach) -> the next session.
+
+    THE GO CUE'S LIGHT (ring_cue.off_at): go = it goes out with the go tone (the go is light-off plus the
+    tone); move = it stays lit through the go tone until the arm has moved MOVE_ONSET_M, so a monkey who
+    does not start at once still sees the cue; end = it stays lit until the trial's outcome. Foraging
+    always uses go (its ring shows the warm-zone cue during the search).
     """
 
     def __init__(self) -> None:
@@ -155,6 +163,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_sec = float(get_required_param(self, "session_sec"))
         self.force_release = ForceReleaseWaiter(
             self, param_prefix="force_release", on_complete=self.on_force_released)
+        # The snatch (force_release.snatch): the hold after the outcome, before the arm leaves.
+        self.snatch_wait = WaitAction(self, duration_sec=0.5, on_complete=self.on_snatch, name="snatch")
+        self._read_trial_end()
         self.switch_to_joint = SwitchControllerAction(
             self, activate=[JOINT_CTRL], deactivate=[CLIK_CTRL],
             on_complete=self.on_switched_to_joint, name="switch->joint")
@@ -172,6 +183,19 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # The run's first move: to park, out of reach, from wherever the arm is; then the trial loop.
         self.control.on_event("parking")
         self.move_park.start_first(lambda: self.control.begin_trial(self._next_trial))
+
+    def _read_trial_end(self):
+        """The live settings of the go cue's light and of the end of a trial (snatch or release wait)."""
+        def get(name, default):
+            return get_required_param(self, name) if self.has_parameter(name) else default
+        off_at = str(get("ring_cue.off_at", "go")).strip().lower()
+        self._off_at = off_at if off_at in OFF_AT else "go"
+        self._snatch = bool(get("force_release.snatch", False))
+        self._snatch_sec = max(0.0, float(get("force_release.snatch_after_sec", 0.5)))
+
+    def _keep_lit(self) -> bool:
+        """The go cue's light stays on through the go tone (ring_cue.off_at move or end)."""
+        return self._off_at != "go" and self.ring.enabled()
 
     def start_trial(self):
         self.ring.show("off")
@@ -213,7 +237,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.recorder.mark("target", target)
             state, quarters = self.centre_out.ring_cue()
             self.go.start(lambda label: self.ring.show(state, quarters, label=label),
-                          visual_enabled=self.ring.enabled())
+                          visual_enabled=self.ring.enabled(), keep_lit=self._keep_lit())
         elif self._forage_on():            # this trial's warm cue and whether it is a probe; the go is the green flash
             plan = self.forage.pick(self.trial_count)
             self.recorder.annotate(forage=plan.record(self.forage.settings()))
@@ -226,12 +250,13 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.recorder.mark("target", self.free_reach.target())
             quarters = self.free_reach.quarters()
             self.go.start(lambda label: self.ring.show("go", quarters, label=label),
-                          visual_enabled=self.ring.enabled(), preview_sec=self.free_reach.cue_delay())
+                          visual_enabled=self.ring.enabled(), preview_sec=self.free_reach.cue_delay(),
+                          keep_lit=self._keep_lit())
         else:
             if self._n_choice_on():        # every direction's reward probability, before the choice
                 self.recorder.annotate(n_choice=self.n_choice.state())
             self.go.start(lambda label: self.ring.show("go", label=label),
-                          visual_enabled=self.ring.enabled())
+                          visual_enabled=self.ring.enabled(), keep_lit=self._keep_lit())
 
     def _centre_out_on(self) -> bool:
         return self.centre_out is not None and self.centre_out.enabled
@@ -314,6 +339,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
             return
         self.recorder.mark("armed")
         self.admittance.enable_motion()
+        self.recorder.annotate(tare=self.admittance.tare_record())
+        if self._off_at == "move" and self._keep_lit() and not self._forage_on():
+            self.admittance.notify_moved(MOVE_ONSET_M, self._cue_out)
         self.safety.start()
         self.response_timeout.start()
         self._session_live = True
@@ -336,6 +364,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.get_logger().info("Free move: the arm follows the hand until Stop.")
         if self._long_move_on():
             self.long_move.start(self._on_long_move)
+
+    def _cue_out(self):
+        """ring_cue.off_at move: he has started (the arm moved MOVE_ONSET_M): the go cue's light goes out."""
+        if self._session_live and not self._trial_ending:
+            self.ring.show("off")
+            self.recorder.mark("cue_off", MOVE_ONSET_M)
 
     def _smartpad_ok(self) -> bool:
         """Check the task's six-axis stiffness diagonal before opening the response window."""
@@ -431,14 +465,31 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.end_cue.start()
             self.switch_to_joint.start()
             return
-        # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
-        self.get_logger().info("Session over. The arm holds; waiting for release before reset."
-                               if reason == "session_end" else "The arm holds; waiting for release before reset.")
+        # A completed session or a reach: the arm holds where it is, then parks -- after snatch_after_sec,
+        # taking the apple from the hand (snatch), or once the hand lets go.
         if reason in ("choice", "choice_unrewarded", "reach", "reach_wrong", "forage_done"):
             self.end_cue.start()
         self._end_tone_pending = reason == "session_end"
+        if self._snatch:
+            self.get_logger().info(f"The arm holds {self._snatch_sec:g} s, then parks (snatch).")
+            self.recorder.mark("snatch_wait", self._snatch_sec)
+            self.snatch_wait.set_duration(max(0.02, self._snatch_sec))
+            self.snatch_wait.start()
+            return
+        self.get_logger().info("Session over. The arm holds; waiting for release before reset."
+                               if reason == "session_end" else "The arm holds; waiting for release before reset.")
         self.recorder.mark("release_wait")
         self.force_release.start()
+
+    def on_snatch(self):
+        """force_release.snatch: the outcome cue has had its time: leave now, at the quick retreat's speed,
+        whether or not the hand still holds the apple."""
+        if self._stopping:
+            return
+        self.recorder.mark("snatch")
+        self.ring.show("off")
+        self.move_park.retreat()
+        self.switch_to_joint.start()
 
     def on_force_released(self):
         self.recorder.mark("released")
@@ -515,6 +566,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.safety.stop()
         self.admittance.stop()
         self.force_release.stop()
+        self.snatch_wait.stop()
         self.ring.show("off")
         if self.move_to_start.active():           # still on the joint controller
             self.move_to_start.cancel()
@@ -527,6 +579,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _reload_live(self):
         for cue in (self.go_cue, self.end_cue):
             cue.reload()
+        self._read_trial_end()
         self.ring.reload()
         self.quiet_window.set_duration(float(get_required_param(self, "quiet_window_sec")))
         self.quiet_window.reload()

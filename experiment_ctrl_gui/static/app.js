@@ -35,7 +35,7 @@ const STEP_LABEL = {
   trial_start: "start", at_start: "at start", quiet_end: "quiet", cue_go: "go cue", armed: "armed",
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze active", checkpoint: "checkpoint",
-  goal: "goal / timeout", release_wait: "wait for release", released: "released", threshold: "threshold",
+  goal: "goal / timeout", release_wait: "hold", released: "to park", threshold: "threshold",
   session_end: "session ended", grasp_wait: "wait for grasp", grasp: "grasped", reach: "reach", choice: "choice",
   grip: "grip", zone: "zone", forage_done: "all found",
 };
@@ -59,6 +59,10 @@ const PHASE_TEXT = {
   grasp_wait: "Waiting for grasp", grasp: "Grasp detected. Waiting to apply perturbation",
   grasp_timeout: "No grasp detected. Resetting",
   stop_requested: "Stop requested. Ending trial and moving to park",
+  // force_release.snatch: the hold after the outcome cue, then the arm leaves whether or not he lets go.
+  snatch_wait: "Outcome cue. The arm leaves in a moment", snatch: "Moving to park (snatch)",
+  // ring_cue.off_at move: the go cue's light stays on until he starts moving.
+  cue_off: "Moving. Go cue off",
   closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
   cue_colour: null, reversal: null,   // the Color Rule's cue and reversal marks, just before `target`
 };
@@ -70,11 +74,11 @@ const PHASE_TEXT_BY_EXP = {
                move_start: "moving", move_end: "Free movement within the workspace",
                long_move: "Long movement rewarded" },
   move_vertical: { session_end: "Session ended. Waiting for release",
-                   release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
+                   release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   move_rails: { session_end: "Session ended. Waiting for release",
-                release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
+                release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   move_horizontal: { session_end: "Session ended. Waiting for release",
-                     release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
+                     release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   n_choice: { release_wait: "Waiting for release", armed: "Waiting for a choice",
               choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
   colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
@@ -85,7 +89,7 @@ const PHASE_TEXT_BY_EXP = {
             response_timeout: "Time up. Waiting for release", release_wait: "Waiting for release" },
   move_free: { target: "Cue lit", armed: "Waiting for a reach", grip: "Reaching", jump: "Apple jumped",
                jump_end: "Waiting for a reach", jump_skipped: null, bump: "Bump", bump_end: "Reaching",
-               reach: "Reach rewarded. Waiting for release", reach_wrong: "Reach outside the target. No reward. Waiting for release",
+               reach: "Reach rewarded", reach_wrong: "Reach outside the target. No reward",
                release_wait: "Waiting for release" },
   reach_map: { armed: "Mapping reach in the frontal plane", session_end: "Session ended. Waiting for release",
                release_wait: "Waiting for release", move_start: "moving", move_end: "Mapping reach in the frontal plane",
@@ -106,7 +110,8 @@ const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Color Rul
                       reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
                       apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
                       grasp: "Grasp", virtual_fixtures: "Fixture", free_reach: "Reach", perturb: "Perturbations", grip: "Grip",
-                      forage: "Environment", warm: "Warm-zone cue", probe: "Probe trials" };
+                      forage: "Environment", warm: "Warm-zone cue", probe: "Probe trials",
+                      ring_cue: "Go cue", force_release: "After the outcome" };
 // mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
 // interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
 function rewardVolume(ms, count = 1, gap = 0) {
@@ -431,6 +436,11 @@ function fmtDur(sec) {
 }
 // The run bar while a run goes: how long, and the juice given so far (from the run monitor's trials).
 function renderRunStats() {
+  // The Session view's experiment clock ticks with every status poll.
+  document.querySelectorAll(".exp-clock[data-t0]").forEach((c) => {
+    const t1 = c.dataset.t1 ? Number(c.dataset.t1) : Date.now() / 1000;
+    c.textContent = fmtDur(t1 - Number(c.dataset.t0));
+  });
   const a = S.app, el = $("#run-stats"); if (!a || !el) return;
   const r = a.runner, on = r.state !== "idle" && r.started_at;
   if (!on) { el.innerHTML = ""; return; }
@@ -452,6 +462,9 @@ function renderStatus() {
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip" || (cur === "response_timeout" && key === "maze")) cur = "goal";
   if (cur === "reach_wrong") cur = "reach";
+  if (cur === "snatch_wait") cur = "release_wait";      // force_release.snatch: the hold, then the arm leaves
+  if (cur === "snatch") cur = "released";
+  if (cur === "cue_off") cur = "armed";
   if (cur === "choice_unrewarded") cur = "choice";
   if (cur === "early_touch" || cur === "response_timeout") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
@@ -1377,7 +1390,15 @@ function renderMonitor() {
   const juice = juiceOf(d);
   const latency = median(rows.slice(-10).map((r) => num(r.outcome_latency_s)));
   const misses = rows.filter((r) => ["response_timeout", "timeout", "early_touch"].includes(r.outcome)).length;
+  // The experiment clock: since Start while the run goes (the run bar's ⏱, ticking: renderRunStats), else the
+  // finished run's first trial to its last.
+  const started = d.running && S.app && S.app.runner.started_at;
+  const t0 = started || num(all[0].t_start), tEnd = d.running ? NaN : num(last.t_end);
+  const clock = Number.isFinite(t0)
+    ? `<span class="exp-clock" data-t0="${t0}"${d.running ? "" : ` data-t1="${Number.isFinite(tEnd) ? tEnd : t0}"`}>${
+      fmtDur((d.running ? Date.now() / 1000 : (Number.isFinite(tEnd) ? tEnd : t0)) - t0)}</span>` : "–";
   const row1 = [
+    ["Experiment time", clock, "", "Since Start was pressed (a finished run: its first trial to its last)"],
     [session ? "Sessions" : "Trials", rows.length],
     session ? ["Rewards", rows.reduce((sum, r) => sum + (num(r.n_rewards) || 0), 0)]
             : ["Rewarded · last 20", recent.length ? `${rewarded}/${recent.length}` : "–"],

@@ -85,6 +85,11 @@ class ParkMove(MoveToPositionJointSpace):
         self._penalty = max(0.0, float(sec))
         self._retreat = True
 
+    def retreat(self) -> None:
+        """Make the next park move a quick retreat (move_to_park.early_touch_speed_scale), with no time-out:
+        the snatch after a trial's outcome (force_release.snatch), taking the apple from the hand."""
+        self._retreat = True
+
     def start(self) -> None:
         if self._scale_after is not None and not self._retreat:   # an earlier retreat was cut short (Stop)
             self._speed_scale, self._scale_after = self._scale_after, None

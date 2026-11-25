@@ -146,7 +146,8 @@ CARDS = {
     "restricted_move": ("Restricted Move", "Move freely along one rail. Completing the timed session earns a reward."),
     "cued_reach": ("Cued Reaches", "One reach per trial: along a rail, or free in 3-D with jumps and bumps."),
 }
-_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m", "centre_out.wrong_timeout_sec")
+_CUED_TASK = ("centre_out.max_repeats", "centre_out.end_tol_m", "centre_out.wrong_timeout_sec",
+              "ring_cue.off_at", "force_release.snatch", "force_release.snatch_after_sec")
 _CENTRE_OUT_VERTICAL = _CENTRE_OUT_HORIZONTAL = _CENTRE_OUT      # the same modes on either rail
 EXPERIMENTS += [
     Experiment(
@@ -258,7 +259,8 @@ EXPERIMENTS += [
                        "perturb.probability", "perturb.jump_m", "perturb.jump_angles_deg",
                        "perturb.jump_delay_min_sec", "perturb.jump_delay_max_sec", "perturb.bump_force_n",
                        "perturb.bump_sec", "perturb.bump_angles_deg", "perturb.bump_at_m", "perturb.bump_depth_force_n",
-                       "perturb.bump_depth_rules"),
+                       "perturb.bump_depth_rules", "ring_cue.off_at", "force_release.snatch",
+                       "force_release.snatch_after_sec"),
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
@@ -433,7 +435,11 @@ LABELS: Dict[str, str] = {
     "quiet_ramp.back_sec": "Staircase: step down after an early touch [s]",
     "quiet_ramp.min_sec": "Staircase: shortest [s]",
     "quiet_ramp.max_sec": "Staircase: longest [s]",
-    "move_to_park.early_touch_speed_scale": "Park speed after an early touch",
+    "move_to_park.early_touch_speed_scale": "Park speed, quick retreat (early touch, wrong choice, snatch)",
+    "ring_cue.off_at": "Go cue light goes out at",
+    "force_release.snatch": "Take the apple back after the outcome (snatch)",
+    "force_release.snatch_after_sec": "Snatch after the outcome cue [s]",
+    "free_move.tare_tol_n": "Tare check: hand on the apple above [N]",
     "quiet_gate.flashes": "Early-touch flashes",
     "perturb_start.polar_r_m": "Perturbation distance [m]",
     "perturb_start.polar_theta_deg": "Perturbation direction [deg]",

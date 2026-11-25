@@ -1734,6 +1734,16 @@ does the IK; ROS only moves the target point.
     below it moves nothing; above it the force counts, in full from twice the threshold. It also keeps
     the arm's own small model errors from driving the motion (below). Raise it if the arm creeps or
     oscillates when nobody touches it; lower it for a lighter start.
+  - `tare_tol_n` (default **2 N**, live): **the tare check.** The resting force subtracted from every
+    reading (the tare) is measured each trial while the arm holds at the start before the go. A hand
+    already resting on the apple then becomes part of the "zero", and once he lets go the arm reads his
+    missing hand as a push the other way and **creeps off by itself** (seen with the monkey on the
+    horizontal rail, 25 Nov; human testers keep their hands off until the go). The start pose is the same
+    every trial, so the arm's own reading there barely changes: a trial's tare more than `tare_tol_n` from
+    the median of the run's last 9 is taken for a hand and the median is used instead, with a warning in
+    the log ([`tare_check.py`](sinthlab_bringup/sinthlab_bringup/helpers/tare_check.py)). The first two
+    trials of a run use their own. Each trial's sidecar records it (`tare`: measured, used, the usual one,
+    which was kept). 0 = off.
   - `max_speed_mps`: speed cap, 0.35 m/s by default.
   - `accel_limit_mps2`: **smoothness** — how fast the speed may change (default 4 m/s²; 0 = off).
     The force reading is noisy and flickers across the threshold; without this the speed follows
@@ -1959,8 +1969,11 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
 
 2. **Reaching an end** (within `end_tol_m` of it):
    - a **goal end**: the confirmation tone and the reward pulse, and the **reward cue** (the whole ring
-     **white**, `ring_cue.colours.reward`, the same in every task) until the hand lets go. Then, as any
-     trial: the arm holds where it is, the **release wait** (the ring goes dark at release), **park**.
+     **white**, `ring_cue.colours.reward`, the same in every task). The arm holds where it is for
+     `force_release.snatch_after_sec` (0.5 s) and then **parks at once**, taking the apple from his hand
+     at the quick retreat's speed (`force_release.snatch: true`, the default in every Cued Reaches
+     variant: he does not have to let go). With `snatch: false` it holds until the hand lets go (the
+     release wait, the ring dark at release), as in the other free-move tasks.
    - the **other end**, Cued, can correct: nothing; the trial goes on.
    - the **other end**, Cued, one choice: the same confirmation tone without a reward, the ring dark, and
      the arm **parks at once**: no release wait, the quick retreat used after an early touch
@@ -1968,6 +1981,12 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
 3. The next trial starts from park, as always.
 4. **No reach** within `response_timeout_sec` (30 s) ends the trial too, without reward. Moving the arm
    is not enough here: the response is the reach. `session_sec` does not apply.
+
+**The go cue's light** (`ring_cue.off_at`, live, every free-move task but Foraging): `go` puts it out with
+the go tone, so the go is light-off plus the tone; `move` (the Cued Reaches default) leaves it lit through
+the go tone until the arm has moved 1 cm (event `cue_off`), so a monkey who does not start at once still
+has the lit cue to look at rather than a dark ring, and the go is the tone; `end` leaves it lit until the
+trial's outcome (useful in Cued, can correct, where the cue still matters after a wrong end).
 
 The position is the arm's own along the rail, where it rests — not the equilibrium — so a reach counts
 only when the arm is really there. All of it is live, in the `centre_out` block:

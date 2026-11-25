@@ -30,6 +30,9 @@ WHAT KEEPS IT SAFE (none of these is a boundary on where the arm may go)
                    speed changes. 0 = off.
   * tare           the force at rest (the gravity-model residual, ~5 N here) is measured during
                    tare_sec at the start of each trial and subtracted, so a resting arm does not creep.
+                   Checked against the run's usual tare (tare_tol_n, helpers/tare_check.py): a hand
+                   resting on the apple during the quiet window would otherwise become the zero, and the
+                   arm would creep off by itself once he lets go.
   * deadband_n     a THRESHOLD to START: a (tared) force below it moves a resting arm nothing, so
                    force-reading noise cannot creep it. Above it the WHOLE force counts -- it is not
                    subtracted from every push -- with a short ramp (one dead band wide) so the start is
@@ -143,7 +146,7 @@ from sinthlab_bringup.helpers import rail_shapes, switch_rails
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers.hand_force import HandForce
 from sinthlab_bringup.helpers.free_reach import min_jerk
-from sinthlab_bringup.helpers import forage
+from sinthlab_bringup.helpers import forage, tare_check
 from sinthlab_bringup.helpers.start_grid import StartGrid
 
 HOLD_FRACTION = 0.5     # once moving, the force counts down to this fraction of deadband_n (resting noise ~1.25 N p90)
@@ -257,6 +260,9 @@ class AdmittanceMoveAction:
         self._v = np.zeros(3)                           # equilibrium velocity (accel-limited)
         self._tare = np.zeros(3)
         self._tare_samples = []
+        self._tare_history = []                         # the run's recent tares (helpers/tare_check.py)
+        self._tare_rec = {}                             # this trial's tare, for its sidecar
+        self._moved_cb = None                           # notify_moved(): (distance [m], callback), one-shot
         self._rest_offset = np.zeros(3)                 # equilibrium - arm at rest (gravity sag), from the tare
         self._pushing = False
         self._v_arm = np.zeros(3)                       # the arm's velocity, smoothed (the trail)
@@ -304,6 +310,8 @@ class AdmittanceMoveAction:
         self._accel = max(0.0, float(get_required_param(n, p + "accel_limit_mps2")))
         self._tau = max(0.0, float(get_required_param(n, p + "force_filter_tau_sec")))
         self._tare_sec = max(0.0, float(get_required_param(n, p + "tare_sec")))
+        self._tare_tol = (max(0.0, float(get_required_param(n, p + "tare_tol_n")))
+                          if n.has_parameter(p + "tare_tol_n") else 0.0)
         self._trail = max(0.0, float(get_required_param(n, p + "trail_m")))
         self._low_force = max(0.0, float(get_required_param(n, p + "low_force_n")))
         self._low_damping = max(self._damping, float(get_required_param(n, p + "low_force_damping_ns_per_m")))
@@ -335,19 +343,23 @@ class AdmittanceMoveAction:
         self._push = None
         self._vp_last = np.zeros(3)
         self._f_hand[:] = 0.0
+        self._moved_cb = None
         self._t_start = time.monotonic()
 
     def enable_motion(self) -> None:
         """Finish the tare and let the arm move. Call at the go cue."""
-        if self._tare_samples:
-            tare = np.mean(self._tare_samples, axis=0)
-            if np.linalg.norm(tare) <= self._tare_max:
-                self._tare = tare
-            else:   # someone was pushing during the tare: keep the previous one rather than learn the push
-                self._node.get_logger().warn(
-                    f"Free move: resting force {np.round(tare, 1)} N exceeds tare_max_n "
-                    f"({self._tare_max:g} N) -- was the arm being touched? Keeping the previous tare "
-                    f"{np.round(self._tare, 1)} N.")
+        raw = np.mean(self._tare_samples, axis=0) if self._tare_samples else None
+        self._tare, self._tare_rec = tare_check.choose(raw, self._tare_history, self._tare_tol, self._tare_max,
+                                                       self._tare)
+        if self._tare_rec.get("over_max"):   # someone was pushing during the tare: do not learn the push
+            self._node.get_logger().warn(
+                f"Free move: resting force {np.round(raw, 1)} N exceeds tare_max_n ({self._tare_max:g} N) -- was "
+                f"the arm being touched? Using {np.round(self._tare, 1)} N.")
+        elif self._tare_rec["kept"] == "usual":
+            self._node.get_logger().warn(
+                f"Free move: resting force {np.round(raw, 1)} N is {self._tare_rec['off_n']:g} N from this run's "
+                f"usual {np.round(self._tare, 1)} N (tare_tol_n {self._tare_tol:g}) -- a hand on the apple? "
+                "Using the usual one.")
         if self._eq is not None and self._p_meas is not None:
             off = self._eq - self._p_meas                 # the resting sag under the gravity residual
             n = float(np.linalg.norm(off))
@@ -360,9 +372,19 @@ class AdmittanceMoveAction:
         self._max_exc = 0.0
         self._moving = True
 
+    def tare_record(self) -> dict:
+        """This trial's tare for its sidecar: measured, used, the run's usual one and which was kept."""
+        return dict(self._tare_rec)
+
+    def notify_moved(self, distance_m: float, callback) -> None:
+        """Call callback() once, as soon as the arm has moved distance_m from where it was at the go cue
+        (enable_motion). Dropped by start() and stop(). Call after enable_motion()."""
+        self._moved_cb = (float(distance_m), callback)
+
     def stop(self) -> None:
         """Stop moving. The CLIK keeps the last equilibrium, so the arm holds where it is."""
         self._active = self._moving = False
+        self._moved_cb = None
         self._disp = None
         self._push = None
 
@@ -562,6 +584,9 @@ class AdmittanceMoveAction:
 
         if self._p_go is not None:
             self._max_exc = max(self._max_exc, float(np.linalg.norm(self._p_meas - self._p_go)))
+            if self._moved_cb is not None and self._max_exc >= self._moved_cb[0]:
+                callback, self._moved_cb = self._moved_cb[1], None
+                callback()
         k = 1.0 if self._tau <= 0.0 or dt <= 0.0 else dt / (self._tau + dt)
         self._f_hand += k * ((f_base - self._tare) - self._f_hand)
         if self._disp is not None:                        # a jump or a bump: the equilibrium is driven

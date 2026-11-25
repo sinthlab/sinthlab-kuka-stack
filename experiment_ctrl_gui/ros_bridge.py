@@ -358,6 +358,12 @@ class DemoBridge:
                 self.trial_rows.append(row)
                 self._metas.append(self._meta)
             self._meta = None
+        if self._effective.get("force_release.snatch") and not (self._stopped or self._paused):
+            sec = float(self._effective.get("force_release.snatch_after_sec", 0.5))
+            self._phase_to("snatch_wait", sec, f"The arm holds {sec:g} s, then parks (snatch).")
+            if not self._sleep(run_id, sec):
+                return False
+            self._phase_to("snatch", None, "Snatch: parking now, with or without his hand.")
         self._phase_to("recover_start", None, "Parking.")
         return self._sleep(run_id, 1.5)
 
@@ -367,8 +373,14 @@ class DemoBridge:
                 self._phase_to("cue_preview", None, "Cue light on. Waiting before Go.")
                 if not self._sleep(run_id, 0.30):
                     return False
-            self._phase_to("cue_go", None, "Cue light off. Go tone played if enabled.")
+            keep = self._effective.get("visual_cue.enabled") and str(self._effective.get("ring_cue.off_at", "go")) != "go"
+            self._phase_to("cue_go", None, "Go tone played; the cue stays lit." if keep
+                           else "Cue light off. Go tone played if enabled.")
             self._phase_to("armed", None, "Ready for movement.")
+            if keep and str(self._effective.get("ring_cue.off_at")) == "move":
+                if not self._sleep(run_id, random.uniform(0.3, 1.2)):
+                    return False
+                self._phase_to("cue_off", 0.01, "He has started: the go cue's light goes out.")
             return True
 
         if run_id == self._run_id:
