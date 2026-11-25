@@ -1,0 +1,42 @@
+# Runs the ROS-free tests and the parameter-docs check on every pull request and every push to main.
+# The tests import only numpy, scipy and pyyaml, so no ROS install is needed here.
+# The rig still has to test anything that moves the arm; see the PR template.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"  # the Python of Ubuntu 24.04 and ROS 2 Jazzy, as on the rig
+
+      - name: Install test dependencies
+        run: python -m pip install numpy scipy pyyaml pytest
+
+      - name: Unit tests (no ROS)
+        run: |
+          dirs=""
+          for d in sinthlab_bringup/test analysis; do
+            [ -d "$d" ] && dirs="$dirs $d"
+          done
+          if [ -z "$dirs" ]; then
+            echo "No test folders yet."
+            exit 0
+          fi
+          set +e
+          python -m pytest -q $dirs
+          code=$?
+          # Exit code 5 means no tests were collected, which is fine.
+          if [ $code -eq 5 ]; then exit 0; fi
+          exit $code
+
+      - name: Every YAML parameter has a description
+        run: python experiment_ctrl_gui/check_param_docs.py
