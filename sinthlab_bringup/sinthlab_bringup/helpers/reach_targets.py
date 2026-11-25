@@ -8,16 +8,21 @@ rail_min_m end. centre_out.target picks the trial's goal:
     restricted  RESTRICTED CUED: one end per trial, drawn at random  (the cued end's quarter lit; the arm
                 (never more than max_repeats of the same end in a     can only move toward it)
                 row), the other half of the rail CLOSED
-    cued        CUED END: drawn the same way, the whole rail OPEN:   (the cued end's quarter lit; a real
-                only the cued end pays, the other is reach_wrong      choice)
+    retry       CUED, CAN CORRECT: drawn the same way, the whole     (the cued end's quarter lit; the
+                rail OPEN; reaching the other end does nothing        first training step with both
+                (event wrong_end) and he may go on to the cued end    directions open)
+    cued        CUED, ONE CHOICE: drawn the same way, the whole rail (the cued end's quarter lit; a real
+                OPEN: only the cued end pays; the other end is        choice)
+                reach_wrong, which ends the trial and parks at once
     rule        the colour rule: a red or blue ring means one end or (helpers/rule_schedule.py; the whole
                 the other, and the mapping reverses unsignaled         rail stays open, it is a choice)
 
-Changed between trials (it is live), so a session can go restricted cued -> cued end -> either.
+Changed between trials (it is live), so a session can go restricted cued -> can correct -> one choice -> either.
 
 Restricted cued closes the other half of the rail: the admittance clamps the equilibrium between the
 centre and the cued end, so the arm can only move toward it -- the cue always matches the one open
-direction. Cued end leaves the whole rail open: going the wrong way is reach_wrong (no reward).
+direction. The two cued modes leave the whole rail open: going the wrong way is wrong_end (can correct: the
+trial goes on) or reach_wrong (one choice: no reward, the trial ends). outcome() decides which.
 """
 from __future__ import annotations
 
@@ -25,13 +30,22 @@ import random
 from typing import Optional, Sequence, Tuple
 
 RESTRICTED = "restricted"
-CUED_MODES = ("cued", RESTRICTED)     # one end per trial, drawn at random
+RETRY = "retry"                       # cued, can correct: the wrong end does not end the trial
+CUED_MODES = ("cued", RESTRICTED, RETRY)     # one end per trial, drawn at random
 RULE = "rule"      # the colour rule (helpers/rule_schedule.py): drawn by the ReversalSchedule, not here
 
 
 def modes_for(ends: Sequence[str]) -> Tuple[str, ...]:
     """Every centre_out.target value (the same on every rail), in the order the dashboard offers them."""
-    return ("either", RESTRICTED, "cued", RULE)
+    return ("either", RESTRICTED, RETRY, "cued", RULE)
+
+
+def outcome(mode: str, target: Optional[str], end: str) -> str:
+    """What reaching `end` means this trial: "reward" (a goal end), "retry" (the wrong end, can correct:
+    nothing happens, the trial goes on), or "wrong" (the wrong end, one choice: the trial ends unrewarded)."""
+    if target == "either" or end == target:
+        return "reward"
+    return "retry" if mode == RETRY else "wrong"
 
 
 def check_mode(mode: str, ends: Sequence[str]) -> Optional[str]:

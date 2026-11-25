@@ -70,9 +70,9 @@ const PHASE_TEXT_BY_EXP = {
                move_start: "moving", move_end: "Free movement within the workspace",
                long_move: "Long movement rewarded" },
   move_vertical: { session_end: "Session ended. Waiting for release",
-                   release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+                   release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   move_horizontal: { session_end: "Session ended. Waiting for release",
-                     release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Other end reached. No reward. Waiting for release", },
+                     release_wait: "Waiting for release", target: "Go cue lit", armed: "Waiting for a reach", reach: "End reached and rewarded. Waiting for release", reach_wrong: "Wrong end. No reward. Parking", wrong_end: "Wrong end. Waiting for the cued end", },
   n_choice: { release_wait: "Waiting for release", armed: "Waiting for a choice",
               choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
   colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
@@ -1393,9 +1393,10 @@ function renderMonitor() {
     const end = key === "move_horizontal" ? "left" : "up";
     const reaches = rows.filter((r) => r.chosen_end).slice(-LAST_N);
     row2.push([`${end === "left" ? "Left" : "Up"} reaches · last 20`, pct(reaches.filter((r) => r.chosen_end === end).length, reaches.length)]);
-    if (last.paradigm === "cued") {
-      const cued = rows.filter((r) => r.paradigm === "cued" && ["0", "1"].includes(String(r.correct))).slice(-LAST_N);
-      row2.push(["Cued accuracy · last 20", pct(cued.filter((r) => String(r.correct) === "1").length, cued.length)]);
+    if (last.paradigm === "cued" || last.paradigm === "retry") {
+      // The first end reached is the choice in both cued modes (can correct: before any correction).
+      const cued = rows.filter((r) => r.paradigm === last.paradigm && ["0", "1"].includes(String(r.first_correct))).slice(-LAST_N);
+      row2.push(["First choice correct · last 20", pct(cued.filter((r) => String(r.first_correct) === "1").length, cued.length)]);
     }
   } else if (key === "colour_rule") {
     row2.push(["Block", esc(last.block || "–")]);

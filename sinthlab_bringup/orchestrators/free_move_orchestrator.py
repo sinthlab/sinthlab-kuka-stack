@@ -308,6 +308,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         """Centre-out: the arm reached an end of the rail -- the trial's outcome."""
         self._end_trial("reach" if rewarded else "reach_wrong", end)
 
+    def on_wrong_end(self, end: str):
+        """Centre-out, cued, can correct: the arm reached the wrong end. Nothing happens; the trial goes on."""
+        self.recorder.mark("wrong_end", end)
+
+
     def on_go_complete(self):
         if self._stopping:
             return
@@ -317,7 +322,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.response_timeout.start()
         self._session_live = True
         if self._centre_out_on():
-            self.centre_out.start(self.on_reach)
+            self.centre_out.start(self.on_reach, self.on_wrong_end)
             if self.haptic is not None:
                 self.haptic.start()
             self.get_logger().info("Centre-out: reach to the lit end of the rail.")
@@ -421,6 +426,17 @@ class FreeMoveOrchestratorNode(rclpyNode):
                 reason == "response_timeout" and not self._choice_on()):
             if reason == "safety":
                 self.get_logger().error("SAFETY ABORT: parking immediately.")
+            self.switch_to_joint.start()
+            return
+        # A wrong choice under cued, one choice ends the trial at once: no release wait, the quick retreat to
+        # park (as after an early touch) and centre_out.wrong_timeout_sec there.
+        if reason == "reach_wrong" and self.centre_out is not None and self.centre_out.mode() == "cued":
+            timeout = (float(get_required_param(self, "centre_out.wrong_timeout_sec"))
+                       if self.has_parameter("centre_out.wrong_timeout_sec") else 0.0)
+            self.get_logger().info("Wrong choice: no reward, parking now"
+                                   + (f", then {timeout:g} s at park." if timeout > 0 else "."))
+            self.move_park.penalize(timeout)          # the quick retreat, and the time-out (0: none)
+            self.end_cue.start()
             self.switch_to_joint.start()
             return
         # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.

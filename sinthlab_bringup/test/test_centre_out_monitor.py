@@ -142,6 +142,42 @@ def test_cued_end_leaves_the_rail_open_and_pays_only_the_cue(seed):
     assert run_to(node, arm, mon, 0.14 if wrong == "right" else -0.14) == (wrong, False)
 
 
+@pytest.mark.parametrize("seed", range(6))
+def test_can_correct_lets_him_go_on_to_the_cued_end(seed):
+    random.seed(seed)
+    node, arm, mon = horizontal(target="retry")
+    goal = mon.pick_target()
+    assert mon.quarters() == [3 if goal == "left" else 1]
+    assert mon.open_span() is None and mon.closed_end() is None         # both directions open
+    wrong_x, goal_x = (0.14, -0.14) if goal == "left" else (-0.14, 0.14)
+    ends, wrongs = [], []
+    mon.start(lambda end, rewarded: ends.append((end, rewarded)), wrongs.append)
+
+    def at(x):
+        arm.x = x
+        for tick in node.timers:
+            tick()
+    at(wrong_x)
+    at(wrong_x)                       # staying there is one arrival, not many
+    assert ends == [] and len(wrongs) == 1                               # the wrong end: nothing ends
+    at(wrong_x * 12 / 14)             # 3 cm off that end, within twice end_tol_m: not a new arrival yet
+    at(wrong_x)
+    assert len(wrongs) == 1
+    at(0.0)                           # back through the centre, then to the wrong end again
+    at(wrong_x)
+    assert len(wrongs) == 2
+    at(goal_x)                        # then the cued end: the reward
+    assert ends == [(goal, True)] and mon.mode() == "retry"
+
+
+def test_outcome_by_mode():
+    from sinthlab_bringup.helpers.reach_targets import outcome, modes_for
+    assert outcome("retry", "left", "left") == "reward" and outcome("retry", "left", "right") == "retry"
+    assert outcome("cued", "left", "right") == "wrong" and outcome("rule", "left", "right") == "wrong"
+    assert outcome("either", "either", "right") == "reward"
+    assert modes_for(("left", "right")) == ("either", "restricted", "retry", "cued", "rule")
+
+
 def test_either_keeps_the_whole_rail_and_rewards_both():
     node, arm, mon = horizontal(target="either")
     assert mon.pick_target() == "either"
