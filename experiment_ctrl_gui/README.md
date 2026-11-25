@@ -348,7 +348,8 @@ while an experiment runs (here or in a terminal), since a conversion reads and w
 1. **Recordings.** The robot run folder (a list of the runs in `analysis/`, or any path) and the
    Blackrock NSP recording: any one of its files (`.nev`, `.ns1`–`.ns6`) or the folder holding it, on a
    network mount if it lives on the server; empty for a robot-only archive. The sync channels
-   (default `ainp6` = trial start, `ainp7` = trial end, `ainp8` = experiment start; empty = none) and
+   (default `ainp2` = trial start, `ainp3` = trial end, `ainp4` = experiment start; empty = none; an
+   input renamed in Central is still found as `ainpN`, or give its Central label) and
    threshold (2.5 V), and whether to include
    the continuous NSx data and the NEV spikes. **Check recordings** shows what each holds and flags a
    sync channel the recording does not have.
@@ -409,7 +410,7 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | GET | `/api/profile/diff?exp=<exp>` | Save to profile: the profile fields where that task's values in effect differ |
 | POST | `/api/subject` `{subject}` | choose the monkey; its profile applies to every free-move task (refused while a run for another subject is going) |
 | POST | `/api/profile/save` `{values, task_only, exp, note, from_task, reach_map_run}` | write the chosen monkey's profile (a new version); `task_only` = rewards for `exp` only (null = back to the profile's); `from_task` = start from `exp`'s values; `reach_map_run` = keep a record of that Reach Map run with the reach |
-| POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal. With `nsp_sync.enabled`, first sends the cabinet the experiment start pulse (`PULSE <nsp_sync.experiment_start_output> <width>`) and logs when it was sent and the answer |
+| POST | `/api/start` `{experiment}` | launch; refused if anything is running, here or in a terminal |
 | POST | `/api/stop` | the orchestrator ends the trial and parks, then Ctrl-C (again = skip parking) |
 | POST | `/api/live` `{name, value}` | `set_parameters_atomically` on the running orchestrator, with any linked parameter in the same call |
 | POST | `/api/validate` | `analysis/validate_recording.py --folder <this run's folder>`, output to the log |
