@@ -21,6 +21,9 @@
       move_m: 0.03  # Displacement that ends the trial during the quiet window [m]
       force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
       penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
+      flash_colour: [255, 200, 0, 0]  # early-touch cue: the whole ring flashes this colour (yellow, used for nothing else), RGBW at full value; visual_cue.brightness sets how bright
+      flashes: 2  # how many flashes on an early touch, with the low tone; 0 = no visual cue
+      flash_sec: 0.15  # each flash is on this long, then off this long [s]
 
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
     # is let go, within a box around the start (free_move.box_*). No goal -- for getting used to holding and moving the arm. It
@@ -97,10 +100,11 @@
       joint_move_tolerance: 0.15  # Maximum joint error at the target [rad]
       wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
       cartesian_move_tolerance: 0.05  # Maximum distance from the park target at arrival [m]
-      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed, per joint [deg/s]
-      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
-      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      move_to_pos_v_max: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 4.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 20.0  # joint jerk limit [rad/s^3]
       speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      early_touch_speed_scale: 1.25  # Speed multiplier for the park move after an early touch only (0.25-2), so the arm leaves the hand at once; the next park move is back at speed_scale
       first_move_speed_scale: 0.5  # Speed multiplier for the initial move from ready to park. This move crosses a straight elbow posture.
       hold_sec: 2.0  # Time at park before moving to the next trial’s start [s]
       debug_log_enabled: false  # Enable periodic debug logging for this action

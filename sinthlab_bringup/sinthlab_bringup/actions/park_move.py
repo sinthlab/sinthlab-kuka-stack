@@ -12,6 +12,10 @@ impedance cannot follow. A park pose on the other side from the start is refused
 
 The joint-space move between them must also keep the end effector above the floor all the way
 (helpers/floor.py) -- checked at start-up and on every live edit of either pose (check_live).
+
+AFTER AN EARLY TOUCH (penalize) the park move runs at move_to_park.early_touch_speed_scale instead of
+speed_scale (live, 1.25 by default): the arm leaves the hand at once rather than lingering. Only that one
+move; the next park move is back at speed_scale.
 """
 from __future__ import annotations
 
@@ -40,6 +44,8 @@ class ParkMove(MoveToPositionJointSpace):
         # The wait at park before the next trial's move to the start (live: move_to_park.hold_sec).
         self._then: Optional[Callable[[], None]] = None
         self._penalty = 0.0             # extra wait at park before the next trial (early touch)
+        self._retreat = False           # the next park move is an early touch's: early_touch_speed_scale
+        self._scale_after: Optional[float] = None   # speed_scale to restore once that move is done
         self._hold = WaitAction(node, duration_sec=float(get_required_param(node, "move_to_park.hold_sec")),
                                 on_complete=self._held_done, name="park_hold")
         start = get_required_param(node, "move_to_start.target_joint_position")
@@ -74,8 +80,22 @@ class ParkMove(MoveToPositionJointSpace):
         self._hold.set_duration(float(get_required_param(self._node, "move_to_park.hold_sec")))
 
     def penalize(self, sec: float) -> None:
-        """Add a time-out of `sec` to the NEXT wait at park (a trial broken off by an early touch)."""
+        """An early touch: add a time-out of `sec` to the NEXT wait at park, and make the next park move a
+        quick retreat (move_to_park.early_touch_speed_scale)."""
         self._penalty = max(0.0, float(sec))
+        self._retreat = True
+
+    def start(self) -> None:
+        if self._scale_after is not None and not self._retreat:   # an earlier retreat was cut short (Stop)
+            self._speed_scale, self._scale_after = self._scale_after, None
+        if self._retreat and self._on_first is None:
+            self._retreat = False
+            fast = float(get_required_param(self._node, "move_to_park.early_touch_speed_scale"))
+            if self._scale_after is None:
+                self._scale_after = self._speed_scale
+            self._speed_scale = fast
+            self._node.get_logger().info(f"Early touch: parking at speed scale {fast:g}.")
+        super().start()
 
     def wait_then(self, fn: Callable[[], None]) -> None:
         """Wait hold_sec at park -- plus any time-out from penalize() -- then call fn (the next trial)."""
@@ -110,12 +130,16 @@ class ParkMove(MoveToPositionJointSpace):
         self.start()
 
     def set_speed_scale(self, scale: float) -> None:
-        if self._on_first is None:
+        if self._scale_after is not None:   # during an early touch's retreat: applies from the next move
+            self._scale_after = float(scale)
+        elif self._on_first is None:
             super().set_speed_scale(scale)
         else:                        # the slow first move keeps its speed; the change applies after it
             self._normal_scale = float(scale)
 
     def _done(self) -> None:
+        if self._scale_after is not None:   # the retreat is over: back to speed_scale
+            self._speed_scale, self._scale_after = self._scale_after, None
         if self._on_first is not None:
             on_parked, self._on_first = self._on_first, None
             self._speed_scale = self._normal_scale

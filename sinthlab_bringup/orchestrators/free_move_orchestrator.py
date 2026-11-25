@@ -373,10 +373,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
         without reward, park, and add the penalty wait before the next trial."""
         self.go.cancel()
-        self.go.warn_early_touch()
         self.get_logger().warn(f"EARLY TOUCH ({why}): no reward, parking, then a penalty wait.")
         self.move_park.penalize(float(get_required_param(self, "quiet_gate.penalty_sec")))
         self._end_trial("early_touch")
+        self.go.warn_early_touch()         # after _end_trial darkens the ring, so the flashes are not cut short
 
     def on_safety_trip(self, reason: str):
         self._end_trial("safety")

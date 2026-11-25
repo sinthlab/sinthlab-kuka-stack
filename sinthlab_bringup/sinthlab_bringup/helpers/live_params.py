@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Tuple
 _COMMON = [
     "quiet_window_sec",            # pause at the start pose before the go cue
     "move_to_park.hold_sec",       # wait at park before each trial's move to the start
+    "move_to_park.early_touch_speed_scale",   # the quick retreat after an early touch (that move only)
     # The park pose: only the joint controller drives the arm there, so it can change between trials
     # anywhere. Checked like any pose, and its elbow (A4) must bend the same way as the start's.
     "move_to_park.target_joint_position",
@@ -155,6 +156,9 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "quiet_gate.move_m": (0.005, 0.2),
     "quiet_gate.force_n": (1.0, 50.0),
     "quiet_gate.penalty_sec": (0.0, 120.0),
+    "quiet_gate.flashes": (0, 5),
+    "quiet_gate.flash_sec": (0.05, 1.0),
+    "move_to_park.early_touch_speed_scale": (0.25, 2.0),
     "response_timeout_sec": (2.0, 600.0),
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
@@ -337,6 +341,7 @@ def paradigm_of(name: str) -> Optional[Tuple[str, ...]]:
 STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
     "*.speed_scale": 0.05,
+    "*_speed_scale": 0.05,
     "grasp.bump_speed_scale": 0.05,
     "centre_out.max_repeats": 1,
     "long_move.min_m": 0.01,
