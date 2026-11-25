@@ -11,8 +11,9 @@
 //   openscad -D 'part="assembly"'  -o reward_and_sync_box.stl  reward_and_sync_box.scad
 //   openscad -D 'part="print_box"' -o print_box.stl            reward_and_sync_box.scad
 //   openscad -D 'part="print_lid"' -o print_lid.stl            reward_and_sync_box.scad
+//   openscad -D 'part="print_caddy"' -o print_caddy.stl        reward_and_sync_box.scad
 
-part = "assembly";  // front | rear | assembly | print_box | print_lid | print_assembly
+part = "assembly";  // front | rear | assembly | print_box | print_lid | print_caddy | print_assembly
 
 $fn = 96;
 
@@ -185,6 +186,27 @@ SSR_AT = [32, 74];                     // SSR centre on the floor
 PB_STACK_AT = [75, 40];                // Beckhoff stack corner; rail runs front to back
 PB_RAIL_HOLES = [40, 120];             // DIN rail screw holes, y, on the rail's centre line
 
+// ---- the side caddy: holds the StarTech ICUSB422IS (USB <-> RS-422) beside the box ------------------
+// A separate part, held by the lid's own two left-hand screws: its LIP lies on top of the lid's left edge,
+// the screws pass through lip, lid and into the corner posts. Below the lip a side plate rests against the
+// box's left wall and carries a TRAY standing out from it. The adapter lies flat in the tray, its 118 mm
+// length running out from the box, so its cables leave its long edges straight front and back: the USB
+// cable out of the FRONT, the RS-422 terminal cable out of the BACK. Each end wall has a cable notch open
+// at the top (the cable drops in) and a tongue with cable-tie slots beyond it (the strain relief). Open
+// top, with a lip along the outer end that the adapter tucks under.
+SE = [118, 64, 23];                    // StarTech ICUSB422IS: length, width, height (its spec sheet)
+CAD_CLR = 1.0;                         // clearance round the adapter [mm]
+CAD_WALL = 2.5;                        // walls, floor, side plate [mm]
+CAD_GAP = 0.3;                         // side plate to box wall [mm]
+CAD_LIP_T = 3;                         // the lip on the lid [mm]
+CAD_LIP_IN = 13;                       // how far the lip reaches in over the lid, past the screw holes [mm]
+CAD_NOTCH = [40, 6];                   // cable notch in each end wall: width, and its bottom above the floor [mm]
+CAD_TONGUE = 18;                       // the strain-relief tongue beyond each end wall [mm]
+TIE_SLOT = [4.5, 2.2];                 // cable-tie slots through each tongue, a pair across the cable [mm]
+TIE_SPACING = 14;                      // between the two slots of a pair [mm]
+CAD_KEEP = 6;                          // the outer end's retaining lip, reaching in over the adapter [mm]
+CAD_IN = [SE[0] + 2 * CAD_CLR, SE[1] + 2 * CAD_CLR, SE[2] + 2 * CAD_CLR];   // the tray's inside: out, along, up
+
 module wall_labels(items) {
     for (it = items) if (it[0] != "")
         translate([it[1], it[4]]) text(it[0], size = LABEL_SIZE, font = FONT, halign = "center");
@@ -235,9 +257,44 @@ module print_lid() {   // plain cover with the four screw holes
     }
 }
 
+// The side caddy, in box coordinates (the box's left wall is x = 0, its outside x < 0).
+module side_caddy() {
+    z_top = PB_H + PB_T;                                  // the lid's top face: the lip sits on it
+    z_fl  = z_top - CAD_IN[2];                             // the tray floor's top
+    x_pl  = -CAD_GAP - CAD_WALL;                           // the side plate's outer face
+    x_out = x_pl - CAD_IN[0] - CAD_WALL;                   // the tray's outer end
+    y0    = (PB_D - CAD_IN[1]) / 2;                        // the tray's inside, front
+    y1    = y0 + CAD_IN[1];                                // and back
+    difference() {
+        union() {
+            translate([x_pl, 0, z_top]) cube([-x_pl + CAD_LIP_IN, PB_D, CAD_LIP_T]);                       // lip
+            translate([x_pl, 0, z_fl - CAD_WALL]) cube([CAD_WALL, PB_D, z_top + CAD_LIP_T - z_fl + CAD_WALL]);  // side plate
+            translate([x_out, y0 - CAD_WALL - CAD_TONGUE, z_fl - CAD_WALL])                                 // floor + tongues
+                cube([x_pl - x_out, CAD_IN[1] + 2 * (CAD_WALL + CAD_TONGUE), CAD_WALL]);
+            for (y = [y0 - CAD_WALL, y1]) translate([x_out, y, z_fl]) cube([x_pl - x_out, CAD_WALL, CAD_IN[2]]);  // end walls
+            translate([x_out, y0, z_fl]) cube([CAD_WALL, CAD_IN[1], CAD_IN[2]]);                            // outer end
+            hull() {                                                                                       // its retaining lip
+                translate([x_out, y0, z_top - 1.2]) cube([CAD_WALL + CAD_KEEP, CAD_IN[1], 1.2]);
+                translate([x_out, y0, z_top - 1.2 - CAD_KEEP]) cube([CAD_WALL, CAD_IN[1], 0.01]);
+            }
+        }
+        for (y = [PB_T + PB_POST / 2, PB_D - PB_T - PB_POST / 2])                                         // lid screws
+            translate([PB_T + PB_POST / 2, y, z_top - 1]) cylinder(d = 3.4, h = CAD_LIP_T + 2);
+        for (y = [y0 - CAD_WALL - 1, y1 - 1])                                                             // cable notches
+            translate([(x_pl + x_out) / 2 - CAD_NOTCH[0] / 2, y, z_fl + CAD_NOTCH[1]])
+                cube([CAD_NOTCH[0], CAD_WALL + 2, CAD_IN[2]]);
+        for (yc = [y0 - CAD_WALL - CAD_TONGUE / 2, y1 + CAD_WALL + CAD_TONGUE / 2], d = [-1, 1])          // tie slots
+            translate([(x_pl + x_out) / 2 + d * TIE_SPACING / 2 - TIE_SLOT[1] / 2, yc - TIE_SLOT[0] / 2, z_fl - CAD_WALL - 1])
+                cube([TIE_SLOT[1], TIE_SLOT[0], CAD_WALL + 2]);
+    }
+}
+
 module print_assembly() {
     color("lightgray") print_box();
     color("white", 0.6) translate([0, 0, PB_H]) print_lid();
+    color("tan") side_caddy();
+    color("dimgray") translate([-CAD_GAP - CAD_WALL - CAD_CLR - SE[0], (PB_D - SE[1]) / 2, PB_H + PB_T - CAD_IN[2] + CAD_CLR])
+        cube([SE[0], SE[1], SE[2]]);   // the StarTech
     color("steelblue") translate([SSR_AT[0] - 22, SSR_AT[1] - 29, PB_T - 0.2]) cube([44, 58, 25]);
     // Beckhoff stack, rail front to back: modules 100 mm across (x), 80 mm along the rail (y)
     color("silver") translate([PB_STACK_AT[0] + STACK[1] / 2 - RAIL[1] / 2, 30, PB_T - 0.2]) cube([RAIL[1], 100, RAIL[2]]);
@@ -259,6 +316,8 @@ check(REAR, "rear", PANEL_W, PANEL_H, MARGIN_X, MARGIN_Y);
 check(PB_FRONT, "print front", PB_W, PB_H, PB_T + PB_POST, PB_T + 2);
 check(PB_REAR, "print rear", PB_W, PB_H, PB_T + PB_POST, PB_T + 2);
 assert(PB_W <= 279 && PB_D <= 279, "print box larger than an 11 x 11 in bed");
+assert(CAD_IN[1] + 2 * (CAD_WALL + CAD_TONGUE) <= PB_D, "caddy tray longer than the box side");
+assert(CAD_IN[0] + 2 * CAD_WALL + CAD_LIP_IN <= 279, "caddy wider than an 11 x 11 in bed");
 assert(PB_T + RAIL[2] + STACK[2] < PB_H - 2, "Beckhoff stack taller than the print box");
 
 // ---- output ------------------------------------------------------------------------------------------
@@ -267,5 +326,6 @@ else if (part == "rear") panel_3d(REAR);
 else if (part == "assembly") assembly();
 else if (part == "print_box") print_box();
 else if (part == "print_lid") print_lid();
+else if (part == "print_caddy") translate([0, 0, -(PB_H + PB_T - CAD_IN[2] - CAD_WALL)]) side_caddy();   // as used: floor on the bed
 else if (part == "print_assembly") print_assembly();
 else assert(false, str("unknown part: ", part));

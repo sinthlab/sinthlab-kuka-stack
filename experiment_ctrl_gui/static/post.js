@@ -90,7 +90,7 @@ async function scan() {
         rows.push([s.name, `${s.rate_hz} Hz · ${s.neural_channels} neural · ${s.duration_s} s` +
                    (s.analog_inputs.length ? ` · ${s.analog_inputs.join(", ")}` : "")]);
       rows.push(["Spike units (NEV)", n.spike_units], ["Event channels (NEV)", n.event_channels]);
-      const ain = n.streams.flatMap((s) => s.analog_inputs.map((a) => a.toLowerCase()));
+      const ain = n.streams.flatMap((s) => s.analog_names || s.analog_inputs.map((a) => a.toLowerCase()));
       for (const id of ["#sync-start", "#sync-end", "#sync-exp"]) {
         const c = $(id).value.trim().toLowerCase();
         if (c && !ain.includes(c)) rows.push(["Sync", `${c} is not in this recording`]);
