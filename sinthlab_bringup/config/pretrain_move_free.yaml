@@ -44,8 +44,8 @@
     # from himself. Only the movement's part in the plane facing him (sideways, up / down) is scored: depth
     # neither counts toward the reach's length nor against its direction. A reach ends when that part has
     # gone free_reach.distance_m from where it started.
-    # The PERTURBATIONS (perturb.kind, LIVE; cued only) are what the free variant adds -- the CIHR grant's
-    # Aims 1-2: none | jump (the apple jumps before he grips it) | bump (it is pushed across the cue, and in
+    # The PERTURBATIONS (perturb.kind, LIVE; cued only) are what the free variant adds:
+    # none | jump (the apple jumps before he grips it) | bump (it is pushed across the cue, and in
     # depth, once he has started). Trials come in shuffled blocks: every direction free_reach.block_trials
     # times, round(probability x block_trials) of them perturbed, cycling through the angles (and the bump's
     # depth rules); never more than perturb.max_in_row perturbed trials together. A change starts a new block.
@@ -243,7 +243,7 @@
 
     # ---- cues (live) ----
     quiet_window_sec: 0.5  # the guarded wait at the start pose before the go cue [s]: short to begin training, then lengthen it by hand or with quiet_ramp; early touches are caught after its first 0.2 s, so 0.3 s is the useful minimum
-    response_timeout_sec: 30.0  # longest time from the go to the end of the reach [s]; shorten over training (the grant: 1 s)
+    response_timeout_sec: 30.0  # longest time from the go to the end of the reach [s]; shorten over training, toward 1 s
     audio_cue:  # Enable audio cues
       enabled: true  # Enable audio cues
     audio_cue_play:  # go cue: free movement starts

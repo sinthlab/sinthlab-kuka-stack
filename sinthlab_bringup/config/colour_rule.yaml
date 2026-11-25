@@ -35,7 +35,7 @@
       min_sec: 0.3  # never shorter than this [s]
       max_sec: 2.0  # never longer than this [s]
 
-    # COLOUR RULE WITH UNSIGNALED REVERSALS (CI2B Aim 3). A task of its own, not training: some days it is
+    # COLOUR RULE WITH UNSIGNALED REVERSALS. A task of its own, not training: some days it is
     # all that runs. Each trial is one choice: at the go cue the whole ring lights red or blue, and each
     # colour means one end (left or right). Once he reaches criterion the mapping reverses WITHOUT ANY
     # SIGNAL TO THE ANIMAL, as often as he reaches criterion (the rule block below; helpers/rule_schedule.py).

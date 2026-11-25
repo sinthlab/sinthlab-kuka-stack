@@ -244,7 +244,7 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
     # Cued Reaches, free (3-D): the same cue modes, no rail -- free in 3-D inside a box, only the reach's part in
-    # the plane facing him scored -- with jump and bump perturbations (CIHR grant Aims 1-2; perturb.kind).
+    # the plane facing him scored -- with jump and bump perturbations (perturb.kind).
     # It starts where N-Choice and Move Vertical do.
     Experiment(
         key="move_free", label="Cued Reaches · Free", group="experiments",
@@ -265,7 +265,7 @@ EXPERIMENTS += [
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
-# The Color Rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# The Color Rule with unsignaled reversals: a task of its own, on the free-move node. Rail
 # or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
 EXPERIMENTS += [
     Experiment(
