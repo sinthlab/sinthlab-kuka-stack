@@ -192,7 +192,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Parameter | Meaning |
 |---|---|
-| `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
+| `quiet_window_sec` | pause at the start pose before the go cue [s] (0.5 in every task: short to begin training; lengthen it by hand or with `quiet_ramp`) |
+| `quiet_ramp.*` | the [quiet-window staircase](#the-quiet-window--hands-off-until-the-go-cue), off by default |
 | `quiet_gate.enabled`, `quiet_gate.move_m`, `quiet_gate.force_n`, `quiet_gate.penalty_sec` | the [guarded quiet window](#the-quiet-window--hands-off-until-the-go-cue): touching the apple before the go cue ends the trial with no reward and a penalty wait (on, 3 cm, 5 N, 5 s) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `move_to_park.target_joint_position` | the park pose, A1..A7 [deg]; first used when the next trial ends. Checked against the limits, and A4 must keep the start's sign |
@@ -684,9 +685,19 @@ corrupts the trial that follows, so the window is **guarded**
 or pushed before the go cue,
 
 1. the trial **ends without reward** — event `early_touch`, no go cue;
-2. the arm **parks**;
+2. the ring **flashes yellow** twice with the low tone (`quiet_gate.flashes`, `flash_colour`, `flash_sec`),
+   and the arm **parks**, quicker than usual (`move_to_park.early_touch_speed_scale`);
 3. a **penalty wait** (`quiet_gate.penalty_sec`, on top of `move_to_park.hold_sec`) runs before the next
    trial — shaping "wait for the go cue".
+
+The window starts short (0.5 s) and is lengthened as the animal learns to wait: by hand (`quiet_window_sec`
+is live), or with the **staircase** (`quiet_ramp.enabled`, off by default;
+[`quiet_ramp.py`](sinthlab_bringup/sinthlab_bringup/helpers/quiet_ramp.py)). After every trial it adds
+`quiet_ramp.step_sec` (0.1 s) once `after_trials` (3) trials in a row reached the go cue, takes `back_sec`
+(0.1 s) off after an early touch, and stays within `min_sec`–`max_sec` (0.3–2 s); the new value is set as the
+live `quiet_window_sec`, so it applies from the next trial, shows on the dashboard and is in each trial's
+sidecar. The guard only catches touches after the window's first 0.2 s (and during the go cue's preview),
+so below about 0.3 s it catches little.
 
 Both checks compare with the window's first 0.2 s, so each pose's resting sag and resting force do
 not count:

@@ -186,7 +186,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.switch_to_joint.start()
             return
         # Hold still and measure the resting force while the quiet window runs; the arm only
-        # starts following the hand at the go cue. Keep quiet_window_sec >= free_move.tare_sec.
+        # starts following the hand at the go cue (the tare is the mean over the window so far, up to free_move.tare_sec).
         self.recorder.mark("fixture_active")
         self.admittance.start()
         self.quiet_window.start()

@@ -29,6 +29,7 @@ _COMMON = [
     # anywhere. Checked like any pose, and its elbow (A4) must bend the same way as the start's.
     "move_to_park.target_joint_position",
     "quiet_gate.*",                # the guarded quiet window: early touch -> no reward, park, time-out
+    "quiet_ramp.*",                # the quiet-window staircase (helpers/quiet_ramp.py), off by default
     "audio_cue.enabled",           # master switch for every beep
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
@@ -157,6 +158,11 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "quiet_gate.force_n": (1.0, 50.0),
     "quiet_gate.penalty_sec": (0.0, 120.0),
     "quiet_gate.flashes": (0, 5),
+    "quiet_ramp.step_sec": (0.01, 2.0),
+    "quiet_ramp.after_trials": (1, 50),
+    "quiet_ramp.back_sec": (0.0, 2.0),
+    "quiet_ramp.min_sec": (0.0, 60.0),
+    "quiet_ramp.max_sec": (0.1, 60.0),
     "quiet_gate.flash_sec": (0.05, 1.0),
     "move_to_park.early_touch_speed_scale": (0.25, 2.0),
     "response_timeout_sec": (2.0, 600.0),

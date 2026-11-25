@@ -39,6 +39,11 @@ reward_pulse.count > 1 the reward is a burst: that many pulses, each pulse_ms lo
 closed valve between them (the cabinet stretches a pulse that is still high, so they must not overlap).
 Failures (timeout, early touch, safety trip, Stop) send none. Independent of nsp_sync.enabled; same
 cabinet_ip.
+
+QUIET-WINDOW STAIRCASE (helpers/quiet_ramp.py, quiet_ramp.*; off by default). At each trial_end, a trial
+that reached the go cue (`cue_go`) counts toward lengthening quiet_window_sec and an `early_touch`
+shortens it; a change is set as the live parameter quiet_window_sec, so it applies from the next trial
+and the dashboard shows it. Every task, since every task marks those events.
 """
 from __future__ import annotations
 
@@ -57,6 +62,7 @@ from std_srvs.srv import Trigger
 from sinthlab_bringup.helpers.node_utils import get_required_param
 from sinthlab_bringup.helpers.live_params import LIVE_PARAMS, check_value, is_immediate, is_live
 from sinthlab_bringup.helpers.live_params import PAIRED
+from sinthlab_bringup.helpers import quiet_ramp
 from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
 # Event token -> the parameter naming its EL2124 output. Two per trial are enough for alignment
@@ -241,10 +247,44 @@ class ExperimentControl:
             reward = {"output": output, "ms": ms, "count": count, "gap_ms": gap}
             if delay > 0:
                 reward["delay_ms"] = round(delay * 1000, 1)
+        self._ramp_event(token)
         if token == "trial_start" and arg is not None:
             self._trial = int(arg)
         self._set_phase(token, arg)
         return reward
+
+    # ------------------------------------------------------------------ the quiet-window staircase
+
+    def _ramp_event(self, token: str) -> None:
+        """Note what the trial did (reached the go, or touched early); at trial_end, step the staircase."""
+        if token == "trial_start":
+            self._ramp_flags = set()
+        elif token in ("cue_go", "early_touch"):
+            if not hasattr(self, "_ramp_flags"):
+                self._ramp_flags = set()
+            self._ramp_flags.add(token)
+        elif token == "trial_end":
+            flags, self._ramp_flags = getattr(self, "_ramp_flags", set()), set()
+            try:
+                self._ramp_step("cue_go" in flags, "early_touch" in flags)
+            except Exception as exc:                      # never let the staircase break a trial
+                self._log.warn(f"Quiet-window staircase skipped: {exc}")
+
+    def _ramp_step(self, went: bool, early: bool) -> None:
+        node = getattr(self, "_node", None)
+        if node is None or not node.has_parameter("quiet_ramp.enabled") or not node.has_parameter("quiet_window_sec"):
+            return
+        s = quiet_ramp.settings_from(lambda name: node.get_parameter(name).value)
+        current = float(node.get_parameter("quiet_window_sec").value)
+        new, self._ramp_streak, why = quiet_ramp.step(current, went, early, getattr(self, "_ramp_streak", 0), s)
+        if why is None:
+            return
+        from rclpy.parameter import Parameter
+        result = node.set_parameters([Parameter("quiet_window_sec", value=float(new))])
+        if result and not result[0].successful:
+            self._log.warn(f"Quiet-window staircase: {why} refused ({result[0].reason}).")
+            return
+        self._log.info(f"Quiet-window staircase: {why}, from the next trial.")
 
     # ------------------------------------------------------------------ internals
 

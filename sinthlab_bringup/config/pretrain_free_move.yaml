@@ -25,6 +25,16 @@
       flashes: 2  # how many flashes on an early touch, with the low tone; 0 = no visual cue
       flash_sec: 0.15  # each flash is on this long, then off this long [s]
 
+    # The quiet-window staircase (helpers/quiet_ramp.py): lengthens quiet_window_sec as early touches stop.
+    # Off: change quiet_window_sec by hand. On: after every trial, set as the live quiet_window_sec.
+    quiet_ramp:  # automatic lengthening of the quiet window (all live)
+      enabled: false  # on = after_trials trials in a row that reach the go cue add step_sec; an early touch takes back_sec off
+      step_sec: 0.1  # how much the window grows after each streak [s]
+      after_trials: 3  # trials in a row without an early touch before it grows
+      back_sec: 0.1  # how much an early touch shortens it [s]; 0 = never shorter
+      min_sec: 0.3  # never shorter than this [s]
+      max_sec: 2.0  # never longer than this [s]
+
     # PRE-TRAINING: FREE MOVE. The arm in ADMITTANCE: it goes wherever it is pushed and stays where it
     # is let go, within a box around the start (free_move.box_*). No goal -- for getting used to holding and moving the arm. It
     # runs as one free-movement SESSION, for session_sec or (0) until Stop. The reward: the session's end,
@@ -187,7 +197,7 @@
       debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
     # ---- cues (live) ----
-    quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
+    quiet_window_sec: 0.5  # the guarded wait at the start pose before the go cue [s]: short to begin training, then lengthen it by hand or with quiet_ramp; early touches are caught after its first 0.2 s, so 0.3 s is the useful minimum
     response_timeout_sec: 30.0  # the arm not moved more than quiet_gate.move_m within this long after the go cue -> the session ends (event response_timeout), park [s]
     audio_cue:  # Enable audio cues
       enabled: true  # Enable audio cues
