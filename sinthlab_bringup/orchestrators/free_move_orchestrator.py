@@ -20,6 +20,7 @@ from sinthlab_bringup.actions.long_move import LongMoveMonitor
 from sinthlab_bringup.actions.n_choice import NChoiceMonitor
 from sinthlab_bringup.actions.free_reach import FreeReachMonitor
 from sinthlab_bringup.actions.forage import ForageMonitor
+from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -118,12 +119,15 @@ class FreeMoveOrchestratorNode(rclpyNode):
             on_event=self.control.on_event)
         self.go = GoCue(self, self.recorder, self.quiet_window, self.go_cue, self.on_go_complete)
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
+        self.haptic = None                 # Move Vertical / Horizontal: buzz harder nearing the goal end
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
             self.control.add_validator(self.centre_out.check_live)   # e.g. no "left" on the vertical rail
             if self.experiment == "colour_rule" and not self.centre_out.rule_on():   # its own task: the rule
                 raise ValueError("colour_rule.yaml must have centre_out.target: rule (the Colour Rule task "
                                  "always runs the colour rule)")
+            if self.has_parameter("haptic.enabled"):
+                self.haptic = HapticGuidance(self, self.centre_out.distance_to_goal)
         # The long-movement reward (Free Move only: the rails have no long_move block).
         if self.has_parameter("long_move.reward"):
             self.long_move = LongMoveMonitor(self, self.admittance)
@@ -314,6 +318,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = True
         if self._centre_out_on():
             self.centre_out.start(self.on_reach)
+            if self.haptic is not None:
+                self.haptic.start()
             self.get_logger().info("Centre-out: reach to the lit end of the rail.")
         elif self._n_choice_on():
             self.n_choice.start(self.on_choice)
@@ -399,6 +405,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             if reason == "response_timeout" and self.forage.plan is not None:
                 self.recorder.annotate(forage_result=self.forage.result())
             self.forage.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -494,6 +502,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.free_reach.stop()
         if self.forage is not None:
             self.forage.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -532,6 +542,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.forage is not None:
             self.forage.reload()
             self.reward_cue.reload()
+        if self.haptic is not None:
+            self.haptic.reload()
         self._set_reward_events()
 
 

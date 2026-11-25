@@ -189,12 +189,12 @@
       frequency_hz: 800  # end tone: pitch [Hz]
       duration_ms: 350  # choice confirmation tone: length [ms]
     nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
-      enabled: true  # send a pulse at Start (experiment start) and at every trial start and trial end
-      cabinet_ip: "172.31.1.147"  # Cabinet address for pulse commands (UDP port 30002)
+      enabled: true  # send a pulse at experiment start and at every trial start and trial end
+      cabinet_ip: "172.31.1.147"  # the cabinet's address on the network this computer reaches it by (pulse commands go to its UDP 30002)
       trial_start_output: 1  # EL2124 output (1-4, front jack SYNC 1-4) pulsed at trial start
       trial_end_output: 2  # EL2124 output (1-4) pulsed at trial end
-      experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
-      pulse_width_ms: 500  # Time each pulse stays high [ms], from 10 to 5000
+      experiment_start_output: 3  # EL2124 output (1-4) pulsed once per run, before trial 1
+      pulse_width_ms: 500  # how long each pulse stays high [ms], 10-5000
 
     reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
       enabled: true  # send the reward pulse when the centre-out reach gets to a goal end (centre_out.enabled), else when a session runs its full session_sec; a wrong end, no response, early touch, safety trip and Stop get none
@@ -202,6 +202,20 @@
       pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
       count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
       gap_ms: 300  # Time the valve stays closed between pulses [ms], from 100 to 5000
+
+    # THE APPLE'S FORCE SENSOR (FSR), streamed by the end-effector board over the serial link (visual_cue.serial_port)
+    # into four columns of every trial file: fsr_raw, fsr_t_ms, fsr_age_ms, haptic_pct (README, "Haptics and force sensor").
+    end_effector:  # the apple's sensor
+      fsr_rate_hz: 100  # force samples per second recorded into the trial file; 0 = off
+
+    # HAPTIC GUIDANCE (actions/haptic_guidance.py): the apple buzzes harder as it nears the goal end of the rail (either: the nearer end; cued: the cued end); silent within 5 cm of the centre.
+    # Silent beyond ramp_start_m; min_pct there, rising to max_pct at ramp_full_m. Sent over the serial link.
+    haptic:  # the apple's ERM motor
+      enabled: true  # off = no buzz
+      min_pct: 30  # strength as the goal comes within ramp_start_m [%] -- a coin ERM needs some drive to spin at all
+      max_pct: 100  # strength at ramp_full_m and closer [%]
+      ramp_start_m: 0.10  # the buzz starts this far from the goal [m]
+      ramp_full_m: 0.02  # full strength this close to the goal [m]
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout

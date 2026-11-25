@@ -79,11 +79,10 @@ top and a clear casing box over the lot:
 
 ## Power / data flow
 ```
-24 V (cabinet, via X650/X651) ─► Tobsun 24 V→5 V ─► 5 V ─┬─► Metro M4 AirLift board
-                                                 ├─► NeoPixel ring   (via Pixel Shifter: 3.3 V data → 5 V)
-                                                 ├─► DRV2605L driver ─► ERM/LRA motor (actuator, apple cavity)
-                                                 └─► pressure sensor (apple cavity)
-   data: Metro 3.3 V ─► Pixel Shifter ─► ring DIN ;  Metro I²C ─► DRV2605L ;  sensor ─► Metro ADC/I²C
+24 V (cabinet, via X650/X651) ─► Tobsun 24 V→5 V ─► 5 V ─┬─► Metro M4 AirLift board ─► its 3V3 ─┬─► DRV2605L ─► ERM motor (apple)
+                                                 │                                       └─► FSR divider (apple FSR → A2)
+                                                 └─► NeoPixel ring   (via Pixel Shifter: 3.3 V data → 5 V)
+   data: Metro 3.3 V ─► Pixel Shifter ─► ring DIN ;  Metro I²C ─► DRV2605L ;  FSR ─► Metro A2 (ADC)
 ```
 > **Ring current.** The 60-LED RGBW ring can pull **~3.5 A at 5 V** at full-white — inject 5 V at each
 > of the 4 quarter pass-throughs (don't feed 60 LEDs through one arc). Size the converter for it, and
@@ -91,10 +90,140 @@ top and a clear casing box over the lot:
 
 The **Metro M4 Express AirLift** runs everything: it drives the NeoPixel ring through the **Pixel
 Shifter** (its 3.3 V data needs shifting to 5 V), commands the **DRV2605L** over I²C to run the
-haptic **actuator** (an ERM/LRA motor in the apple), and reads the **pressure sensor**. The
-**Tobsun converter** steps the 24 V down to 5 V; that **5 V rail is distributed from it** out
-to every board and up the centre riser (ring + apple). All the boards live in the base; only the
-ERM motor + pressure sensor sit up in the apple cavity.
+haptic **actuator** (the coin ERM motor in the apple), and reads the **force sensor** (the FSR in
+the apple). The **Tobsun converter** steps the 24 V down to 5 V; that **5 V rail is distributed from
+it** out to the Metro and the ring. The DRV2605L and the FSR divider run from the **Metro's 3V3**, so
+nothing above 3.3 V reaches the Metro's pins. All the boards live in the base; only the ERM motor and
+the FSR sit up in the apple cavity.
+
+## Haptics and force sensor
+
+The apple carries a **coin ERM motor** (haptic guidance: it buzzes harder as the hand nears the goal)
+and an **FSR** (the grip force, recorded in every trial file). Both are wired to the Metro and run over
+the serial link (firmware: [`HAP` and `FSR`](../end_effector_metro_code/README.md#the-serial-link);
+the experiments: [Haptic guidance and the force sensor](../README.md#haptic-guidance-and-the-force-sensor)).
+
+### Parts
+
+| Part | Where | Notes |
+|---|---|---|
+| DRV2605L breakout ([Adafruit 2305](https://www.adafruit.com/product/2305)) | tier 2 (`haptic_*`) | the ERM driver, I²C address 0x5A |
+| Vibrating Mini Motor Disc ([Adafruit 1201](https://www.adafruit.com/product/1201)) | apple cavity, under the cap | coin ERM, Ø10 × 2.7 |
+| FSR, Alpha MF01A, 1–98 N ([Adafruit 5475](https://www.adafruit.com/product/5475)) | apple cavity, face up on the FSR platform | its tail runs down the stem bore |
+| FSR platform (`apple_fsr_platform`, PETG) | glued on the retainer hub | the FSR's rigid, flat backing |
+| FSR filler (`apple_fsr_filler`, TPU 90A) | press-fit in the lower cup | the printed spring that carries a squeeze to the FSR |
+| STEMMA QT to male-header cable, 150 mm ([Adafruit 4209](https://www.adafruit.com/product/4209)) | Metro header → DRV2605L | the I²C and 3V3 to the driver, no soldering: plugs into the DRV2605L's STEMMA QT port |
+| 10 kΩ resistor, ¼ W ([Adafruit 2784](https://www.adafruit.com/product/2784)) | at the Metro | the FSR divider's lower leg |
+| 0.22 µF ceramic capacitor (marked **224**) | at the Metro, A2 → GND | filters the FSR reading (with the 10 kΩ, above ~72 Hz) |
+| Hook-up wire, 2 twisted pairs (~26 AWG) | apple → base | one pair for the ERM, one for the FSR, twisted separately |
+
+### Wiring
+
+| From | To | Wire |
+|---|---|---|
+| Metro **3V3** | DRV2605L **VIN** | 4209 cable, **red** |
+| Metro **GND** | DRV2605L **GND** | 4209 cable, **black** |
+| Metro **SDA** | DRV2605L **SDA** | 4209 cable, **blue** |
+| Metro **SCL** | DRV2605L **SCL** | 4209 cable, **yellow** |
+| DRV2605L **+ / −** (motor terminals) | ERM's two leads | ERM pair, twisted |
+| Metro **3V3** | FSR, one pin | FSR pair, twisted |
+| FSR, other pin | Metro **A2** | FSR pair, twisted |
+| Metro **A2** | 10 kΩ → Metro **GND** | — |
+| Metro **A2** | 0.22 µF → Metro **GND** | — |
+
+```
+   Metro 3V3 ──┬──────────────► DRV2605L VIN
+               │                DRV2605L GND ─────────────── Metro GND
+               │   Metro SDA ─► DRV2605L SDA      DRV2605L + ─┐
+               │   Metro SCL ─► DRV2605L SCL      DRV2605L − ─┴─ ERM pair (twisted) ─► ERM (apple)
+               │
+               └── FSR pair (twisted) ─► FSR (apple) ─► back down ─► Metro A2 ─┬── 10 kΩ ── GND
+                                                                                └── 0.22 µF ── GND
+```
+
+- **Everything on 3V3, nothing on 5 V.** The DRV2605L's I²C lines follow its supply; on 3V3 they
+  are safe for the SAMD51, which is not 5 V tolerant. The ERM runs on 3.3 V (it is rated 2–5 V).
+- **The FSR has no polarity, and nor does the ERM's direction matter** (a coin ERM buzzes the same
+  either way round).
+- **The divider is ratiometric.** The FSR divider and the ADC both run from 3V3, so a dip on that
+  rail moves the reading and the reference together, and the 0.22 µF at A2 filters what remains.
+- **Route the two pairs apart.** Down the stem bore and through the base, keep the ERM pair and the
+  FSR pair as separate twisted pairs, not bundled into one twist.
+- **The 3V and GND pins are shared** by the MikroE, the DRV2605L and the FSR divider: join each with a
+  Wago or a soldered splice and run one wire from the joint into the Metro's socket.
+- **The DRV2605L's two STEMMA QT ports** are the same bus; use either, and leave the other empty.
+- **Firmware library:** copy `adafruit_drv2605.mpy` into the board's `lib/`
+  ([Files on the board](../end_effector_metro_code/README.md#lib--what-is-actually-required)).
+
+### The FSR in the apple — platform and filler
+
+```
+          cap  ── ERM motor, glued near the top of the dome
+          ─ ─ ─ ─ air gap ─ ─ ─ ─
+          filler (TPU 90A, 12 % gyroid) fills the lower cup, preloaded against the wall and the skirt
+          [ solid pad Ø14 ]  presses 0.3 mm into the FSR at rest
+          [ FSR head Ø18, face up ]
+          [ platform Ø20 × 3, PETG ]   ← the rigid backing, glued on the hub
+          retainer hub Ø16 → stem tip (glued to the stem)
+```
+
+The FSR reads force only when squeezed between something soft and something rigid that cannot move.
+The **platform** is the rigid side: glued on the retainer hub, it gives the Ø18 head a full flat seat
+over the stem's Ø9 bore (an FSR over a hole bends into it). The **filler** is the soft side: a printed
+spring that fills the lower cup, so squeezing the ball from any side loads it, and its solid pad
+presses on the FSR's active area. It reads the **overall grip squeeze**, not one direction.
+
+**The platform** (`apple_fsr_platform`): Ø20 × 3 mm. Underneath, a recess drops over the Ø16 hub and
+centres it, and two channels run from the bore to the edge: **+X for the FSR tail** (7 mm wide —
+measure your tail and set `fsr_tail_w`), **−X for the motor pair**.
+
+**The filler** (`apple_fsr_filler`): the lower cup's own shape, from the floor to 1 mm below the cap
+split, **0.4 mm oversize** (`fill_pre`) so it sits preloaded against the wall and the cap's skirt.
+Underneath, a pocket clears the hub, platform and FSR; inside it the **solid Ø14 pad** reaches 0.3 mm
+into the FSR (`pad_pre`), so the FSR reads a small, steady value at rest — an FSR barely responds to the
+first gram, and the preload puts it where it does. A notch at +X takes the tail's fold over the platform
+edge; a Ø3.5 hole at −X takes the motor pair up to the cap.
+
+**Stiffness is the slicer's infill**, not the model: start at the preset's **12 % gyroid, 1 wall**. If
+a firm squeeze barely moves `fsr_raw`, raise the infill; if it saturates, or the ball feels rigid,
+lower it. The preset's 6 top layers make the pad solid (it prints upside down, so the pad is a top
+surface).
+
+**Fitting**, with the retainer glued and the wiring through the bore:
+
+1. **Glue the platform** on the retainer hub, recess down, the +X channel toward where the tail will go:
+   **thin CA or 5-minute epoxy**, a thin film, pressed flat for 30 s. Keep glue out of the bore and the
+   channels. Let it set before the FSR goes near it.
+2. **Bring the motor pair up** the bore, out through the −X channel, and up past the platform edge.
+3. **Fit the FSR**, face up, centred on the platform, on **thin double-sided tape** (or its own adhesive
+   backing). Lead its tail over the +X edge, fold it gently down into the +X channel and down the bore —
+   a smooth bend, not a crease at the head.
+4. **Drop the filler in**, pocket down, the notch over the tail and the motor pair through its hole. It
+   squeezes past the rim (0.4 mm oversize) and seats on the floor.
+5. **Fix the motor** under the cap, near the top of the dome, and press the cap on: its skirt slides
+   down round the filler's top. The motor must not touch the filler.
+6. **Check at rest:** `fsr_raw` low and steady (`GET /status`). Squeeze the ball: it rises smoothly and
+   comes back when you let go.
+7. **Calibrate** with a few known weights or a squeeze gauge, to turn `fsr_raw` into newtons. Repeat
+   after changing the filler.
+
+### Keeping the motor out of the force reading
+
+The ERM shakes the apple, and the FSR measures force on the apple, so some buzz can reach the
+reading. Four things keep it apart:
+
+1. **Placement.** The ERM goes **under the cap**, and an **air gap** separates it from the filler: the
+   filler's top stops 1 mm below the cap split, the motor sits near the top of the dome. The FSR lies
+   at the bottom, on its platform under the filler. The FSR tail and the ERM pair leave the platform in
+   opposite directions and go down the bore without touching each other.
+2. **Electrical.** Twisted pairs routed apart, and the 0.22 µF at A2 (above).
+3. **Every sample says whether the motor was running.** The firmware stamps each force sample with
+   the haptic strength driven at that moment, and the trial file records it beside the reading
+   (`haptic_pct`), so any leakage can be measured and masked in analysis.
+4. **Bench check before the arm.** With nothing touching the apple, record the FSR with the motor at
+   0, 30, 60 and 100 % with `ros2 run sinthlab_bringup check_haptic_fsr.py`; then repeat with a fixed
+   weight resting on the apple. The difference between motor on and off is the leakage, at each
+   strength, to compare with the grip forces you need to resolve.
 
 ## The media flange is a pass-through — the as-built wiring
 
@@ -274,7 +403,7 @@ before any electronics are involved.
 | Actuator driver | [DRV2605L (2305)](https://www.adafruit.com/product/2305) (ERM/LRA driver, I²C) | **28 × 20** | `haptic_*` |
 | **RS-422 transceiver** | [MIKROE-2821 RS485 3 Click](https://www.mikroe.com/rs485-3-click) — SN65HVD31, full duplex, 3.3 V | **42.9 × 25.4** (footprint 45 × 28) | `rs422_l/w`, `rs422_pos` |
 | Haptic actuator | [Vibrating Mini Motor Disc (1201)](https://www.adafruit.com/product/1201) (coin ERM) | **Ø10 × 2.7** | apple cavity |
-| Force sensor **A** | [FSR — Alpha MF01A round, high-force 1–98 N (5475)](https://www.adafruit.com/product/5475) | **Ø18 head** (~Ø15 active) · 60 long · 0.56 thin | apple cavity (head) + tail down bore |
+| Force sensor **A** (wired: [Haptics and force sensor](#haptics-and-force-sensor)) | [FSR — Alpha MF01A round, high-force 1–98 N (5475)](https://www.adafruit.com/product/5475) | **Ø18 head** (~Ø15 active) · 60 long · 0.56 thin | apple cavity (head) + tail down bore |
 | Force sensor **B** | [MPRLS ported pressure sensor (3965)](https://www.adafruit.com/product/3965), I²C 0–25 PSI | board **17.8 × 16.7 × 7.5** (footprint 20 × 19) · port Ø2.5 | `mprls_*` on **tier 1** + Ø2–3 tube up the riser to a *sealed* cavity |
 
 > **Fit notes (read before printing):**
@@ -422,7 +551,8 @@ both share the Ø5.5/Ø10 head, so the counterbores fit either. The build here u
 ## Files
 | File | What |
 |------|------|
-| `apple_pluck_end_effector.scad` | the parametric model (flange plate, both base tiers, cover, apple stem, ball, cap, casing, assembly) |
+| `apple_pluck_end_effector.scad` | the parametric model (flange plate, both base tiers, cover, apple stem, ball, cap, FSR platform and filler, casing, assembly) |
+| `apple_fsr_platform.stl`, `apple_fsr_filler.stl` | the FSR's backing and filler, ready to slice |
 | `bambu_presets/` | Bambu Studio presets (H2D, 0.4 mm nozzles) for every printed part — see [Print settings](#print-settings) |
 | `check_layout.py` | verifies board fit, pillars, ports, drops, trenches, screw clearances and the strength section against the `.scad` |
 | `README.md` | this file |
@@ -441,6 +571,8 @@ openscad -D 'part="apple_stem"'      -o apple_stem.stl      apple_pluck_end_effe
 openscad -D 'part="apple_ball"'      -o apple_ball.stl      apple_pluck_end_effector.scad   # TPU  (lower ball, printed on the stem)
 openscad -D 'part="apple_retainer"'  -o apple_retainer.stl  apple_pluck_end_effector.scad   # PETG (glued onto the tip)
 openscad -D 'part="apple_cap"'       -o apple_cap.stl       apple_pluck_end_effector.scad   # TPU  (press-fit cap)
+openscad -D 'part="apple_fsr_platform"' -o apple_fsr_platform.stl apple_pluck_end_effector.scad # PETG (FSR backing, upside down)
+openscad -D 'part="apple_fsr_filler"'   -o apple_fsr_filler.stl   apple_pluck_end_effector.scad # TPU  (FSR filler, upside down)
 # previews only: 'part="assembly"' (default), 'part="apple"' (stem + ball + retainer + cap),
 # 'part="apple_section"' / 'part="section"' (half-cuts), 'part="electronics_mock"' (board/ring fit),
 # 'part="casing"' (clear casing box — reference only; you build it by hand from clear acrylic sheet)
@@ -564,10 +696,10 @@ populate — the boards go in over the screw heads.
      ~6 mm of the tip, push the retainer down hard so it clamps the floor, and hold it 30 s. Keep glue
      off the TPU and **out of the Ø9 bore** (run the wiring first, or plug the bore with a wire). Let it
      cure fully (CA: 1 h; epoxy: per the pack) before any pull.
-8. **Load the electronics + close the ball.** With the **cap off**, seat the **ERM (Ø10)** against the inner
-   TPU wall and the **force sensor** in the open cavity (FSR head against the wall behind a backing; or, for
-   the MPRLS route, just the pressure tube — sensor stays in the base). Route the leads / FSR tail / tube
-   **down the stem bore**, then **press the cap on** (a bead of silicone if pulls unseat it — see
+8. **Load the electronics + close the ball.** With the **cap off**, glue the **FSR platform** on the hub,
+   fit the **FSR** on it, drop in the **filler**, and fix the **ERM (Ø10)** under the cap
+   ([The FSR in the apple](#the-fsr-in-the-apple--platform-and-filler), steps 1–5). The FSR tail and
+   the ERM pair run **down the stem bore**, apart. Then **press the cap on** (a bead of silicone if pulls unseat it — see
    [Printing & finishing](#printing--finishing)). Confirm the **cap + ball can't pull off** by hand.
 9. **Connect + commission.** Connect the media-flange power/data, **re-calibrate the tool load** in
    Sunrise (electronics + apple add mass — see main repo README §2 "Tool Load Data"), and first
@@ -608,8 +740,11 @@ Every number is in the presets in [`bambu_presets/`](bambu_presets/); this is wh
 | **apple_stem** + **apple_retainer** | PETG | **0.16 mm** | 6 | 6 / 6 | **100 %** rectilinear | Upright, printed with the ball — see below. |
 | **apple_ball** | TPU 90A | 0.16 mm | 3 | 4 / 4 | 15 % gyroid | Printed on the stem. |
 | **apple_cap** | TPU 90A | 0.20 mm | 3 | 4 / 4 | 15 % gyroid | Slow (≤ 20 mm/s), no retraction. |
+| **apple_fsr_platform** | PETG | 0.20 mm | 8 | 8 / 8 | 60 % gyroid | The flange plate's presets: at Ø20 × 3 mm, 8 walls and 8 + 8 layers make it solid. Upside down (recess and channels up). |
+| **apple_fsr_filler** | TPU 90A | 0.20 mm | **1** | **6** / 3 | **12 %** gyroid | Upside down (flat top on the bed). The infill **is** the stiffness: tune it (above). |
 
-**Temperatures and fans.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %); the
+**Temperatures and fans.** PETG: nozzle **250 °C**, bed 80 °C, **fan 20–30 %** (not 100 %), flow
+capped at **9 mm³/s** (`PETG - High Strength`; faster overloads the extruder); the
 upright stem runs hotter — 255 °C, fan off for its first ~25 mm. TPU 90A: 220–225 °C, fan 30–70 %.
 **The auxiliary (side) fan is off in every preset**: Bambu's own TPU 90A profile runs it at 100 %, and
 its blast blows a fresh TPU line off its base.
@@ -672,12 +807,13 @@ They build on Bambu's own H2D 0.4 mm presets, so pick the **Bambu Lab H2D 0.4 no
 | `0.20 Base Tier1 PETG` | process | `base_tier1` |
 | `0.20 Base Tier2 PETG` | process | `base_tier2` |
 | `0.20 Cover PETG` | process | `cover` |
-| `PETG - High Strength` | filament | the four above |
+| `PETG - High Strength` | filament | the four above, and `apple_fsr_platform` (with `0.20 Flange Plate PETG`) |
 | `0.16 Stem+Ball PETG-TPU` | process | `apple_stem` + `apple_ball` + `apple_retainer` |
 | `PETG - Stem upright` | filament | the stem and retainer (left nozzle) |
 | `TPU 90A - Stem+Ball` | filament | the ball (right nozzle) |
 | `0.20 TPU Cap` | process | `apple_cap` |
 | `TPU 90A - Cap` | filament | the cap (right nozzle) |
+| `0.20 TPU FSR Filler` | process | `apple_fsr_filler` (with the `TPU 90A - Cap` filament) |
 
 The two TPU 90A cap presets also carry the values for the **TPU High Flow** nozzle: set the right
 nozzle's type to TPU High Flow and they apply.
