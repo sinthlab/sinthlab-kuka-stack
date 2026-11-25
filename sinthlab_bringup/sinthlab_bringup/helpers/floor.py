@@ -150,7 +150,7 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
         return room(z - float(threshold), f"a {float(threshold) * 100:.0f} cm pull straight down from {name}")
 
     if (grid is not None and "free_move.box.preset" in params
-            and str(params.get("free_move.rail_axis", "none")) == "none"):      # Free Move: the box
+            and str(params.get("free_move.rail_axis", "none")) in ("none", "frontal")):   # Free Move, No rail: the box
         from sinthlab_bringup.helpers.free_move_box import box_bounds
         what = f"free_move.box.preset {params['free_move.box.preset']}"
         try:
@@ -167,6 +167,15 @@ def setup_problem(params: dict, fk: Callable, grid=None) -> Optional[str]:
             return f"the rail (free_move.rail_min_m / rail_max_m): {problem}"
     if axis == "z":                                                # Move Vertical: the rail's bottom end
         return room(z0 + float(params["free_move.rail_min_m"]), "the bottom of the rail")
+    if str(params.get("free_move.rail_axis", "none")) == "rays":   # N-choice: every rail reachable, and the lowest end
+        from sinthlab_bringup.helpers.rail_shapes import layout_degs, rays_problem
+        degs = layout_degs(params["free_move.ray_layout"])
+        if grid is not None:
+            problem = rays_problem(grid, start, degs, float(params["free_move.ray_length_m"]))
+            if problem:
+                return f"N-choice: {problem}"
+        low = min(float(np.sin(np.radians(a))) for a in degs)
+        return room(z0 + low * float(params["free_move.ray_length_m"]), "the lowest rail's end")
     profile = params.get("virtual_fixture_profile")                # maze
     if profile is not None:
         pre = f"virtual_fixtures.{profile}."

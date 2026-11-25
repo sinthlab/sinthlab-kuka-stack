@@ -39,6 +39,10 @@ CORE = (["t", "t_wall", "t_ros", "fri_s", "fri_ns"]
 # "perturb" = apple pluck in the perturb paradigm (see validate()).
 EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["disp_m"], "restricted_plane": ["disp_m"],
          "maze": ["rel_a", "rel_b", "corridor", "off_rail", "rail_dist", "rail_nearest"]}
+# The free-move node's tasks: the admittance's equilibrium offset and hand force
+# (AdmittanceMoveAction.record_extra_header).
+_ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
+EXTRA.update({k: _ADMITTANCE for k in ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
 # maze endings, restricted plane's snap or safety_trip) is optional or repeatable.
@@ -240,14 +244,42 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
-    if exp in ("move_vertical", "move_horizontal") and "target" in got:
+    if exp == "free_move" and "move_end" in got:
+        # Long moves (actions/long_move.py): every reward follows the end of a movement.
+        ends, paid = got.count("move_end"), got.count("long_move")
+        r.check(paid <= ends, f"no more long_move rewards ({paid}) than finished movements ({ends})")
+        r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t == "long_move"),
+                "each long_move reward comes right after its move_end")
+        r.note(f"long moves: {ends} movement(s), {paid} rewarded")
+    if exp == "n_choice" and "early_touch" not in got:
+        # N-choice (actions/n_choice.py): one choice per trial, paid or not, or none.
+        outcome = [t for t in got if t in ("choice", "choice_unrewarded", "response_timeout", "safety_trip")]
+        r.check(len(outcome) <= 1, f"at most one outcome (choice / choice_unrewarded / response_timeout / safety_trip); found {outcome}")
+        r.check(meta is None or "n_choice" in meta, "the sidecar has every direction's probability (n_choice)")
+        arg = [a for _, t, a in seq if t in ("choice", "choice_unrewarded")]
+        r.note(f"n-choice: {outcome[0] if outcome else 'no outcome'}" + (f" ({arg[0]})" if arg else ""))
+    if exp in ("move_vertical", "move_horizontal", "colour_rule") and "target" in got:
         # Centre-out (actions/centre_out.py): one reach per trial -- to the goal, to the other end, or none.
         outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
         r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")
         tgt = [a for _, t, a in seq if t == "target"]
         ends = [a for _, t, a in seq if t in ("reach", "reach_wrong")]
-        r.note(f"centre-out: target {tgt[0] if tgt else '?'}, " + (f"{outcome[0]} at the {ends[0]} end" if ends
-               else (outcome[0] if outcome else "no outcome")))
+        if "cue_colour" in got:
+            # The colour rule: one cue colour per trial, red or blue, before the target; and no closed end.
+            cues = [a for _, t, a in seq if t == "cue_colour"]
+            r.check(len(cues) == 1 and cues[0] in ("red", "blue"), f"one cue colour, red or blue (found {cues})")
+            r.check("closed_end" not in got, "the colour rule keeps the whole rail open")
+            if "reversal" in got:
+                r.note(f"colour rule: reversal before this trial -> {[a for _, t, a in seq if t == 'reversal'][0]}")
+        closed = [a for _, t, a in seq if t == "closed_end"]
+        if closed:
+            # One-direction trial with the other half of the rail closed: the closed end is not the goal,
+            # and cannot be reached.
+            r.check(len(closed) == 1 and (not tgt or closed[0] != tgt[0]),
+                    f"one closed end, not the target (closed {closed}, target {tgt[0] if tgt else '?'})")
+            r.check("reach_wrong" not in got, "no reach_wrong with the other half of the rail closed")
+        r.note(f"centre-out: target {tgt[0] if tgt else '?'}" + (f" ({closed[0]} half closed)" if closed else "")
+               + ", " + (f"{outcome[0]} at the {ends[0]} end" if ends else (outcome[0] if outcome else "no outcome")))
     if exp == "perturb_bump" and "early_touch" not in got:
         if "grasp_timeout" in got or ("response_timeout" in got and "grasp" not in got):   # grasp_timeout: older files
             r.check("grasp" not in got and "perturb_applied" not in got,

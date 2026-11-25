@@ -21,9 +21,13 @@ import random
 import threading
 import time
 from collections import deque
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import experiments as ex
+from sinthlab_bringup.helpers.reach_targets import RULE, TargetPicker, modes_for   # on the path via experiments
+from sinthlab_bringup.helpers.rule_schedule import ReversalSchedule
+from sinthlab_bringup.helpers.bandit_schedule import DepletingBandit
+from sinthlab_bringup.helpers.rail_shapes import direction_name, layout_degs
 
 SESSION_STATES = {0: "IDLE", 1: "MONITORING_WAIT", 2: "MONITORING_READY",
                   3: "COMMANDING_WAIT", 4: "COMMANDING_ACTIVE"}
@@ -194,9 +198,16 @@ class DemoBridge:
         self._emit = emit
 
     # -- the runner calls these when the (fake) launch starts and ends
-    def launch_started(self, exp: ex.Experiment, params: Dict[str, object]) -> None:
+    def launch_started(self, exp: ex.Experiment, params: Dict[str, object], subject: str = "") -> None:
         with self._lock:
             self._run_id += 1
+            # The behavioural tables, as the recorder would write them: one trials.csv row per trial
+            # (outcome_tables.trial_row on a sidecar-like record), and a sessions.csv row at the end.
+            self._subject = subject
+            self._run = f"demo_{exp.run_name}_{time.strftime('%Y%m%d_%H%M%S')}"
+            self._meta: Optional[dict] = None
+            self._metas: List[dict] = []
+            self.trial_rows: List[dict] = []
             self._exp = exp
             self._params = dict(params)
             self._effective = {k: v for k, v in params.items() if ex.live_params.is_live(exp.key, k)}
@@ -206,6 +217,9 @@ class DemoBridge:
             self._stop_now = False
             self._in_trial = False
             self._trial = 0
+            self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
+            self._rule: Optional[ReversalSchedule] = None   # the colour rule, built on entering it
+            self._bandit: Optional[DepletingBandit] = None  # N-choice, built at the first trial
             self._phase, self._phase_arg, self._phase_t = "starting", None, time.time()
         threading.Thread(target=self._loop, args=(self._run_id,), daemon=True).start()
 
@@ -213,6 +227,15 @@ class DemoBridge:
         with self._lock:
             self._run_id += 1
             self._status = None
+            rows, metas, run = list(getattr(self, "trial_rows", [])), list(getattr(self, "_metas", [])), getattr(self, "_run", "")
+        if rows:      # the demo session's sessions.csv row, in the demo data folder
+            row = ex.outcome_tables.summarize(run, rows, metas[0]["params"], metas[-1]["params"])
+            ex.outcome_tables.upsert_session(row, ex.DATA / ex.outcome_tables.SESSIONS_CSV)
+
+    def run_rows(self) -> List[dict]:
+        """This (or the last) demo run's trials.csv rows."""
+        with self._lock:
+            return list(getattr(self, "trial_rows", []))
 
     def _log(self, text: str, level: str = "INFO") -> None:
         if self._emit:
@@ -236,6 +259,12 @@ class DemoBridge:
 
     def _phase_to(self, phase: str, arg=None, log: Optional[str] = None) -> None:
         self._phase, self._phase_arg, self._phase_t = phase, arg, time.time()
+        if phase == "trial_start":
+            self._meta = {"experiment": self._exp.key, "trial_index": arg, "subject": self._subject,
+                          "session_id": self._run, "params": {**self._params, **self._effective},
+                          "events": [], "rewards": [], "git": {"sha": "demo", "dirty": False}}
+        if self._meta is not None:
+            self._meta["events"].append({"event": phase, "arg": arg, "t_wall": self._phase_t})
         if log:
             self._log(log)
         self._publish()
@@ -244,6 +273,8 @@ class DemoBridge:
         """As helpers/experiment_control.py does on a successful outcome (REWARD_EVENTS)."""
         if self._effective.get("reward_pulse.enabled"):
             out, ms = self._effective.get("reward_pulse.output", 4), self._effective.get("reward_pulse.pulse_ms", 500)
+            if self._meta is not None:
+                self._meta["rewards"].append({"output": out, "ms": ms, "event": token})
             self._log(f"Reward: PULSE {out} {ms} (SYNC {out}, valve open {ms} ms) on {token}.")
 
     def _sleep(self, run_id: int, sec: float) -> bool:
@@ -286,6 +317,12 @@ class DemoBridge:
         finally:
             self._in_trial = False
         self._phase_to("trial_end", self._trial, f"--- TRIAL {self._trial} OVER ---")
+        if self._meta is not None:
+            row = ex.outcome_tables.trial_row(self._meta, self._run)
+            with self._lock:
+                self.trial_rows.append(row)
+                self._metas.append(self._meta)
+            self._meta = None
         self._phase_to("recover_start", None, "Parking.")
         return self._sleep(run_id, 1.5)
 
@@ -321,30 +358,101 @@ class DemoBridge:
                     return False
                 self._phase_to("goal", None, "Maze solved! Playing goal cue; waiting for release before reset.")
                 self._reward("goal")
-            elif self._exp.group == "pretraining" and self._effective.get(
-                    "centre_out.enabled", self._params.get("centre_out.enabled")):
-                # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other.
+            elif "n_choice.p_max" in self._effective:
+                # N-choice: a simulated chooser that prefers directions that have been paying.
+                e = self._effective
+                if self._bandit is None:
+                    names = [direction_name(a) for a in layout_degs(self._params.get("free_move.ray_layout", "4"))]
+                    self._bandit = DepletingBandit(names, start=str(e.get("n_choice.start", "full")))
+                self._bandit.configure(float(e["n_choice.p_max"]), float(e.get("n_choice.p_min", 0.1)),
+                                       float(e.get("n_choice.deplete", 0.3)), float(e.get("n_choice.recover", 0.1)))
+                if not self._sleep(run_id, random.uniform(1.0, 2.5)):
+                    return False
+                if self._meta is not None:
+                    self._meta["n_choice"] = {"p": self._bandit.probabilities(), "best": self._bandit.best()}
+                weights = [p ** 3 for p in self._bandit.p]
+                name = random.choices(self._bandit.names, weights=weights)[0]
+                p = self._bandit.probabilities()[name]
+                if self._bandit.choose(name):
+                    self._phase_to("choice", name, f"N-choice: {name} (p = {p:.2f}) -- reward.")
+                    self._reward("choice")
+                else:
+                    self._phase_to("choice_unrewarded", name, f"N-choice: {name} (p = {p:.2f}) -- no reward.")
+            elif self._effective.get("centre_out.enabled", self._params.get("centre_out.enabled")):
+                # Move Vertical / Horizontal, centre-out: one reach per trial, to the lit end or the other
+                # (none with the other half of the rail closed: actions/centre_out.py).
                 mode = str(self._effective.get("centre_out.target", self._params.get("centre_out.target", "either")))
                 ends = ("down", "up") if self._exp.key == "move_vertical" else ("left", "right")
-                target = random.choice(ends) if mode == "cued" else "either"
-                self._phase_to("target", target, f"Centre-out: the goal is {target}.")
-                if not self._sleep(run_id, random.uniform(1.0, 3.0)):
-                    return False
-                end = random.choice(ends)
+                if self._picker is None:
+                    self._picker = TargetPicker(ends)
+                if mode == RULE:
+                    # The colour rule: a simulated learner, right more often the longer the block runs, so
+                    # the criterion is met and the mapping reverses (unsignaled) every few dozen trials.
+                    e = self._effective
+                    if self._rule is None:
+                        self._rule = ReversalSchedule(ends, str(e.get("rule.red_end", ends[1])))
+                    self._rule.configure(int(e.get("rule.window", 20)), float(e.get("rule.criterion_pct", 80)),
+                                         int(e.get("rule.min_trials", 20)), int(e.get("rule.max_repeats", 3)))
+                    mapping = self._rule.mapping() if self._rule.take_reversal() else None
+                    if mapping:
+                        self._phase_to("reversal", mapping, f"(operator only) Colour rule: now {mapping}.")
+                    if self._meta is not None:
+                        self._meta["rule"] = self._rule.state()
+                    colour = self._rule.draw_colour()
+                    target = self._rule.end_for(colour)
+                    self._phase_to("cue_colour", colour, "")
+                    self._phase_to("target", target, f"Colour rule: {colour} -- the goal is {target}.")
+                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                        return False
+                    p_right = min(0.95, 0.35 + 0.04 * self._rule.choices_in_block)
+                    end = target if random.random() < p_right else [x for x in ends if x != target][0]
+                    if self._rule.record(end == target):
+                        self._log(f"Colour rule: criterion met -- reverses, unsignaled, from the next trial: "
+                                  f"{self._rule.mapping()} (block {self._rule.block}).")
+                    closed = None
+                else:
+                    self._rule = None
+                    self._picker.set_mode(mode if mode in modes_for(ends) and mode != RULE else "either",
+                                          int(self._effective.get("centre_out.max_repeats", 0) or 0))
+                    target = self._picker.pick()
+                    closed = (self._picker.other(target) if target in ends
+                              and self._effective.get("centre_out.block_other_end") else None)
+                    if closed:
+                        self._phase_to("closed_end", closed, f"Free move: the {closed} half of the rail is closed this trial.")
+                    self._phase_to("target", target, f"Centre-out: the goal is {target}.")
+                    if not self._sleep(run_id, random.uniform(1.0, 3.0)):
+                        return False
+                    end = target if closed else random.choice(ends)
                 if target in ("either", end):
                     self._phase_to("reach", end, f"Centre-out: reached the {end} end -- reward.")
                     self._reward("reach")
                 else:
                     self._phase_to("reach_wrong", end, f"Centre-out: reached the {end} end, the target was {target} -- no reward.")
             elif self._exp.group == "pretraining":
-                # Runs for session_sec, or (0) until Stop.
+                # Runs for session_sec, or (0) until Stop. Long moves (Free Move): a movement every few
+                # seconds, rewarded if at least long_move.min_m (actions/long_move.py).
                 limit = float(self._effective.get("session_sec", 0.0) or 0.0)
-                t0 = time.time()
+                each_move = self._effective.get("long_move.reward") == "each_move"
+                t0, next_move = time.time(), time.time() + random.uniform(1.0, 3.0)
                 while not (limit > 0 and time.time() - t0 >= limit):
                     if not self._sleep(run_id, 0.2):
                         return False
+                    if each_move and time.time() >= next_move:
+                        self._phase_to("move_start", None, "")
+                        if not self._sleep(run_id, random.uniform(0.5, 1.2)):
+                            return False
+                        length = random.uniform(0.03, 0.2)
+                        self._phase_to("move_end", f"length={length:.3f}", "")
+                        if length >= float(self._effective.get("long_move.min_m", 0.1)):
+                            self._phase_to("long_move", round(length, 3),
+                                           f"Long move: {length * 100:.1f} cm -- reward.")
+                            self._reward("long_move")
+                        else:
+                            self._log(f"Movement {length * 100:.1f} cm: too short, no reward.")
+                        next_move = time.time() + random.uniform(1.5, 4.0)
                 self._phase_to("session_end", None, "Session over. The arm holds; waiting for release before reset.")
-                self._reward("session_end")
+                if not each_move:
+                    self._reward("session_end")
             else:
                 thr = self._effective.get(
                     "apple_pluck_impedance_control_displacement.cartesian_displacement_threshold_m", 0.1)
@@ -389,6 +497,9 @@ class DemoBridge:
             if not ex.live_params.is_live(exp.key, name):
                 return False, f"'{name}' is a per-run parameter: it was read once at start-up."
             problem = ex.live_params.check_value(name, value, context)
+            if not problem and name == exp.paradigm_param and exp.paradigms and \
+                    str(value) not in [k for k, _ in exp.paradigms]:   # e.g. "left" on the vertical rail
+                problem = f"{name} must be one of {[k for k, _ in exp.paradigms]} in {exp.label}, got {value!r}"
             if problem:
                 return False, problem
         with self._lock:

@@ -29,6 +29,12 @@ ANALYSIS = REPO / "analysis"
 # from the source tree whether or not ROS is sourced.
 sys.path.insert(0, str(BRINGUP))
 from sinthlab_bringup.helpers import live_params  # noqa: E402
+from sinthlab_bringup.helpers import outcome_tables  # noqa: E402
+
+# Where the recordings are: the recorder's save folder (outcome_tables.data_dir: $SINTHLAB_DATA_DIR, else
+# ~/lbr-stack/src/sinthlab-kuka-stack/analysis), whichever checkout this dashboard runs from. ANALYSIS
+# above is this checkout's analysis CODE (validate_recording.py, nwb_export.py).
+DATA = outcome_tables.data_dir()
 
 
 
@@ -58,10 +64,14 @@ class Experiment:
     clik_nullspace: Optional[str] = None
     group: str = "experiments"     # dashboard tab: "experiments" or "pretraining"
     # Variants of one experiment, chosen per run by its `paradigm_param` parameter and shown as nested
-    # tabs on its card: [(value, label), ...]. Parameters that belong to one paradigm only
-    # (live_params.PARADIGM_ONLY) are shown only under it.
+    # tabs on its card: [(value, label), ...]. A live paradigm_param (the rails' centre_out.target) can
+    # also be switched by those tabs during a run, from the next trial. Parameters that belong to one
+    # paradigm only (live_params.PARADIGM_ONLY) are shown only under it.
     paradigms: List[Tuple[str, str]] = field(default_factory=list)
     paradigm_param: str = "paradigm"
+    # Parameters fixed by the task itself, not shown in the dashboard (the colour rule: centre_out.target is
+    # always "rule"). The YAML holds them; the node refuses another value.
+    hidden: Tuple[str, ...] = ()
 
     def smartpad(self) -> Dict[str, str]:
         """The SmartPad selections, in the order LbrImpedanceControlServer asks for them."""
@@ -126,17 +136,22 @@ EXPERIMENTS: List[Experiment] = [
 _MAZE_LAUNCH = {"ctrl": "lbr_joint_position_command_controller",
                 "extra_inactive_ctrl": "kuka_clik_controller",
                 "clik_nullspace_cfg": "config/clik_nullspace_pretrain.yaml"}
-# Move Vertical / Horizontal: the centre-out goal (centre_out.target).
+# Move Vertical / Horizontal: the centre-out goal (centre_out.target). It is live, so these tabs also
+# switch it during a run, from the next trial: one end only -> the other -> cued -> either.
 _CENTRE_OUT = [("either", "Either end"), ("cued", "Cued end")]
+_CENTRE_OUT_VERTICAL = _CENTRE_OUT + [("down", "Down only"), ("up", "Up only")]
+_CENTRE_OUT_HORIZONTAL = _CENTRE_OUT + [("left", "Left only"), ("right", "Right only")]
 EXPERIMENTS += [
     Experiment(
         key="free_move", label="Free Move", group="pretraining",
-        summary="Admittance: the arm goes wherever it is pushed within a box around the start, and holds where it is let go. No goal.",
+        summary="Admittance: the arm goes wherever it is pushed within a box around the start, and holds where it is let go. Rewards the session's end, or each long movement.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
         stiffness_profile="Uniform 1000",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_free_move",
+        # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
+        paradigms=[("session", "Session"), ("each_move", "Long moves")], paradigm_param="long_move.reward",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
     ),
     Experiment(
@@ -147,7 +162,7 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
-        paradigms=list(_CENTRE_OUT), paradigm_param="centre_out.target",
+        paradigms=list(_CENTRE_OUT_VERTICAL), paradigm_param="centre_out.target",
         # It starts 5 cm lower, in the middle of its rail, so it has its own CLIK posture.
         launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
         clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
@@ -160,8 +175,43 @@ EXPERIMENTS += [
         stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
-        paradigms=list(_CENTRE_OUT), paradigm_param="centre_out.target",
+        paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
         launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+]
+# The colour rule with unsignaled reversals (CI2B Aim 3): a task of its own, on the free-move node. Rail
+# or No rail is the run's option (free_move.rail_axis, per-run), with the same criterion.
+EXPERIMENTS += [
+    Experiment(
+        key="colour_rule", label="Colour Rule", group="experiments",
+        summary="Red or blue ring: each colour means left or right; the mapping reverses, unsignaled, at criterion. On a rail or free in the frontal plane.",
+        launch_file="iiwa7_colour_rule.launch.py",
+        params_yaml="colour_rule.yaml", node="free_move_orchestrator",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_colour_rule",
+        paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
+        hidden=("centre_out.enabled", "centre_out.target", "centre_out.block_other_end",
+                "centre_out.max_repeats", "centre_out.quarter_left", "centre_out.quarter_right"),
+        launch_args=dict(_MAZE_LAUNCH), clik_nullspace="clik_nullspace_pretrain.yaml",
+    ),
+]
+# N-choice with depleting rewards on an asterisk of rails: a task of its own, on the free-move node. It
+# starts where Move Vertical does (the middle of the arm's vertical span), so rails can go up and down.
+EXPERIMENTS += [
+    Experiment(
+        key="n_choice", label="N-Choice", group="experiments",
+        summary="An asterisk of rails from the centre: each direction pays with a probability that falls while chosen and recovers while left alone.",
+        launch_file="iiwa7_n_choice.launch.py",
+        params_yaml="n_choice.yaml", node="free_move_orchestrator",
+        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        ros_controller="kuka_clik_controller",
+        run_name="iiwa7_n_choice",
+        # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.
+        paradigms=[("2", "2 choices"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8")],
+        paradigm_param="free_move.ray_layout",
+        launch_args={**_MAZE_LAUNCH, "clik_nullspace_cfg": "config/clik_nullspace_pretrain_vertical.yaml"},
+        clik_nullspace="clik_nullspace_pretrain_vertical.yaml",
     ),
 ]
 BY_KEY = {e.key: e for e in EXPERIMENTS}

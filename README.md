@@ -95,8 +95,21 @@ python3 ~/lbr-stack/src/sinthlab-kuka-stack/experiment_ctrl_gui/server.py --demo
 ### The page
 - **Left column:** the experiment list (tabs **Experiments** and **Pre-training**), the **Run** controls, and a **Before you start** checklist
   with the SmartPad selections for the chosen experiment.
-- **Middle column:** the **status**, then the **parameters**. Status shows the trial number, the
-  current phase, the trial's steps, and a list of every event.
+- **Middle column:** the **status**, the **session card**, then the **parameters**. Status shows the
+  trial number, the current phase, the trial's steps, and a list of every event.
+- **Session card**, two tabs, built on the [behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv):
+  - **Run monitor** (shown while a run is going): this run's `trials.csv` as it grows, or the last run
+    between runs. Trials, % success, rewards and valve time; % correct over the last 20 choices; the
+    colour rule's block and mapping; N-choice's recent payoff and % best choices; a strip of every trial's
+    outcome (grouped by block for the colour rule; hover a cell for the trial); outcome counts; choices per
+    block (the colour rule: falling counts mean faster reversals) or per direction (N-choice).
+  - **Today vs recent** (shown between runs): for the selected experiment and subject, each key setting
+    in the last three sessions (`sessions.csv`) beside today's value (● where it differs from last
+    session), and the last session at a glance (trials, success, rewards, duration, the task's own
+    summary, what changed during it). **Same as last session** copies last session's values as per-run
+    edits; clicking an earlier value uses just that one. The settings are the task's own plus the common
+    ones (`outcome_tables.settings_for`).
+  - Demo mode keeps its sessions in a temporary folder, never beside real data.
 - **Log:** on the right on a wide screen, below on a narrow one.
 - **Top bar pills:** the ROS connection, the robot (FRI session state and `lbr_state` rate), and the
   run state. **Live view** (top right) shows the running experiment's bounds and the arm in them,
@@ -345,6 +358,7 @@ pre-training launches also accept `clik_nullspace_cfg:=`.
 | `experiment_ctrl_gui/runs/<exp>_<time>.yaml` | the edited parameter copy a Start used (only when something was edited), plus `…_clik_nullspace.yaml` when a CLIK start pose was edited |
 | `experiment_ctrl_gui/logs/<exp>_<time>.log` | the full launch output of each run |
 | `analysis/expt_<run_name>_<time>/` | the trial recordings, written by the orchestrator as always ([§7](#7-data-collected)) |
+| `analysis/sessions.csv` | one row per run, added when the run ends ([behavioural tables](#behavioural-tables-trialscsv-and-sessionscsv)) |
 
 None of these are committed to git.
 
@@ -693,6 +707,8 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 3c | Apple Pluck, perturb bump paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=perturb_bump` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 3b | Apple Pluck, random start paradigm | `iiwa7_apple_pluck_impedance_control.launch.py paradigm:=random_start` | `LbrImpedanceControlServer` | `LBRJointPositionCommandController` |
 | 4 | Maze                 | `iiwa7_maze.launch.py`                          | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 5 | Colour Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1468,6 +1484,111 @@ Work up the ladder and stop at the first rung that feels wrong.
 > box with free area inside it again. Segments must **touch** to form a junction; START (0,0) must lie on
 > one; the checkpoint/goal **X**-offset is 0 (on the locked plane), and Y/Z carry the position.
 
+### Scenario 5 — Colour Rule (unsignaled reversals)
+A task of its own (the **Colour Rule** card under Experiments), not part of pre-training: some days it
+is all that runs. It runs on the free-move node with the centre-out reach fixed to its `rule` mode
+([`colour_rule.yaml`](sinthlab_bringup/config/colour_rule.yaml),
+[`helpers/rule_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/rule_schedule.py)).
+
+1. **The cue.** At the go cue the **whole ring** lights **red** or **blue** (`ring_cue.colours.rule_red` /
+   `rule_blue`), drawn at random, never more than `rule.max_repeats` of one colour in a row.
+2. **The choice.** Each colour means one end: in block 1, red means `rule.red_end` (right) and blue the
+   other. The end the colour means gives the reward and the end tone; the other end gives nothing. The
+   ring goes dark at the choice (no red "reached" ring: red is a cue here).
+3. **The reversal.** Once the last `rule.window` choices of the block are at least
+   `rule.criterion_pct` % correct, and the block has run at least `rule.min_trials` choices, the
+   mapping flips from the next trial: **the contingency flips without any signal to the animal**. No
+   tone, no light, nothing on the ring changes; only the outcomes tell him. A session runs as many
+   blocks as he reaches criterion for.
+
+**Rail or No rail** (the card's tabs, per run: `free_move.rail_axis`), with the same criterion:
+
+| Option | `rail_axis` | The arm | A choice is |
+|---|---|---|---|
+| **Rail** | `y` | held to one horizontal rail through the start, ±0.15 m (as Move Horizontal) | reaching an end (within `centre_out.end_tol_m`) |
+| **No rail** | `frontal` | free in the plane facing the monkey: left, right, up, down, but never toward or away from him | reaching `centre_out.free_reach_m` (0.12 m) to the left or right of the start |
+
+With no rail, the arm also stays inside Free Move's box (`free_move.box.*`, default `standard`: up to
+1 cm above the start, ±18 cm sideways, 12 cm down), checked safe at the start pose by the dashboard and
+again at start-up. That keeps an upward push away from the singular pose above +0.02 m. Keep
+`free_reach_m` inside the box's sideways reach. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7,
+elbow 30, as Move Horizontal.
+
+Only choices count: a trial with no choice (time-out, early touch, safety stop) neither helps nor hurts
+the criterion. Every run starts at block 1 with red = `rule.red_end`; the criterion settings are live and
+apply from the next choice without resetting the block. The centre-out mode is fixed to the rule: the
+node refuses to start this task in any other mode.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `rule.red_end` | `right` | the end red means in block 1 |
+| `rule.window` | `20` | the criterion looks at the last this many choices of the block |
+| `rule.criterion_pct` | `80` | ...and reverses once at least this % of them are correct |
+| `rule.min_trials` | `20` | ...and the block has run at least this many choices |
+| `rule.max_repeats` | `3` | at most this many trials in a row with the same cue colour |
+| `centre_out.free_reach_m` | `0.12` | No rail: how far left or right is a choice [m] |
+
+Events: `reversal` (the new mapping; on the first trial of a new block, for the record only),
+`cue_colour` (red / blue), then `target` (the end the colour means) and `reach` / `reach_wrong`. Each
+trial's sidecar has `rule`: the mapping, block, choices so far in the block and the window's % correct,
+before the choice. `trials.csv` gets the choice, correct, cue colour, mapping, block, choices in block,
+window % and reversal, and the paradigm (rail / no rail); `sessions.csv` gets the number of choices, %
+correct, reversals and the mean choices to criterion.
+
+**On the rig, before a subject:** check that the red and blue whole-ring cues are clearly different from
+where the monkey sits (quarter 3 is dark on the current ring, so three quarters light), that a reversal
+leaves no trace he could perceive, and, for No rail, that the plane feels free and the reach distance
+is comfortable.
+
+### Scenario 6 — N-Choice (depleting rewards on an asterisk of rails)
+A task of its own (the **N-Choice** card under Experiments), on the free-move node
+([`n_choice.yaml`](sinthlab_bringup/config/n_choice.yaml),
+[`actions/n_choice.py`](sinthlab_bringup/sinthlab_bringup/actions/n_choice.py),
+[`helpers/bandit_schedule.py`](sinthlab_bringup/sinthlab_bringup/helpers/bandit_schedule.py)).
+
+**The asterisk.** Straight rails from the start in the plane facing the monkey, each
+`free_move.ray_length_m` long (0.07 m). **How many** is the run's choice (the card's tabs,
+`free_move.ray_layout`, 2-8; default 2): start with 2 and add choices over sessions. They are always
+**evenly spaced**, 360/n degrees apart, so no two choices are closer than any others, and mirror-symmetric
+left to right: an even number starts at right (2 = left / right, 4 = the cross, 8 = every compass
+direction), an odd number straight down (3 = down, up-right, up-left at 120 degrees). Directions are
+named right, up-right, up, ... for the compass angles, otherwise by angle (`30deg`; 0 = right, 90 = up). Near the start a push slides the arm out along the rail
+closest to its direction; once out on a rail it stays on it (a sideways push only slides it back toward
+the start). Nothing moves toward or away from him. The number and length are per-run
+([`helpers/rail_shapes.py`](sinthlab_bringup/sinthlab_bringup/helpers/rail_shapes.py)).
+
+**The start** is Move Vertical's, 5 cm below the maze start, in the middle of the arm's vertical span
+(up is the limit from the maze start), so rails can go up as well as down; the dashboard's floor check
+covers the lowest rail's end. SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30.
+
+**One choice per trial.** At the go cue the whole ring lights green: no cue, nothing says which
+direction is best. The trial ends when the arm reaches the end of a rail (within `n_choice.end_tol_m`).
+That direction pays with its current probability p (`choice`: the reward and the end tone; or
+`choice_unrewarded`: nothing). Then the probabilities change:
+
+- the direction chosen **depletes**: p → p − `deplete` × (p − `p_min`);
+- every other direction **recovers**: p → p + `recover` × (`p_max` − p).
+
+So a direction he keeps choosing gets worse, and one he leaves alone gets better again. He has to track
+which directions are paying from his own rewards.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `n_choice.p_max` / `p_min` | `0.9` / `0.1` | the range the probabilities move in |
+| `n_choice.deplete` | `0.3` | how much of the way to `p_min` the chosen direction falls, per choice |
+| `n_choice.recover` | `0.1` | how much of the way to `p_max` every other direction rises, per trial |
+| `n_choice.start` | `full` | `full`: every direction starts at `p_max` · `random`: each starts between `p_min` and `p_max` |
+| `n_choice.end_tol_m` | `0.015` | this close to a rail's end counts as choosing it [m] |
+
+All live, from the next trial (the probabilities are kept, clipped to a new range). Each trial's sidecar
+has `n_choice`: every direction's probability before the choice and the best direction(s).
+`trials.csv` gets the choice, rewarded, the chosen direction's p, the best direction(s), chose-best and
+every p; `sessions.csv` gets the reward rate, % chose best, % switches and the choices per direction.
+
+**On the rig, before a subject:** with the diagnostics scripts, solve every rail's end from this start
+(the diagonals especially); then push out along each rail and check the junction at the start is smooth,
+with no snag when committing to a rail.
+
 ### Pre-training — Free Move, Move Vertical, Move Horizontal
 Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
 they are under the **Pre-training** tab. All three:
@@ -1637,6 +1758,36 @@ does the IK; ROS only moves the target point.
   and the threshold before it starts. The estimate of the hand's force also drifts a little with
   posture, so far from the start some directions can feel slightly assisted or held back.
 
+#### Long moves — a reward for each long movement
+On the Free Move card, the **Long moves** tab (`long_move.reward: each_move`) pays for every movement
+of at least `long_move.min_m` as it ends, with the reward tone (`audio_cue_reward`), instead of paying
+for the session's end. The session runs as before, for `session_sec` or until Stop. It builds up to the
+maze's long movements: raise `min_m` live as he learns ([`long_move.py`](sinthlab_bringup/sinthlab_bringup/actions/long_move.py),
+logic in [`helpers/long_moves.py`](sinthlab_bringup/sinthlab_bringup/helpers/long_moves.py)).
+
+A **movement** runs from one rest to the next: it starts when the arm moves faster than
+`start_speed_mps`, counts once it has gone `confirm_m` from where it rested (a resting hand's ~7 mm bob
+never does), and ends once it has been slower than `stop_speed_mps` for `stop_sec`. Its **length** is
+the straight-line distance from where it started to where it ended; its **straightness** is that length
+over the path travelled.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `long_move.reward` | `session` | `session`: the session's end pays (as before) · `each_move`: each long movement pays (the card's tabs) |
+| `long_move.min_m` | `0.10` | shortest rewarded movement [m] |
+| `long_move.min_straightness` | `0` | 0–1, length over path at least this; 0 = not checked |
+| `long_move.min_gap_sec` | `1.0` | at least this long between two rewards [s] |
+| `long_move.start_speed_mps` / `stop_speed_mps` / `stop_sec` | `0.03` / `0.02` / `0.3` | where a movement starts and ends |
+| `long_move.confirm_m` | `0.02` | a movement counts once it has gone this far [m] |
+
+All live, from the next session. Events: `move_start` (confirmed), `move_end` (argument
+`length=…;straightness=…;duration=…;peak_speed=…`), and `long_move` (its length) when it is rewarded.
+`validate_recording.py` counts them.
+
+**On the rig, before a subject:** with debug logging on, make a few long and short pushes and check the
+log reports one movement per push with about the right length; rest a hand on the apple and check it
+reports none.
+
 #### Move Vertical / Move Horizontal — Free Move on one rail
 Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The
 arm goes along the rail wherever it is pushed and stays where it is let go; across the rail the
@@ -1689,12 +1840,15 @@ from its limit.
 In Move Vertical and Move Horizontal each trial is **one reach**: the **centre** is the start, and the
 two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_bringup/actions/centre_out.py)).
 
-1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), or one
-   end drawn at random (`target: cued`). From then on the apple **buzzes harder as it nears the goal
+1. **Go cue.** With the go cue the ring lights the goal: both end quarters (`target: either`), one
+   end drawn at random (`target: cued`), or the same end every trial (`target: left` / `right` on Move
+   Horizontal, `down` / `up` on Move Vertical). With `block_other_end` (the default), a trial with one
+   goal end closes the other half of the rail: the arm moves only between the centre and the goal, so
+   each trial allows one direction. From then on the apple **buzzes harder as it nears the goal
    end** and is silent around the centre ([haptic guidance](#haptic-guidance-and-the-force-sensor)).
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the **reward pulse** and the end tone;
-   - the **other end** (cued): no reward, no tone.
+   - the **other end** (cued or one end only, with `block_other_end` off): no reward, no tone.
 
    Either way the lit quarters turn **red** (`ring_cue.colours.reached`) and stay red until the hand
    lets go.
@@ -1709,7 +1863,9 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 | Parameter | Default | Meaning |
 |---|---|---|
 | `centre_out.enabled` | `true` | off = plain free movement on the rail, one session per trial; the session's end then rewards, as in Free Move |
-| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded |
+| `centre_out.target` | `either` | `either`: both ends are goals and both light · `cued`: one end per trial, drawn at random; only its quarter lights and only it is rewarded · `left` / `right` (Move Horizontal), `down` / `up` (Move Vertical): that end on every trial |
+| `centre_out.block_other_end` | `true` | a trial with one goal end (`cued` or one end only) closes the other half of the rail, so the arm can only move toward the goal; `false`: the whole rail is open and the other end is `reach_wrong` |
+| `centre_out.max_repeats` | `3` | `cued`: at most this many trials in a row to the same end (0 = no cap); switching mode restarts the count |
 | `centre_out.end_tol_m` | `0.02` | this close to an end counts as reaching it (0.005–0.03 m) |
 | `centre_out.quarter_down` / `quarter_up` | `2` / `0` | Move Vertical: the ring quarter lit for the down end (`rail_min_m`) and for the up end (`rail_max_m`) |
 | `centre_out.quarter_left` / `quarter_right` | `3` / `1` | Move Horizontal: the ring quarter lit for the left end (`rail_min_m`) and for the right end (`rail_max_m`) |
@@ -1717,7 +1873,16 @@ only when the arm is really there. All of it is live, in the `centre_out` block:
 The ends are named by where they are, seen from the front of the arm: **down** / **up** on Move
 Vertical's rail, **left** / **right** on Move Horizontal's.
 
-Events: `target` at the go cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
+**Switching within a session.** `centre_out.target` is live, and the paradigm tabs on the Move Vertical
+/ Move Horizontal card stay clickable while it runs: a click switches the mode from the next trial (the
+tab shows *next trial* until then), so one session can work up from one direction to both, for example
+**Left only → Right only → Cued end (one-way trials, interleaved) → Cued end with `block_other_end` off
+(a cued choice) → Either end**. The node refuses an end its rail does not have (`up` on Move
+Horizontal). The goal logic is [`helpers/reach_targets.py`](sinthlab_bringup/sinthlab_bringup/helpers/reach_targets.py),
+unit-tested without ROS: `python3 -m pytest sinthlab_bringup/test`.
+
+Events: `closed_end` (the closed end's name, only when half the rail is closed) and `target` at the go
+cue (the goal end's name, or `either`), then the outcome — `reach` (a goal
 end, the reward) or `reach_wrong` (the other end), each with the end's name as its argument — or
 `response_timeout`. They are in the trial CSV and sidecar; `validate_recording.py` reports each trial's
 target and outcome.
@@ -2645,6 +2810,28 @@ block of every experiment YAML, all live:
 | `reward_pulse.output` | `4` | EL2124 output (front jack SYNC 1–4) cabled to the reward box's NSP jack; must differ from the `nsp_sync` outputs |
 | `reward_pulse.pulse_ms` | `500` | how long the valve stays open, 10–5000 ms |
 
+**Calibrating the reward: milliseconds to microlitres.** `pulse_ms` is a time, not a volume.
+[`analysis/reward_calibration.py`](analysis/reward_calibration.py) measures the conversion. It sends the
+same `PULSE 4 <ms>` command in batches (50 openings each by default, shuffled widths, 3 batches per width,
+plus blank batches with no pulse); you weigh each batch. Then it fits volume per pulse against width and
+gives the width for a volume:
+
+```bash
+python3 analysis/reward_calibration.py sweep --widths 20 40 60 100 150 200 300 --out reward_calib/2026-11-24.csv
+python3 analysis/reward_calibration.py fit reward_calib/2026-11-24.csv --density 1.0 --out reward_calib/profile.json
+python3 analysis/reward_calibration.py ms --profile reward_calib/profile.json 100 250   # -> reward_pulse.pulse_ms
+python3 analysis/reward_calibration.py check --profile reward_calib/profile.json --width 133   # before a session
+```
+
+Run it with the arm parked under **PulseTestServer** (it never moves the arm), with no experiment running,
+the session's fluid, reservoir fill, tubing and spout, the line primed, FLUSH off and the pedal and hand
+switch unplugged. A sweep can be stopped and resumed (the same command continues it). A pulse the cabinet
+does not confirm stops the batch, which is redone; it is never repeated blindly. Pulses must be at least
+0.3 s apart with the valve closed (`TtlPulser` extends a pulse that is still high, so overlapping pulses
+would merge into one long opening). Widths whose batches vary by more than 10 % are left out of the
+calibrated range, and a volume outside that range is refused. `--demo` runs the whole procedure against
+a simulated cabinet. Recalibrate after changing the valve, tubing, spout, fluid or reservoir.
+
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event
 has its own line, so a dropped pulse shows up as a missing edge on that line instead of silently
@@ -2654,6 +2841,50 @@ mispairing every subsequent trial.
 (*NSP sync: the cabinet confirms pulses*); a refusal is logged as an error with the cabinet's reason
 (e.g. the outputs are unavailable because the I/O configuration is missing); no answer within a second
 is warned once per address (the experiment app is not running, or `cabinet_ip` is wrong).
+
+### Behavioural tables: trials.csv and sessions.csv
+The recording above holds everything, but not in a form you can open and read. Beside it, every run
+folder gets plain tables of what happened, written as each trial ends:
+
+| File | One row per | Holds |
+|---|---|---|
+| `<run folder>/trials.csv` | trial | the common columns below, then the task's own (centre-out: target, closed end, chosen end, correct) |
+| `<run folder>/movements.csv` | movement | Long moves only: length, straightness, duration, peak speed, rewarded |
+| `<run folder>/tables.md` | | what every column means |
+| `analysis/sessions.csv` | run (Start to Stop) | date, subject, experiment, paradigms, trials, % success, rewards, valve time, the task's key settings at the start and what changed during the run, plus the task's own summary (centre-out: % correct) |
+
+**Common columns:** run, session id, **subject**, experiment, paradigm, trial, times (trial start, go
+cue, outcome, trial end; Unix s on the ROS computer), outcome (`reach`, `reach_wrong`, `snap`, `goal`,
+`response_timeout`, `early_touch`, `safety_trip`, `stop_requested`, …), success (1 / 0 / blank for an
+aborted trial), go-to-outcome latency, reward pulses and total valve-open time (as commanded; the sidecar
+now keeps each pulse under `rewards`), partial, and the code version (git SHA, dirty).
+
+**The sidecar stays the record; the tables are views of it.** They are computed from the sidecars by
+[`helpers/outcome_tables.py`](sinthlab_bringup/sinthlab_bringup/helpers/outcome_tables.py), so they can
+be rebuilt at any time, including for runs recorded before they existed or started from a terminal:
+
+```bash
+python3 analysis/outcome_tables.py                 # every run in the data folder
+python3 analysis/outcome_tables.py <run folder>    # one run
+```
+
+The recorder appends to `trials.csv` as each trial ends; the dashboard adds the run's `sessions.csv`
+row when the run ends.
+
+**The subject.** The dashboard asks for a subject ID at every Start (`test` for a run without an
+animal) and passes it as the launch argument `subject:=<id>`; from a terminal, add `subject:=<id>` to
+the `ros2 launch` line.
+
+**The data folder** is `~/lbr-stack/src/sinthlab-kuka-stack/analysis`, or `$SINTHLAB_DATA_DIR` if set,
+for the recorder and the dashboard alike, so a dashboard started from a test checkout (`~/lbr-test`)
+still finds the runs.
+
+**Adding a task's columns.** Register a `TaskTables` subclass for the experiment in
+`helpers/outcome_tables.py` (the module's docstring has a template; `CentreOutTables` is a worked
+example): the columns and their descriptions, the key settings for `sessions.csv`, and how to read each
+column from the trial's events and parameters. Anything a task wants in its table must be marked as an
+event (`recorder.mark("choice", end)`) or be a parameter. An experiment with no class of its own gets
+the common columns.
 
 ### The sidecar
 

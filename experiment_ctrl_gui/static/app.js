@@ -21,7 +21,9 @@ const STEPS = {
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
 STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
-STEPS.move_vertical = STEPS.move_horizontal =
+STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
+                  "trial_end", "release_wait", "released"];
+STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
   ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "reach",
    "trial_end", "release_wait", "released"];
 const STEP_LABEL = {
@@ -29,7 +31,7 @@ const STEP_LABEL = {
   snap: "threshold", recover_start: "park", trial_end: "end", perturb_delay_start: "delay",
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze on", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "release wait", released: "released", threshold: "threshold",
-  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach",
+  session_end: "session over", grasp_wait: "grasp wait", grasp: "grasped", reach: "reach", choice: "choice",
 };
 const PHASE_TEXT = {
   starting: "starting up", trial_start: "at park — then to the start pose", at_start: "quiet window", quiet_end: "go cue",
@@ -48,15 +50,24 @@ const PHASE_TEXT = {
   grasp_wait: "waiting for the grasp", grasp: "grasped — delay before the bump",
   grasp_timeout: "no grasp — resetting",
   stop_requested: "STOP — ending the trial, parking",
+  closed_end: null,      // the one-direction trial's closed half of the rail, marked just before `target`
+  cue_colour: null, reversal: null,   // the colour rule's cue and reversal marks, just before `target`
 };
 // Where a phase means something different per experiment.
 const PHASE_TEXT_BY_EXP = {
   free_move: { armed: "free move — the arm follows the hand", session_end: "session over — waiting for release",
-               release_wait: "waiting for release" },
+               release_wait: "waiting for release",
+               // Long moves (long_move.reward each_move): each movement is reported as it starts and ends.
+               move_start: "moving", move_end: "free move — the arm follows the hand",
+               long_move: "long movement — reward" },
   move_vertical: { session_end: "session over — waiting for release",
                    release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
   move_horizontal: { session_end: "session over — waiting for release",
                      release_wait: "waiting for release", target: "go — the goal lit", armed: "reach to the lit end of the rail", reach: "reached the goal — reward, waiting for release", reach_wrong: "reached the other end — no reward, waiting for release", },
+  n_choice: { release_wait: "waiting for release", armed: "reach out along a rail",
+              choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
+  colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
+                 reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
@@ -132,7 +143,23 @@ function exp(key) { return S.experiments.find((e) => e.key === key); }
 // Paradigm experiments (apple pluck; Move Vertical / Horizontal): the run's paradigm is the
 // experiment's paradigm_param (`paradigm`, or `centre_out.target`).
 function paradigmParam(key) { return exp(key)?.paradigm_param || "paradigm"; }
-function paradigmOf(key) {
+// A live paradigm parameter (the rails' centre_out.target) can be switched during the run, from the next trial.
+function paradigmIsLive(key) {
+  const d = S.params[key], name = paradigmParam(key); const p = d && d.params.find((x) => x.name === name);
+  return !!p && p.tier === "live";
+}
+// While `key` runs: the paradigm the current trial runs (`now`) and one waiting for the next trial (`next`).
+function runningParadigm(key) {
+  const s = statusLive(), name = paradigmParam(key);
+  if (!s || runningKey() !== key || s.experiment !== key) return { now: null, next: null };
+  const now = s.live && name in s.live ? String(s.live[name]) : null;
+  const next = s.pending && name in s.pending ? String(s.pending[name]) : null;
+  return { now, next: next === now ? null : next };
+}
+// The paradigm in effect: while running, the current trial's; with upcoming, the next trial's.
+function paradigmOf(key, upcoming = false) {
+  const run = runningParadigm(key);
+  if (run.now !== null) return upcoming && run.next !== null ? run.next : run.now;
   const d = S.params[key], name = paradigmParam(key); const p = d && d.params.find((x) => x.name === name);
   return p ? String(p.value) : null;
 }
@@ -172,32 +199,49 @@ function renderExperiments() {
       <div class="d">${esc(e.summary)}</div>`;
     b.onclick = () => select(e.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued end), on
-    // the selected card. They set the paradigm parameter for the next Start; locked while that experiment runs.
+    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
+    // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
+    // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
+    // trial, and the tab waiting for the next trial is marked.
     if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
-      const cur = paradigmOf(e.key), locked = rk === e.key;
+      const running = rk === e.key, live = running && paradigmIsLive(e.key);
+      const run = running ? runningParadigm(e.key) : { now: null, next: null };
+      const cur = paradigmOf(e.key), locked = running && !live;
       const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
       sub.setAttribute("aria-label", `${e.label} paradigm`);
       for (const pr of e.paradigms) {
         const t = document.createElement("button");
+        const isNext = pr.key === run.next;
         t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
-        t.setAttribute("aria-selected", String(pr.key === cur)); t.textContent = pr.label; t.disabled = locked && pr.key !== cur;
-        t.title = locked ? "Fixed for this run — stop to change it" : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+        t.setAttribute("aria-selected", String(pr.key === cur));
+        t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
+        t.disabled = locked && pr.key !== cur;
+        t.title = locked ? "Fixed for this run — stop to change it"
+          : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
+          : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
         t.onclick = async () => {
-          if (locked || pr.key === cur) return;
+          if (locked) return;
+          if (live) {          // the status update that follows re-renders the tabs
+            if (pr.key === (run.next ?? cur)) return;
+            await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
+                      `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
+            return;
+          }
+          if (pr.key === cur) return;
           await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
           await loadParams(e.key, true); renderExperiments(); renderControls();
         };
         sub.appendChild(t);
       }
       const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-      lbl.textContent = locked ? "Paradigm (fixed for this run)" : "Paradigm";
+      lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
       list.appendChild(lbl); list.appendChild(sub);
     }
   }
 }
 async function select(key) {
   S.selected = key; store.set("exp", key);
+  if (!runningKey()) { SV.data = SV.hist = null; setTimeout(() => refreshSession(true), 0); }
   S.group = exp(key)?.group ?? S.group;
   renderExperiments(); renderChecklist();
   await loadParams(key);
@@ -285,6 +329,7 @@ function renderStatus() {
   let cur = s ? s.phase : null;
   if (cur === "timeout" || cur === "safety_trip" || (cur === "response_timeout" && key === "maze")) cur = "goal";
   if (cur === "reach_wrong") cur = "reach";
+  if (cur === "choice_unrewarded") cur = "choice";
   if (cur === "early_touch" || cur === "response_timeout") cur = "trial_end";
   if (cur === "cue_snap" || cur === "freeze") cur = "trial_end";   // they follow the snap's trial_end
   if (cur === "quiet_end" && key === "restricted_plane") cur = "cue_go";
@@ -422,8 +467,9 @@ function renderParams(force = false) {
   }
   S.renderSig = sig; S.renderDeferred = false;
 
-  // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm.
-  const para = paradigmOf(S.selected);
+  // Hide the paradigm itself (the card's tabs choose it) and parameters of another paradigm -- while a
+  // live paradigm switch waits, those of the paradigm coming next, so they can be set before it starts.
+  const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
   const counts = { live: 0, run: 0 };
   shown.forEach((p) => counts[p.tier]++);
@@ -625,7 +671,11 @@ function onState(a) {
   // When an experiment starts (here or in a terminal), show it: its Live tab is what you need.
   if (key && key !== prevKey && key !== S.selected) { select(key); return; }
   renderControls();
-  if (key !== prevKey) renderExperiments();
+  sessionOnState();
+  // The paradigm tabs follow a live switch (the rails): re-render when the running or waiting one changes.
+  const para = key ? JSON.stringify(runningParadigm(key)) : null;
+  if (key !== prevKey || para !== S.paradigmSig) renderExperiments();
+  S.paradigmSig = para;
   renderParams();
 }
 function connect() {
@@ -647,6 +697,236 @@ function connect() {
   es.onerror = () => { $("#pill-run").className = "pill err"; $("#pill-run").textContent = "Dashboard disconnected"; };
 }
 
+// ---------------------------------------------------------------- the session card
+// Run monitor (mock-up D): this run's trials.csv as it grows, or the last run between runs.
+// Today vs recent (mock-up E): the selected experiment's key settings across the subject's last sessions
+// (sessions.csv), today's values beside them, and the last session at a glance.
+const OUTCOME_CLASS = {
+  reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
+  choice_unrewarded: "unrewarded", reach_wrong: "wrong",
+  response_timeout: "none", timeout: "none", early_touch: "early",
+  safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort",
+};
+const OUTCOME_LABEL = { success: "Correct / done", unrewarded: "Chose, not paid", wrong: "Wrong end",
+  none: "No response", early: "Early touch", abort: "Aborted (safety, Stop)" };
+const SV = { view: null, userView: false, data: null, hist: null, lastTrial: null, lastFetch: 0, busy: false };
+
+function sessionKey() { return runningKey() || S.selected; }
+function pct(n, d) { return d ? `${Math.round(100 * n / d)}%` : "–"; }
+const num = (v) => (v === "" || v == null ? NaN : Number(v));
+
+function chooseSessionView() {
+  if (!SV.userView) SV.view = runningKey() ? "monitor" : "history";
+  document.querySelectorAll(".session-card .tab").forEach((t) => {
+    const on = t.dataset.view === SV.view;
+    t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
+  });
+}
+
+async function refreshSession(force = false) {
+  chooseSessionView();
+  const key = sessionKey();
+  if (!key || SV.busy) return;
+  const now = Date.now();
+  if (!force && now - SV.lastFetch < 1500) return;
+  SV.busy = true; SV.lastFetch = now;
+  try {
+    if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
+    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(store.get("subject", ""))}`);
+  } catch (e) { /* shown as empty */ }
+  finally { SV.busy = false; }
+  renderSession();
+}
+
+// Called on every status update: refetch the trials when a trial ends.
+function sessionOnState() {
+  const s = statusLive();
+  const t = s ? `${s.experiment}:${s.trial}:${["trial_end", "recover_start"].includes(s.phase)}` : null;
+  const viewWas = SV.view;
+  chooseSessionView();
+  if (t !== SV.lastTrial || SV.view !== viewWas) { SV.lastTrial = t; refreshSession(true); }
+}
+
+function renderSession() {
+  if (SV.view === "monitor") renderMonitor(); else renderHistory();
+}
+
+function renderMonitor() {
+  const box = $("#session-view"), d = SV.data;
+  const rows = (d && d.rows) || [];
+  $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
+  if (!rows.length) {
+    box.innerHTML = `<p class="empty">No trials yet${d && d.run ? " in this run" : ` for ${esc(exp(sessionKey())?.label || "")}`}.</p>`;
+    return;
+  }
+  const last = rows[rows.length - 1];
+  const done = rows.filter((r) => r.success === "0" || r.success === "1" || r.success === 0 || r.success === 1);
+  const ok = done.filter((r) => String(r.success) === "1").length;
+  const rewards = rows.reduce((a, r) => a + (num(r.n_rewards) || 0), 0);
+  const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
+  const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
+                 ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
+  const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
+  if (chosen.length) {
+    const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
+    tiles.push(["Correct, last 20", `${pct(c, lastN.length)} <small>${c}/${lastN.length}</small>`]);
+  }
+  if (last.block) tiles.push(["Block · mapping", `${esc(last.block)} <small>${esc(last.mapping || "")}</small>`]);
+  if ("choice" in last && !("correct" in last)) {
+    const ch = rows.filter((r) => r.choice), lastN = ch.slice(-20);
+    tiles.push(["Paid, last 20", pct(lastN.filter((r) => String(r.rewarded) === "1").length, lastN.length)]);
+    tiles.push(["Chose best", pct(ch.filter((r) => String(r.chose_best) === "1").length, ch.length)]);
+  }
+  if ("n_long_moves" in last) {
+    const mv = rows.reduce((a, r) => a + (num(r.n_movements) || 0), 0), lm = rows.reduce((a, r) => a + (num(r.n_long_moves) || 0), 0);
+    tiles.push(["Long moves", `${lm} <small>of ${mv}</small>`]);
+  }
+  const cls = (r) => OUTCOME_CLASS[r.outcome] || "none";
+  const title = (r) => [`Trial ${r.trial}: ${r.outcome || "no outcome"}`, r.cue_colour && `cue ${r.cue_colour}`,
+    r.chosen_end && `chose ${r.chosen_end}`, r.choice && `chose ${r.choice}${r.p_chosen !== "" && r.p_chosen != null ? ` (p ${r.p_chosen})` : ""}`,
+    r.reversal == 1 && "first trial after a reversal"].filter(Boolean).join(" · ");
+  // The strip: the last 120 trials, grouped by block when the task has blocks (the colour rule).
+  const shown = rows.slice(-120);
+  const groups = [];
+  for (const r of shown) {
+    const g = r.block ? `B${r.block} · ${r.mapping || ""}` : "";
+    if (!groups.length || groups[groups.length - 1].label !== g) groups.push({ label: g, rows: [] });
+    groups[groups.length - 1].rows.push(r);
+  }
+  const strip = groups.map((g) => `<div class="blk">${g.label ? `<span class="blk-l">${esc(g.label)}</span>` : ""}<div class="cells">` +
+    g.rows.map((r) => `<span class="cell o-${cls(r)}" title="${esc(title(r))}"></span>`).join("") + "</div></div>").join("");
+  const counts = {};
+  rows.forEach((r) => { const k = cls(r); counts[k] = (counts[k] || 0) + 1; });
+  const present = Object.keys(OUTCOME_LABEL).filter((k) => counts[k]);
+  const legend = present.map((k) => `<span><i class="o-${k}"></i>${OUTCOME_LABEL[k]}</span>`).join("");
+  const bars = (items, max) => `<div class="bars">` + items.map(([k, v]) =>
+    `<div class="b"><span title="${esc(k)}">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${max ? Math.round(100 * v / max) : 0}%"></span></span><span class="n">${v}</span></div>`).join("") + "</div>";
+  const panels = [`<div><h3>Outcomes</h3>${bars(present.map((k) => [OUTCOME_LABEL[k], counts[k]]), rows.length)}</div>`];
+  if (rows.some((r) => r.block)) {      // the colour rule: choices to criterion, block by block
+    const per = {};
+    rows.forEach((r) => { if (r.block && (String(r.correct) === "0" || String(r.correct) === "1")) per[r.block] = (per[r.block] || 0) + 1; });
+    const blocks = Object.keys(per).map(Number).sort((a, b) => a - b);
+    const items = blocks.map((b) => [`B${b}${b === Math.max(...blocks) ? " (now)" : ""}`, per[b]]);
+    panels.push(`<div><h3>Choices per block</h3><p class="muted small">Completed blocks ended at criterion: falling counts mean faster reversals.</p>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
+  }
+  if (rows.some((r) => r.choice)) {     // N-choice: how often each direction was chosen
+    const per = {};
+    rows.forEach((r) => { if (r.choice) per[r.choice] = (per[r.choice] || 0) + 1; });
+    const items = Object.entries(per).sort((a, b) => b[1] - a[1]);
+    panels.push(`<div><h3>Choices per direction</h3>${bars(items, Math.max(...items.map((x) => x[1])))}</div>`);
+  }
+  box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>` +
+    `<div class="legend">${legend}</div><div class="strip" aria-label="Trial outcomes, oldest to newest">${strip}</div>` +
+    `<div class="mon-grid">${panels.join("")}</div>`;
+}
+
+// Values as sessions.csv writes them (Python str / json.dumps) and as the dashboard holds them: compare loosely.
+function normVal(v) {
+  if (Array.isArray(v)) return JSON.stringify(v).replace(/\s+/g, "");
+  const t = String(v ?? "").trim().replace(/\s+/g, "");
+  if (/^(true|false)$/i.test(t)) return t.toLowerCase();
+  const n = Number(t);
+  return t !== "" && Number.isFinite(n) ? String(n) : t.replace(/^"(.*)"$/, "$1");
+}
+function parseVal(t) {
+  const x = String(t).trim();
+  if (/^(true|false)$/i.test(x)) return x.toLowerCase() === "true";
+  try { return JSON.parse(x); } catch { return x; }
+}
+
+function renderHistory() {
+  const box = $("#session-view"), h = SV.hist;
+  const key = sessionKey(), label = exp(key)?.label || key;
+  const subject = store.get("subject", "");
+  const running = !!runningKey();
+  $("#session-sub").textContent = h ? `${label}${subject ? ` · ${subject}` : ""}` : "";
+  const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Subject</label>
+    <input id="hist-subject" list="hist-subjects" value="${esc(subject)}" size="10" spellcheck="false">
+    <datalist id="hist-subjects">${((h && h.subjects) || []).map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist>
+    <button class="btn small" id="hist-same" ${running ? "disabled title=\"Stop the run to change per-run settings\"" : ""}>Same as last session</button></div>`;
+  if (!h) { box.innerHTML = tools + `<p class="empty">Loading…</p>`; wireHistory(); return; }
+  const sess = h.sessions || [];
+  if (!sess.length) {
+    box.innerHTML = tools + `<p class="empty">No earlier ${esc(label)} sessions${subject ? ` for ${esc(subject)}` : ""} in sessions.csv. ` +
+      `Each run adds one when it ends.</p>`;
+    wireHistory(); return;
+  }
+  const lastS = sess[sess.length - 1];
+  const head = sess.map((x) => `<th>${esc(x.date)} ${esc(x.start)}</th>`).join("");
+  const nChanged = h.settings.filter((st) => st.history.length && st.history[st.history.length - 1] !== "" &&
+    normVal(st.history[st.history.length - 1]) !== normVal(st.today)).length;
+  const body = h.settings.map((st, i) => {
+    const prev = st.history[st.history.length - 1];
+    const changed = prev !== "" && prev != null && normVal(prev) !== normVal(st.today);
+    const cells = st.history.map((v, j) => `<td class="v">${v === "" ? "–" :
+      running ? esc(v) : `<button class="use" data-i="${i}" data-j="${j}" title="Use ${esc(v)} today">${esc(v)}</button>`}</td>`).join("");
+    const today = Array.isArray(st.today) ? JSON.stringify(st.today) : String(st.today);
+    return `<tr class="${changed ? "changed" : ""}"><td title="${esc(st.help || "")}">${esc(st.name)}</td>${cells}` +
+      `<td class="v today">${esc(today)}${changed ? " ●" : ""}</td></tr>`;
+  }).join("");
+  const glance = [["Trials", lastS.n_trials], ["Success", lastS.success_pct !== "" ? `${lastS.success_pct}%` : "–"],
+    ["Rewards", `${lastS.n_rewards} <small>${(num(lastS.reward_ms) / 1000 || 0).toFixed(1)} s valve</small>`],
+    ["Duration", lastS.duration_min !== "" ? `${lastS.duration_min} min` : "–"]];
+  const common = new Set(["run", "date", "start", "duration_min", "subject", "experiment", "paradigms", "n_trials", "n_success",
+    "success_pct", "n_rewards", "reward_ms", "settings", "changed", "git_sha"]);
+  Object.entries(lastS).forEach(([k, v]) => { if (!common.has(k) && v !== "" && v != null) glance.push([k.replace(/_/g, " "), esc(v)]); });
+  box.innerHTML = tools +
+    `<h3>Last session at a glance <span class="muted small">${esc(lastS.date)} ${esc(lastS.start)} · ${esc(lastS.paradigms || "")}</span></h3>` +
+    `<div class="tiles">${glance.map(([k, v]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("")}</div>` +
+    (lastS.changed ? `<p class="muted small">Changed during that session: ${esc(lastS.changed)}</p>` : "") +
+    `<h3>Settings <span class="muted small">${nChanged ? `${nChanged} differ from last session (●)` : "same as last session"}` +
+    `${running ? "" : " · click an earlier value to use it today"}</span></h3>` +
+    `<div class="hist-wrap"><table class="hist"><thead><tr><th>Setting</th>${head}<th>Today</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  wireHistory();
+}
+
+function wireHistory() {
+  const inp = $("#hist-subject");
+  if (inp) inp.onchange = () => { store.set("subject", inp.value.trim()); refreshSession(true); };
+  const h = SV.hist;
+  const apply = async (pairs) => {
+    for (const [name, val] of pairs) await act(() => api(`/api/params/${sessionKey()}`, { name, value: parseVal(val) }));
+    await loadParams(sessionKey(), true); renderExperiments(); renderControls();
+    toast(pairs.length ? `${pairs.length} setting(s) set for the next Start` : "Already the same as last session", "ok");
+    refreshSession(true);
+  };
+  const same = $("#hist-same");
+  if (same && h) same.onclick = () => apply(h.settings.filter((st) => {
+    const prev = st.history[st.history.length - 1];
+    return prev !== "" && prev != null && normVal(prev) !== normVal(st.today);
+  }).map((st) => [st.name, st.history[st.history.length - 1]]));
+  document.querySelectorAll("table.hist button.use").forEach((b) => b.onclick = () => {
+    const st = h.settings[Number(b.dataset.i)];
+    apply([[st.name, st.history[Number(b.dataset.j)]]]);
+  });
+}
+
+document.querySelectorAll(".session-card .tab").forEach((t) => t.onclick = () => {
+  SV.view = t.dataset.view; SV.userView = true; refreshSession(true);
+});
+
+// ---------------------------------------------------------------- Start: ask who is being run
+async function openStartDialog() {
+  const dlg = $("#start-dlg"), inp = $("#start-subject");
+  $("#start-dlg-exp").textContent = expLabel(S.selected);
+  inp.value = store.get("subject", "");
+  try {
+    const subjects = await api("/api/subjects");
+    $("#start-subjects").innerHTML = subjects.map((x) => `<option value="${esc(x)}"></option>`).join("");
+  } catch { /* no history yet */ }
+  dlg.showModal();
+  inp.focus(); inp.select();
+}
+$("#start-cancel").onclick = () => $("#start-dlg").close();
+$("#start-form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const subject = $("#start-subject").value.trim();
+  if (!$("#start-subject").checkValidity()) return $("#start-subject").reportValidity();
+  $("#start-dlg").close();
+  store.set("subject", subject);
+  await act(() => api("/api/start", { experiment: S.selected, subject }), `Starting (subject ${subject})`);
+};
+
 async function init() {
   S.experiments = await api("/api/experiments");
   S.groups = await api("/api/groups");
@@ -659,6 +939,7 @@ async function init() {
   await loadParams(S.selected);
   renderExperiments();          // the paradigm tabs need the parameters
   renderControls();
+  refreshSession(true);
   connect();
   wireTips();
   // ?hover=<parameter name>: open that parameter's help, e.g. to link someone to it.
@@ -674,7 +955,7 @@ async function init() {
     }
   }, 300);
 
-  $("#btn-start").onclick = () => act(() => api("/api/start", { experiment: S.selected }), "Starting");
+  $("#btn-start").onclick = openStartDialog;
   $("#btn-stop").onclick = () => {
     const q = S.app && S.app.stopping_now
       ? "Skip parking and stop the launch now? FRI closes wherever the arm is."

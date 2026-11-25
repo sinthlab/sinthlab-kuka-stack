@@ -77,6 +77,9 @@ _HAPTIC = ["haptic.*"]
 _FREE = _COMMON + _REWARD + _SPEED + _RING + _HAPTIC + [
     # Move Vertical / Horizontal: the centre-out reach (actions/centre_out.py). Free Move has none.
     "centre_out.*",
+    "rule.*",                      # the colour rule (helpers/rule_schedule.py; colour_rule.yaml only)
+    # Free Move: the long-movement reward (actions/long_move.py). The rails have none.
+    "long_move.*",
     "session_sec",
     "response_timeout_sec",        # not moved in time -> the session ends, park
     # The feel of the admittance -- see pretrain_free_move.yaml.
@@ -125,6 +128,11 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
     "move_vertical": _FREE,
     "move_horizontal": _FREE,
+    # The colour rule: the same node and feel; Rail / No rail (free_move.rail_axis) is per-run, and the
+    # centre-out mode is fixed to the rule (so not centre_out.*: only the reach distances are live).
+    "colour_rule": [x for x in _FREE if x != "centre_out.*"] + ["centre_out.end_tol_m", "centre_out.free_reach_m"],
+    # N-choice: the same node and feel; the asterisk (free_move.rail_axis, ray_layout, ray_length_m) is per-run.
+    "n_choice": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")] + ["n_choice.*"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -168,6 +176,30 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "reward_pulse.pulse_ms": (10, 5000),
     # Centre-out: how close to a rail end counts as reaching it.
     "centre_out.end_tol_m": (0.005, 0.03),
+    # The colour rule, No rail: how far left or right is a choice.
+    "centre_out.free_reach_m": (0.03, 0.2),
+    # Cued: at most this many trials in a row to the same end (0 = no cap).
+    "centre_out.max_repeats": (0, 20),
+    # The colour rule (helpers/rule_schedule.py).
+    "rule.window": (1, 100),
+    "rule.criterion_pct": (50.0, 100.0),
+    "rule.min_trials": (1, 200),
+    "rule.max_repeats": (0, 20),
+    # N-choice (actions/n_choice.py, helpers/bandit_schedule.py).
+    "n_choice.end_tol_m": (0.005, 0.03),
+    "n_choice.p_max": (0.0, 1.0),
+    "n_choice.p_min": (0.0, 1.0),
+    "n_choice.deplete": (0.0, 1.0),
+    "n_choice.recover": (0.0, 1.0),
+    "free_move.ray_length_m": (0.02, 0.15),
+    # Long moves (actions/long_move.py).
+    "long_move.min_m": (0.02, 0.40),
+    "long_move.min_straightness": (0.0, 1.0),
+    "long_move.min_gap_sec": (0.0, 30.0),
+    "long_move.start_speed_mps": (0.01, 0.3),
+    "long_move.stop_speed_mps": (0.005, 0.3),
+    "long_move.stop_sec": (0.05, 2.0),
+    "long_move.confirm_m": (0.005, 0.1),
     "haptic.min_pct": (0, 100),
     "haptic.max_pct": (0, 100),
     "haptic.ramp_start_m": (0.005, 0.3),
@@ -213,8 +245,9 @@ IIWA7_LIMITS_DEG = [169.0, 119.0, 169.0, 119.0, 169.0, 119.0, 174.0]
 STRAIGHT_BELOW_DEG = 12.0
 _START, _PARK = "move_to_start.target_joint_position", "move_to_park.target_joint_position"
 
-# Paradigm-only parameters: in an experiment with a `paradigm` (apple pluck), these act -- and the
-# dashboard shows them -- only in those paradigms. The first matching pattern wins.
+# Paradigm-only parameters: in an experiment with a paradigm (apple pluck's `paradigm`, the rails'
+# `centre_out.target`), these act -- and the dashboard shows them -- only in those paradigms. The first
+# matching pattern wins.
 PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.baseline_settle_sec": ("perturb",),
     "perturb_start.speed_scale": ("perturb",),           # perturb_bump: grasp.bump_speed_scale
@@ -222,6 +255,14 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "perturb_start.*": ("perturb", "perturb_bump"),
     "grasp.*": ("perturb_bump",),
     "random_start.*": ("random_start",),
+    # Move Vertical / Horizontal, whose paradigm is centre_out.target.
+    "centre_out.max_repeats": ("cued",),
+    "centre_out.block_other_end": ("cued", "left", "right", "down", "up"),
+    # The colour rule, whose paradigm is Rail / No rail (free_move.rail_axis).
+    "centre_out.free_reach_m": ("frontal",),
+    "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "left", "right", "down", "up"),
+    # Free Move, whose paradigm is long_move.reward.
+    "long_move.*": ("each_move",),
 }
 
 
@@ -239,6 +280,8 @@ STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
     "*.speed_scale": 0.05,
     "grasp.bump_speed_scale": 0.05,
+    "centre_out.max_repeats": 1,
+    "long_move.min_m": 0.01,
 }
 
 # Live parameters applied the moment they are set, instead of at the next trial boundary. Only for
@@ -268,12 +311,18 @@ CHOICES: Dict[str, List[str]] = {
     "paradigm": ["pluck", "perturb", "perturb_bump", "random_start"],
     "perturb_start.start_delay_mode": ["fixed", "random"],
     "grasp.delay_mode": ["fixed", "random"],
-    "free_move.rail_axis": ["none", "x", "y", "z"],
+    "free_move.rail_axis": ["none", "x", "y", "z", "frontal", "rays"],   # helpers/rail_shapes.SHAPES
     "nsp_sync.*_output": ["1", "2", "3", "4"],                # the EL2124's outputs, front jacks SYNC 1-4
     "reward_pulse.output": ["1", "2", "3", "4"],
     "free_move.box.preset": ["standard", "more_x", "most_x", "centred", "custom"],   # helpers/free_move_box.CHOICES
-    "centre_out.target": ["either", "cued"],                  # actions/centre_out.TARGETS
+    # helpers/reach_targets.modes_for: either | cued | an end's name. The node refuses an end its rail
+    # does not have (left / right on the vertical rail, down / up on the horizontal one).
+    "centre_out.target": ["either", "cued", "left", "right", "down", "up", "rule"],
+    "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
+    "long_move.reward": ["session", "each_move"],            # actions/long_move.MODES
+    "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
+    "free_move.ray_layout": ["2", "3", "4", "5", "6", "7", "8"],   # helpers/rail_shapes.LAYOUT_COUNTS
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
 }
 

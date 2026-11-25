@@ -43,6 +43,7 @@ import numpy as np
 from rclpy.node import Node as rclpyNode
 
 from lbr_fri_idl.msg import LBRState
+from sinthlab_bringup.helpers import outcome_tables
 from sinthlab_bringup.helpers.node_utils import get_launch_param
 from sinthlab_bringup.helpers.smartpad_link import SmartPadLink
 
@@ -91,7 +92,7 @@ def _quat_from_matrix(m: np.ndarray) -> tuple:
 
 class TrialRecorder:
     def __init__(self, node: rclpyNode, *, experiment: str,
-                 save_dir: str = "~/lbr-stack/src/sinthlab-kuka-stack/analysis",
+                 save_dir: Optional[str] = None,
                  extra_header: Optional[Sequence[str]] = None,
                  extra_fn: Optional[Callable[[np.ndarray], list]] = None,
                  session_id: Optional[str] = None,
@@ -103,7 +104,10 @@ class TrialRecorder:
         run = str(get_launch_param(node, "run_name", "") or "").strip()
         if not run:
             run = node.get_name().replace("_orchestrator", "")
-        self._save_dir = os.path.join(os.path.expanduser(save_dir),
+        # The data folder is shared with the dashboard (helpers/outcome_tables.data_dir:
+        # $SINTHLAB_DATA_DIR, else ~/lbr-stack/src/sinthlab-kuka-stack/analysis), so a test checkout
+        # records where the dashboard looks.
+        self._save_dir = os.path.join(os.path.expanduser(save_dir) if save_dir else str(outcome_tables.data_dir()),
                                       f"expt_{run}_{time.strftime('%Y%m%d_%H%M%S')}")
         self._extra_header = list(extra_header) if extra_header else []
         self._extra_fn = extra_fn
@@ -139,7 +143,9 @@ class TrialRecorder:
         self._events: list = []
         self._last_msg: Optional[LBRState] = None
         self._sidecar: dict = {}
-        self._subject = get_launch_param(node, "subject", None)   # set at launch, if at all
+        self._docs_written = False
+        # Set at launch (the dashboard asks for it at Start: subject:=<id>), if at all.
+        self._subject = str(get_launch_param(node, "subject", "") or "").strip() or None
         # What the SmartPad app runs with: one file per run, beside the trials (helpers/smartpad_link.py).
         SmartPadLink.get(node.get_logger()).write_to(self._save_dir)
         self._experiment_start = self._send_experiment_start()
@@ -225,11 +231,15 @@ class TrialRecorder:
         column to find the event, the sidecar to time it."""
         if not self._active:
             return
+        reward = None
         if self._on_event is not None:
             try:
-                self._on_event(event, arg)      # sync pulse first: nothing above should delay it
+                reward = self._on_event(event, arg)   # sync pulse first: nothing above should delay it
             except Exception as exc:
                 self._node.get_logger().warn(f"TrialRecorder sync hook failed on '{event}': {exc}")
+        if isinstance(reward, dict):            # the event sent the reward pulse: keep what was commanded
+            self._sidecar.setdefault("rewards", []).append({
+                **reward, "event": event, "row": self._rows, "t_wall": time.time()})
         m = self._last_msg
         self._events.append({
             "event": event, "arg": arg, "row": self._rows,
@@ -267,6 +277,16 @@ class TrialRecorder:
             self._node.get_logger().error(f"TrialRecorder failed to close cleanly: {exc}")
         finally:
             self._fh, self._writer = None, None
+        # The behavioural tables (trials.csv, ...): a view of the sidecar just written, so a failure here
+        # never costs data -- they can be rebuilt with analysis/outcome_tables.py.
+        try:
+            outcome_tables.append_trial(self._save_dir, self._sidecar)
+            if not self._docs_written:
+                outcome_tables.write_column_docs(self._save_dir, self._experiment)
+                self._docs_written = True
+        except Exception as exc:
+            self._node.get_logger().warn(f"TrialRecorder: trials.csv not updated ({exc}); rebuild it with "
+                                         f"analysis/outcome_tables.py")
         return path
 
     # ------------------------------------------------------------------ sampling
