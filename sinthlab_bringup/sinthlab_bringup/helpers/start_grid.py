@@ -75,11 +75,14 @@ class StartGrid:
         """The same check as box_problem, along Move Vertical / Horizontal's rail: the base `axis` ("x" |
         "y" | "z") through the start's end effector, from rail_min to rail_max [m] -- at `steps` points
         along it, the start's orientation held. None if safe, else the reason."""
+        return self.directed_rail_problem(start_deg, np.eye(3)["xyz".index(axis)], rail_min, rail_max, steps)
+
+    def directed_rail_problem(self, start_deg, direction, rail_min, rail_max, steps=15):
+        """Check the cabinet posture margins along a segment in the supplied unit direction."""
         q0 = np.radians(np.asarray(start_deg, dtype=float))
         T0 = self._fk(q0)
-        u = np.eye(3)["xyz".index(axis)]
         for s in np.linspace(float(rail_min), float(rail_max), steps):
-            problem = self._pose_problem(q0, T0, u * s, f"the rail point {s:+.3f} m from the start")
+            problem = self._pose_problem(q0, T0, direction * s, f"the rail point {s:+.3f} m from the start")
             if problem:
                 return problem
         return None

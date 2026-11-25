@@ -144,7 +144,7 @@
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
-      smartpad_stiffness_n_per_m: 1000.0  # the SmartPad profile this needs (Uniform 1000): another reported stiffness does not start, the arm parks and holds; 0 = no check [N/m]
+      smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
       rail_axis: "rays"  # the asterisk: straight rails from the start in the frontal plane (helpers/rail_shapes.py). Per-run
       ray_layout: "2"  # how many choices (the card's tabs), 2-8, evenly spaced: even numbers start at right, odd ones straight down (helpers/rail_shapes.layout_degs). Quoted: a string. Per-run
       ray_length_m: 0.07  # every rail's length from the start [m]: the lowest end keeps the apple bottom at 0.90 m. Per-run
@@ -172,7 +172,7 @@
 
     # ---- cues (live) ----
     quiet_window_sec: 2.0  # at the start, before the go cue [s]; keep >= free_move.tare_sec
-    response_timeout_sec: 30.0  # the arm not moved more than quiet_gate.move_m within this long after the go cue -> the session ends (event response_timeout), park [s]
+    response_timeout_sec: 30.0  # maximum choice time from armed [s]; timeout holds for release before park
     audio_cue:  # switch for every beep
       enabled: true  # false = no beeps at all; the trial sequence is unchanged
     audio_cue_play:  # go cue: free movement starts
@@ -193,6 +193,8 @@
       enabled: true  # send the reward pulse when the chosen direction pays (event choice); an unpaid choice, no response, early touch, safety trip and Stop get none
       output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
       pulse_ms: 500  # how long the valve stays open [ms] = the reward size, 10-5000
+      count: 1  # pulses per reward, each pulse_ms long: 1 = one opening; more = a burst of separate drops (calibrate the burst itself: analysis/reward_calibration.py --burst)
+      gap_ms: 300  # closed valve between the pulses of a burst [ms], 100-5000
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout

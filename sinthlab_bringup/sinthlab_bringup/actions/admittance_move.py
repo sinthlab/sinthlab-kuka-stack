@@ -177,7 +177,7 @@ class AdmittanceMoveAction:
             self._ray_degs = rail_shapes.layout_degs(get_required_param(node, self._p + "ray_layout"))
             self._rays = rail_shapes.ray_dirs(self._ray_degs)
             self._ray_len = float(get_required_param(node, self._p + "ray_length_m"))
-            # Every rail's end and middle reachable from this start (as the box is checked for Free Move).
+            # Apply the production rail posture check along each ray from this start.
             start = get_required_param(node, "move_to_start.target_joint_position")
             problem = rail_shapes.rays_problem(StartGrid(model, self.ee_link), start, self._ray_degs, self._ray_len)
             if problem:

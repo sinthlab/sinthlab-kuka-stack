@@ -9,6 +9,8 @@ from sinthlab_bringup.actions.switch_controller import SwitchControllerAction
 from sinthlab_bringup.actions.admittance_move import AdmittanceMoveAction
 from sinthlab_bringup.actions.safety_stop_monitor import SafetyStopMonitor
 from sinthlab_bringup.actions.force_release_waiter import ForceReleaseWaiter
+from sinthlab_bringup.helpers.live_params import CHOICE_GEOMETRY, choice_geometry_problem
+from sinthlab_bringup.helpers.stiffness_profiles import SMARTPAD_PROFILES, required_profile
 from sinthlab_bringup.actions.audio_cue import AudioCue
 from sinthlab_bringup.actions.visual_cue import VisualCue
 from sinthlab_bringup.actions.ring_state_cue import RingStateCue
@@ -57,6 +59,11 @@ class FreeMoveOrchestratorNode(rclpyNode):
         AudioCue.warmup(self)
         VisualCue.warmup(self)
         self.experiment = str(get_required_param(self, "experiment"))   # free_move | move_vertical | move_horizontal | colour_rule | n_choice
+
+        geometry = {k: get_required_param(self, k) for k in CHOICE_GEOMETRY if self.has_parameter(k)}
+        problem = choice_geometry_problem(geometry)
+        if problem:
+            raise ValueError(problem)
 
         self.trial_count = 0
         self._trial_ending = False
@@ -249,27 +256,18 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move.start(self._on_long_move)
 
     def _smartpad_ok(self) -> bool:
-        """Free move needs the SmartPad's firm spring (free_move.smartpad_stiffness_n_per_m, Uniform 1000):
-        the arm follows the moving equilibrium only on a firm spring. On a soft one it runs on for several
-        cm after every let-go (10-28 test at Uniform 100: median 18-41 mm, up to 74 mm, for ~0.7 s, against
-        3.6 mm at Uniform 1000), and a push during that run-on moves it much further. So a reported profile
-        with another stiffness does not start: the arm parks and the run holds there. No report at all
-        (network, an older app) only warns."""
+        """Check the task's six-axis stiffness diagonal before opening the response window."""
         need = float(get_required_param(self, "free_move.smartpad_stiffness_n_per_m"))
         if need <= 0.0:
             return True
-        got = self.control.smartpad().translational_stiffness()
-        if got is None:
-            self.get_logger().warn(
-                f"No SmartPad settings report: cannot check the stiffness profile. Free move needs "
-                f"{need:g} N/m (Uniform {need:g}); moving anyway.")
+        name = required_profile(self.experiment)
+        expected = SMARTPAD_PROFILES[name]
+        problem = (f"configured X stiffness {need:g} disagrees with {name}" if need != expected[0]
+                   else self.control.smartpad().stiffness_problem(expected))
+        if problem is None:
             return True
-        if abs(got - need) <= 1.0:
-            return True
-        self.get_logger().error(
-            f"SmartPad stiffness is {got:g} N/m but free move needs {need:g} N/m (profile Uniform {need:g}). "
-            f"Not moving. Stop, restart LbrImpedanceControlServer with that profile, and start again.")
-        self.control.hold(f"the SmartPad profile ({got:g} N/m) is not the {need:g} N/m free move needs")
+        self.get_logger().error(f"Cannot start trial: {problem}. Check the cabinet report and select {name}.")
+        self.control.hold(problem)
         self._end_trial("smartpad_mismatch")
         return False
 
@@ -283,7 +281,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self._trial_ending or self._stopping:
             return
         if self._choice_on():
-            self.get_logger().warn(f"NO REACH within {self.response_timeout.duration_sec():g} s: parking.")
+            self.get_logger().warn(f"NO REACH within {self.response_timeout.duration_sec():g} s: waiting for release before parking.")
             self._end_trial("response_timeout")
             return
         moved = self.admittance.max_excursion_m()
@@ -329,7 +327,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.ring.show("reached", lit)   # the lit quarters turn red until the hand lets go
         else:
             self.ring.show("off")
-        if reason in ("safety", "early_touch", "smartpad_mismatch", "response_timeout"):
+        if reason in ("safety", "early_touch", "smartpad_mismatch") or (
+                reason == "response_timeout" and not self._choice_on()):
             if reason == "safety":
                 self.get_logger().error("SAFETY ABORT: parking immediately.")
             self.switch_to_joint.start()
@@ -337,7 +336,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
         self.get_logger().info("Session over. The arm holds; waiting for release before reset."
                                if reason == "session_end" else "The arm holds; waiting for release before reset.")
-        if reason not in ("reach_wrong", "choice_unrewarded"):
+        if reason not in ("reach_wrong", "choice_unrewarded", "response_timeout"):
             self.end_cue.start()
         self.recorder.mark("release_wait")
         self.force_release.start()

@@ -28,6 +28,7 @@ ANALYSIS = REPO / "analysis"
 # The live list is shared with the orchestrators. It is plain Python (no ROS import), so load it
 # from the source tree whether or not ROS is sourced.
 sys.path.insert(0, str(BRINGUP))
+from sinthlab_bringup.helpers.stiffness_profiles import SMARTPAD_PROFILES, required_profile
 from sinthlab_bringup.helpers import live_params  # noqa: E402
 from sinthlab_bringup.helpers import outcome_tables  # noqa: E402
 
@@ -36,17 +37,6 @@ from sinthlab_bringup.helpers import outcome_tables  # noqa: E402
 # above is this checkout's analysis CODE (validate_recording.py, nwb_export.py).
 DATA = outcome_tables.data_dir()
 
-
-
-# The SmartPad app's stiffness profiles {X, Y, Z, A, B, C} -- a copy of stiffness_profiles_ /
-# stiffness_vals_ in sunrise_controller_code/LbrImpedanceControlServer.java, kept in step with it. Every
-# experiment's stiffness_profile must be one of these (checked at import).
-SMARTPAD_PROFILES: Dict[str, List[float]] = {
-    "Uniform 100": [100.0, 100.0, 100.0, 300.0, 300.0, 300.0],
-    "Uniform 400": [400.0, 400.0, 400.0, 300.0, 300.0, 300.0],
-    "Uniform 1000": [1000.0, 1000.0, 1000.0, 300.0, 300.0, 300.0],
-    "Z lock 2500, X/Y 1000, rot 120": [1000.0, 1000.0, 2500.0, 120.0, 120.0, 120.0],
-}
 
 
 @dataclass
@@ -147,7 +137,7 @@ EXPERIMENTS += [
         summary="Admittance: the arm goes wherever it is pushed within a box around the start, and holds where it is let go. Rewards the session's end, or each long movement.",
         launch_file="iiwa7_pretrain_free_move.launch.py",
         params_yaml="pretrain_free_move.yaml", node="free_move_orchestrator",
-        stiffness_profile="Uniform 1000",
+        stiffness_profile=required_profile("free_move"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_free_move",
         # The reward: the session's end, or each long movement (long_move.reward, live: switchable mid-run).
@@ -159,7 +149,7 @@ EXPERIMENTS += [
         summary="Free Move on one vertical rail, centre-out: reaches from the centre up or down to an end of the rail are rewarded. No threshold.",
         launch_file="iiwa7_pretrain_move_vertical.launch.py",
         params_yaml="pretrain_move_vertical.yaml", node="free_move_orchestrator",
-        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        stiffness_profile=required_profile("move_vertical"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_vertical",
         paradigms=list(_CENTRE_OUT_VERTICAL), paradigm_param="centre_out.target",
@@ -172,7 +162,7 @@ EXPERIMENTS += [
         summary="Free Move on one horizontal rail, centre-out: reaches from the centre left or right to an end of the rail are rewarded. No threshold.",
         launch_file="iiwa7_pretrain_move_horizontal.launch.py",
         params_yaml="pretrain_move_horizontal.yaml", node="free_move_orchestrator",
-        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        stiffness_profile=required_profile("move_horizontal"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_pretrain_move_horizontal",
         paradigms=list(_CENTRE_OUT_HORIZONTAL), paradigm_param="centre_out.target",
@@ -187,7 +177,7 @@ EXPERIMENTS += [
         summary="Red or blue ring: each colour means left or right; the mapping reverses, unsignaled, at criterion. On a rail or free in the frontal plane.",
         launch_file="iiwa7_colour_rule.launch.py",
         params_yaml="colour_rule.yaml", node="free_move_orchestrator",
-        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        stiffness_profile=required_profile("colour_rule"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_colour_rule",
         paradigms=[("y", "Rail"), ("frontal", "No rail")], paradigm_param="free_move.rail_axis",
@@ -204,7 +194,7 @@ EXPERIMENTS += [
         summary="An asterisk of rails from the centre: each direction pays with a probability that falls while chosen and recovers while left alone.",
         launch_file="iiwa7_n_choice.launch.py",
         params_yaml="n_choice.yaml", node="free_move_orchestrator",
-        stiffness_profile="Z lock 2500, X/Y 1000, rot 120",
+        stiffness_profile=required_profile("n_choice"),
         ros_controller="kuka_clik_controller",
         run_name="iiwa7_n_choice",
         # How many choices (free_move.ray_layout, per run), evenly spaced: work up from 2 over sessions.

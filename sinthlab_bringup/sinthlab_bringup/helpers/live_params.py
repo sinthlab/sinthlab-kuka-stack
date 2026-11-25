@@ -41,7 +41,8 @@ _COMMON = [
 
 # The reward: a pulse on a Beckhoff output (SYNC 4) into the reward box's NSP jack on a successful trial.
 # Every experiment has it; the success outcomes are experiment_control.REWARD_EVENTS.
-_REWARD = ["reward_pulse.enabled", "reward_pulse.output", "reward_pulse.pulse_ms"]
+_REWARD = ["reward_pulse.enabled", "reward_pulse.output", "reward_pulse.pulse_ms",
+           "reward_pulse.count", "reward_pulse.gap_ms"]
 
 # The pull threshold and its dwell. Deliberately NOT cartesian_axis: that changes what the
 # threshold means, so it is a different experiment, not a different trial.
@@ -174,6 +175,10 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "nsp_sync.pulse_width_ms": (10, 5000),
     # How long the juice valve stays open. The cabinet pulses 1-5000 ms.
     "reward_pulse.pulse_ms": (10, 5000),
+    # A burst: pulses per reward, and the closed valve between them (the cabinet stretches a pulse that is
+    # still high into one long opening, so they must not touch).
+    "reward_pulse.count": (1, 10),
+    "reward_pulse.gap_ms": (100, 5000),
     # Centre-out: how close to a rail end counts as reaching it.
     "centre_out.end_tol_m": (0.005, 0.03),
     # The colour rule, No rail: how far left or right is a choice.
@@ -339,7 +344,28 @@ _DELAY_RANGES = (("perturb_start.start_delay_min_sec", "perturb_start.start_dela
                  ("grasp.delay_min_sec", "grasp.delay_max_sec"))
 _SYNC_OUTPUTS = ("nsp_sync.trial_start_output", "nsp_sync.trial_end_output", "nsp_sync.experiment_start_output",
                  "reward_pulse.output")
-PAIRED = (_R, _PLANE, _START, _PARK, _K, _K_BASE) + sum(_DELAY_RANGES, ()) + _SYNC_OUTPUTS   # checked together: see check_value(context=...)
+CHOICE_GEOMETRY = ("free_move.rail_axis", "free_move.ray_length_m", "n_choice.end_tol_m",
+                   "centre_out.free_reach_m", "free_move.box.preset") + tuple(
+    f"free_move.box.{axis}_{end}_m" for axis in "xyz" for end in ("min", "max"))
+
+
+def choice_geometry_problem(params):
+    axis = params.get("free_move.rail_axis")
+    if axis == "rays" and "n_choice.end_tol_m" in params:
+        if not 0 < params["n_choice.end_tol_m"] < params.get("free_move.ray_length_m", 0):
+            return "n_choice.end_tol_m must be positive and smaller than free_move.ray_length_m"
+    if axis == "frontal" and "centre_out.free_reach_m" in params:
+        from sinthlab_bringup.helpers.free_move_box import box_bounds
+        try:
+            lo, hi = box_bounds(params.__getitem__)
+        except (KeyError, ValueError) as exc:
+            return str(exc)
+        if not 0 < params["centre_out.free_reach_m"] <= min(-lo[1], hi[1]):
+            return "centre_out.free_reach_m must be positive and fit inside both lateral box bounds"
+    return None
+
+
+PAIRED = CHOICE_GEOMETRY + (_R, _PLANE, _START, _PARK, _K, _K_BASE) + sum(_DELAY_RANGES, ()) + _SYNC_OUTPUTS   # checked together: see check_value(context=...)
 
 
 def check_perturbation(r, plane) -> Optional[str]:
@@ -402,6 +428,10 @@ def check_value(name: str, value, context: Optional[dict] = None) -> Optional[st
 
     `context` holds the other parameter values in effect (name -> value). With it, parameters that are
     only valid together are checked together -- the perturbation's r against its plane's cap."""
+    if name in CHOICE_GEOMETRY and context:
+        problem = choice_geometry_problem({**context, name: value})
+        if problem:
+            return problem
     choices = choices_for(name)
     if choices is not None and str(value) not in choices:
         return f"{name} must be one of {choices}, got {value!r}"

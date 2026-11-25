@@ -147,3 +147,53 @@ def test_csv_round_trip(tmp_path):
         rc.append_row(out, {**r, "batch": 1})
     p = rc.fit_profile(rc.read_rows(out), density=1.0)
     assert p["slope_ul_per_ms"] == pytest.approx(0.8, rel=1e-6)
+
+
+# ---------------------------------------------------------------- bursts (reward_pulse.count > 1)
+def test_a_burst_sends_its_pulses_width_plus_gap_apart():
+    sent, slept = [], []
+    got, err = rc.dispense(lambda c: (sent.append(c), (True, "OK", 1.0))[1], 4, 50, 2, 1.5,
+                           sleep=slept.append, burst=3, gap_ms=300)
+    assert (got, err) == (2, None) and sent == ["PULSE 4 50"] * 6
+    assert slept.count(0.35) == 4                           # (50 + 300) ms inside each of the 2 bursts
+
+
+def test_a_failed_pulse_mid_burst_loses_the_whole_burst():
+    calls = []
+
+    def call(cmd):
+        calls.append(cmd)
+        return (True, "OK", 1.0) if len(calls) != 5 else (False, "no answer", 1000.0)
+
+    got, err = rc.dispense(call, 4, 50, 3, 1.5, sleep=lambda s: None, burst=3, gap_ms=300)
+    assert got == 1 and err == "no answer"                # burst 2 broke on its 2nd pulse
+
+
+def test_spacing_must_fit_the_whole_burst():
+    rc.check_widths([50], 1.5, burst=3, gap_ms=300)         # 3 x 50 + 2 x 300 = 0.75 s, + 0.3 s closed
+    with pytest.raises(ValueError):
+        rc.check_widths([50], 1.0, burst=3, gap_ms=300)
+    with pytest.raises(ValueError):
+        rc.check_widths([50], 2.0, burst=3, gap_ms=50)      # gap under 100 ms
+    with pytest.raises(ValueError):
+        rc.check_widths([50], 9.0, burst=11)
+
+
+def test_fit_is_per_burst_and_refuses_mixed_settings():
+    rows = [dict(r, burst="3", burst_gap_ms="300") for r in rows_from(lambda w: 3 * (0.8 * w + 400), [20, 30, 50, 75])]
+    p = rc.fit_profile(rows, density=1.0)
+    assert (p["burst"], p["burst_gap_ms"]) == (3, 300)
+    assert rc.volume_for(p, 50) == pytest.approx(3 * (0.8 * 50 + 400), rel=0.01)
+    mixed = rows + [dict(r, burst="1", burst_gap_ms="") for r in rows_from(LINE, [100, 200])]
+    with pytest.raises(ValueError):
+        rc.fit_profile(mixed, density=1.0)
+    assert rc.fit_profile(rows_from(LINE, WIDTHS), density=1.0)["burst"] == 1   # older files: single pulses
+
+
+def test_old_sweep_files_are_refused_for_appending(tmp_path):
+    out = tmp_path / "old.csv"
+    out.write_text("batch,width_ms,pulses_requested,pulses_confirmed,spacing_s,net_mass_g,status,started,"
+                   "duration_s,cabinet,output,note\n1,100,20,20,1,17.4,ok,x,22,c,4,\n")
+    with pytest.raises(ValueError):
+        rc.append_row(out, {"batch": 2})
+    assert len(rc.read_rows(out)) == 1                      # ...but still read and fitted
