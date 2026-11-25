@@ -231,7 +231,7 @@ status pills (ROS, Robot, run state) have a dot and are not clickable; the butto
 other pages.
 
 The page has the cabinet address and reward output (shared with the Diagnostics TTL tab's address), **Check
-cabinet** (`STATUS`) and **Prime the line** (10 × 200 ms, not recorded), then three tabs:
+cabinet** (`STATUS`) and **Prime the line** (10 × 200 ms, not recorded), then the valve card, which stays in place at one size: it shows the job's progress and Stop, then the net-mass field (with a two-tone beep when it is time to weigh), and the last outcome when idle. The dispense buttons read **Cup tared: dispense**, so taring is part of the click. Then three tabs:
 
 - **In use**: the set the dashboard uses (the newest with a fitted profile), as mL per reward against valve time
   per pulse for each reward size, with each width's mean ± SD (hover for n and CV), and a table.

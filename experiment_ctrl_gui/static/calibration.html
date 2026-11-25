@@ -27,9 +27,8 @@
   <!-- ---------------- the cabinet and the line: always in view ---------------- -->
   <div class="card">
     <h2>Cabinet and line</h2>
-    <p class="note">On the SmartPad, run <strong>PulseTestServer</strong> (it never moves the arm) or
-      <strong>LbrImpedanceControlServer</strong>, with no experiment running. Put a cup on the scale under the
-      spout, and keep the reservoir fill, tubing and spout as they are in a session: the volume depends on all of them.</p>
+    <p class="note">Run <strong>PulseTestServer</strong> on the SmartPad and put a cup on the scale under the spout.
+      <span class="info" tabindex="0" title="PulseTestServer never moves the arm (LbrImpedanceControlServer also works). No experiment may be running. Keep the reservoir fill, tubing and spout as they are in a session: the volume depends on all of them.">ⓘ</span></p>
     <div class="diag-row">
       <label>Cabinet address <input id="addr" size="14" spellcheck="false"></label>
       <label>Reward output
@@ -41,21 +40,22 @@
     </div>
   </div>
 
-  <!-- ---------------- the job: dispensing, the last drop, the scale ---------------- -->
-  <div class="card job-card hidden" id="job">
+  <!-- ---------------- the valve: always here, the same size, so nothing below it moves ---------------- -->
+  <div class="card job-card" id="job">
     <div class="job-head">
-      <h2 id="job-label">Job</h2>
+      <h2 id="job-label">Valve idle</h2>
       <button class="btn danger small" id="btn-job-stop">■ Stop</button>
     </div>
     <div class="job-bar"><span id="job-fill"></span></div>
-    <p class="job-phase" id="job-phase"></p>
-    <div class="diag-row hidden" id="weigh-row">
-      <label>Net mass [g] <input type="number" id="mass" min="0" step="0.01" inputmode="decimal"></label>
-      <button class="btn primary" id="btn-record">Record</button>
-      <button class="btn" id="btn-discard" title="Not recorded as a result; a sweep's batch comes round again">Discard</button>
+    <div class="job-body">
+      <p class="job-phase" id="job-phase"></p>
+      <div class="job-weigh hidden" id="weigh-row">
+        <input type="number" id="mass" min="0" step="0.01" inputmode="decimal" placeholder="net mass" aria-label="Net mass in grams"><span class="unit">g</span>
+        <button class="btn primary" id="btn-record">Record</button>
+        <button class="btn" id="btn-discard" title="Not recorded as a result; a sweep's batch comes round again">Discard</button>
+      </div>
     </div>
   </div>
-  <p class="job-last hidden" id="job-last"></p>
 
   <div class="tabs diag-tabs" role="tablist">
     <button class="tab active" role="tab" aria-selected="true" data-tab="inuse">In use</button>
@@ -81,8 +81,8 @@
   <section id="tab-check" class="diag-panel hidden">
     <div class="card">
       <h2>Check before a session</h2>
-      <p class="note">A batch of rewards at the width you will use, weighed and compared with the calibration in use.
-        Within ±<span class="tol">5</span> % is fine; further off, check the reservoir fill, the line for air and the spout.</p>
+      <p class="note">Within ±<span class="tol">5</span> % of the calibration in use is fine.
+        <span class="info" tabindex="0" title="A batch of rewards at the width you will reward with, weighed and compared with the calibration in use. Further off: check the reservoir fill, the line for air and the spout; recalibrate if it persists. Each check is logged in the set's checks.csv.">ⓘ</span></p>
       <div class="diag-grid">
         <label>Reward <select id="ck-size"></select></label>
         <label>Width of each pulse [ms] <input type="number" id="ck-width" min="10" max="5000" step="1" value="200"></label>
@@ -90,8 +90,7 @@
       </div>
       <p class="note" id="ck-expect"></p>
       <div class="row-actions">
-        <button class="btn primary" id="btn-check">▶ Dispense</button>
-        <span class="note">Tare the cup first.</span>
+        <button class="btn primary" id="btn-check">▶ Cup tared: dispense</button>
       </div>
       <h2 class="sub-h">Recent checks</h2>
       <table class="hist" id="checks"></table>
@@ -102,10 +101,8 @@
   <section id="tab-new" class="diag-panel hidden">
     <div class="card">
       <h2>Sweeps</h2>
-      <p class="note">One sweep per reward size: batches at several widths, in shuffled order, plus blanks with no
-        pulse. Tare the cup before each batch, then weigh it. A sweep can stop and carry on later, here or with
-        <code>analysis/reward_calibration.py</code>. When every batch is weighed, fit it. The dashboard uses the
-        newest set with a fitted sweep.</p>
+      <p class="note">One sweep per reward size; fit it once every batch is weighed.
+        <span class="info" tabindex="0" title="A sweep is batches at several widths in shuffled order, plus blanks with no pulse: tare the cup, dispense, weigh, for each. It can stop and carry on later, here or with analysis/reward_calibration.py. The dashboard uses the newest set with a fitted sweep, so calibrate every reward size you use into the same set.">ⓘ</span></p>
       <div class="diag-row">
         <label>Set <select id="set"></select></label>
       </div>

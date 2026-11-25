@@ -8,7 +8,26 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const ADDR_KEY = "diag.ttl.addr";                 // shared with the Diagnostics page's TTL tab
 const SERIES = ["--s1", "--s2", "--s3", "--s4"];  // by reward size, in a fixed order (style.css)
 const DEFAULT_WIDTHS = { 1: "100 150 200 300 400", 2: "30 50 75 100", 3: "20 30 50" };
-const C = { st: null, set: null, sweep: null, timer: null, setsKey: "", fitOpen: false, lastKey: null };
+const C = { st: null, set: null, sweep: null, timer: null, setsKey: "", fitOpen: false, lastKey: null, msg: null, phase: null };
+
+// ---------------------------------------------------------------- the "weigh now" beep
+// Browsers only allow sound after a click on the page, so the audio starts on the first click.
+let audio = null;
+document.addEventListener("click", () => {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = false; } }
+}, { capture: true });
+function beep() {
+  if (!audio) return;
+  try {
+    for (const [t, f] of [[0, 880], [0.18, 1175]]) {
+      const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + t;
+      o.frequency.value = f; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+      o.start(t0); o.stop(t0 + 0.16);
+    }
+  } catch (e) { /* no sound: the pill and the card still say it */ }
+}
 
 async function api(path, body) {
   const opt = body === undefined ? {} : {
@@ -48,44 +67,52 @@ function volume(p, ms) {
 const activeSet = () => (C.st ? C.st.sets.find((s) => s.name === C.st.active) : null);
 
 // ---------------------------------------------------------------- the job
+// A message for the valve card: the last job's outcome, or what this page just did (a fit, an error).
 function showLast(last) {
-  const el = $("#job-last");
-  el.classList.toggle("hidden", !last);
-  if (!last) return;
-  el.className = "job-last " + (last.ok ? "ok" : "bad");
-  el.textContent = last.text;
+  C.msg = last;
+  if (C.st) renderJob(C.st);
 }
 
 function renderJob(st) {
   const j = st.job, pill = $("#pill-job");
-  $("#job").classList.toggle("hidden", !j);
+  // The server's outcome of the last job shows once, when it changes, so a message from this page stays
+  // until something new happens.
+  const lastKey = JSON.stringify([j && j.started, st.last]);
+  if (lastKey !== C.lastKey) {
+    C.lastKey = lastKey;
+    if (!j && st.last) C.msg = st.last;
+    else if (j && j.phase === "dispensing") C.msg = null;
+  }
+  const phase = j ? j.phase : null;
+  if (phase === "weigh" && C.phase && C.phase !== "weigh") beep();
+  C.phase = phase;
+  $("#job").classList.toggle("active", !!j);
+  $("#btn-job-stop").classList.toggle("invisible", !j || j.phase === "weigh");
+  $("#weigh-row").classList.toggle("hidden", !j || j.phase !== "weigh");
   if (!j) {
     pill.className = "pill"; pill.textContent = "Idle";
+    $("#job-label").textContent = "Valve idle";
+    $("#job-fill").style.width = "0";
+    const m = C.msg, ph = $("#job-phase");
+    ph.className = "job-phase " + (m ? (m.ok ? "ok" : "bad") : "muted");
+    ph.textContent = m ? m.text : "Tare the cup, then dispense from a tab below.";
   } else {
+    $("#job-phase").className = "job-phase";
     $("#job-label").textContent = j.label;
     $("#job-fill").style.width = `${Math.round(100 * j.done / Math.max(j.total, 1))}%`;
     const weigh = j.phase === "weigh";
-    $("#btn-job-stop").classList.toggle("hidden", weigh);
-    $("#weigh-row").classList.toggle("hidden", !weigh);
     pill.className = "pill " + (weigh ? "warn" : "run");
     pill.textContent = weigh ? "Weigh the cup" : j.phase === "draining" ? "Last drops" : `Dispensing ${j.done} / ${j.total}`;
     $("#job-phase").innerHTML = j.phase === "dispensing"
       ? `Dispensing: ${j.done} of ${j.total} ${j.kind === "prime" ? "openings" : "rewards"}, ${j.spacing_s} s apart.`
       : j.phase === "draining" ? `Waiting ${st.defaults.drain_s} s for the last drops.`
-      : `Read the scale: the net mass in grams.${j.expected_g != null ? ` The calibration expects about <strong>${j.expected_g.toFixed(2)} g</strong>.` : ""}`;
+      : `Weigh the cup.${j.expected_g != null ? ` The calibration expects about <strong>${j.expected_g.toFixed(2)} g</strong>.` : ""}`
+        + (C.msg && !C.msg.ok ? ` <span class="warn-text">${esc(C.msg.text)}</span>` : "");
     if (weigh && document.activeElement !== $("#mass") && !$("#mass").dataset.armed) {
       $("#mass").value = ""; $("#mass").dataset.armed = "1"; $("#mass").focus();
     }
   }
   if (!j || j.phase !== "weigh") delete $("#mass").dataset.armed;
-  // The server's outcome of the last job shows once, when it changes: a message from this page (a fit, an
-  // error) stays until something new happens.
-  const lastKey = JSON.stringify([j && j.started, st.last]);
-  if (lastKey !== C.lastKey) {
-    C.lastKey = lastKey;
-    if (!j && st.last) showLast(st.last);
-    else if (j && j.phase === "dispensing") showLast(null);
-  }
 }
 
 // ---------------------------------------------------------------- in use: the chart and the table
@@ -240,8 +267,8 @@ function renderSweep(st, w) {
       <label>Leave out widths with CV above [%] <input type="number" id="fit-cv" min="1" max="50" value="10"></label>
     </div><div class="row-actions"><button class="btn primary" id="btn-fit">Fit ${esc(w.name)}</button></div>`;
   el.innerHTML = `<div class="sweep-box">
-    ${nx ? `<div class="row-actions"><button class="btn primary" id="btn-batch" ${blocked ? "disabled" : ""}>▶ Dispense batch ${nx.batch}</button>
-      <span class="note">Next: ${esc(what)}. Tare the cup first. ${w.n_ok} of ${w.total} weighed.</span></div>`
+    ${nx ? `<div class="row-actions"><button class="btn primary" id="btn-batch" ${blocked ? "disabled" : ""}>▶ Cup tared: dispense batch ${nx.batch}</button>
+      <span class="note">${esc(what[0].toUpperCase() + what.slice(1))}. ${w.n_ok} of ${w.total} weighed.</span></div>`
     : `<p class="note">Every batch is weighed.${w.fitted ? " Fitted: fit again to change the model or the limits." : " Fit it to use it."}</p>`}
     ${!nx || C.fitOpen ? fitForm : `<div class="row-actions"><button class="btn small" id="fit-early">Fit now</button><span class="note">with the batches weighed so far</span></div>`}
     ${done || w.rows.length ? `<table class="hist batches"><tr><th>Batch</th><th>Width</th><th>Result</th><th>Net mass</th><th>mL per reward</th></tr>` +
@@ -276,9 +303,10 @@ function newNote() {
   const batches = widths.length * reps + blanks, perBatch = n * spacing + 3;
   const set = C.st && C.st.sets.find((s) => s.name === C.set);
   const name = b === 1 ? "single" : `burst${b}`;
+  const setup = $("#setup").value.trim().toLowerCase().replace(/\s+/g, "_");
   const clash = set && set.sweeps.some((w) => w.name === name);
   $("#nw-note").innerHTML = `${batches} batches, rewards ${spacing} s apart: about ${Math.round(perBatch)} s of pulses per batch, `
-    + `${Math.round(batches * (perBatch + 30) / 60)} min with weighing. Saved as <code>${esc(set ? set.name : `${C.st ? C.st.defaults.today : "today"}_<setup>`)}/${name}</code>.`
+    + `${Math.round(batches * (perBatch + 30) / 60)} min with weighing. Saved as <code>${esc(set ? set.name : `${C.st ? C.st.defaults.today : "today"}_${setup || "<setup>"}`)}/${name}</code>.`
     + (clash ? ` <span class="warn-text">This set already has a ${name} sweep: open it above, or choose New set.</span>` : "")
     + (b > 1 && gap !== 300 ? ` <span class="warn-text">The tasks use a ${300} ms gap by default (reward_pulse.gap_ms): calibrate the gap you reward with.</span>` : "");
   $("#btn-new").disabled = !!clash;
@@ -303,7 +331,13 @@ function render() {
 
 async function refresh(again = true) {
   clearTimeout(C.timer);
-  try { C.st = await api("/api/calib/state"); render(); } catch (e) { showLast({ ok: false, text: `Dashboard not reachable: ${e.message}` }); }
+  // A poll and an action's refresh can overlap: keep only the newest answer, or the phase could step back
+  // (weigh -> draining -> weigh) and beep twice.
+  const seq = (C.seq = (C.seq || 0) + 1);
+  try {
+    const st = await api("/api/calib/state");
+    if (seq === C.seq) { C.st = st; render(); }
+  } catch (e) { showLast({ ok: false, text: `Dashboard not reachable: ${e.message}` }); }
   if (again) C.timer = setTimeout(refresh, C.st && C.st.job ? 400 : 3000);
 }
 
@@ -350,7 +384,7 @@ $("#nw-burst").addEventListener("input", () => {
   if (DEFAULT_WIDTHS[b]) $("#nw-widths").value = DEFAULT_WIDTHS[b];
   newNote();
 });
-for (const id of ["#nw-gap", "#nw-widths", "#nw-reps", "#nw-blanks", "#nw-n"]) $(id).addEventListener("input", newNote);
+for (const id of ["#setup", "#nw-gap", "#nw-widths", "#nw-reps", "#nw-blanks", "#nw-n"]) $(id).addEventListener("input", newNote);
 $("#btn-new").onclick = async () => {
   try {
     const b = +$("#nw-burst").value;
