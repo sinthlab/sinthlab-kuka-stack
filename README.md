@@ -2872,7 +2872,8 @@ block of every experiment YAML, all live:
 [`analysis/reward_calibration.py`](analysis/reward_calibration.py) measures the conversion. It sends the
 same `PULSE 4 <ms>` command in batches (50 openings each by default, shuffled widths, 3 batches per width,
 plus blank batches with no pulse); you weigh each batch. Then it fits volume per pulse against width and
-gives the width for a volume:
+gives the width for a volume. The dashboard's **Reward calibration** page runs the same steps with buttons
+(see below); the script does them in a terminal:
 
 ```bash
 python3 analysis/reward_calibration.py sweep --widths 20 40 60 100 150 200 300 --out reward_calib/2026-11-24.csv
@@ -2905,6 +2906,18 @@ whose gap differs from its calibration), can set the valve time from a volume, a
 juice given and the rate per hour. Current: `2026-11-23_gravity_reservoir`, provisional (the gravity-fed
 reservoir's flow falls as it empties, ±10 %): about 0.78–1.69 mL for one pulse of 100–400 ms, and every
 opening costs ~0.45 mL before its width counts. Redo it once the pressure system is in.
+
+**The Reward calibration page** (the dashboard's top bar, beside Post-processing and Diagnostics) does all of
+this without a terminal, through the same functions and files (`experiment_ctrl_gui/calibration.py`):
+**In use** plots and tabulates the calibration the dashboard uses; **Check before a session** dispenses a batch
+at the width you will reward with, takes the net mass and says how far it is from the calibration (±5 % is
+fine; logged in the set's `checks.csv`); **New calibration** plans a sweep per reward size into a set
+(`<date>_<setup>/single`, `burst2`, ...), dispenses one batch at a time (tare, dispense, weigh), and fits it.
+**Prime the line** opens the valve 10 × 200 ms and records nothing. The pulses are timed by the dashboard
+server, so reloading the page loses nothing; **Stop** sets every output low between pulses and marks the batch
+aborted. Dispensing is refused while an experiment runs, and Start is refused while the page is dispensing.
+Fitting the first sweep of a new set switches the dashboard to that set, so calibrate every reward size you
+use (the page says which sizes the new set still lacks). Commit the new folder afterwards.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event

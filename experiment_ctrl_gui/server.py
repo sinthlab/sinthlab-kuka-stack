@@ -40,6 +40,7 @@ from sinthlab_bringup.helpers import forage  # noqa: E402
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
 import reward_volume  # noqa: E402
+import calibration  # noqa: E402
 from live_view import LiveView  # noqa: E402
 import ttl  # noqa: E402
 from postprocess import PostProcessor  # noqa: E402
@@ -58,6 +59,14 @@ class App:
         if demo:            # demo runs write their sessions.csv rows here, never beside real data
             import tempfile
             ex.DATA = Path(tempfile.mkdtemp(prefix="kuka_demo_data_"))
+            # and its reward calibrations here: a copy of the real ones, so a demo sweep never lands in the repo
+            import shutil
+            demo_cal = Path(tempfile.mkdtemp(prefix="kuka_demo_calib_")) / "reward_calibrations"
+            if reward_volume.FOLDER.is_dir():
+                shutil.copytree(reward_volume.FOLDER, demo_cal)
+            else:
+                demo_cal.mkdir(parents=True)
+            reward_volume.FOLDER = demo_cal
         self.demo = demo
         self.fake_board = cue_board.FakeBoard()      # the Diagnostics page's board, in --demo
         self.fake_cabinet = ttl.FakeCabinet()        # and its TTL outputs
@@ -79,6 +88,7 @@ class App:
         if not self.bridge.available:
             self.runner.emit(f"ROS not available: {self.bridge.reason}", "warn")
         self.post = PostProcessor(self.broadcast, self.runner.emit, self._busy)
+        self.calib = calibration.Calibrator(demo, self._busy, self.runner.emit)
         self.live_view = LiveView(self.bridge)
         threading.Thread(target=self._ticker, daemon=True).start()
         threading.Thread(target=self._live_ticker, daemon=True).start()
@@ -316,6 +326,9 @@ class App:
                                    f"now applied. Check the settings, then press Start again.")
         if self.runner.running():
             raise RuntimeError(f"{self.runner.experiment} is already running; stop it first")
+        if self.calib.running():
+            raise RuntimeError(f"Reward calibration is using the valve ({self.calib.running()}): wait for it, or "
+                               f"stop it on the Reward calibration page")
         s = self.status()
         if s and not s["stale"]:
             raise RuntimeError(f"{s.get('experiment')} is already running outside the dashboard "
@@ -616,6 +629,8 @@ def make_handler(app: App):
                                                                  int((q.get("count") or ["1"])[0])))
                 except ValueError as exc:
                     return self._json({"ok": False, "error": str(exc)}, HTTPStatus.CONFLICT)
+            if path == "/api/calib/state":        # the Reward calibration page (calibration.py)
+                return self._json(app.calib.state())
             if path == "/api/reach_map":          # the Reach Map view
                 q = parse_qs(urlparse(self.path).query)
                 try:
@@ -685,6 +700,8 @@ def make_handler(app: App):
                                  str(body.get("path", "wifi")), str(body.get("port", "")))
             if path == "/api/diag/ttl":
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
+            if path.startswith("/api/calib/"):
+                return _calib(app.calib, path[len("/api/calib/"):], body)
             if path == "/api/stop":
                 return app.stop()
             if path in ("/api/pause", "/api/resume"):
@@ -775,6 +792,30 @@ def make_handler(app: App):
             raise KeyError(f"unknown endpoint {path}")
 
     return Handler
+
+
+def _calib(c: "calibration.Calibrator", what: str, b: dict) -> dict:
+    """POST /api/calib/<what>: the Reward calibration page's actions."""
+    addr, out = str(b.get("addr", "")).strip(), b.get("output", calibration.rc.DEFAULT_OUTPUT)
+    if what == "cabinet":
+        return c.cabinet(addr)
+    if what == "prime":
+        return c.prime(addr, out, b.get("width_ms"), b.get("count"))
+    if what == "check":
+        return c.check(addr, out, b.get("burst"), b.get("width_ms"), b.get("rewards"))
+    if what == "sweep":
+        return c.new_sweep(str(b.get("set") or ""), str(b.get("setup") or ""), b.get("burst"), b.get("gap_ms"),
+                           b.get("widths"), b.get("reps"), b.get("blanks"), b.get("rewards"), b.get("spacing"))
+    if what == "batch":
+        return c.batch(addr, out, str(b.get("set", "")), str(b.get("name", "")))
+    if what == "weigh":
+        return c.weigh(b.get("mass_g"), bool(b.get("discard")))
+    if what == "stop":
+        return c.stop()
+    if what == "fit":
+        return c.fit(str(b.get("set", "")), str(b.get("name", "")), str(b.get("model") or "interp"),
+                     b.get("density", 1.0), b.get("max_cv", 10.0))
+    raise KeyError(f"unknown endpoint /api/calib/{what}")
 
 
 def _start_height(p) -> dict:

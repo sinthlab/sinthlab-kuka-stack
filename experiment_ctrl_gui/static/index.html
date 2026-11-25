@@ -33,13 +33,18 @@
       <div class="run-stats" id="run-stats"></div>
     </div>
   </div>
-  <!-- Second, slim row: connection and run state, and the other pages. -->
-  <div class="pills rb-pills">
-    <span class="pill" id="pill-ros" title="ROS connection">ROS …</span>
-    <span class="pill" id="pill-robot" title="FRI session state and lbr_state rate">Robot …</span>
-    <span class="pill" id="pill-run" title="Experiment state">Idle</span>
-    <a class="pill link" href="/postprocess.html" title="Archive a session as NWB and upload it to the server">Post-processing</a>
-    <a class="pill link" href="/diagnostics.html" title="Check the end-effector cue ring and TTL outputs">Diagnostics</a>
+  <!-- Second, slim row: connection and run state (status pills, not clickable), then the other pages (buttons). -->
+  <div class="rb-foot">
+    <div class="pills rb-pills" role="status" aria-label="Status">
+      <span class="pill" id="pill-ros" title="ROS connection">ROS …</span>
+      <span class="pill" id="pill-robot" title="FRI session state and lbr_state rate">Robot …</span>
+      <span class="pill" id="pill-run" title="Experiment state">Idle</span>
+    </div>
+    <nav class="rb-tools" aria-label="Other pages">
+      <a class="btn tool" href="/calibration.html" title="Weigh what the juice valve gives: pre-session check and new calibrations">Reward calibration</a>
+      <a class="btn tool" href="/postprocess.html" title="Archive a session as NWB and upload it to the server">Post-processing</a>
+      <a class="btn tool" href="/diagnostics.html" title="Check the end-effector cue ring and TTL outputs">Diagnostics</a>
+    </nav>
   </div>
 </header>
 
