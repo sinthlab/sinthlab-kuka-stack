@@ -526,7 +526,9 @@ class DemoBridge:
                         v = round(random.gauss(0.0, 0.04), 3)
                         sign, basis = free_reach.depth_sign(plan.depth_rule, v, 0.0, s.bump_depth_still_mps, random)
                         self._meta["free_reach_result"].update(depth_dir="toward" if sign > 0 else "away",
-                                                         depth_m=s.bump_depth_m, depth_basis=basis, depth_speed_mps=v)
+                                                         depth_force_n=s.bump_depth_force_n,
+                                                         depth_m=round(s.bump_extent_m(s.bump_depth_force_n), 4),
+                                                         depth_basis=basis, depth_speed_mps=v)
                 if ok:
                     self._phase_to("reach", ang, "Free reach: to the target -- reward.")
                     self._reward("reach")

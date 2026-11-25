@@ -192,7 +192,8 @@ from the page; stop it with Ctrl-C in its own terminal.
 
 | Parameter | Meaning |
 |---|---|
-| `quiet_window_sec` | pause at the start pose before the go cue [s] (apple pluck 1.0, the CLIK experiments 2.0–4.0) |
+| `quiet_window_sec` | pause at the start pose before the go cue [s] (0.5 in every task: short to begin training; lengthen it by hand or with `quiet_ramp`) |
+| `quiet_ramp.*` | the [quiet-window staircase](#the-quiet-window--hands-off-until-the-go-cue), off by default |
 | `quiet_gate.enabled`, `quiet_gate.move_m`, `quiet_gate.force_n`, `quiet_gate.penalty_sec` | the [guarded quiet window](#the-quiet-window--hands-off-until-the-go-cue): touching the apple before the go cue ends the trial with no reward and a penalty wait (on, 3 cm, 5 N, 5 s) |
 | `move_to_park.hold_sec` | wait at park before each trial's move to the start [s] (default 2.0) |
 | `move_to_park.target_joint_position` | the park pose, A1..A7 [deg]; first used when the next trial ends. Checked against the limits, and A4 must keep the start's sign |
@@ -685,9 +686,19 @@ corrupts the trial that follows, so the window is **guarded**
 or pushed before the go cue,
 
 1. the trial **ends without reward** — event `early_touch`, no go cue;
-2. the arm **parks**;
+2. the ring **flashes yellow** twice with the low tone (`quiet_gate.flashes`, `flash_colour`, `flash_sec`),
+   and the arm **parks**, quicker than usual (`move_to_park.early_touch_speed_scale`);
 3. a **penalty wait** (`quiet_gate.penalty_sec`, on top of `move_to_park.hold_sec`) runs before the next
    trial — shaping "wait for the go cue".
+
+The window starts short (0.5 s) and is lengthened as the animal learns to wait: by hand (`quiet_window_sec`
+is live), or with the **staircase** (`quiet_ramp.enabled`, off by default;
+[`quiet_ramp.py`](sinthlab_bringup/sinthlab_bringup/helpers/quiet_ramp.py)). After every trial it adds
+`quiet_ramp.step_sec` (0.1 s) once `after_trials` (3) trials in a row reached the go cue, takes `back_sec`
+(0.1 s) off after an early touch, and stays within `min_sec`–`max_sec` (0.3–2 s); the new value is set as the
+live `quiet_window_sec`, so it applies from the next trial, shows on the dashboard and is in each trial's
+sidecar. The guard only catches touches after the window's first 0.2 s (and during the go cue's preview),
+so below about 0.3 s it catches little.
 
 Both checks compare with the window's first 0.2 s, so each pose's resting sag and resting force do
 not count:
@@ -1562,21 +1573,24 @@ way, so a correction after a bump counts.
 - `none`: standard cued reaches.
 - `jump`: the apple jumps `perturb.jump_m` (1.5 cm) before he grips it, `jump_delay_min_sec`..`max_sec`
   (0.1-0.3 s) after the go cue; he reaches from where it landed. If he grips first, no jump (`jump_skipped`).
-- `bump`: once he has gone `perturb.bump_at_m` (2.5 cm) along the cue, the apple is pushed `perturb.bump_m`
-  (1.5 cm) across it, and in 3-D also `perturb.bump_depth_m` (1 cm) in depth; the target stays, so he has
-  to correct.
+- `bump`: once he has gone `perturb.bump_at_m` (2.5 cm) along the cue, a **force pulse** pushes the apple
+  across it, `perturb.bump_force_n` (5 N) for `perturb.bump_sec` (0.15 s), and in 3-D also
+  `perturb.bump_depth_force_n` (3 N) in depth. It is added to his own force, so he stays in control and can
+  push back at once; the target stays, so he has to correct. Uncorrected it moves the apple force ×
+  duration / `free_move.damping_ns_per_m`: 1.5 cm across and 0.9 cm in depth at the defaults.
 
 Angles (`perturb.jump_angles_deg`, `perturb.bump_angles_deg`, default `[90, 270]` = perpendicular, both
-sides) are from the cued direction, counter-clockwise as he sees the plane. Each jump or bump drives the
-admittance's equilibrium along a minimum-jerk path (`perturb.jump_sec`, `bump_sec`, 0.1 s), so the stiff
-cabinet spring carries the arm and his hand with it (`AdmittanceMoveAction.displace()`); then the
-admittance carries on from there.
+sides) are from the cued direction, counter-clockwise as he sees the plane. A jump moves the apple before
+he holds it, so it drives the admittance's equilibrium along a minimum-jerk path (`perturb.jump_sec`, 0.1 s;
+`AdmittanceMoveAction.displace()`). A bump comes while he holds it, so it is a force, not a position: the
+same kind of bump as a force pulse on a free manipulandum, added to his hand's force in the admittance
+(`AdmittanceMoveAction.push()`), with the correction left to him.
 
 **The bump's depth.** Which way is set per trial by a rule (`perturb.bump_depth_rules`, balanced with the
 angles): `against` his depth movement at the bump's onset or `with` it (the defaults), or a fixed `toward` /
 `away`. His depth movement is his depth velocity if at least `perturb.bump_depth_still_mps` (0.02 m/s), else
 the depth he has moved the apple so far (5 mm or more), else toward or away at random. If the box has less
-room that way, the depth is cut short and the log says so.
+room that way than the depth force would move the apple, the force is scaled down and the log says so.
 
 **The cue and the go.** The trial's cue shows for `free_reach.cue_delay_min_sec`..`max_sec` (0.3 s = the
 standard flash) before the go (light off + tone); longer values give an instructed delay. The quiet
@@ -1598,14 +1612,15 @@ run and on every live change.
 
 **Recorded:** events `target`, `grip`, `jump` / `jump_end` / `jump_skipped`, `bump` / `bump_end`, `reach` /
 `reach_wrong`. The sidecar has `free_reach` (cue, direction, perturbation, angle, depth rule, block, cue
-delay) and `free_reach_result` (perturbed, depth delivered and its basis, crossing angle, error).
+delay) and `free_reach_result` (perturbed, the force delivered, the depth force and its basis, crossing angle, error).
 `trials.csv` adds the target, the perturbation and whether it happened, grip and perturbation times from
 the go cue, the crossing angle and error, the bump's depth, correct and block; `sessions.csv` adds % correct
 overall, on standard and on perturbed trials, against / with his depth movement, and the median grip time.
 
 **On the rig, before a subject:** confirm the box start-up check passes at this start; with the arm
-held lightly, run a few bump and jump trials and check the displacement is felt but not violent (lower
-`bump_m` / `bump_depth_m` or lengthen `bump_sec` if needed); check the grip time against the recorded force.
+held lightly, run a few bump and jump trials: a jump should be felt but not violent (lower `jump_m` or
+lengthen `jump_sec` if needed), and a bump should push the hand off course but be easy to resist (set
+`bump_force_n` / `bump_depth_force_n` and `bump_sec` by feel); check the grip time against the recorded force.
 
 ### Scenario 8 — Foraging (hidden reward zones, one environment per session)
 A task of its own (the **Foraging** card under Experiments), on the free-move node

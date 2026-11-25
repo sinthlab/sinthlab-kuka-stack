@@ -13,8 +13,11 @@ The cue (free_reach.cue, the card's tabs, live):
 The perturbation (perturb.kind, live; cued only), on perturb.probability of trials:
     none      standard cued reaches
     jump      the apple JUMPS perturb.jump_m before he has gripped it; he reaches from where it landed
-    bump      once he has gone perturb.bump_at_m along the cue, the apple is BUMPED perturb.bump_m across it
-              and, in 3-D, perturb.bump_depth_m in depth (depth_sign); the target stays, so he must correct
+    bump      once he has gone perturb.bump_at_m along the cue, the apple is BUMPED: a force pulse of
+              perturb.bump_force_n across it and, in 3-D, perturb.bump_depth_force_n in depth (depth_sign),
+              for perturb.bump_sec, added to his own force (AdmittanceMoveAction.push). He stays in control
+              throughout and corrects by pushing back; the target stays. Uncorrected it moves the apple
+              force x bump_sec / free_move.damping_ns_per_m (bump_extent_m: 5 N, 0.15 s, 50 N s/m = 1.5 cm).
 
 Directions are named from the monkey's side, in the frontal plane: right (+Y), up (+Z), left, down.
 Angles are degrees in that plane, 0 = right, 90 = up. A perturbation's angle is relative to the cued
@@ -121,11 +124,12 @@ class ReachSettings:
     jump_angles_deg: List[float] = field(default_factory=lambda: [90.0, 270.0])
     jump_delay_min_sec: float = 0.1
     jump_delay_max_sec: float = 0.3
-    bump_m: float = 0.015
-    bump_sec: float = 0.1
+    bump_force_n: float = 5.0          # the force pulse across the cue [N]
+    bump_sec: float = 0.15             # how long the pulse lasts [s]
     bump_angles_deg: List[float] = field(default_factory=lambda: [90.0, 270.0])
     bump_at_m: float = 0.025
-    bump_depth_m: float = 0.01
+    bump_depth_force_n: float = 3.0    # its depth part [N] (3-D only)
+    damping_ns_per_m: float = 50.0     # free_move.damping_ns_per_m: turns the pulse into how far it moves the apple
     bump_depth_rules: List[str] = field(default_factory=lambda: ["against", "with"])
     bump_depth_still_mps: float = 0.02
 
@@ -135,7 +139,7 @@ class ReachSettings:
 
     def depth_rules(self) -> List[Optional[str]]:
         """The bump's depth rules to balance over (a bump with a depth component), else [None]."""
-        return list(self.bump_depth_rules) if self.kind() == "bump" and self.bump_depth_m > 0 and self.bump_depth_rules \
+        return list(self.bump_depth_rules) if self.kind() == "bump" and self.bump_depth_force_n > 0 and self.bump_depth_rules \
             else [None]
 
     def angles(self) -> List[float]:
@@ -144,7 +148,13 @@ class ReachSettings:
                     self.bump_angles_deg if self.kind() == "bump" else [])
 
     def size(self) -> float:
-        return self.jump_m if self.kind() == "jump" else self.bump_m if self.kind() == "bump" else 0.0
+        """The jump's size [m], or the bump's force [N]."""
+        return self.jump_m if self.kind() == "jump" else self.bump_force_n if self.kind() == "bump" else 0.0
+
+    def bump_extent_m(self, force_n: Optional[float] = None) -> float:
+        """How far a bump of force_n (default bump_force_n) moves the apple if he does not resist it [m]."""
+        f = self.bump_force_n if force_n is None else force_n
+        return float(f) * self.bump_sec / max(self.damping_ns_per_m, 1e-6)
 
 
 def settings_problem(s: ReachSettings) -> Optional[str]:
@@ -171,9 +181,11 @@ def settings_problem(s: ReachSettings) -> Optional[str]:
     if not 0.0 < s.bump_at_m < s.distance_m - 0.01:
         return (f"perturb.bump_at_m ({s.bump_at_m:g}) must be positive and at least 1 cm short of "
                 f"free_reach.distance_m ({s.distance_m:g}), so there is room to correct")
-    for name, m, sec in (("jump", s.jump_m, s.jump_sec), ("bump", s.bump_m, s.bump_sec)):
+    for name, m, sec in (("jump", s.jump_m, s.jump_sec), ("bump", s.bump_force_n, s.bump_sec)):
         if m > 0.0 and sec <= 0.0:
             return f"perturb.{name}_sec must be positive"
+    if s.bump_force_n < 0.0 or s.bump_depth_force_n < 0.0:
+        return "perturb.bump_force_n and perturb.bump_depth_force_n must not be negative"
     if s.kind() and s.probability > 0.0 and not s.angles():
         return f"perturb.{s.kind()}_angles_deg needs at least one angle"
     bad = [r for r in s.bump_depth_rules if r not in DEPTH_RULES]
@@ -181,14 +193,14 @@ def settings_problem(s: ReachSettings) -> Optional[str]:
         return f"perturb.bump_depth_rules: unknown {bad}; use {list(DEPTH_RULES)}"
     if len(set(s.bump_depth_rules)) != len(s.bump_depth_rules):
         return "perturb.bump_depth_rules lists a rule twice"
-    if s.bump_depth_m < 0.0 or s.bump_depth_still_mps < 0.0:
-        return "perturb.bump_depth_m and perturb.bump_depth_still_mps must not be negative"
+    if s.bump_depth_still_mps < 0.0:
+        return "perturb.bump_depth_still_mps must not be negative"
     return None
 
 
 def needed_points(s: ReachSettings) -> List[np.ndarray]:
     """Every frontal-plane offset from the start a trial under these settings can need the arm at:
-    each direction's end, from the start and after every jump; and where every bump leaves it."""
+    each direction's end, from the start and after every jump; and where every bump would leave it, uncorrected."""
     pts = []
     for name in s.directions:
         u = unit(name)
@@ -196,7 +208,7 @@ def needed_points(s: ReachSettings) -> List[np.ndarray]:
         for a in s.jump_angles_deg:
             pts.append(s.jump_m * rotate(u, a) + s.distance_m * u)
         for a in s.bump_angles_deg:
-            pts.append(s.bump_at_m * u + s.bump_m * rotate(u, a))
+            pts.append(s.bump_at_m * u + s.bump_extent_m() * rotate(u, a))
     return pts
 
 
@@ -219,9 +231,10 @@ def box_problem(s: ReachSettings, lo3: Sequence[float], hi3: Sequence[float]) ->
 _FLOATS = {"free_reach.distance_m": "distance_m", "free_reach.cone_deg": "cone_deg", "perturb.probability": "probability",
            "perturb.jump_m": "jump_m", "perturb.jump_sec": "jump_sec",
            "perturb.jump_delay_min_sec": "jump_delay_min_sec", "perturb.jump_delay_max_sec": "jump_delay_max_sec",
-           "perturb.bump_m": "bump_m", "perturb.bump_sec": "bump_sec", "perturb.bump_at_m": "bump_at_m"}
+           "perturb.bump_force_n": "bump_force_n", "perturb.bump_sec": "bump_sec", "perturb.bump_at_m": "bump_at_m",
+           "free_move.damping_ns_per_m": "damping_ns_per_m"}
 _INTS = {"free_reach.block_trials": "block_trials", "perturb.max_in_row": "max_in_row"}
-_FLOATS.update({"perturb.bump_depth_m": "bump_depth_m", "perturb.bump_depth_still_mps": "bump_depth_still_mps"})
+_FLOATS.update({"perturb.bump_depth_force_n": "bump_depth_force_n", "perturb.bump_depth_still_mps": "bump_depth_still_mps"})
 _LISTS = {"perturb.jump_angles_deg": "jump_angles_deg", "perturb.bump_angles_deg": "bump_angles_deg"}
 PARAMS = ("free_reach.cue", "perturb.kind", "free_reach.directions", "perturb.bump_depth_rules") + tuple(_FLOATS) + tuple(_INTS) + tuple(_LISTS)
 
@@ -292,21 +305,32 @@ class TrialPlan:
     direction: Optional[str]          # None with no cue (any direction)
     perturb: Optional[str] = None     # "jump" | "bump" | None
     angle_deg: Optional[float] = None
-    size_m: float = 0.0
+    size_m: float = 0.0               # a jump: how far [m]
     block: int = 0
     depth_rule: Optional[str] = None  # the bump's depth component: against | with | toward | away | None
+    force_n: float = 0.0              # a bump: the pulse across the cue [N]
 
-    def offset(self) -> Optional[np.ndarray]:
-        """The perturbation as a frontal-plane offset (y, z) [m], or None."""
+    def heading(self) -> Optional[np.ndarray]:
+        """The perturbation's direction in the frontal plane (y, z), a unit vector, or None."""
         if self.perturb is None or self.direction is None:
             return None
-        return self.size_m * rotate(unit(self.direction), float(self.angle_deg))
+        return rotate(unit(self.direction), float(self.angle_deg))
+
+    def offset(self) -> Optional[np.ndarray]:
+        """A jump as a frontal-plane offset (y, z) [m], or None (no jump)."""
+        h = self.heading()
+        return None if h is None or self.perturb != "jump" else self.size_m * h
+
+    def force(self) -> Optional[np.ndarray]:
+        """A bump's frontal-plane force (y, z) [N], or None (no bump)."""
+        h = self.heading()
+        return None if h is None or self.perturb != "bump" else self.force_n * h
 
     def record(self) -> dict:
         off = self.offset()
         return {"cue": self.cue, "direction": self.direction, "perturb": self.perturb,
                 "angle_deg": self.angle_deg, "size_m": self.size_m, "block": self.block,
-                "depth_rule": self.depth_rule,
+                "depth_rule": self.depth_rule, "force_n": self.force_n,
                 "offset_yz_m": None if off is None else [round(float(v), 4) for v in off]}
 
 
@@ -346,7 +370,8 @@ class ReachSchedule:
                 if i < n_pert:
                     a, r = combos[k % len(combos)]
                     k += 1
-                    trials.append(TrialPlan(s.cue, name, s.kind(), float(a), s.size(), self.block, r))
+                    trials.append(TrialPlan(s.cue, name, s.kind(), float(a), s.jump_m if s.kind() == "jump" else 0.0,
+                                            self.block, r, s.bump_force_n if s.kind() == "bump" else 0.0))
                 else:
                     trials.append(TrialPlan(s.cue, name, block=self.block))
         self._queue = self._shuffled(trials)

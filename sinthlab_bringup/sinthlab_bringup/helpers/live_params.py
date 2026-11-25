@@ -24,10 +24,12 @@ from typing import Dict, List, Optional, Tuple
 _COMMON = [
     "quiet_window_sec",            # pause at the start pose before the go cue
     "move_to_park.hold_sec",       # wait at park before each trial's move to the start
+    "move_to_park.early_touch_speed_scale",   # the quick retreat after an early touch (that move only)
     # The park pose: only the joint controller drives the arm there, so it can change between trials
     # anywhere. Checked like any pose, and its elbow (A4) must bend the same way as the start's.
     "move_to_park.target_joint_position",
     "quiet_gate.*",                # the guarded quiet window: early touch -> no reward, park, time-out
+    "quiet_ramp.*",                # the quiet-window staircase (helpers/quiet_ramp.py), off by default
     "audio_cue.enabled",           # master switch for every beep
     "audio_cue_*.frequency_hz",
     "audio_cue_*.duration_ms",
@@ -158,6 +160,14 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "quiet_gate.move_m": (0.005, 0.2),
     "quiet_gate.force_n": (1.0, 50.0),
     "quiet_gate.penalty_sec": (0.0, 120.0),
+    "quiet_gate.flashes": (0, 5),
+    "quiet_ramp.step_sec": (0.01, 2.0),
+    "quiet_ramp.after_trials": (1, 50),
+    "quiet_ramp.back_sec": (0.0, 2.0),
+    "quiet_ramp.min_sec": (0.0, 60.0),
+    "quiet_ramp.max_sec": (0.1, 60.0),
+    "quiet_gate.flash_sec": (0.05, 1.0),
+    "move_to_park.early_touch_speed_scale": (0.25, 2.0),
     "response_timeout_sec": (2.0, 600.0),
     "audio_cue_*.frequency_hz": (37, 32767),      # [console]::Beep refuses anything outside this
     "audio_cue_*.duration_ms": (10, 10000),
@@ -238,13 +248,13 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "perturb.probability": (0.0, 1.0),
     "perturb.max_in_row": (0, 10),
     "perturb.jump_m": (0.0, 0.03),
-    "perturb.bump_m": (0.0, 0.03),
+    "perturb.bump_force_n": (0.0, 15.0),    # 15 N for 0.5 s at damping 40 moves the apple 19 cm: the box bounds it
     "perturb.jump_sec": (0.05, 1.0),       # 3 cm in 0.05 s peaks at 1.1 m/s, under the 1.5 m/s safety trip
     "perturb.bump_sec": (0.05, 1.0),
     "perturb.jump_delay_min_sec": (0.0, 3.0),
     "perturb.jump_delay_max_sec": (0.0, 3.0),
     "perturb.bump_at_m": (0.005, 0.14),
-    "perturb.bump_depth_m": (0.0, 0.03),
+    "perturb.bump_depth_force_n": (0.0, 15.0),
     "perturb.bump_depth_still_mps": (0.0, 0.3),
     "grip.threshold_n": (1.0, 30.0),
     "grip.hold_sec": (0.0, 0.5),
@@ -345,6 +355,7 @@ def paradigm_of(name: str) -> Optional[Tuple[str, ...]]:
 STEPS: Dict[str, float] = {
     "resistance.stiffness_n_per_m": 10.0,
     "*.speed_scale": 0.05,
+    "*_speed_scale": 0.05,
     "grasp.bump_speed_scale": 0.05,
     "centre_out.max_repeats": 1,
     "long_move.min_m": 0.01,

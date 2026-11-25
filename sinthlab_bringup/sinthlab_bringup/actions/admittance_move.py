@@ -61,7 +61,14 @@ DISPLACING THE APPLE: displace() (the free reach's jump and bump, actions/free_r
 the equilibrium is DRIVEN -- from where it is, by a set offset, along a minimum-jerk profile -- and the
 hand's force does not move it; the stiff cabinet spring carries the arm (and a hand holding it) along.
 Then the admittance carries on from the displaced equilibrium, so the apple stays where it was put until
-the hand moves it. The offset stays inside the rail / box and above the floor.
+the hand moves it. The offset stays inside the rail / box and above the floor. (The free reach's jump.)
+
+PUSHING THE APPLE: push() (the free reach's bump). A force pulse: for its duration a virtual force F is
+added to the hand's, as if a second hand pushed the apple -- the equilibrium gains F / damping_ns_per_m of
+velocity, linearly and on top of whatever the hand does (not through the threshold or the light-force
+damping, so the pulse is the same whatever the hand's own force). The hand stays in control throughout:
+pushing back opposes it at once. Uncorrected, it moves the apple F x duration / damping (5 N for 0.15 s at
+50 N s/m: 1.5 cm). The rail / plane keeps only the part along it; the box and the floor bound it as usual.
 
 A HAND FASTER THAN THE EQUILIBRIUM: TRAIL. A strong push moves the arm faster than the equilibrium
 may move (max_speed_mps, accel_limit_mps2): the hand then drags the arm AHEAD of it, against the
@@ -246,6 +253,8 @@ class AdmittanceMoveAction:
         self._max_exc = 0.0                             # farthest the arm has been moved from there [m]
         self._f_hand = np.zeros(3)                      # tared hand force, every direction, filtered (the grip)
         self._disp = None                               # displace(): (eq0, offset, t0, duration, on_done)
+        self._push = None                               # push(): (force, t_end, on_done)
+        self._vp_last = np.zeros(3)                     # the push's velocity in the last step [m/s]
 
         node.create_subscription(LBRState, state_topic, self._on_state, 1)
         self._pub = node.create_publisher(PoseStamped, cmd_topic, 1)
@@ -295,6 +304,8 @@ class AdmittanceMoveAction:
         self._settle_until = 0.0
         self._open = None                       # every trial starts with the whole rail open
         self._disp = None
+        self._push = None
+        self._vp_last = np.zeros(3)
         self._f_hand[:] = 0.0
         self._t_start = time.monotonic()
 
@@ -325,6 +336,7 @@ class AdmittanceMoveAction:
         """Stop moving. The CLIK keeps the last equilibrium, so the arm holds where it is."""
         self._active = self._moving = False
         self._disp = None
+        self._push = None
 
     def displace(self, offset_xyz, duration_sec: float, on_done=None) -> bool:
         """Move the equilibrium by offset_xyz [m, base frame] over duration_sec, minimum jerk, whatever the
@@ -338,6 +350,39 @@ class AdmittanceMoveAction:
 
     def displacing(self) -> bool:
         return self._disp is not None
+
+    def push(self, force_xyz, duration_sec: float, on_done=None) -> bool:
+        """A force pulse of force_xyz [N, base frame] for duration_sec, added to the hand's (class doc,
+        "pushing the apple"); then on_done(). Only while moving and not displacing or pushing already;
+        returns whether it started."""
+        if not self._moving or self._eq is None or self._disp is not None or self._push is not None:
+            return False
+        f = np.asarray(force_xyz, dtype=float)
+        if self._rail is not None:
+            f = self._rail[0] * float(f @ self._rail[0])
+        elif self._plane_n is not None:
+            f = rail_shapes.on_plane(f, self._plane_n)
+        self._push = (f, time.monotonic() + max(float(duration_sec), 1e-3), on_done)
+        return True
+
+    def pushing(self) -> bool:
+        return self._push is not None
+
+    def perturbing(self) -> bool:
+        """A jump (displace) or a bump (push) under way."""
+        return self._disp is not None or self._push is not None
+
+    def _push_velocity(self, now: float) -> np.ndarray:
+        """The push's velocity this step (F / damping), zeros without one; ends the push when it is over."""
+        if self._push is None:
+            return np.zeros(3)
+        f, t_end, on_done = self._push
+        if now < t_end:
+            return f / self._damping
+        self._push = None
+        if on_done is not None:
+            on_done()
+        return np.zeros(3)
 
     def arm_velocity(self) -> np.ndarray:
         """The arm's velocity [m/s, base frame], smoothed over ARM_V_TAU_SEC; zeros before the go cue."""
@@ -519,9 +564,13 @@ class AdmittanceMoveAction:
         if self._pushing and self._quiet >= RELEASE_SEC:
             self._pushing = False
             self._v[:] = 0.0
+            self._vp_last[:] = 0.0           # the speed is reset whole: no push part left in it either
             self._settle_until = now + SETTLE_SEC
+        vp = self._push_velocity(now)
+        push_on = bool(np.any(vp))
+        vp_prev, self._vp_last = self._vp_last, vp        # every step, the holding one included
         if not self._pushing:
-            if not np.any(self._f_used):
+            if not np.any(self._f_used) and not push_on:
                 if now < self._settle_until:
                     target = self._bound(self._p_meas + self._rest_offset)
                     self._eq = self._eq + min(1.0, dt / GLIDE_TAU_SEC) * (target - self._eq)
@@ -537,10 +586,16 @@ class AdmittanceMoveAction:
         if speed > self._max_speed > 0.0:
             v *= self._max_speed / speed
         if self._accel > 0.0 and dt > 0.0:                # smooth: the speed changes at most accel * dt
-            dv = v - self._v
+            base = self._v - vp_prev                      # the hand's own part of the last step's speed
+            dv = v - base
             step = float(np.linalg.norm(dv))
             if step > self._accel * dt:
-                v = self._v + dv * (self._accel * dt / step)
+                v = base + dv * (self._accel * dt / step)
+        if push_on:                                       # the push: linear, on top of the hand's part
+            v = v + vp
+            speed = float(np.linalg.norm(v))
+            if speed > self._max_speed > 0.0:
+                v *= self._max_speed / speed
 
         eq = self._eq + v * dt
         lead = eq - self._p_meas                          # leash: never far ahead of the arm
