@@ -19,7 +19,7 @@ from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
-SHAPES = ("none", "x", "y", "z", "frontal", "rays")
+SHAPES = ("none", "x", "y", "z", "frontal", "rays", "switch")   # switch: helpers/switch_rails.py
 FRONTAL_NORMAL = np.array([1.0, 0.0, 0.0])     # base X: toward the monkey
 
 # How many choices: the N-Choice card's tabs (free_move.ray_layout, per run), to work up from 2 over sessions.

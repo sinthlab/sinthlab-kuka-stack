@@ -91,6 +91,15 @@ class CentreOutMonitor:
 
     def reload(self) -> None:
         n, p = self._node, self._p
+        # Switchable rails (helpers/switch_rails.py): the rail may have changed since the last trial, and
+        # with it the ends' names. The goal mode and its repeat count carry over to the new ends.
+        axis = "y" if self._free else self._adm.rail_axis()
+        ends = END_NAMES.get(axis, ("min", "max"))
+        if ends != self._ends:
+            mode, repeats = self._picker.mode, self._picker.max_repeats
+            self._ends, self._picker = ends, TargetPicker(ends)
+            self._picker.set_mode(mode, repeats)
+            n.get_logger().info(f"Centre-out: now the {ends[0]} / {ends[1]} rail.")
         if self._free:
             d = float(get_required_param(n, p + "free_reach_m"))
             self._free_ends = (-d, d)

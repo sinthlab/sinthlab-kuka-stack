@@ -42,7 +42,7 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # The free-move node's tasks: the admittance's equilibrium offset and hand force
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
-ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
+ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "move_rails", "restricted_move_horizontal",
                     "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free", "forage")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
@@ -339,7 +339,7 @@ def validate(path) -> bool:
         r.check(len(outcome) <= 1, f"at most one outcome (choice / choice_unrewarded / response_timeout / safety_trip); found {outcome}")
         arg = [a for _, t, a in seq if t in ("choice", "choice_unrewarded")]
         r.note(f"n-choice: {outcome[0] if outcome else 'no outcome'}" + (f" ({arg[0]})" if arg else ""))
-    if exp in ("move_vertical", "move_horizontal", "colour_rule") and "target" in got:
+    if exp in ("move_vertical", "move_horizontal", "move_rails", "colour_rule") and "target" in got:
         # Centre-out (actions/centre_out.py): one reach per trial -- to the goal, to the other end, or none.
         outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]
         r.check(len(outcome) <= 1, f"at most one outcome (reach / reach_wrong / response_timeout / safety_trip); found {outcome}")

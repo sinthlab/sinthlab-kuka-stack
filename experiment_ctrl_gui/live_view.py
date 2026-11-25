@@ -36,6 +36,7 @@ from sinthlab_bringup.helpers.floor import reference_drop
 from sinthlab_bringup.helpers.free_move_box import box_bounds
 from sinthlab_bringup.helpers import free_reach
 from sinthlab_bringup.helpers import forage
+from sinthlab_bringup.helpers import switch_rails
 from sinthlab_bringup.helpers.rail_shapes import direction_name, frontal_dir as rail_dir, layout_degs  # noqa: E402
 
 # Without a robot model (demo without ROS): the pre-training start, tool along +X.
@@ -154,7 +155,7 @@ class LiveView:
             self._plane(p, a, add)
         elif key == "maze":
             self._maze(p, a, add)
-        elif key in ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
+        elif key in ("free_move", "move_vertical", "move_horizontal", "move_rails", "restricted_move_horizontal",
                      "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free", "forage"):
             self._free_move(p, a, add)
         return {"experiment": key, "shapes": shapes, "anchor": a.tolist(), "start": start.tolist(),
@@ -311,8 +312,11 @@ class LiveView:
                 return
             add({"kind": "box", "min": (a + lo).tolist(), "max": (a + hi).tolist(), "role": "wall", "label": "box"})
             return
+        got = switch_rails.effective(p)           # a fixed rail, or the switchable one in force (rails.axis)
+        if got is None:
+            return
+        axis, lo, hi = got
         u = np.eye(3)[AXES[axis]]
-        lo, hi = float(p["free_move.rail_min_m"]), float(p["free_move.rail_max_m"])
         add({"kind": "seg", "a": (a + u * lo).tolist(), "b": (a + u * hi).tolist(), "role": "rail", "label": f"{axis} rail"})
         if p.get("centre_out.enabled"):
             tol = float(p.get("centre_out.end_tol_m", 0.02))

@@ -1,0 +1,235 @@
+/**:
+  ros__parameters:
+    # ---- THE FLOOR: the end effector never goes below this height above the ground (per-run) ----
+    # The robot stands on the ground, so heights are base-frame z. Enforced as a soft wall wherever ROS
+    # moves the spring's equilibrium, a trip (abort + park) if the measured point still gets
+    # trip_margin_m below it, and a check of the start / park poses and the moves between them before
+    # the arm goes there. See helpers/floor.py and README "The floor".
+    floor:  # lowest height the end effector may reach
+      height_m: 0.88  # Floor height above ground [m]
+      reference: apple_bottom  # Point kept above the floor (apple_bottom or base_edge, the lowest edge of the Ø188 base)
+      trip_margin_m: 0.03  # Distance below the floor that triggers a trial abort and park [m]
+
+    # ---- THE QUIET WINDOW IS GUARDED (live) ----
+    # Moving or pushing the apple during the quiet window (before the go cue) ends the trial with no
+    # reward: event early_touch, the arm parks, and a time-out runs before the next trial -- shaping
+    # "wait for the go cue". Compared with the window's first 0.2 s, so resting sag and force don't
+    # count. An untouched arm still settles by up to 16 mm (Uniform 100) and its force reading wanders
+    # by up to 3 N; an early pull moved it 74 mm with 31 N. See actions/quiet_gate.py.
+    quiet_gate:  # Early-touch detection before the go cue
+      enabled: true  # End the trial if an early touch crosses the movement or force threshold
+      move_m: 0.03  # Displacement that ends the trial during the quiet window [m]
+      force_n: 5.0  # Change in force that ends the trial during the quiet window [N]
+      penalty_sec: 5.0  # Extra wait at park after an early touch [s], in addition to move_to_park.hold_sec
+      flash_colour: [255, 200, 0, 0]  # early-touch cue: the whole ring flashes this colour (yellow, used for nothing else), RGBW at full value; visual_cue.brightness sets how bright
+      flashes: 2  # how many flashes on an early touch, with the low tone; 0 = no visual cue
+      flash_sec: 0.15  # each flash is on this long, then off this long [s]
+
+    # The quiet-window staircase (helpers/quiet_ramp.py): lengthens quiet_window_sec as early touches stop.
+    # Off: change quiet_window_sec by hand. On: after every trial, set as the live quiet_window_sec.
+    quiet_ramp:  # automatic lengthening of the quiet window (all live)
+      enabled: false  # on = after_trials trials in a row that reach the go cue add step_sec; an early touch takes back_sec off
+      step_sec: 0.1  # how much the window grows after each streak [s]
+      after_trials: 3  # trials in a row without an early touch before it grows
+      back_sec: 0.1  # how much an early touch shortens it [s]; 0 = never shorter
+      min_sec: 0.3  # never shorter than this [s]
+      max_sec: 2.0  # never longer than this [s]
+
+    # CUED REACHES, RAILS (SWITCHABLE) (the Cued Reaches card, Rails; experiment key move_rails). Free Move on
+    # ONE rail through the start, horizontal OR vertical (rails.axis), switched between trials with no
+    # restart; ONE CENTRE-OUT REACH PER TRIAL, with the same mode tabs as the fixed rails. Both rails run
+    # from Move Vertical's start pose (also N-Choice's and Cued Reaches Free's), so the CLIK posture fits
+    # both; Move Horizontal itself starts 5 cm higher, at the maze start. Both rails are checked against the
+    # arm's posture limits at start-up (helpers/switch_rails.py).
+    #
+    # HOW: as Free Move (actions/admittance_move.py) with free_move.rail_axis switch: only the hand's force
+    # along the rail in force moves the equilibrium, only along it, and never past its ends.
+    #
+    # >>> SmartPad: "Z lock 2500, X/Y 1000, rot 120", damping 0.7, elbow 30 -- the maze's setup. Z 2500
+    #     (flange Z = tool axis, along base +X) holds the plane; along the rail the spring is 1000 N/m,
+    #     as in Free Move, so the same feel settings apply (damping 50 -- see the free_move block).
+    #
+    # REACH, holding the tool orientation (optas IK on the iiwa7 URDF): from the maze start, UP is the
+    # limit -- the arm nears a singular pose above +0.02 m (smallest singular value 0.12 at +0.02, 0.095
+    # at +0.04) and +0.08 m is out of reach; down to -0.12 m every joint stays >= 17 deg from its limit,
+    # with the apple bottom at 0.90 m, above the 0.88 m floor. So the usable span is the maze start
+    # -0.12 / +0.02 m. For centre-out the start is the MIDDLE of that span -- 5 cm below the maze start
+    # -- and the rail is +/-0.07 m: the same span (apple bottom 0.90-1.04 m), every 1 cm of it solved
+    # with every joint 17-31 deg from its limit.
+    #
+    # GRAVITY: the equilibrium is moved by force, never copied from the arm, so an untouched arm holds
+    # its height on the rail (as in Free Move); the floor still applies below.
+    experiment: "move_rails"  # Cued Reaches, rails (switchable): the experiment this YAML runs, on the free-move node
+    state_topic: "lbr_state"  # LBRState topic, relative to the robot namespace
+    base_link: "lbr_link_0"  # URDF base link the motion is computed in
+    end_effector_link: "lbr_link_ee"  # URDF end-effector link that is moved
+
+    session_sec: 0.0  # Session length [s]. Use 0 to run until Stop. With a timed session, the next session starts automatically.
+
+    # CENTRE-OUT (actions/centre_out.py): ONE REACH PER TRIAL. The centre is the start, the goals are the
+    # rail's two ends. At the go cue the ring lights (the whole ring for either end, the goal's quarter otherwise); the first end the arm reaches ends the
+    # trial -- a goal end gives the reward (event `reach`), the other end none (`reach_wrong`) -- then the
+    # release wait and park, as any trial. No reach within response_timeout_sec ends it too (no reward).
+    # With it on, session_sec does not apply.
+    centre_out:  # one rewarded reach per trial, from the centre to an end of the rail
+      enabled: true  # off = plain free movement on the rail, one session per trial (the session's end rewards)
+      # Work-up, switchable mid-session (the card's tabs): restricted cued -> cued, can correct -> cued, one choice -> either end.
+      target: "either"  # either = both ends are goals, the whole ring lights (no direction cued) | restricted = restricted cued: one end drawn at random per trial, only its quarter lights, the other half of the rail is closed | retry = cued, can correct: drawn the same way, the whole rail open, the other end does nothing (event wrong_end) and he may go on to the cued end | cued = cued, one choice: drawn the same way, the whole rail open, only the cued end is rewarded; the other end ends the trial and parks at once
+      max_repeats: 3  # restricted / cued: at most this many trials in a row to the same end (0 = no cap)
+      end_tol_m: 0.02  # this close to an end counts as reaching it [m]
+      wrong_timeout_sec: 0.0  # cued, one choice: a wrong choice parks at once; then this long at park before the next trial [s]
+      quarter_left: 3  # ring quarter (0-3) lit for the left end (horizontal rail, -Y) (README, "The ring")
+      quarter_right: 1  # ring quarter (0-3) lit for the right end (horizontal rail, +Y)
+      quarter_down: 2  # ring quarter (0-3) lit for the down end (vertical rail, -Z)
+      quarter_up: 0  # ring quarter (0-3) lit for the up end (vertical rail, +Z)
+
+    # The rail (free_move.rail_axis switch, helpers/switch_rails.py): which one is in force, and both rails' ends.
+    rails:  # the switchable rails
+      axis: "horizontal"  # horizontal | vertical: the rail in force (live, from the next trial; no restart)
+      left_m: 0.15  # the horizontal rail's left end, from the start [m] (per-run; checked safe at start-up)
+      right_m: 0.15  # the horizontal rail's right end, from the start [m] (per-run)
+      down_m: 0.07  # the vertical rail's lower end, from the start [m] (per-run; apple bottom 0.90 m)
+      up_m: 0.07  # the vertical rail's upper end, from the start [m] (per-run): the arm's reach ends just above
+
+    move_to_start:  # joint-space move to the trial start pose (the middle of the vertical rail)
+      update_rate: 200  # Action loop rate [Hz]
+      # 5 cm BELOW the maze start, the middle of the vertical rail: EE ~ (0.38, 0.01, 0.98) m, tool along
+      # +X toward the subject. Keep equal to nullspace_desired_configuration in
+      # config/clik_nullspace_pretrain_vertical.yaml.
+      target_joint_position: [1.6, 53.6, 1.0, 63.4, 0.6, 96.1, 2.0]  # start pose, joint angles A1..A7 [deg]
+      joint_move_tolerance: 0.03  # Maximum joint error at the target [rad]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
+      cartesian_move_tolerance: 0.03  # EE within this of the target counts as physically arrived [m]
+      move_to_pos_v_max: [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]  # peak joint speed [deg/s]
+      move_to_pos_a_max: 2.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 5.0  # joint jerk limit [rad/s^3]
+      speed_scale: 0.7  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      physical_arrival_timeout_sec: 0.0  # Wait this long for the measured arm position to reach the target [s]. Use 0 for no timeout.
+    # PARK -- where the arm waits between trials, out of the monkey's reach: the apple pulled back over
+    # the robot's base and raised, at ~(0.2, 0, 1.1) m in every experiment. The run's FIRST move goes here
+    # from wherever the arm is (the SmartPad app's ready pose, or where a previous run left it); then
+    # every trial is park -> start -> trial -> park. Pausing holds here.
+    # This is the elbow-POSITIVE posture (A4 > 0), like this experiment's start. The apple / plane family
+    # parks at the same place with the elbow the other way. Start and park must bend the elbow the same way, or
+    # every park <-> start move passes a straight, singular elbow (refused by the dashboard and at start-up).
+    # The SmartPad app leaves the arm at its ready pose, elbow NEGATIVE: so the run's first move (ready ->
+    # park) passes the straight elbow once. It runs slowly for that (first_move_speed_scale).
+    move_to_park:  # joint-space move to the park pose: before the first trial and after every trial
+      update_rate: 200  # Action loop rate [Hz]
+      target_joint_position: [-3.6, 45.0, -3.6, 95.0, 0.7, 90.0, -15.7]  # park pose A1..A7 [deg] (per-run)
+      joint_move_tolerance: 0.15  # Maximum joint error at the target [rad]
+      wait_for_physical_arrival: true  # Wait for the measured arm position to reach the target
+      cartesian_move_tolerance: 0.05  # Maximum distance from the park target at arrival [m]
+      move_to_pos_v_max: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]  # peak joint speed, per joint [deg/s]
+      move_to_pos_a_max: 4.0  # joint acceleration limit [rad/s^2]
+      move_to_pos_j_max: 20.0  # joint jerk limit [rad/s^3]
+      speed_scale: 1.0  # Speed multiplier for the next move (0.25–2). At 0.5 the move takes twice as long.
+      early_touch_speed_scale: 1.25  # Speed multiplier for the park move after an early touch only (0.25-2), so the arm leaves the hand at once; the next park move is back at speed_scale
+      first_move_speed_scale: 0.5  # Speed multiplier for the initial move from ready to park. This move crosses a straight elbow posture.
+      hold_sec: 2.0  # Time at park before moving to the next trial’s start [s]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+      physical_arrival_timeout_sec: 10.0  # Wait this long for the measured arm position to reach the target before issuing a warning [s]
+
+    # ---- THE FEEL (live: change between trials from the dashboard) ----
+    free_move:  # admittance: the equilibrium moves at force / damping
+      # STABILITY FIRST. Free Move is a loop through the hand: force -> equilibrium -> (~80 ms) cabinet
+      # -> (~45 ms) arm -> hand, ~170 ms round trip with the force filter. A loop through a hand with
+      # that much delay is stable only if the damping is high enough for how firmly the hand holds:
+      # at 30 it rang (stop-go bursts), at 20 it trembled; 50 is smooth (recordings 26 Oct). At 50,
+      # 5 N moves the arm 0.1 m/s, 10 N 0.2 m/s. Go below ~40 only with care.
+      damping_ns_per_m: 50.0  # Damping [N s/m]. Lower values make the arm easier to move. Below about 40 N s/m, it can oscillate.
+      # A ROUND THRESHOLD, the same in every direction: a (tared) force below it moves nothing; above it
+      # the force counts, in full from twice the threshold. It is also what keeps the arm's own small
+      # model errors from driving it (see jacobian_damping): 2.5 N with damping 0.1 is smooth and stable.
+      deadband_n: 2.5  # Forces below this threshold are ignored [N]. Use 0 to disable the threshold.
+      max_speed_mps: 0.35  # cap on how fast the arm can be moved [m/s]
+      # SMOOTHNESS. The force reading is noisy and crosses the threshold on and off; without this the
+      # target speed follows every jolt. But it also delays the arm behind the hand, and too low a cap
+      # makes the hand and arm rock against each other: at 1.5 the equilibrium sat on the cap for 45% of
+      # every push and the arm oscillated at ~1.5 Hz, moving in stop-go bursts (recording 26 Oct). A
+      # hand asks for more than 4 only ~4% of the time. Lower = smoother starts but laggier; 0 = off.
+      accel_limit_mps2: 4.0  # the arm's speed may change at most this fast [m/s^2] (0 -> 0.3 m/s in 0.08 s)
+      force_filter_tau_sec: 0.03  # low-pass on the force reading [s]; larger = smoother, but its lag destabilises the loop
+      # A strong push can move the arm faster than the equilibrium may move; it then trails the arm and
+      # the cabinet spring pulls the arm back when the hand lets go (the jerk at the end of a fast move).
+      trail_m: 0.005  # while pushed harder than low_force_n, the equilibrium is never more than this behind the arm along the push (spring <= K * trail) [m]
+      # A resting hand and this admittance form a loop that bobs (~1.6 Hz in Z) when the damping is low,
+      # so light forces get more of it; pushes above low_force_n feel as set by damping_ns_per_m.
+      low_force_n: 10.0  # below this force the damping rises toward low_force_damping_ns_per_m [N]
+      low_force_damping_ns_per_m: 100.0  # the damping at the threshold (deadband_n) [N s/m]; = damping_ns_per_m turns this off
+      # THE FORCE is computed from the arm's external joint torques (F = pinv(J)^T tau_ext), with this
+      # round threshold -- not from lbr's estimated wrench topic, whose per-axis dead band makes diagonal
+      # moves snap between axes. The torques also carry the arm's own model errors, which the elbow (A4)
+      # amplifies most: 1 Nm there reads as 4.3 N at damping 0.02 (that oscillated, ~1 Hz in Z), 3.4 N at
+      # 0.1, 2.0 N at 0.2. Damping 0.1 reads a push at 78-96 % of its strength, bent by at most 6 deg --
+      # a constant small bend for a pose, never a snap. Keep the tool's load data current: stale load
+      # data is the largest model error. With debug_log_enabled the log shows the per-joint torques.
+      jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
+      tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
+      tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
+      leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
+      smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
+      rail_axis: "switch"  # the rail: horizontal or vertical as the rails block says, switched between trials
+      debug_log_enabled: false  # print force, speed and position twice a second while moving
+      debug_log_rate_hz: 2.0  # how often that line prints [Hz]
+
+    # Runaway stop -- SPEED ONLY: the rail's ends bound the motion, so the distance check is off.
+    free_move_safety:  # Runaway motion limits
+      update_rate: 100  # Action loop rate [Hz]
+      base_frame: lbr_link_0  # TF frame positions are measured in
+      ee_frame: lbr_link_ee  # TF frame of the end effector being tracked
+      max_displacement_m: 0.0  # 0 = no distance limit (the rail bounds the motion)
+      max_speed_mps: 1.5  # abort if the EE moves faster than this [m/s]: about twice the fastest hand push recorded (0.79 m/s, 5 samples in a row), so a monkey pushing harder still passes
+      speed_trip_samples: 5  # consecutive over-speed samples needed to trip (filters single-sample noise)
+      state_timeout_sec: 0.5  # Stop if no robot state arrives within this time [s]. Normally lbr_state arrives every 10 ms. Use 0 to disable.
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+
+    force_release:  # waits for the hand to let go before parking
+      update_rate: 100  # Action loop rate [Hz]
+      release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
+      release_duration_sec: 1.0  # ... continuously for this long [s]
+      debug_log_enabled: false  # Enable periodic debug logging for this action
+      debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
+
+    # ---- cues (live) ----
+    quiet_window_sec: 0.5  # the guarded wait at the start pose before the go cue [s]: short to begin training, then lengthen it by hand or with quiet_ramp; early touches are caught after its first 0.2 s, so 0.3 s is the useful minimum
+    response_timeout_sec: 30.0  # maximum choice time from armed [s]; timeout holds for release before park; in plain rail sessions this is the initial movement deadline
+    audio_cue:  # Enable audio cues
+      enabled: true  # Enable audio cues
+    audio_cue_play:  # go cue: free movement starts
+      frequency_hz: 1500  # go tone: pitch [Hz]
+      duration_ms: 500  # go tone: length [ms]
+    audio_cue_end:  # confirms a valid choice
+      frequency_hz: 800  # end tone: pitch [Hz]
+      duration_ms: 350  # choice confirmation tone: length [ms]
+    nsp_sync:  # TTL sync pulses to the Blackrock NSP, through the cabinet's Beckhoff outputs
+      enabled: true  # send a pulse at Start (experiment start) and at every trial start and trial end
+      cabinet_ip: "172.31.1.147"  # Cabinet address for pulse commands (UDP port 30002)
+      trial_start_output: 1  # EL2124 output (1-4, front jack SYNC 1-4) pulsed at trial start
+      trial_end_output: 2  # EL2124 output (1-4) pulsed at trial end
+      experiment_start_output: 3  # EL2124 output (1-4) pulsed once, the moment Start is pressed on the dashboard
+      pulse_width_ms: 500  # Time each pulse stays high [ms], from 10 to 5000
+
+    reward_pulse:  # Reward pulse on the Beckhoff output connected to the reward box’s NSP jack
+      enabled: true  # send the reward pulse when the centre-out reach gets to a goal end (centre_out.enabled), else when a session runs its full session_sec; a wrong end, no response, early touch, safety trip and Stop get none
+      output: 4  # EL2124 output (1-4, front jack SYNC 1-4) cabled to the reward box's NSP jack; must differ from the nsp_sync outputs
+      pulse_ms: 500  # Valve open time per pulse [ms], from 10 to 5000
+      count: 1  # Pulses per reward. Each pulse lasts pulse_ms. Use analysis/reward_calibration.py --burst to calibrate multiple pulses.
+      gap_ms: 300  # Time the valve stays closed between pulses [ms], from 100 to 5000
+
+    visual_cue:  # NeoPixel ring
+      enabled: true  # master switch for the ring; false = dark throughout
+      brightness: 0.02  # the ONE control of how bright the ring is (0.02 = about 5 of 255; the LEDs' lowest steps are near 0.005): every colour is at full value, this scales them all; 0-0.3 (0 = leave the board's own); sent to the board at every run start and change, RAM only [fraction]
+      trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
+      serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
+      remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
+    # The ring is GREEN for the cue, dark otherwise; a reward lights the whole ring white (the reward cue, the same in every task).
+    ring_cue:  # which quarters light, and in what colour
+      quarters: [0, 1, 2, 3]  # every quarter (the centre-out cue lights only the cued end's), 0-3
+      colours:  # RGBW, each colour at full value (255): visual_cue.brightness alone sets how bright
+        go: [0, 255, 0, 0]  # free to move -- green
+        reward: [0, 0, 0, 255]  # the reward cue, the same in every task: the whole ring white with every reward given, until the hand lets go (1 s for a reward mid-session)

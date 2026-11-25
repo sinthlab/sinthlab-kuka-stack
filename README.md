@@ -1672,7 +1672,7 @@ In the dashboard, Free Move, Reach Map and Restricted Move are under **Pre-train
 | **Free Move** | Session · Long moves | `free_move` |
 | **Reach Map** | Long moves · New best | `reach_map`: measures reach by direction for the monkey’s profile ([below](#reach-map--how-far-this-monkey-reaches)) |
 | **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
-| **Cued Reaches** | Horizontal · Vertical: Either end · Restricted cued · Cued, can correct · Cued, one choice; Free (3-D): Any direction · Cued | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial on a rail (the keys are main's, so recordings stay comparable); `move_free`: the same free in 3-D, with jump and bump perturbations ([Scenario 7](#scenario-7--cued-reaches-free-3-d-with-jump-and-bump-perturbations)) |
+| **Cued Reaches** | Horizontal · Vertical · Rails (switchable): Either end · Restricted cued · Cued, can correct · Cued, one choice; Free (3-D): Any direction · Cued | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial on a rail (the keys are main's, so recordings stay comparable); `move_rails`: the same, on a horizontal or vertical rail switched between trials ([switchable rails](#switchable-rails)); `move_free`: the same free in 3-D, with jump and bump perturbations ([Scenario 7](#scenario-7--cued-reaches-free-3-d-with-jump-and-bump-perturbations)) |
 
 A card with a variant row holds one experiment per variant (Restricted Move: two rails; Cued Reaches: two
 rails and Free), each with its own settings and start pose; the variant is fixed during a run, and the card
@@ -2004,6 +2004,26 @@ the end's name as its argument — or `response_timeout`. They are in the trial 
 adds `first_correct` (the first end reached was the goal: the learning measure in both cued modes) and
 `n_wrong_end`, and `sessions.csv` `pct_first_correct`. `validate_recording.py` reports each trial's target
 and outcome.
+
+#### Switchable rails
+The **Rails (switchable)** variant of Cued Reaches (`move_rails`, [`pretrain_move_rails.yaml`](sinthlab_bringup/config/pretrain_move_rails.yaml))
+runs the same centre-out reach on **one rail at a time, horizontal or vertical**, and switches between them
+**between trials, with no restart**: `rails.axis` (`horizontal` | `vertical`) is live, on the card's front
+page, and applies from the next trial. Move Horizontal and Move Vertical stay as they are.
+
+Why a separate variant: the two fixed rails start from different poses (Horizontal at the maze start, Vertical
+5 cm lower), and the CLIK reads its redundancy posture, which must equal the start pose, once at launch. This
+variant runs both rails from Move Vertical's start (also N-Choice's and Cued Reaches Free's), so only the rail
+changes. `free_move.rail_axis: switch` takes the rail from `rails.axis`; its ends are `rails.left_m` /
+`right_m` (0.15 m) and `rails.down_m` / `up_m` (0.07 m), per-run, and **both rails are checked against the
+arm's posture limits at start-up**, so a switch never asks for one that was not
+([`helpers/switch_rails.py`](sinthlab_bringup/sinthlab_bringup/helpers/switch_rails.py)). A monkey's profile
+reach sets all four ends. The ends are named as on the fixed rails, the ring quarters come from
+`centre_out.quarter_left` / `right` / `down` / `up`, and the goal mode and its repeat count carry over a switch.
+`trials.csv` has the rail of each trial (`rail`), and the Run pane shows the rail in force and the side bias on it.
+
+On the rig, first: launch it once and check the start-up log says both rails passed (the horizontal rail from
+this lower start has only been checked in software so far); switch mid-run and confirm the next trial's rail.
 
 #### Before the first session with a subject
 1. **Free Move, sign check (T1, hand on the E-stop).** Set `free_move.debug_log_enabled: true`
