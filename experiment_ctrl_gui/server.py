@@ -34,6 +34,7 @@ from params import ExperimentParams, read_fixed_config  # noqa: E402
 from ros_bridge import DemoBridge, make_bridge  # noqa: E402
 import board as cue_board  # noqa: E402
 import kinematics  # noqa: E402
+import install_check  # noqa: E402
 from sinthlab_bringup.helpers import free_reach  # noqa: E402  (on the path via experiments)
 import profiles  # noqa: E402
 import reach_view  # noqa: E402
@@ -318,6 +319,10 @@ class App:
             raise RuntimeError(f"{s.get('experiment')} is already running outside the dashboard "
                                f"({s.get('node')}). Stop it in its terminal first.")
         if not self.demo:
+            # The arm must run this checkout's code: the settings come from here (install_check.py).
+            stale = install_check.problem(ex.REPO)
+            if stale:
+                raise RuntimeError(f"Not starting: {stale}")
             # Leftovers of an earlier run (e.g. an old ros2_control_node holding the FRI connection) make
             # a new launch hang at its controller spawners: end them first. A live experiment started
             # outside the dashboard was refused above, so anything matching now is a leftover.
@@ -352,6 +357,20 @@ class App:
         if isinstance(self.bridge, DemoBridge):
             self.bridge.launch_started(exp, p.current(), subject)
         return {"ok": True}
+
+    def pause(self, resume: bool = False) -> dict:
+        """Pause: end the trial now, park, and hold until Resume -- the launch, FRI and the SmartPad app keep
+        running. Resume starts the next trial (live changes made meanwhile apply from it)."""
+        exp = self.running_experiment()
+        if exp is None or not self.runner.running():
+            raise RuntimeError("nothing is running")
+        if self.stopping:
+            raise RuntimeError("the run is stopping")
+        ok, msg = (self.bridge.resume if resume else self.bridge.pause)(exp)
+        self.runner.emit(f"{'Resume' if resume else 'Pause'}: {msg}", "gui" if ok else "warn")
+        if not ok:
+            raise RuntimeError(msg)
+        return {"ok": True, "message": msg}
 
     def stop(self) -> dict:
         exp = self.running_experiment()
@@ -632,6 +651,8 @@ def make_handler(app: App):
                 return app.ttl(str(body.get("addr", "")), str(body.get("cmd", "")))
             if path == "/api/stop":
                 return app.stop()
+            if path in ("/api/pause", "/api/resume"):
+                return app.pause(resume=path == "/api/resume")
             if path == "/api/subject":
                 return app.select_subject(str(body.get("subject", "")), bool(body.get("clear_edits")))
             if path == "/api/profile/save":

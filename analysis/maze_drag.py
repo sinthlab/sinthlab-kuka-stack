@@ -53,7 +53,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 START = ("maze_armed", "armed")                                     # the fixture's live phase begins
-END = ("goal", "response_timeout", "timeout", "safety_trip", "stop_requested", "session_end", "release_wait")
+END = ("goal", "response_timeout", "timeout", "safety_trip", "stop_requested", "paused", "session_end", "release_wait")
 QUIET = ("fixture_active", "cue_go")                                # untouched arm: the force tare
 MIN_SPEED = 0.02           # [m/s] slower samples are "not moving along the rail"
 SMOOTH = 5                 # samples in the position smoothing window (~50 ms at the 10 ms FRI period)

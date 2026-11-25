@@ -125,7 +125,9 @@ def serial_call(port: str, cmd: str, params: Dict[str, object]) -> Tuple[bool, s
         if not opened:
             return False, reply, 0.0
         ok = reply == "PONG" or reply.startswith("ACK")
-        text = ("serial=up\n" + _LEGACY_NOTE + "\n") if cmd == "status" and ok else f"{legacy} -> {reply}\n"
+        text = (("serial=up\nfirmware=older: over serial only cues work; settings (brightness included) need the "
+                 "Wi-Fi path, or the current code.py flashed over USB\n" + _LEGACY_NOTE + "\n")
+                if cmd == "status" and ok else f"{legacy} -> {reply}\n")
         return ok, text if ok else (reply or "no reply"), ms
     if not reply:
         return False, (f"no reply on {port} within {SERIAL_TIMEOUT_SEC:.0f} s. Is the board powered and "

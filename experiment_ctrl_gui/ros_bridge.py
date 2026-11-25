@@ -7,6 +7,8 @@
                              geometry_msgs/PoseStamped  the live view
     <ns>/<node>/set_parameters                         live parameters (the node rejects the rest)
     <ns>/<node>/stop         std_srvs/Trigger          end the trial now, park, and hold
+    <ns>/<node>/pause        std_srvs/Trigger          end the trial now, park, hold until resume
+    <ns>/<node>/resume       std_srvs/Trigger          start the next trial
 
 It talks to whatever orchestrator is running -- one started from the dashboard, or one started in a
 terminal with `ros2 launch` -- so the live controls work either way.
@@ -143,8 +145,18 @@ class RosBridge:
 
     def stop(self, exp: ex.Experiment) -> Tuple[bool, str]:
         """Stop: the orchestrator ends the trial at once, parks the arm, and holds."""
+        return self._trigger(exp, "stop")
+
+    def pause(self, exp: ex.Experiment) -> Tuple[bool, str]:
+        """Pause: as Stop, but the run goes on: the arm holds at park until resume()."""
+        return self._trigger(exp, "pause")
+
+    def resume(self, exp: ex.Experiment) -> Tuple[bool, str]:
+        return self._trigger(exp, "resume")
+
+    def _trigger(self, exp: ex.Experiment, service: str) -> Tuple[bool, str]:
         from std_srvs.srv import Trigger
-        ok, res = self._call(Trigger, f"{self._ns}/{exp.node}/stop", Trigger.Request())
+        ok, res = self._call(Trigger, f"{self._ns}/{exp.node}/{service}", Trigger.Request())
         if not ok:
             return False, res
         return bool(res.success), res.message
@@ -217,6 +229,7 @@ class DemoBridge:
             self._stopped = False
             self._held = False
             self._stop_now = False
+            self._paused = False
             self._in_trial = False
             self._trial = 0
             self._picker: Optional[TargetPicker] = None     # centre-out goals, one schedule per run
@@ -249,7 +262,7 @@ class DemoBridge:
         self._status = {
             "experiment": self._exp.key, "node": f"/lbr/{self._exp.node}", "trial": self._trial,
             "phase": self._phase, "phase_arg": self._phase_arg, "phase_t": self._phase_t,
-            "t": time.time(), "held": self._held,
+            "t": time.time(), "held": self._held, "paused": getattr(self, "_paused", False),
             "pending": dict(self._pending), "live": dict(self._effective),
             "nsp_sync": bool(self._effective.get("nsp_sync.enabled", False)), "_rx": time.time(),
             # As the real app would report it, set up as the checklist says.
@@ -305,6 +318,16 @@ class DemoBridge:
         while run_id == self._run_id:
             if not self._trial_once(run_id):
                 return
+            if self._paused and not self._stopped:
+                self._held = True
+                self._phase_to("paused", None, "Paused: holding at park until Resume.")
+                while self._paused and not self._stopped and self._sleep(run_id, 0.2):
+                    pass
+                if run_id != self._run_id:
+                    return
+                if not self._stopped:
+                    self._held = False
+                    self._log("RESUME: starting the next trial.")
             if self._stopped:
                 self._held = True
                 self._phase_to("stopped", None, "Stopped: holding at park.")
@@ -319,7 +342,10 @@ class DemoBridge:
             if not self._trial_body(run_id):
                 return False
         except _DemoStop:
-            self._phase_to("stop_requested", None, "STOP requested: ending the trial now and parking; then holding.")
+            if self._paused and not self._stopped:
+                self._phase_to("paused", None, "PAUSE requested: ending the trial now and parking; then holding until Resume.")
+            else:
+                self._phase_to("stop_requested", None, "STOP requested: ending the trial now and parking; then holding.")
         finally:
             self._in_trial = False
         self._phase_to("trial_end", self._trial, f"--- TRIAL {self._trial} OVER ---")
@@ -592,6 +618,32 @@ class DemoBridge:
             self._stop_now = True
         self._log("STOP requested: ending the trial now and parking; then holding.", "WARN")
         return True, "stopping: the trial ends now, the arm parks, then holds"
+
+    def pause(self, exp: ex.Experiment) -> Tuple[bool, str]:
+        if self._status is None:
+            return False, "no experiment is running"
+        with self._lock:
+            if self._stopped:
+                return False, "stopping: the run is ending"
+            if self._paused:
+                return True, "already paused"
+            self._paused = True
+            if not self._held:
+                self._stop_now = True
+        self._log("PAUSE requested: ending the trial now and parking; then holding until Resume.", "WARN")
+        self._publish()
+        return True, "pausing: the trial ends now, the arm parks, then holds until Resume"
+
+    def resume(self, exp: ex.Experiment) -> Tuple[bool, str]:
+        if self._status is None:
+            return False, "no experiment is running"
+        with self._lock:
+            if not self._paused:
+                return True, "not paused"
+            self._paused = False
+            self._stop_now = False
+        self._publish()
+        return True, "resumed: the next trial starts now"
 
     def shutdown(self) -> None:
         self.launch_ended()

@@ -227,7 +227,7 @@ def validate(path) -> bool:
 
     # ---- EVENTS ----
     print("\n [EVENTS]")
-    stopped = bool(meta) and any(e.get("event") == "stop_requested" for e in meta.get("events", []))
+    stopped = bool(meta) and any(e.get("event") in ("stop_requested", "paused") for e in meta.get("events", []))
     if meta and (meta.get("partial") or stopped):
         # The trial did not run to its natural end: Ctrl-C, a crash (`partial` -- it never reached
         # stop_and_save), or the dashboard's Stop (`stop_requested` -- it ended at park and was
@@ -242,7 +242,8 @@ def validate(path) -> bool:
             if exp in ADMITTANCE_TASKS:
                 for event in ("trial_start", "trial_end"):
                     r.check(got_p.count(event) == 1, f"saved stopped trial has one {event}")
-            r.note("TRIAL STOPPED (Stop) at stop_requested -- the arm then parked and the trial was saved.")
+            how = "paused (Pause)" if "paused" in got_p else "STOPPED (Stop) at stop_requested"
+            r.note(f"TRIAL {how} -- the arm then parked and the trial was saved.")
         r.note("Everything before that point is valid; event-sequence checks are skipped.")
         print(f"\n  RESULT: {'PASS (partial)' if not r.bad else str(len(r.bad)) + ' PROBLEM(S)'}")
         return not r.bad

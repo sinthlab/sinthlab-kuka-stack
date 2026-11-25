@@ -392,13 +392,13 @@ class ApplePluckOrchestratorNode(rclpyNode):
         if self._stopping:
             return
         if self.move_park.cancel_hold():          # at park, waiting for the next trial: end it there, hold
-            self._trial_over("stop_requested")
+            self._trial_over(self.control.stop_token())
             self.recorder.stop_and_save()
             self.control.begin_trial(self._next_trial)
             return
         if self.move_park.active():
             return                                # already on the way to park
-        self._abort_trial("stop_requested")
+        self._abort_trial(self.control.stop_token())
 
     def on_early_touch(self, why: str):
         """The apple was moved or pushed during the quiet window (actions/quiet_gate.py): end the trial
