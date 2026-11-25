@@ -18,12 +18,12 @@ INPUTS
 
 SYNC  (reward_and_sync_box/README.md, "Sync: TTL pulses to the NSP")
   The cabinet pulses EL2124 output 1 at every trial_start and output 2 at every trial_end; the NSP
-  records them on two analog inputs (default ainp6, ainp7; set per recording). Rising edges on those channels are matched to
+  records them on two analog inputs (default ainp2, ainp3; set per recording). Rising edges on those channels are matched to
   the robot's trial_start / trial_end events (their wall-clock times), and a straight line
   t_nsp = slope * t_wall + intercept is fitted to the matched pairs (offset and clock drift). Every
   robot time in the file is converted with it, so the whole file runs on the NSP's clock.
-  Output 3 pulses once when Start is pressed on the dashboard (experiment start); its edges (default
-  ainp8) are stored as they are, not used for the fit. A missing experiment start channel is noted, not
+  Output 3 pulses once per run, before trial 1 (experiment start); its edges (default
+  ainp4) are stored as they are, not used for the fit. A missing experiment start channel is noted, not
   an error.
 
 NWB CONTENTS
@@ -62,7 +62,29 @@ import numpy as np
 Progress = Callable[[str, float], None]          # (message, fraction 0..1 or -1 for unknown)
 
 NSX_EXTS = (".ns1", ".ns2", ".ns3", ".ns4", ".ns5", ".ns6")
-ANALOG_INPUT = re.compile(r"^ainp\d+$", re.IGNORECASE)
+ANALOG_INPUT = re.compile(r"^ainp(\d+)$", re.IGNORECASE)
+FIRST_ANALOG_ID = 257                            # NSP electrode id of ainp1 (front-end channels are 1-256)
+
+
+def analog_number(name: str, chan_id: str) -> Optional[int]:
+    """The analog input number (ainpN -> N) of a channel, from its electrode id or, failing that, its
+    name; None for a neural channel. The id keeps an input found when it is renamed in Central."""
+    try:
+        i = int(chan_id)
+        if i >= FIRST_ANALOG_ID:
+            return i - FIRST_ANALOG_ID + 1
+    except ValueError:
+        pass
+    m = ANALOG_INPUT.match(name)
+    return int(m.group(1)) if m else None
+
+
+def channel_names(name: str, number: Optional[int]) -> List[str]:
+    """The names a channel answers to (lower case): its label and, for an analog input, ainpN."""
+    names = [name.lower()]
+    if number is not None and f"ainp{number}" not in names:
+        names.append(f"ainp{number}")
+    return names
 SYNC_LINES = ("trial_start", "trial_end")        # EL2124 output 1, output 2
 
 
@@ -301,10 +323,11 @@ def nsp_streams(raw) -> List[dict]:
             segs.append({"t_start": float(raw.get_signal_t_start(0, seg, si)),
                          "n": int(raw.get_signal_size(0, seg, si))})
         local = list(range(len(idx)))
+        ains = [analog_number(names[k], str(sig[idx[k]]["id"])) for k in local]
         out.append({"index": si, "name": str(st["name"]), "id": str(st["id"]), "rate": rate,
                     "channels": names, "segments": segs,
-                    "neural": [k for k in local if not ANALOG_INPUT.match(names[k])],
-                    "analog": [k for k in local if ANALOG_INPUT.match(names[k])],
+                    "neural": [k for k in local if ains[k] is None],
+                    "analog": [k for k in local if ains[k] is not None], "ainp": ains,
                     "gain": [float(sig[i]["gain"]) for i in idx], "offset": [float(sig[i]["offset"]) for i in idx],
                     "units": [str(sig[i]["units"]) for i in idx], "ids": [str(sig[i]["id"]) for i in idx]})
     return out
@@ -316,21 +339,29 @@ def describe_nsp(raw) -> dict:
     return {"start": t0.isoformat() if t0 else None,
             "segments": int(raw.header["nb_segment"][0]),
             "streams": [{"name": s["name"], "rate_hz": s["rate"], "neural_channels": len(s["neural"]),
-                         "analog_inputs": [s["channels"][k] for k in s["analog"]],
+                         "analog_inputs": [_analog_label(s, k) for k in s["analog"]],
+                         "analog_names": [n for k in s["analog"] for n in channel_names(s["channels"][k], s["ainp"][k])],
                          "duration_s": round(sum(g["n"] for g in s["segments"]) / s["rate"], 1) if s["rate"] else 0}
                         for s in streams],
             "spike_units": int(len(raw.header["spike_channels"])),
             "event_channels": int(len(raw.header["event_channels"]))}
 
 
+def _analog_label(s: dict, k: int) -> str:
+    """ainpN, with the Central label after it when the input was renamed: 'ainp2 (tr st)'."""
+    a, n = f"ainp{s['ainp'][k]}", s["channels"][k]
+    return a if n.lower() == a else f"{a} ({n})"
+
+
 def find_channel(streams: List[dict], name: str) -> Tuple[dict, int]:
-    """The stream (highest rate first) and local index of a channel, by name (case-insensitive)."""
+    """The stream (highest rate first) and local index of a channel, by its label or, for an analog
+    input, by ainpN even when it was renamed in Central (case-insensitive)."""
     for s in sorted(streams, key=lambda s: -s["rate"]):
         for k, n in enumerate(s["channels"]):
-            if n.lower() == name.lower():
+            if name.lower() in channel_names(n, s["ainp"][k]):
                 return s, k
     raise ExportError(f"channel {name} is not in the NSP recording "
-                      f"(analog inputs: {', '.join(sorted({s['channels'][k] for s in streams for k in s['analog']})) or 'none'})")
+                      f"(analog inputs: {', '.join(sorted({_analog_label(s, k) for s in streams for k in s['analog']})) or 'none'})")
 
 
 def rising_edges(raw, stream: dict, k: int, threshold_v: float, progress: Optional[Progress] = None,
@@ -507,9 +538,9 @@ def _nsx_iterator(raw, stream: dict, seg: int, chans: List[int], scaled: bool, p
 
 
 def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[str] = None,
-           sync_channels: Sequence[str] = ("ainp6", "ainp7"), threshold_v: float = 2.5,
+           sync_channels: Sequence[str] = ("ainp2", "ainp3"), threshold_v: float = 2.5,
            include_continuous: bool = True, include_spikes: bool = True,
-           progress: Optional[Progress] = None, experiment_start_channel: Optional[str] = "ainp8") -> dict:
+           progress: Optional[Progress] = None, experiment_start_channel: Optional[str] = "ainp4") -> dict:
     """Write the NWB file; returns a summary (sizes, trials, sync fit)."""
     from dateutil.tz import tzutc  # noqa: F401  (pynwb needs tz-aware times; dateutil ships with it)
     from hdmf.backends.hdf5.h5_utils import H5DataIO
@@ -749,9 +780,9 @@ def main() -> int:
     ap.add_argument("--robot", required=True, help="robot run folder")
     ap.add_argument("--nsp", help="Blackrock recording: one of its files, or its folder")
     ap.add_argument("--out", required=True, help="NWB file to write")
-    ap.add_argument("--sync-channels", nargs=2, default=["ainp6", "ainp7"], metavar=("START", "END"),
+    ap.add_argument("--sync-channels", nargs=2, default=["ainp2", "ainp3"], metavar=("START", "END"),
                     help="NSP analog inputs of the trial start and trial end lines")
-    ap.add_argument("--experiment-start-channel", default="ainp8",
+    ap.add_argument("--experiment-start-channel", default="ainp4",
                     help="NSP analog input of the experiment start line ('' = none)")
     ap.add_argument("--threshold-v", type=float, default=2.5)
     ap.add_argument("--no-continuous", action="store_true", help="leave the NSx continuous data out")

@@ -11,7 +11,7 @@
 # It arrives on either path; the ROS computer's `visual_cue.trigger` picks which:
 #   SERIAL             The RS-422 link from the ROS computer, on the UART (TX D0, RX D8). One text
 #                      command per line: CUE fires the cue and answers ACK CUE once the ring is
-#                      lit. The same link will carry the pressure sensor and haptics.
+#                      lit. The same link carries the haptics (HAP) and the force sensor (FSR).
 #   WI-FI              GET /cue on the board's own access point.
 #
 # SETTINGS (the API).  The board hosts its OWN Wi-Fi access point. Join it from a laptop or phone
@@ -32,6 +32,7 @@ import time
 import board
 import busio
 import struct
+import analogio
 import neopixel
 from digitalio import DigitalInOut, Direction, Pull
 from adafruit_esp32spi import adafruit_esp32spi
@@ -48,6 +49,8 @@ CUE_PIN = board.D2              # contact-closure input, not wired (pins 9/10 ca
 UART_TX = board.D0              # -> MikroE RS485 3 Click RX (data into the click)
 UART_RX = board.D8              # <- MikroE RS485 3 Click TX (data out of the click)
 UART_BAUD = 115200
+FSR_PIN = board.A2              # <- FSR divider: 3V3 -> FSR -> A2 -> 10 kohm -> GND (README, "Haptics and force sensor")
+# The DRV2605L haptic driver is on the I2C bus (board.SCL / board.SDA), powered from the Metro's 3V3.
 
 # ---------------------------------------------------------------------------
 # !!! POWER --- READ BEFORE RAISING `brightness` !!!
@@ -517,6 +520,8 @@ print("Cue input on {} (active {}), mode={}, nvm={}".format(
 #   OFF             stop any cue and LED test, ring dark           -> ACK OFF
 #   SEG f colors    static arcs, exactly as /segments?factor=f&colors=colors -> ACK SEG
 #   PING            link check                                     -> PONG
+#   HAP pct         haptic strength 0-100 %, held HAPTIC_TIMEOUT_S -> ACK HAP <pct>
+#   FSR rate        stream force samples at rate/s (0 stops)       -> ACK FSR <rate>, then S lines
 #   GET /route?q    any board route the Wi-Fi API has (not /fs)    -> OK <its text, lines joined by tabs>
 #                   e.g. GET /status, GET /config?r=0&g=255&b=0&w=0, GET /led_test?from=0&to=59
 #                   -- the same function the HTTP route runs, so every test works on either path
@@ -629,12 +634,137 @@ def _serial_get(args):
     return "OK " + "\t".join(text.rstrip("\n").split("\n"))
 
 
+# ---------------------------------------------------------------------------
+# Haptics and the force sensor -- the apple's ERM motor and FSR, both on the serial link
+# ---------------------------------------------------------------------------
+# HAPTICS. A coin ERM motor in the apple, driven by a DRV2605L in real-time playback: the ROS computer
+# sends the strength it wants (HAP 0-100 %), the driver holds it until the next HAP. It never runs
+# unattended: a HAP that is not refreshed within HAPTIC_TIMEOUT_S falls back to 0, so a dead link,
+# a crashed experiment or an unplugged adapter can never leave the motor buzzing. ROS refreshes it
+# several times a second while guiding.
+#
+# THE FORCE SENSOR. An FSR in the apple, read on A2 through a divider from the same 3V3 the ADC uses
+# (so a dip on that rail -- the motor starting -- moves the divider and the reference together). FSR
+# <rate> starts a stream of samples, one line each, sent between replies:
+#
+#     S <t_ms> <raw> <hap>     t_ms = the board's clock [ms] at the sample, raw = AnalogIn.value
+#                              (0-65535), hap = the haptic strength [%] driven AT that sample
+#
+# so every sample says whether the motor was running when it was taken: a buzz leaking into the
+# force reading can be measured and masked offline.
+HAPTIC_TIMEOUT_S = 0.5          # a HAP not refreshed within this falls back to 0
+FSR_RATE_MAX = 200              # samples/s; at 100/s the stream is ~2 kB/s of the link's ~11.5 kB/s
+RTP_FULL = 127                  # the DRV2605L's real-time value at 100 % (signed format, ERM forward)
+
+drv = None
+haptic_state = "unavailable"
+haptic_pct = 0
+_haptic_deadline_ns = 0
+try:
+    import adafruit_drv2605     # lib/adafruit_drv2605.mpy, from the CircuitPython library bundle
+    drv = adafruit_drv2605.DRV2605(busio.I2C(board.SCL, board.SDA))
+    drv.use_ERM()
+    drv.realtime_value = 0
+    drv.mode = adafruit_drv2605.MODE_REALTIME
+    haptic_state = "up"
+    print("Haptic driver (DRV2605L) up, real-time mode")
+except Exception as e:
+    drv = None
+    print("Haptics unavailable: {}".format(e))
+
+fsr = None
+fsr_state = "unavailable"
+fsr_rate = 0                    # samples/s while streaming; 0 = not streaming
+_fsr_period_ns = 0
+_fsr_next_ns = 0
+try:
+    fsr = analogio.AnalogIn(FSR_PIN)
+    fsr_state = "up"
+except Exception as e:
+    print("Force sensor input unavailable: {}".format(e))
+
+
+def haptic_set(pct):
+    """Drive the motor at pct % (0 = off). Never raises: the cue and the link must outlive a driver fault."""
+    global haptic_pct
+    haptic_pct = pct
+    if drv is None:
+        return
+    try:
+        drv.realtime_value = (pct * RTP_FULL + 50) // 100
+    except Exception as e:
+        print("Haptic write failed: {}".format(e))
+
+
+def haptic_service():
+    """The watchdog: a HAP not refreshed in time falls back to 0. Call every pass of the main loop."""
+    if haptic_pct and time.monotonic_ns() >= _haptic_deadline_ns:
+        haptic_set(0)
+
+
+def _serial_hap(args):
+    global _haptic_deadline_ns
+    if len(args) != 1:
+        return "ERR HAP takes one strength, 0-100 (%)"
+    try:
+        pct = int(args[0])
+    except ValueError:
+        return "ERR HAP strength must be an integer"
+    if not 0 <= pct <= 100:
+        return "ERR HAP strength must be 0-100"
+    if drv is None:
+        return "ERR HAP: no haptic driver ({})".format(haptic_state)
+    _haptic_deadline_ns = time.monotonic_ns() + int(HAPTIC_TIMEOUT_S * 1e9)
+    haptic_set(pct)
+    return "ACK HAP {}".format(pct)
+
+
+def _serial_fsr(args):
+    global fsr_rate, _fsr_period_ns, _fsr_next_ns
+    if len(args) != 1:
+        return "ERR FSR takes one rate, 0-{} (samples/s; 0 stops)".format(FSR_RATE_MAX)
+    try:
+        rate = int(args[0])
+    except ValueError:
+        return "ERR FSR rate must be an integer"
+    if not 0 <= rate <= FSR_RATE_MAX:
+        return "ERR FSR rate must be 0-{}".format(FSR_RATE_MAX)
+    if fsr is None and rate:
+        return "ERR FSR: no force sensor input ({})".format(fsr_state)
+    fsr_rate = rate
+    _fsr_period_ns = 1000000000 // rate if rate else 0
+    _fsr_next_ns = time.monotonic_ns()
+    return "ACK FSR {}".format(rate)
+
+
+def fsr_service():
+    """Take and send a sample when one is due. Late (a blocking ring update): take it now, and keep
+    the next one on the grid rather than bursting to catch up -- t_ms says when each was taken."""
+    global _fsr_next_ns
+    if not fsr_rate or uart is None:
+        return
+    now = time.monotonic_ns()
+    if now < _fsr_next_ns:
+        return
+    _fsr_next_ns += _fsr_period_ns
+    if _fsr_next_ns <= now:
+        _fsr_next_ns = now + _fsr_period_ns
+    try:
+        raw = fsr.value
+    except Exception as e:
+        print("Force sensor read failed: {}".format(e))
+        return
+    _serial_reply("S {} {} {}".format(now // 1000000, raw, haptic_pct))
+
+
 SERIAL_COMMANDS = {
     "CUE": _serial_cue,
     "OFF": _serial_off,
     "SEG": _serial_seg,
     "PING": _serial_ping,
     "GET": _serial_get,
+    "HAP": _serial_hap,
+    "FSR": _serial_fsr,
 }
 
 
@@ -882,12 +1012,14 @@ def status(request: Request):
         "cue_active={}\nwire_fired={}\nserial={}\nserial_fired={}\nnvm_writes={}\n"
         "trigger_pin_raw={}\ntrigger_asserted={}\ntrigger_debounced={}\n"
         "led_test_pixel={}\nled_test_colour={}\n"
+        "haptic={}\nhaptic_pct={}\nfsr={}\nfsr_rate={}\nfsr_raw={}\n"
         "nvm_restored_at_boot={}\nuptime_s={:.1f}\nconnections_reclaimed={}\n"
     ).format(
         PHYSICAL_LEDS, ",".join(PATTERNS), wifi_ip,
         cue_active(), fired, serial_state, serial_fired, nvm_writes,
         cue_in.value, trigger_asserted(), _trig_state,
         _lt_pixel, LED_TEST_COLOURS[_lt_colour][0] if led_test_active() else "-",
+        haptic_state, haptic_pct, fsr_state, fsr_rate, fsr.value if fsr is not None else "-",
         _nvm_loaded, time.monotonic_ns() / 1e9, _reclaimed,
     ))
 
@@ -1059,6 +1191,8 @@ while True:
     try:
         poll_trigger()
         serial_service()
+        haptic_service()        # the watchdog: an un-refreshed HAP falls back to 0
+        fsr_service()           # a force sample when one is due
         cue_service()
         led_test_service()      # idle unless /led_test is running
         if server is not None:
