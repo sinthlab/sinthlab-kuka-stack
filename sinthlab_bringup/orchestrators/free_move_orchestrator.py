@@ -15,6 +15,7 @@ from sinthlab_bringup.actions.ring_state_cue import RingStateCue
 from sinthlab_bringup.actions.centre_out import CentreOutMonitor
 from sinthlab_bringup.actions.long_move import LongMoveMonitor
 from sinthlab_bringup.actions.n_choice import NChoiceMonitor
+from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
 from sinthlab_bringup.actions.trial_recorder import TrialRecorder
@@ -97,12 +98,15 @@ class FreeMoveOrchestratorNode(rclpyNode):
         VisualCue.set_result_sink(
             lambda lbl, ok, ms: self.recorder.mark("cue_visual_ack", round(ms, 1)))
         # The centre-out reach on the rail (Move Vertical / Horizontal only: Free Move has no centre_out block).
+        self.haptic = None                 # Move Vertical / Horizontal: buzz harder nearing the goal end
         if self.has_parameter("centre_out.enabled"):
             self.centre_out = CentreOutMonitor(self, self.admittance)
             self.control.add_validator(self.centre_out.check_live)   # e.g. no "left" on the vertical rail
             if self.experiment == "colour_rule" and not self.centre_out.rule_on():   # its own task: the rule
                 raise ValueError("colour_rule.yaml must have centre_out.target: rule (the Colour Rule task "
                                  "always runs the colour rule)")
+            if self.has_parameter("haptic.enabled"):
+                self.haptic = HapticGuidance(self, self.centre_out.distance_to_goal)
         # The long-movement reward (Free Move only: the rails have no long_move block).
         if self.has_parameter("long_move.reward"):
             self.long_move = LongMoveMonitor(self, self.admittance)
@@ -230,6 +234,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._session_live = True
         if self._centre_out_on():
             self.centre_out.start(self.on_reach)
+            if self.haptic is not None:
+                self.haptic.start()
             self.get_logger().info("Centre-out: reach to the lit end of the rail.")
         elif self._n_choice_on():
             self.n_choice.start(self.on_choice)
@@ -313,6 +319,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move.stop()
         if self.n_choice is not None:
             self.n_choice.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -394,6 +402,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move.stop()
         if self.n_choice is not None:
             self.n_choice.stop()
+        if self.haptic is not None:
+            self.haptic.stop()
         self.session.stop()
         self.response_timeout.stop()
         self.safety.stop()
@@ -427,6 +437,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.reward_cue.reload()
         if self.n_choice is not None:
             self.n_choice.reload()
+        if self.haptic is not None:
+            self.haptic.reload()
         self._set_reward_events()
 
 

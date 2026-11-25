@@ -111,6 +111,11 @@ class TrialRecorder:
                                       f"expt_{run}_{time.strftime('%Y%m%d_%H%M%S')}")
         self._extra_header = list(extra_header) if extra_header else []
         self._extra_fn = extra_fn
+        # The end effector's force sensor and haptic strength, in every experiment that streams it
+        # (end_effector.fsr_rate_hz > 0): four more columns after the experiment's own (helpers/end_effector.py).
+        from sinthlab_bringup.helpers import end_effector
+        ee = end_effector.record_columns(node)
+        self._ee_header, self._ee_fn = ee if ee is not None else ([], None)
         self._session_id = session_id or time.strftime("%Y%m%d_%H%M%S")
         # Called synchronously inside mark(), BEFORE anything else, so a hardware sync pulse leaves
         # at the same instant the event is logged. The orchestrators pass ExperimentControl.on_event,
@@ -143,6 +148,7 @@ class TrialRecorder:
         self._subject = str(get_launch_param(node, "subject", "") or "").strip() or None
         # What the SmartPad app runs with: one file per run, beside the trials (helpers/smartpad_link.py).
         SmartPadLink.get(node.get_logger()).write_to(self._save_dir)
+        self._experiment_start = self._send_experiment_start()
 
         node.create_subscription(LBRState, "lbr_state", self._on_state, 1)
 
@@ -162,7 +168,7 @@ class TrialRecorder:
         self._path = os.path.join(self._save_dir, f"robot_trajectory_{stamp}.csv")
         self._fh = open(self._path, "w", newline="")
         self._writer = csv.writer(self._fh)
-        self._writer.writerow(CORE_HEADER + self._extra_header)
+        self._writer.writerow(CORE_HEADER + self._extra_header + self._ee_header)
         self._t0 = None
         self._rows = 0
         self._pending = []
@@ -177,6 +183,7 @@ class TrialRecorder:
             "fri": self._fri_snapshot(),
             "git": _git_describe(os.path.dirname(os.path.abspath(__file__))),
             "params": self._param_dump(),
+            "experiment_start": self._experiment_start,
         }
         self._sidecar.update(sidecar)
         self._active = True
@@ -313,6 +320,8 @@ class TrialRecorder:
                     arg]
             if self._extra_fn is not None:
                 row += list(self._extra_fn(T))
+            if self._ee_fn is not None:
+                row += self._ee_fn()
 
             self._writer.writerow(row)
             self._rows += 1
@@ -336,6 +345,30 @@ class TrialRecorder:
             self._node.get_logger().warn(f"TrialRecorder: sidecar write failed: {exc}")
 
     # ------------------------------------------------------------------ metadata
+
+    def _send_experiment_start(self) -> dict:
+        """The run's experiment start: the sync hook sends its pulse (with nsp_sync.enabled, SYNC 3,
+        nsp_sync.experiment_start_output) and the moment is kept, once per run, in
+        <run>/experiment_start.json and in every trial's sidecar. Sent here, as the orchestrator comes
+        up and before trial 1, so every experiment and every launch (dashboard or terminal) has it."""
+        if self._on_event is not None:
+            try:
+                self._on_event("experiment_start", None)    # pulse first, as in mark()
+            except Exception as exc:
+                self._node.get_logger().warn(f"TrialRecorder sync hook failed on 'experiment_start': {exc}")
+        rec = self._clock_triple()
+        node = self._node
+        enabled = node.has_parameter("nsp_sync.enabled") and bool(node.get_parameter("nsp_sync.enabled").value)
+        rec["pulse_sent"] = bool(enabled and self._on_event is not None)
+        rec["output"] = (int(node.get_parameter("nsp_sync.experiment_start_output").value)
+                         if node.has_parameter("nsp_sync.experiment_start_output") else None)
+        try:
+            os.makedirs(self._save_dir, exist_ok=True)
+            with open(os.path.join(self._save_dir, "experiment_start.json"), "w") as f:
+                json.dump({"experiment": self._experiment, "session_id": self._session_id, **rec}, f, indent=2)
+        except OSError as exc:
+            node.get_logger().warn(f"TrialRecorder: could not write experiment_start.json: {exc}")
+        return rec
 
     def _clock_triple(self) -> dict:
         m = self._last_msg

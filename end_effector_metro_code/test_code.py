@@ -39,7 +39,7 @@ FIRMWARE = os.path.join(HERE, "code.py")
 # ---------------------------------------------------------------------------
 def install_stubs():
     board = types.ModuleType("board")
-    for pin in ("D5", "D2", "D0", "D8", "ESP_CS", "ESP_BUSY", "ESP_RESET", "SCK", "MOSI", "MISO"):
+    for pin in ("D5", "D2", "D0", "D8", "A2", "SCL", "SDA", "ESP_CS", "ESP_BUSY", "ESP_RESET", "SCK", "MOSI", "MISO"):
         setattr(board, pin, pin)
 
     busio = types.ModuleType("busio")
@@ -81,6 +81,46 @@ def install_stubs():
 
     busio.UART = UART
     busio.UART_FAILS = False
+    busio.I2C = lambda scl, sda: ("i2c", scl, sda)
+
+    analogio = types.ModuleType("analogio")
+
+    class AnalogIn:
+        """The FSR input: the test sets .value (0-65535). analogio.FAILS = True makes opening it raise."""
+
+        def __init__(self, pin):
+            if analogio.FAILS:
+                raise ValueError("no ADC on that pin")
+            self.pin, self.value = pin, 1000
+
+    analogio.AnalogIn, analogio.FAILS = AnalogIn, False
+
+    drv_mod = types.ModuleType("adafruit_drv2605")
+    drv_mod.MODE_REALTIME = 5
+
+    class DRV2605:
+        """Records what the firmware drives: .writes lists every real-time value written.
+        adafruit_drv2605.FAILS = True makes it raise, like a driver missing from the bus."""
+
+        def __init__(self, i2c):
+            if drv_mod.FAILS:
+                raise ValueError("No I2C device at address: 0x5a")
+            self.i2c, self.mode, self.erm, self.writes = i2c, None, False, []
+            self._rt = 0
+
+        def use_ERM(self):
+            self.erm = True
+
+        @property
+        def realtime_value(self):
+            return self._rt
+
+        @realtime_value.setter
+        def realtime_value(self, v):
+            self._rt = v
+            self.writes.append(v)
+
+    drv_mod.DRV2605, drv_mod.FAILS = DRV2605, False
 
     digitalio = types.ModuleType("digitalio")
 
@@ -235,6 +275,7 @@ def install_stubs():
     for name, mod in (
         ("board", board), ("busio", busio), ("digitalio", digitalio), ("neopixel", neopixel),
         ("microcontroller", microcontroller), ("adafruit_esp32spi", esp_pkg),
+        ("analogio", analogio), ("adafruit_drv2605", drv_mod),
         ("adafruit_esp32spi.adafruit_esp32spi", esp_mod),
         ("adafruit_esp32spi.adafruit_esp32spi_socketpool", sock_mod),
         ("adafruit_httpserver", http),
@@ -841,6 +882,92 @@ def test_serial_get_matches_wifi():
     check("GET with no path refused", serial(b, b"GET\n").startswith(b"ERR"))
 
 
+def test_haptics_and_fsr():
+    section("Haptics and the force sensor — HAP / FSR on the serial link")
+    fw = load()
+    check("the driver is set up for an ERM, in real-time mode, at 0",
+          fw.haptic_state == "up" and fw.drv.erm and fw.drv.mode == 5 and fw.drv.realtime_value == 0)
+    check("I2C on SCL / SDA", fw.drv.i2c == ("i2c", "SCL", "SDA"))
+    check("HAP 50 -> ACK HAP 50", serial(fw, b"HAP 50\n") == b"ACK HAP 50\n")
+    check("and drives half strength (64 of 127)", fw.drv.realtime_value == 64, fw.drv.realtime_value)
+    check("HAP 100 is the full 127", serial(fw, b"HAP 100\n") == b"ACK HAP 100\n" and fw.drv.realtime_value == 127)
+    advance(0.4)
+    fw.haptic_service()
+    check("still running before the timeout", fw.haptic_pct == 100)
+    serial(fw, b"HAP 100\n")
+    advance(0.4)
+    fw.haptic_service()
+    check("a refresh keeps it running", fw.haptic_pct == 100)
+    advance(0.2)
+    fw.haptic_service()
+    check("not refreshed for 0.5 s: back to 0 (the watchdog)", fw.haptic_pct == 0 and fw.drv.realtime_value == 0)
+    serial(fw, b"HAP 30\n")
+    check("HAP 0 stops it at once", serial(fw, b"HAP 0\n") == b"ACK HAP 0\n" and fw.drv.realtime_value == 0)
+    for bad in (b"HAP\n", b"HAP 101\n", b"HAP -1\n", b"HAP x\n", b"HAP 1 2\n"):
+        reply = serial(fw, bad)
+        check(f"ERR for {bad.strip().decode()!r}", reply.startswith(b"ERR"), reply)
+    check("a cue does not touch the motor", serial(fw, b"HAP 40\n") and serial(fw, b"CUE\n") == b"ACK CUE 1\n"
+          and fw.haptic_pct == 40)
+    check("nor does OFF (the ring only)", serial(fw, b"OFF\n") == b"ACK OFF\n" and fw.haptic_pct == 40)
+    serial(fw, b"HAP 0\n")
+
+    check("no stream before FSR", (fw.fsr_service(), fw.uart.take())[1] == b"")
+    check("FSR 100 -> ACK FSR 100", serial(fw, b"FSR 100\n") == b"ACK FSR 100\n")
+    fw.fsr.value = 12345
+    serial(fw, b"HAP 60\n")
+    lines = []
+    for _ in range(10):
+        fw.fsr_service()
+        lines += fw.uart.take().decode().splitlines()
+        advance(0.010)
+    check("one sample per 10 ms", len(lines) == 10, len(lines))
+    parts = [ln.split() for ln in lines]
+    check("each is S <t_ms> <raw> <hap>", all(p[0] == "S" and len(p) == 4 for p in parts), lines[:2])
+    check("raw is the ADC value, hap the strength at that sample",
+          all(p[2] == "12345" and p[3] == "60" for p in parts))
+    ts = [int(p[1]) for p in parts]
+    check("t_ms steps by 10", all(b - a == 10 for a, b in zip(ts, ts[1:])), ts)
+    advance(0.035)                                      # a 35 ms stall (a blocking ring update)
+    fw.fsr_service()
+    late = fw.uart.take().decode().split()
+    fw.fsr_service()
+    check("late: one sample now, no burst to catch up", late and fw.uart.take() == b"")
+    advance(0.010)
+    fw.fsr_service()
+    nxt = fw.uart.take().decode().split()
+    check("and the next 10 ms later", nxt and int(nxt[1]) - int(late[1]) == 10, (late, nxt))
+    check("FSR 0 stops the stream", serial(fw, b"FSR 0\n") == b"ACK FSR 0\n"
+          and (advance(0.02), fw.fsr_service(), fw.uart.take())[2] == b"")
+    for bad in (b"FSR\n", b"FSR 201\n", b"FSR -5\n", b"FSR q\n"):
+        reply = serial(fw, bad)
+        check(f"ERR for {bad.strip().decode()!r}", reply.startswith(b"ERR"), reply)
+    serial(fw, b"FSR 50\n")
+    advance(0.0)
+    fw.fsr_service()
+    fw.uart.take()
+    fw.uart.feed(b"PING\n")
+    fw.serial_service()
+    advance(0.020)
+    fw.fsr_service()
+    out = fw.uart.take().decode().splitlines()
+    check("replies and samples share the link, line by line", out[0] == "PONG" and out[1].startswith("S "), out)
+    st = call(fw, "/status")
+    check("/status reports both", "haptic=up" in st and "fsr=up" in st and "fsr_rate=50" in st and "fsr_raw=12345" in st)
+
+    drv_mod = sys.modules["adafruit_drv2605"]
+    analogio = sys.modules["analogio"]
+    drv_mod.FAILS, analogio.FAILS = True, True
+    try:
+        fw = load()
+    finally:
+        drv_mod.FAILS, analogio.FAILS = False, False
+    check("no driver, no ADC: the board still boots", fw.drv is None and fw.fsr is None)
+    check("HAP and FSR say why", serial(fw, b"HAP 10\n").startswith(b"ERR HAP: no haptic driver")
+          and serial(fw, b"FSR 100\n").startswith(b"ERR FSR: no force sensor"))
+    check("FSR 0 is still fine", serial(fw, b"FSR 0\n") == b"ACK FSR 0\n")
+    check("and the cue link works", serial(fw, b"CUE\n") == b"ACK CUE 1\n")
+
+
 def test_surface_is_the_documented_one():
     section("The API surface is the documented one")
     fw = load()
@@ -850,7 +977,7 @@ def test_surface_is_the_documented_one():
           sorted(fw.server.routes))
     body = call(fw, "/status")
     for field in ("trigger_pin_raw", "trigger_asserted", "trigger_debounced", "wire_fired",
-                  "serial", "serial_fired",
+                  "serial", "serial_fired", "haptic", "haptic_pct", "fsr", "fsr_rate", "fsr_raw",
                   "cue_active", "uptime_s", "nvm", "led_test_pixel", "led_test_colour"):
         check(f"/status reports {field}", field + "=" in body)
     # names that must not exist in the firmware: arming, stored profiles, a brightness cap and a
@@ -881,6 +1008,7 @@ def main():
         test_led_test,
         test_serial_link,
         test_serial_get_matches_wifi,
+        test_haptics_and_fsr,
         test_surface_is_the_documented_one,
     ):
         NVM.nvm[:] = bytearray(256)             # each test starts from a blank board
