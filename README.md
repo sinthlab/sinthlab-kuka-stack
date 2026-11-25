@@ -649,6 +649,7 @@ parameter copy; the maze, restricted-plane and pre-training launches also accept
 | 5 | Color Rule (Rail / No rail) | `iiwa7_colour_rule.launch.py` (`free_move.rail_axis` `y` / `frontal`) | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 6 | N-Choice (asterisk of rails) | `iiwa7_n_choice.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | 7 | Cued Reaches, free (3-D; jumps and bumps) | `iiwa7_pretrain_move_free.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
+| 8 | Foraging (Plane / 3-D) | `iiwa7_forage.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 | P | Pre-training (Free Move, Move Vertical, Move Horizontal) | `iiwa7_pretrain_<task>.launch.py` | `LbrImpedanceControlServer` | `kuka_clik_controller` |
 
 **One control paradigm.** Every scenario uses FRI **POSITION** command mode with the **cabinet**
@@ -1605,6 +1606,46 @@ overall, on standard and on perturbed trials, against / with his depth movement,
 **On the rig, before a subject:** confirm the box start-up check passes at this start; with the arm
 held lightly, run a few bump and jump trials and check the displacement is felt but not violent (lower
 `bump_m` / `bump_depth_m` or lengthen `bump_sec` if needed); check the grip time against the recorded force.
+
+### Scenario 8 — Foraging (hidden reward zones, one environment per session)
+A task of its own (the **Foraging** card under Experiments), on the free-move node
+([`forage.yaml`](sinthlab_bringup/config/forage.yaml), [`actions/forage.py`](sinthlab_bringup/sinthlab_bringup/actions/forage.py),
+[`helpers/forage.py`](sinthlab_bringup/sinthlab_bringup/helpers/forage.py)). Design: the robot task notes, foraging.
+
+**One environment per session**, so a new one each day: the arena and the zones stay the same on every trial of
+the session, and what is learned within the day is where they are. Every trial starts at the start pose (N-Choice's,
+near the arena's centre). There is no context cue: the trial is quiet window, go cue, search.
+
+- **The space** (the card's tabs, `free_move.rail_axis`, per-run): **Plane** (`frontal`, the plane facing him; zones
+  are circles) or **3-D** (`none`; zones are spheres). The reach space is small: about 30 cm side to side, 13 cm up
+  and down, 8 cm in depth.
+- **The arena** (per-run): the box `free_move.box` (always custom), felt at its walls; `free_move.box.shape`
+  `rectangle` or `ellipse` (the ellipse, or ellipsoid in 3-D, inscribed in the box).
+- **The zones** (per-run, the `forage` block): `n_zones` of `zone_radius_m`, placed at random from a seed, at least
+  `wall_margin_m` inside the walls, `start_clear_m` from the start and `min_gap_m` apart. **`forage.seed: 0` = today's
+  environment**, a seed from the date and the monkey: the same all day (a restart keeps it), new the next day, and the
+  dashboard draws the same zones on the Arm view. Any other seed repeats that environment. Start is refused, with the
+  reason, if the zones do not fit.
+- **A zone pays** once per trial after his hand has stayed in it `forage.dwell_sec` (0 = on entry; raise over
+  training): event `zone` (its index), the reward pulse, the reward tone and the reward cue (the whole ring white,
+  1 s). Several zones' pulses never overlap. Entering an emptied zone is `zone_revisit`.
+- **The trial ends** when every zone has paid (`forage_done`; the reward cue stays until release) or at
+  `forage.time_limit_sec` (`response_timeout`; the zones found by then have paid).
+- **The warm-zone cue** (`warm`, live): the ring lights amber (`ring_cue.colours.warm`) while his hand is within the warm
+  radius of a zone he has not emptied this trial (`warm_on` / `warm_off`). `schedule`: over the first `shrink_trials`
+  the warm radius shrinks from `start_factor` × the zone radius to the zone radius, then over `fade_trials` the cue's
+  brightness falls to off. `always`: on every trial at full radius (the training version). `off`.
+- **Probe trials** (`probe`, live): from `after_trial` on, with probability `probability` (0 = none, the default), a
+  probe has no cue and no rewards and lasts `forage.probe_sec` (`probe_end`).
+
+**Recorded:** the sidecar's `forage` (seed, space, arena, zones, warm radius and brightness, probe, dwell) and
+`forage_result` (zones in the order found, the time each paid from the go, revisits, path length, time with the cue
+on). `trials.csv`: zones found, all found, order, time to the first and to all, revisits, path, the cue's state, probe;
+`sessions.csv`: % of searches that found every zone, the median time to all over the first and last three, the seed.
+
+**On the rig, before a subject:** the arena box passes the start-up posture check at this start (in 3-D too); the
+ellipse wall feels like a wall; the warm-zone amber reads clearly at the ring's brightness and differs from the white
+reward and the green go.
 
 ### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
 Short tasks that get a subject used to the arm before the real experiments, all on the free-move node.
@@ -2882,7 +2923,8 @@ block of every experiment YAML, all live:
 [`analysis/reward_calibration.py`](analysis/reward_calibration.py) measures the conversion. It sends the
 same `PULSE 4 <ms>` command in batches (50 openings each by default, shuffled widths, 3 batches per width,
 plus blank batches with no pulse); you weigh each batch. Then it fits volume per pulse against width and
-gives the width for a volume:
+gives the width for a volume. The dashboard's **Reward calibration** page runs the same steps with buttons
+(see below); the script does them in a terminal:
 
 ```bash
 python3 analysis/reward_calibration.py sweep --widths 20 40 60 100 150 200 300 --out reward_calib/2026-11-24.csv
@@ -2915,6 +2957,18 @@ whose gap differs from its calibration), can set the valve time from a volume, a
 juice given and the rate per hour. Current: `2026-11-23_gravity_reservoir`, provisional (the gravity-fed
 reservoir's flow falls as it empties, ±10 %): about 0.78–1.69 mL for one pulse of 100–400 ms, and every
 opening costs ~0.45 mL before its width counts. Redo it once the pressure system is in.
+
+**The Reward calibration page** (the dashboard's top bar, beside Post-processing and Diagnostics) does all of
+this without a terminal, through the same functions and files (`experiment_ctrl_gui/calibration.py`):
+**In use** plots and tabulates the calibration the dashboard uses; **Check before a session** dispenses a batch
+at the width you will reward with, takes the net mass and says how far it is from the calibration (±5 % is
+fine; logged in the set's `checks.csv`); **New calibration** plans a sweep per reward size into a set
+(`<date>_<setup>/single`, `burst2`, ...), dispenses one batch at a time (tare, dispense, weigh), and fits it.
+**Prime the line** opens the valve 10 × 200 ms and records nothing. The pulses are timed by the dashboard
+server, so reloading the page loses nothing; **Stop** sets every output low between pulses and marks the batch
+aborted. Dispensing is refused while an experiment runs, and Start is refused while the page is dispensing.
+Fitting the first sweep of a new set switches the dashboard to that set, so calibrate every reward size you
+use (the page says which sizes the new set still lacks). Commit the new folder afterwards.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event

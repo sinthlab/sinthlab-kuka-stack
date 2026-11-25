@@ -14,6 +14,7 @@ This guide describes the dashboard’s architecture, ROS interfaces, and paramet
 - [Diagnostics page](#diagnostics-page)
 - [Live view](#live-view)
 - [Post-processing page](#post-processing-page)
+- [Reward calibration page](#reward-calibration-page)
 - [HTTP API](#http-api)
 - [Process control](#process-control)
 - [Demo mode](#demo-mode)
@@ -72,8 +73,10 @@ flowchart LR
 | `board.py` | the Diagnostics page's Visual cue tab: sends each board command over the board's Wi-Fi or, as `GET /<cmd>`, over the serial link through the StarTech adapter; `FakeBoard` for `--demo` |
 | `ttl.py` | the Diagnostics page's TTL sync tab: relays `STATUS` / `ALLOFF` / `PULSE` to the cabinet's UDP 30002; `FakeCabinet` for `--demo` |
 | `live_view.py` | the Live view: builds the running experiment's bounds from the parameters it runs with, anchors them once per trial, and turns the measured joints into the end effector by forward kinematics (`kinematics.py`) |
+| `calibration.py` | the Reward calibration page: prime, pre-session check and sweeps (dispense one batch, take the net mass, fit), one job at a time in a background thread, through `analysis/reward_calibration.py`'s own functions and files; refuses to dispense while an experiment runs |
+| `reward_volume.py` | mL per reward from the newest calibration set with a fitted profile (a set with only a sweep in progress is passed over) |
 | `postprocess.py` | exports a session to NWB (`analysis/nwb_export.py`) and uploads it to the server. Runs one job at a time and reports progress through the event stream. |
-| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, `live.html` + `live_view.js`, and `style.css`. No external libraries or fonts |
+| `static/` | the pages: `index.html` + `app.js`, `diagnostics.html` + `diag.js` + `ttl.js`, `postprocess.html` + `post.js`, `calibration.html` + `calib.js`, `live.html` + `live_view.js`, and `style.css`. No external libraries or fonts |
 | `demo_launch.py` | stands in for `ros2 launch` in demo mode |
 | `check_param_docs.py` | fails if any key in `sinthlab_bringup/config/*.yaml` has no one-line description |
 | `run_gui.sh` | sources ROS 2 and the workspace, then runs `server.py` |
@@ -221,6 +224,32 @@ Select an output, pulse width (10–5000 ms), number of repetitions, and the rep
 
 The server uses the same UDP commands as the experiments. During a run it permits `STATUS` only, since the NSP would record a test pulse as a trial edge. See [ttl.py](ttl.py) and the [reward and sync box reference](../reward_and_sync_box/README.md#sync-ttl-pulses-to-the-nsp). Demo mode uses a simulated cabinet.
 
+## Reward calibration page
+
+Select **Reward calibration** in the dashboard's top bar. The top bar keeps status and navigation apart: the
+status pills (ROS, Robot, run state) have a dot and are not clickable; the buttons after the divider open the
+other pages.
+
+The page has the cabinet address and reward output (shared with the Diagnostics TTL tab's address), **Check
+cabinet** (`STATUS`) and **Prime the line** (10 × 200 ms, not recorded), then the valve card, which stays in place at one size: it shows the job's progress and Stop, then the net-mass field (with a two-tone beep when it is time to weigh), and the last outcome when idle. The dispense buttons read **Cup tared: dispense**, so taring is part of the click. Then three tabs:
+
+- **In use**: the set the dashboard uses (the newest with a fitted profile), as mL per reward against valve time
+  per pulse for each reward size, with each width's mean ± SD (hover for n and CV), and a table.
+- **Check before a session**: a reward size from the set in use, the width of each pulse and the number of
+  rewards; the page shows what the cup should gain. **Dispense**, then type the net mass: the result is the
+  volume per reward and its difference from the calibration, logged to the set's `checks.csv`.
+- **New calibration**: the sets, their sweeps and progress. **Add a sweep** writes a plan (one sweep per reward
+  size, `single`, `burst2`, ..., in a set `<date>_<setup>`; widths default to the 2026-11-23 set's, and bursts to
+  the tasks' 300 ms gap). **Dispense batch N** runs the next batch not yet weighed; then type the net mass or
+  **Discard**. When every batch is weighed (or earlier, **Fit now**), **Fit** writes the profile and says whether
+  the dashboard now uses this set and which reward sizes it still lacks.
+
+The server ([calibration.py](calibration.py)) times the pulses with `reward_calibration.dispense`, so they keep
+their timing whatever the browser does. The page polls `GET /api/calib/state`. **Stop** sets every output low
+between pulses; the batch is marked aborted and comes round again. Files are the script's, so a sweep started on
+the page can be resumed with `analysis/reward_calibration.py sweep` and the other way round. Demo mode uses a
+simulated cabinet and a temporary copy of the calibrations.
+
 ## Live view
 
 The **Arm** section of the trial card shows motion and trial bounds during a run. Select **Open live view** to open `/live.html` in a larger view. Both views use the robot base frame. The front view is from the subject’s side, with Y to the right and Z up. The top view has Y to the right and X pointing down toward the subject.
@@ -308,6 +337,15 @@ POSTs need the header `X-Experiment-Ctrl: 1`; errors return 409 with `{"ok": fal
 | POST | `/api/post/upload` `{nwb, dest, overwrite}` | start the verified copy to the server folder |
 | POST | `/api/post/cancel` | cancel the running job |
 | POST | `/api/diag/board` `{path, addr, port, cmd, params}` | Diagnostics page: relays one command to the end-effector cue board (`board.py`): only its own commands (`status`, `config`, `cue`, `set_color`, `segments`, `off`, `led_test`). `path` `wifi` (default): over HTTP, only to a private address. `path` `serial`: as `GET /<cmd>?<params>` on the serial link, only to `/dev/ttyUSB<n>` or `/dev/ttyACM<n>`, refused while an experiment runs |
+| GET | `/api/calib/state` | Reward calibration page: the set in use, every set (profiles, sweeps with progress, recent checks), the current job and the last outcome |
+| POST | `/api/calib/cabinet` `{addr}` | `STATUS` to the cabinet |
+| POST | `/api/calib/prime` `{addr, output, width_ms, count}` | open the valve `count` times; nothing recorded |
+| POST | `/api/calib/check` `{addr, output, burst, width_ms, rewards}` | dispense a check batch against the profile in use for that reward size |
+| POST | `/api/calib/sweep` `{set \| setup, burst, gap_ms, widths, reps, blanks, rewards}` | write a sweep's plan (no pulses) into a set, or a new set `<today>_<setup>` |
+| POST | `/api/calib/batch` `{addr, output, set, name}` | dispense the sweep's next batch not yet weighed |
+| POST | `/api/calib/weigh` `{mass_g}` or `{discard: true}` | the net mass of what the job gave |
+| POST | `/api/calib/stop` | stop dispensing; every output low |
+| POST | `/api/calib/fit` `{set, name, model, density, max_cv}` | fit the sweep and write its profile |
 | POST | `/api/diag/ttl` `{addr, cmd}` | Diagnostics page: relays one command to the cabinet's TTL sync outputs (`ttl.py`): only `STATUS`, `ALLOFF`, `PULSE <output 1-4> <width 10-5000 ms>`, only to a private address; pulses refused while an experiment runs |
 
 ---

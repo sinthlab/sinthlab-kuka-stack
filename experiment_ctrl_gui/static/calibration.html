@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KUKA Reward calibration</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Reward calibration</h1>
+      <p class="sub">Weigh what the juice valve gives, and fit mL per reward.</p>
+    </div>
+  </div>
+  <div class="pills">
+    <span class="pill" id="pill-job">Idle</span>
+    <a class="btn small" href="/">← Dashboard</a>
+  </div>
+</header>
+
+<div class="banner hidden" id="banner"></div>
+
+<main class="diag">
+  <!-- ---------------- the cabinet and the line: always in view ---------------- -->
+  <div class="card">
+    <h2>Cabinet and line</h2>
+    <p class="note">Run <strong>PulseTestServer</strong> on the SmartPad and put a cup on the scale under the spout.
+      <span class="info" tabindex="0" title="PulseTestServer never moves the arm (LbrImpedanceControlServer also works). No experiment may be running. Keep the reservoir fill, tubing and spout as they are in a session: the volume depends on all of them.">ⓘ</span></p>
+    <div class="diag-row">
+      <label>Cabinet address <input id="addr" size="14" spellcheck="false"></label>
+      <label>Reward output
+        <select id="output"><option>1</option><option>2</option><option>3</option><option selected>4</option></select>
+      </label>
+      <button class="btn" id="btn-cabinet">Check cabinet</button>
+      <span class="pill" id="cab-pill">not checked</span>
+      <button class="btn" id="btn-prime" title="Fill the line before weighing: nothing is recorded">Prime the line</button>
+    </div>
+  </div>
+
+  <!-- ---------------- the valve: always here, the same size, so nothing below it moves ---------------- -->
+  <div class="card job-card" id="job">
+    <div class="job-head">
+      <h2 id="job-label">Valve idle</h2>
+      <button class="btn danger small" id="btn-job-stop">■ Stop</button>
+    </div>
+    <div class="job-bar"><span id="job-fill"></span></div>
+    <div class="job-body">
+      <p class="job-phase" id="job-phase"></p>
+      <div class="job-weigh hidden" id="weigh-row">
+        <input type="number" id="mass" min="0" step="0.01" inputmode="decimal" placeholder="net mass" aria-label="Net mass in grams"><span class="unit">g</span>
+        <button class="btn primary" id="btn-record">Record</button>
+        <button class="btn" id="btn-discard" title="Not recorded as a result; a sweep's batch comes round again">Discard</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs diag-tabs" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true" data-tab="inuse">In use</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="check">Check before a session</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="new">New calibration</button>
+  </div>
+
+  <!-- ---------------- in use ---------------- -->
+  <section id="tab-inuse" class="diag-panel">
+    <div class="card">
+      <h2>In use on the dashboard</h2>
+      <p class="note" id="inuse-note"></p>
+      <div class="chart-legend" id="legend"></div>
+      <div class="chart-wrap" id="chart-wrap">
+        <svg id="chart" role="img" aria-label="mL per reward against valve time"></svg>
+        <div class="chart-tip hidden" id="tip"></div>
+      </div>
+      <table class="hist" id="profiles"></table>
+    </div>
+  </section>
+
+  <!-- ---------------- check ---------------- -->
+  <section id="tab-check" class="diag-panel hidden">
+    <div class="card">
+      <h2>Check before a session</h2>
+      <p class="note">Within ±<span class="tol">5</span> % of the calibration in use is fine.
+        <span class="info" tabindex="0" title="A batch of rewards at the width you will reward with, weighed and compared with the calibration in use. Further off: check the reservoir fill, the line for air and the spout; recalibrate if it persists. Each check is logged in the set's checks.csv.">ⓘ</span></p>
+      <div class="diag-grid">
+        <label>Reward <select id="ck-size"></select></label>
+        <label>Width of each pulse [ms] <input type="number" id="ck-width" min="10" max="5000" step="1" value="200"></label>
+        <label>Rewards <input type="number" id="ck-n" min="1" max="200" value="10"></label>
+      </div>
+      <p class="note" id="ck-expect"></p>
+      <div class="row-actions">
+        <button class="btn primary" id="btn-check">▶ Cup tared: dispense</button>
+      </div>
+      <h2 class="sub-h">Recent checks</h2>
+      <table class="hist" id="checks"></table>
+    </div>
+  </section>
+
+  <!-- ---------------- new calibration ---------------- -->
+  <section id="tab-new" class="diag-panel hidden">
+    <div class="card">
+      <h2>Sweeps</h2>
+      <p class="note">One sweep per reward size; fit it once every batch is weighed.
+        <span class="info" tabindex="0" title="A sweep is batches at several widths in shuffled order, plus blanks with no pulse: tare the cup, dispense, weigh, for each. It can stop and carry on later, here or with analysis/reward_calibration.py. The dashboard uses the newest set with a fitted sweep, so calibrate every reward size you use into the same set.">ⓘ</span></p>
+      <div class="diag-row">
+        <label>Set <select id="set"></select></label>
+      </div>
+      <table class="hist" id="sweeps"></table>
+      <div id="sweep-detail"></div>
+    </div>
+
+    <div class="card">
+      <h2>Add a sweep</h2>
+      <div class="diag-grid">
+        <label id="setup-label">New set: setup <input id="setup" placeholder="e.g. pressure_reservoir" spellcheck="false"></label>
+        <label>Pulses per reward <input type="number" id="nw-burst" min="1" max="10" value="1"></label>
+        <label id="gap-label">Gap between pulses [ms] <input type="number" id="nw-gap" min="100" max="5000" value="300"></label>
+        <label>Widths [ms] <input id="nw-widths" value="100 150 200 300 400" spellcheck="false"></label>
+        <label>Batches per width <input type="number" id="nw-reps" min="1" max="10" value="3"></label>
+        <label>Blank batches <input type="number" id="nw-blanks" min="0" max="10" value="2"></label>
+        <label>Rewards per batch <input type="number" id="nw-n" min="1" max="200" value="10"></label>
+      </div>
+      <p class="note" id="nw-note"></p>
+      <div class="row-actions"><button class="btn" id="btn-new">Create sweep</button></div>
+    </div>
+  </section>
+</main>
+<script src="calib.js"></script>
+</body>
+</html>

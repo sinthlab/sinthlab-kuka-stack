@@ -1,6 +1,6 @@
 # Reward calibration, 2026-11-23: gravity-fed reservoir (provisional)
 
-Measured on the rig with `analysis/reward_calibration.py` (sweep, then `fit --model interp`), valve on cabinet output 4 (SYNC 4), juice (density taken as 1.0 g/mL), weighed per batch of 10 rewards, 1 s between rewards (1.5 s for 3-pulse bursts). **Provisional:** the reservoir is gravity-fed, so the flow falls as it empties; redo the sweep once the pressure system is in, in a new folder `analysis/reward_calibrations/<date>_<setup>/` (the dashboard uses the newest folder).
+Measured on the rig with `analysis/reward_calibration.py` (sweep, then `fit --model interp`), valve on cabinet output 4 (SYNC 4), juice (density taken as 1.0 g/mL), weighed per batch of 10 rewards, 1 s between rewards (1.5 s for 3-pulse bursts). **Provisional:** the reservoir is gravity-fed, so the flow falls as it empties; redo the sweep once the pressure system is in, in a new folder `analysis/reward_calibrations/<date>_<setup>/` (the dashboard uses the newest folder with a fitted profile). The dashboard's Reward calibration page does the sweep, the fit and the pre-session check with buttons.
 
 The dashboard (`experiment_ctrl_gui/reward_volume.py`) reads the `*.json` profiles here and shows each reward in mL, the juice given in a run, and lets the reward be set by volume.
 

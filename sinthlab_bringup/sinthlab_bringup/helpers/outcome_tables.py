@@ -114,13 +114,14 @@ TRIALS_CSV = "trials.csv"
 SESSIONS_CSV = "sessions.csv"
 
 # How each trial ended. The first of these in a trial is its outcome.
-OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "session_end",
+OUTCOMES = ("snap", "goal", "timeout", "reach", "reach_wrong", "choice", "choice_unrewarded", "forage_done", "probe_end", "session_end",
             "response_timeout", "early_touch", "safety_trip", "smartpad_mismatch", "go_cue_failed", "stop_requested",
             "paused")
 # A choice in N-choice completes the trial whether or not it paid (the reward is its own column).
-SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "session_end")
+SUCCESS = ("snap", "goal", "reach", "choice", "choice_unrewarded", "forage_done", "session_end")
 FAILURE = ("timeout", "reach_wrong", "response_timeout", "early_touch")
-# safety_trip, smartpad_mismatch, go_cue_failed, stop_requested, paused: aborted -- neither (success left blank)
+# safety_trip, smartpad_mismatch, go_cue_failed, stop_requested, paused: aborted -- neither (success left blank).
+# probe_end (Foraging's probe trial, no rewards): neither too; response_timeout in Foraging may follow found zones.
 
 COMMON = {
     "run": "the run folder (one Start-to-Stop session)",
@@ -692,6 +693,71 @@ class FreeReachTables(TaskTables):
                                                and r.get("depth_rule") == "with"]),
                 "median_grip_s": (round((grips[(len(grips) - 1) // 2] + grips[len(grips) // 2]) / 2, 3)
                                   if grips else "")}
+
+
+@register("forage")
+class ForageTables(TaskTables):
+    """Foraging (actions/forage.py, helpers/forage.py): the search, zone by zone."""
+    paradigm_param = "free_move.rail_axis"
+    trial_columns = {
+        "space": "plane (the plane facing him) or 3-D",
+        "arena": "the arena's shape",
+        "seed": "the environment's seed (the same all session)",
+        "n_zones": "zones in the environment",
+        "n_found": "zones found (paid) this trial",
+        "all_found": "1 = every zone found, 0 = not, blank = a probe or no search",
+        "found_order": "the zones in the order found (their index)",
+        "t_first_s": "the first zone's reward, from the go cue [s]",
+        "t_all_s": "the last zone's reward when all were found, from the go cue [s]",
+        "revisits": "entries into a zone already emptied this trial (working-memory errors)",
+        "path_m": "the hand's path length during the search [m] (in the plane, or in 3-D)",
+        "warm_factor": "the warm radius this trial, as a multiple of the zone radius",
+        "warm_brightness": "the warm-zone cue's brightness this trial (0 = off)",
+        "warm_on_s": "time the warm-zone cue was lit [s]",
+        "probe": "1 = a probe trial (no cue, no rewards)",
+        "dwell_s": "the dwell a zone needed to pay [s]",
+    }
+    settings = ["free_move.rail_axis", "free_move.box.shape", "forage.seed", "forage.n_zones", "forage.zone_radius_m",
+                "forage.dwell_sec", "warm.mode", "warm.shrink_trials", "warm.fade_trials", "probe.probability",
+                "forage.time_limit_sec", "reward_pulse.pulse_ms"]
+    session_columns = {"n_searches": "trials with a search (not probes, not aborted)",
+                       "pct_all_found": "searches that found every zone [%]",
+                       "t_all_first3_s": "median time to find all, first 3 such trials [s]",
+                       "t_all_last3_s": "median time to find all, last 3 such trials [s]",
+                       "seed": "the environment's seed"}
+
+    def paradigm(self, tr):
+        return {"frontal": "plane", "none": "3-D"}.get(str(tr.param("free_move.rail_axis", "")), "")
+
+    def trial_fields(self, tr):
+        plan = tr.meta.get("forage") or {}
+        res = tr.meta.get("forage_result") or {}
+        times = [t for t in (res.get("t_zone_s") or []) if t is not None]
+        probe = bool(plan.get("probe"))
+        n_zones = len(plan.get("zones") or []) or res.get("n_zones", "")
+        searched = bool(res) and not probe
+        return {"space": {"frontal": "plane", "none": "3-D"}.get(plan.get("space"), ""), "arena": plan.get("shape", ""),
+                "seed": plan.get("seed", ""), "n_zones": n_zones, "n_found": res.get("n_found", ""),
+                "all_found": (1 if tr.has("forage_done") else 0) if searched else "",
+                "found_order": " ".join(str(i) for i in res.get("found") or []),
+                "t_first_s": times[0] if times else "", "t_all_s": times[-1] if tr.has("forage_done") and times else "",
+                "revisits": res.get("revisits", ""), "path_m": res.get("path_m", ""),
+                "warm_factor": plan.get("warm_factor", ""), "warm_brightness": plan.get("warm_brightness", ""),
+                "warm_on_s": res.get("warm_on_s", ""), "probe": 1 if probe else 0 if plan else "",
+                "dwell_s": plan.get("dwell_sec", "")}
+
+    def session_fields(self, trials):
+        searched = [r for r in trials if r.get("all_found") in ("0", "1")]
+        done = [float(r["t_all_s"]) for r in searched if r.get("t_all_s") not in ("", None)]
+
+        def med(xs):
+            xs = sorted(xs)
+            return round((xs[(len(xs) - 1) // 2] + xs[len(xs) // 2]) / 2, 2) if xs else ""
+        return {"n_searches": len(searched),
+                "pct_all_found": round(100.0 * sum(r["all_found"] == "1" for r in searched) / len(searched), 1)
+                                 if searched else "",
+                "t_all_first3_s": med(done[:3]), "t_all_last3_s": med(done[-3:]),
+                "seed": next((r.get("seed") for r in trials if r.get("seed")), "")}
 
 
 @register("free_move", "reach_map")

@@ -43,7 +43,7 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
 ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
-                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free")
+                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map", "move_free", "forage")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
@@ -102,11 +102,12 @@ def check_admittance_events(report, exp, got, meta):
     """Validate a saved trial that reached park. A pre-cue abort has a shorter sequence."""
     pre_cue = ("early_touch", "smartpad_mismatch")
     endings = pre_cue + ("session_end", "response_timeout", "safety_trip", "reach", "reach_wrong",
-                         "choice", "choice_unrewarded")
+                         "choice", "choice_unrewarded", "forage_done", "probe_end")
     outcomes = [event for event in got if event in endings]
     report.check(len(outcomes) == 1, f"one trial outcome (found {outcomes})")
     task_outcomes = {"free_move": ("session_end",), "n_choice": ("choice", "choice_unrewarded"),
-                     "colour_rule": ("reach", "reach_wrong"), "move_free": ("reach", "reach_wrong")}
+                     "colour_rule": ("reach", "reach_wrong"), "move_free": ("reach", "reach_wrong"),
+                     "forage": ("forage_done", "probe_end")}
     allowed = pre_cue + ("response_timeout", "safety_trip") + task_outcomes.get(
         exp, ("session_end", "reach", "reach_wrong"))
     report.check(all(event in allowed for event in outcomes), f"outcome is valid for {exp}")
@@ -120,6 +121,10 @@ def check_admittance_events(report, exp, got, meta):
         else:
             required.extend(["cue_go"] + choice_cue)
         required.append("armed")
+        if exp == "forage":
+            plan = (meta or {}).get("forage")
+            report.check(isinstance(plan, dict) and isinstance(plan.get("zones"), list) and plan["zones"],
+                         "the environment (seed, zones) recorded")
         if exp == "move_free":
             plan = (meta or {}).get("free_reach")
             report.check(isinstance(plan, dict) and plan.get("cue") in ("either", "cued"),
@@ -299,6 +304,18 @@ def validate(path) -> bool:
         r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t in paid_tokens),
                 "each movement reward (long_move / new_best) comes right after its move_end")
         r.note(f"movements: {ends}, {paid} rewarded")
+    if exp == "forage" and "early_touch" not in got:
+        # Foraging (actions/forage.py): each zone pays at most once per trial; all paid ends it (forage_done).
+        plan = (meta or {}).get("forage") or {}
+        paid = [a for _, t, a in seq if t == "zone"]
+        r.check(len(paid) == len(set(map(str, paid))), f"each zone pays at most once ({paid})")
+        if plan.get("probe"):
+            r.check(not paid, "a probe trial pays nothing")
+        if "forage_done" in got:
+            r.check(len(paid) == len(plan.get("zones") or []), "forage_done only once every zone has paid")
+        r.check(got.count("warm_on") - got.count("warm_off") in (0, 1), "warm_on / warm_off alternate")
+        r.note(f"foraging: {len(paid)}/{len(plan.get('zones') or [])} zones"
+               + (" (probe)" if plan.get("probe") else "") + f", {got.count('zone_revisit')} revisit(s)")
     if exp == "move_free" and "early_touch" not in got:
         # Cued Reaches, free (actions/free_reach.py): one reach per trial; a jump before the grip, a bump after it.
         outcome = [t for t in got if t in ("reach", "reach_wrong", "response_timeout", "safety_trip")]

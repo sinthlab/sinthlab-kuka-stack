@@ -19,6 +19,7 @@ from sinthlab_bringup.actions.centre_out import CentreOutMonitor
 from sinthlab_bringup.actions.long_move import LongMoveMonitor
 from sinthlab_bringup.actions.n_choice import NChoiceMonitor
 from sinthlab_bringup.actions.free_reach import FreeReachMonitor
+from sinthlab_bringup.actions.forage import ForageMonitor
 from sinthlab_bringup.actions.haptic_guidance import HapticGuidance
 from sinthlab_bringup.actions.wait_action import WaitAction
 from sinthlab_bringup.actions.quiet_gate import QuietGate
@@ -42,7 +43,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
     rail with one centre-out reach per trial); colour_rule; n_choice; reach_map (Free Move in the frontal
     plane, rewarding long movements or each new best reach per direction: maps how far the monkey reaches);
     move_free (the Cued Reaches card's free variant: one reach per trial, free in 3-D, with jump and bump
-    perturbations: actions/free_reach.py).
+    perturbations: actions/free_reach.py); forage (search a felt arena for hidden reward zones, one
+    environment per session: actions/forage.py).
 
     REWARD. Free Move: a session that runs its full session_sec. Move Vertical / Horizontal with
     centre_out.enabled: ONE CENTRE-OUT REACH PER TRIAL (actions/centre_out.py) -- the go cue lights the
@@ -95,8 +97,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.long_move = None              # Free Move: the long-movement reward, created below
         self.n_choice = None               # N-Choice: one choice per trial on the asterisk, created below
         self.free_reach = None             # Cued Reaches, free: one reach per trial in 3-D, created below
+        self.forage = None                 # Foraging: one search per trial, created below
         self.response_timeout = WaitAction(
-            self, duration_sec=float(get_required_param(self, "response_timeout_sec")),
+            self, duration_sec=float(get_required_param(
+                self, "forage.time_limit_sec" if self.has_parameter("forage.time_limit_sec") else "response_timeout_sec")),
             on_complete=self.on_response_timeout, name="response_timeout")
         self.go_cue = AudioCue(
             self, param_prefix="audio_cue_play", on_complete=None,
@@ -139,6 +143,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
         if self.has_parameter("free_reach.cue"):
             self.free_reach = FreeReachMonitor(self, self.admittance, self.recorder.mark)
             self.control.add_validator(self.free_reach.check_live)
+        # Foraging (actions/forage.py): the arena, today's zones, the warm-zone cue.
+        if self.has_parameter("forage.n_zones"):
+            self.forage = ForageMonitor(self, self.admittance, self.ring, self.recorder.mark)
+            self.control.add_validator(self.forage.check_live)
+            if not hasattr(self, "reward_cue"):
+                self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
         self._set_reward_events()
 
         self.safety = SafetyStopMonitor(self, param_prefix="free_move_safety", on_trip=self.on_safety_trip)
@@ -208,6 +218,12 @@ class FreeMoveOrchestratorNode(rclpyNode):
             state, quarters = self.centre_out.ring_cue()
             self.go.start(lambda label: self.ring.show(state, quarters, label=label),
                           visual_enabled=self.ring.enabled())
+        elif self._forage_on():            # this trial's warm cue and whether it is a probe; the go is the green flash
+            plan = self.forage.pick(self.trial_count)
+            self.recorder.annotate(forage=plan.record(self.forage.settings()))
+            if plan.probe:
+                self.recorder.mark("probe", None)
+            self.go.start(lambda label: self.ring.show("go", label=label), visual_enabled=self.ring.enabled())
         elif self._free_reach_on():        # this trial's plan: direction and any perturbation, lit with the go cue
             plan = self.free_reach.pick()
             self.recorder.annotate(free_reach={**plan.record(), "cue_delay_sec": self.free_reach.cue_delay()})
@@ -230,9 +246,26 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _free_reach_on(self) -> bool:
         return self.free_reach is not None
 
+    def _response_limit(self) -> float:
+        """The trial's time limit: Foraging's search limit (forage.time_limit_sec), else response_timeout_sec."""
+        name = "forage.time_limit_sec" if self.has_parameter("forage.time_limit_sec") else "response_timeout_sec"
+        return float(get_required_param(self, name))
+
+    def _forage_on(self) -> bool:
+        return self.forage is not None
+
+    def on_forage_zone(self, index: int):
+        """Foraging: a zone paid (the pulse went with its `zone` mark): the reward tone."""
+        self.reward_cue.start()
+
+    def on_forage_done(self, why: str):
+        """Foraging: every zone found (`forage_done`) or a probe's time up (`probe_end`): the trial's outcome."""
+        self.recorder.annotate(forage_result=self.forage.result())
+        self._end_trial(why)
+
     def _choice_on(self) -> bool:
         """One choice per trial (centre-out, the colour rule, N-choice, the free reach), rather than a free session."""
-        return self._centre_out_on() or self._n_choice_on() or self._free_reach_on()
+        return self._centre_out_on() or self._n_choice_on() or self._free_reach_on() or self._forage_on()
 
     def on_free_reach(self, correct: bool, angle_deg: float):
         """The free reach went its distance -- the trial's outcome, as a rail reach's: `reach` (the reward) or
@@ -250,6 +283,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
     def _set_reward_events(self):
         """Centre-out on: the reach to a goal end gives the reward, not the session's end. Long moves on:
         each long movement does."""
+        if self._forage_on():              # several zones per trial: their pulses must not overlap
+            self.control.set_reward_events(("zone",), sequence=True)
+            return
         self.control.set_reward_events(("reach",) if self._centre_out_on() or self._free_reach_on() else
                                        ("choice",) if self._n_choice_on() else
                                        ("long_move", "new_best") if self._long_move_on() else REWARD_EVENTS)
@@ -288,6 +324,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
         elif self._n_choice_on():
             self.n_choice.start(self.on_choice)
             self.get_logger().info("N-choice: reach out along one of the rails.")
+        elif self._forage_on():
+            self.forage.start(self.on_forage_zone, self.on_forage_done)
+            self.get_logger().info("Foraging: searching.")
         elif self._free_reach_on():
             self.free_reach.start(self.on_free_reach)
             self.get_logger().info(f"Free reach: reach {self.free_reach.target()}.")
@@ -362,6 +401,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.n_choice.stop()
         if self.free_reach is not None:
             self.free_reach.stop()
+        if self.forage is not None:
+            if reason == "response_timeout" and self.forage.plan is not None:
+                self.recorder.annotate(forage_result=self.forage.result())
+            self.forage.stop()
         if self.haptic is not None:
             self.haptic.stop()
         self.session.stop()
@@ -370,7 +413,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.admittance.stop()          # holds where it is
         # The reward cue, the same in every task: the whole ring white with a reward that is given, until the
         # hand lets go. No reward (a wrong reach, an unpaid choice, a time-out): the ring goes dark.
-        if self.control.pays(reason):
+        if self.control.pays(reason) or reason == "forage_done":     # forage_done: the last zone's reward
             self.ring.reward()
         else:
             self.ring.show("off")
@@ -383,7 +426,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         # A completed session or a reach: the arm holds where it is until the hand lets go, then parks.
         self.get_logger().info("Session over. The arm holds; waiting for release before reset."
                                if reason == "session_end" else "The arm holds; waiting for release before reset.")
-        if reason in ("choice", "choice_unrewarded", "reach", "reach_wrong"):
+        if reason in ("choice", "choice_unrewarded", "reach", "reach_wrong", "forage_done"):
             self.end_cue.start()
         self._end_tone_pending = reason == "session_end"
         self.recorder.mark("release_wait")
@@ -457,6 +500,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.n_choice.stop()
         if self.free_reach is not None:
             self.free_reach.stop()
+        if self.forage is not None:
+            self.forage.stop()
         if self.haptic is not None:
             self.haptic.stop()
         self.session.stop()
@@ -483,7 +528,7 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.move_park.reload()
         self._session_sec = float(get_required_param(self, "session_sec"))
         self.session.set_duration(max(self._session_sec, 1.0))
-        self.response_timeout.set_duration(float(get_required_param(self, "response_timeout_sec")))
+        self.response_timeout.set_duration(self._response_limit())
         self.admittance.reload()
         if self.centre_out is not None:
             self.centre_out.reload()
@@ -494,6 +539,9 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.n_choice.reload()
         if self.free_reach is not None:
             self.free_reach.reload()
+        if self.forage is not None:
+            self.forage.reload()
+            self.reward_cue.reload()
         if self.haptic is not None:
             self.haptic.reload()
         self._set_reward_events()

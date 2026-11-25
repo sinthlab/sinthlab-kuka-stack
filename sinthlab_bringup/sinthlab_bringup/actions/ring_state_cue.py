@@ -63,10 +63,13 @@ class RingStateCue:
             return None
         return tuple(vals + [0] * (4 - len(vals)))
 
-    def path_for(self, state: str, quarters: Optional[List[int]] = None) -> str:
+    def path_for(self, state: str, quarters: Optional[List[int]] = None, scale: float = 1.0) -> str:
         """The board request for `state` (kept separate so it can be checked without a board). `quarters`
-        lights those instead of ring_cue.quarters (the centre-out task's cued end)."""
+        lights those instead of ring_cue.quarters (the centre-out task's cued end); `scale` (0-1) dims the
+        state's colour (Foraging's fading warm-zone cue)."""
         colour = self._colour(state) if state != "off" else None
+        if colour is not None and scale < 1.0:
+            colour = tuple(int(round(v * max(0.0, scale))) for v in colour)
         lit = self._quarters if quarters is None else sorted({int(q) for q in quarters if 0 <= int(q) < _QUARTERS})
         if colour is None or not any(colour) or not lit:
             return "/off"
@@ -79,15 +82,16 @@ class RingStateCue:
     def enabled(self) -> bool:
         return self._enabled
 
-    def show(self, state: str, quarters: Optional[List[int]] = None, *, label: Optional[str] = None) -> None:
-        """Show the state on the selected quarters until the next cue."""
+    def show(self, state: str, quarters: Optional[List[int]] = None, *, label: Optional[str] = None,
+             scale: float = 1.0) -> None:
+        """Show the state on the selected quarters until the next cue (dimmed by `scale`, 0-1)."""
         self._state = state
         if not self._enabled:
             return
         try:
             sender = VisualCue.sender(self._node)
             if sender is not None:
-                path = self.path_for(state, quarters)
+                path = self.path_for(state, quarters, scale)
                 if label is None:
                     sender.show(path, f"ring_{state}")
                 elif path != "/off":

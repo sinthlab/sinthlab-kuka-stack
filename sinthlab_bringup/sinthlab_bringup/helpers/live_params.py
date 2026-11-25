@@ -145,6 +145,10 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # are all live (actions/free_reach.py checks every change against the box); rail_axis and the box are per-run.
     "move_free": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")]
                  + ["free_reach.*", "perturb.*", "grip.*"],
+    # Foraging: the same node and feel; the dwell, the warm-zone cue and probes are live. The environment (the
+    # arena, its shape and today's zones) is per-run: it must not change within the session.
+    "forage": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")]
+              + ["forage.time_limit_sec", "forage.dwell_sec", "forage.probe_sec", "warm.*", "probe.*"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -212,6 +216,20 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "n_choice.recover": (0.0, 1.0),
     "free_move.ray_length_m": (0.02, 0.15),
     # Cued Reaches, free (actions/free_reach.py, helpers/free_reach.py); how they fit the box is checked there.
+    # Foraging (helpers/forage.py); whether the zones fit the arena is checked there.
+    "forage.n_zones": (1, 6),
+    "forage.zone_radius_m": (0.01, 0.06),
+    "forage.min_gap_m": (0.0, 0.1),
+    "forage.wall_margin_m": (0.0, 0.05),
+    "forage.start_clear_m": (0.0, 0.1),
+    "forage.time_limit_sec": (5.0, 600.0),
+    "forage.dwell_sec": (0.0, 5.0),
+    "forage.probe_sec": (5.0, 120.0),
+    "warm.start_factor": (1.0, 6.0),
+    "warm.shrink_trials": (0, 50),
+    "warm.fade_trials": (0, 50),
+    "probe.probability": (0.0, 1.0),
+    "probe.after_trial": (1, 500),
     "free_reach.distance_m": (0.02, 0.15),
     "free_reach.cone_deg": (1.0, 44.0),
     "free_reach.block_trials": (1, 50),
@@ -370,6 +388,8 @@ CHOICES: Dict[str, List[str]] = {
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
     "long_move.reward": ["session", "each_move", "new_best"],  # actions/long_move.MODES (new_best: the Reach Map only)
     "free_reach.cue": ["either", "cued"],                     # helpers/free_reach.CUES
+    "free_move.box.shape": ["rectangle", "ellipse"],           # helpers/forage.SHAPES
+    "warm.mode": ["schedule", "always", "off"],                # helpers/forage.WARM_MODES
     "perturb.kind": ["none", "jump", "bump"],                 # helpers/free_reach.PERTURBS
     "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
     "free_move.ray_layout": ["2", "3", "4", "5", "6", "7", "8"],   # helpers/rail_shapes.LAYOUT_COUNTS

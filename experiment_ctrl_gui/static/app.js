@@ -24,6 +24,8 @@ STEPS.restricted_move_horizontal = STEPS.restricted_move_vertical = STEPS.free_m
 STEPS.reach_map = STEPS.free_move;
 STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
                   "trial_end", "release_wait", "released"];
+STEPS.forage = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "zone", "forage_done",
+                "trial_end", "release_wait", "released"];
 STEPS.move_free = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "grip", "reach",
                    "trial_end", "release_wait", "released"];
 STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
@@ -35,7 +37,7 @@ const STEP_LABEL = {
   perturb_applied: "perturbed", fixture_active: "fixture", maze_armed: "maze active", checkpoint: "checkpoint",
   goal: "goal / timeout", release_wait: "wait for release", released: "released", threshold: "threshold",
   session_end: "session ended", grasp_wait: "wait for grasp", grasp: "grasped", reach: "reach", choice: "choice",
-  grip: "grip",
+  grip: "grip", zone: "zone", forage_done: "all found",
 };
 const PHASE_TEXT = {
   starting: "Starting", trial_start: "At park, before moving to start", at_start: "Quiet window", quiet_end: "Go cue",
@@ -75,6 +77,10 @@ const PHASE_TEXT_BY_EXP = {
               choice: "Choice rewarded. Waiting for release", choice_unrewarded: "Choice unrewarded. Waiting for release" },
   colour_rule: { release_wait: "Waiting for release", target: "Color cue lit", armed: "Waiting for a choice",
                  reach: "Correct choice rewarded. Waiting for release", reach_wrong: "Incorrect choice. No reward. Waiting for release" },
+  forage: { armed: "Searching", warm_on: "Searching (warm-zone cue on)", warm_off: "Searching", zone_enter: "Searching",
+            zone_revisit: "Searching (an emptied zone)", zone: "Zone found and rewarded. Searching", probe: "Probe trial",
+            forage_done: "Every zone found. Waiting for release", probe_end: "Probe over. Waiting for release",
+            response_timeout: "Time up. Waiting for release", release_wait: "Waiting for release" },
   move_free: { target: "Cue lit", armed: "Waiting for a reach", grip: "Reaching", jump: "Apple jumped",
                jump_end: "Waiting for a reach", jump_skipped: null, bump: "Bump", bump_end: "Reaching",
                reach: "Reach rewarded. Waiting for release", reach_wrong: "Reach outside the target. No reward. Waiting for release",
@@ -97,7 +103,8 @@ const REWARD_STEP_MS = 10;
 const GROUP_LABEL = { general: "Session", centre_out: "Choice", rule: "Color Rule", n_choice: "Choices", long_move: "Movements",
                       reach_map: "Reach map", free_move: "Geometry", reward_pulse: "Reward",
                       apple_pluck_impedance_control_displacement: "Pull", resistance: "Pull", perturb_start: "Perturbation",
-                      grasp: "Grasp", virtual_fixtures: "Fixture", free_reach: "Reach", perturb: "Perturbations", grip: "Grip" };
+                      grasp: "Grasp", virtual_fixtures: "Fixture", free_reach: "Reach", perturb: "Perturbations", grip: "Grip",
+                      forage: "Environment", warm: "Warm-zone cue", probe: "Probe trials" };
 // mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
 // interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
 function rewardVolume(ms, count = 1, gap = 0) {
@@ -1174,7 +1181,8 @@ function connect() {
 // Today vs recent (mock-up E): the selected experiment's key settings across the subject's last sessions
 // (sessions.csv), today's values beside them, and the last session at a glance.
 const OUTCOME_CLASS = {
-  reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success",
+  reach: "success", choice: "success", snap: "success", goal: "success", session_end: "success", forage_done: "success",
+  probe_end: "none",
   choice_unrewarded: "unrewarded", reach_wrong: "wrong",
   response_timeout: "none", timeout: "none", early_touch: "early",
   go_cue_failed: "abort", safety_trip: "abort", smartpad_mismatch: "abort", stop_requested: "abort", paused: "abort",
@@ -1347,7 +1355,9 @@ const median = (xs) => { const v = xs.filter(Number.isFinite).sort((a, b) => a -
   const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 const fmtS = (x) => (Number.isFinite(x) ? (x >= 100 ? `${Math.round(x)} s` : `${x.toFixed(1)} s`) : "–");
 function paradigmLabel(key, value) {
-  const pr = (exp(key)?.paradigms || []).find((x) => x.key === String(value));
+  // trials.csv may hold the tab's key or a plain name for it (the Color Rule's "no rail", Foraging's "plane")
+  const v = String(value ?? "").toLowerCase();
+  const pr = (exp(key)?.paradigms || []).find((x) => x.key === String(value) || x.label.toLowerCase() === v);
   return pr ? pr.label : String(value || "");
 }
 function renderMonitor() {
@@ -1395,6 +1405,13 @@ function renderMonitor() {
   } else if (key === "n_choice") {
     const choices = rows.filter((r) => ["0", "1"].includes(String(r.chose_best))).slice(-LAST_N);
     row2.push(["Chose best · last 20", pct(choices.filter((r) => String(r.chose_best) === "1").length, choices.length)]);
+  } else if (key === "forage") {
+    const searched = rows.filter((r) => ["0", "1"].includes(String(r.all_found)));
+    const lastS = searched[searched.length - 1];
+    row2.push(["Zones found · last trial", lastS ? `${lastS.n_found}/${lastS.n_zones}` : "–"]);
+    row2.push(["Time to all · last 5", fmtS(median(searched.slice(-5).map((r) => num(r.t_all_s))))]);
+    row2.push(["Warm-zone cue", last.warm_brightness === "" || last.warm_brightness == null ? "–"
+      : num(last.warm_brightness) > 0 ? `${Math.round(100 * num(last.warm_brightness))}%` : "off"]);
   } else if (key === "move_free") {
     // Cued: accuracy on standard and perturbed trials apart, the comparison the perturbations are for.
     if (last.paradigm === "cued") {

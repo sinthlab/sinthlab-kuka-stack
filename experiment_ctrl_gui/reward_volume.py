@@ -21,12 +21,18 @@ FOLDER = ex.ANALYSIS / "reward_calibrations"
 
 
 def calibration(folder: Optional[Path] = None) -> Optional[dict]:
-    """The newest calibration set (folders are named <date>_<setup>, so the newest sorts last), or None."""
+    """The newest calibration set with a fitted profile (folders are named <date>_<setup>, so the newest sorts
+    last), or None. A set holding only a sweep in progress (its .plan.json) is passed over."""
     root = Path(folder) if folder else FOLDER
-    sets = sorted(p for p in root.glob("*") if p.is_dir() and any(p.glob("*.json"))) if root.is_dir() else []
-    if not sets:
-        return None
-    d = sets[-1]
+    sets = sorted((p for p in root.glob("*") if p.is_dir()), reverse=True) if root.is_dir() else []
+    for d in sets:
+        got = _profiles(d)
+        if got:
+            return {"set": d.name, "profiles": got}
+    return None
+
+
+def _profiles(d: Path) -> list:
     profiles = []
     for f in sorted(d.glob("*.json")):
         if f.name.endswith(".plan.json"):
@@ -39,7 +45,7 @@ def calibration(folder: Optional[Path] = None) -> Optional[dict]:
                          "slope_ul_per_ms": float(p["slope_ul_per_ms"]), "intercept_ul": float(p["intercept_ul"]),
                          "valid_width_ms": p["valid_width_ms"], "created": p.get("created", ""),
                          "max_cv_pct": max((r.get("cv_pct", 0.0) for r in p.get("per_width", [])), default=None)})
-    return {"set": d.name, "profiles": profiles} if profiles else None
+    return profiles
 
 
 def volume_ml(cal: Optional[dict], pulse_ms: float, count: int = 1, gap_ms: float = 0) -> dict:

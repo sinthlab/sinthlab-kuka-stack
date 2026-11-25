@@ -40,7 +40,7 @@ def prof(**changes):
 def test_layers_cover_the_free_move_tasks_only():
     assert {e.key for e in FREE_MOVE_TASKS} == {
         "free_move", "restricted_move_horizontal", "restricted_move_vertical", "move_horizontal", "move_vertical",
-        "colour_rule", "n_choice", "reach_map", "move_free"}
+        "colour_rule", "n_choice", "reach_map", "move_free", "forage"}
     for e in experiments.EXPERIMENTS:
         p = ExperimentParams(e)
         assert set(e.task_settings) <= set(p.defaults), e.key            # every task setting exists
