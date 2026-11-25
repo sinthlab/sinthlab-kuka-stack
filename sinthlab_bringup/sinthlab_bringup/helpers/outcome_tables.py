@@ -405,7 +405,7 @@ def upsert_session(row: dict, path) -> None:
 
 
 # Settings worth comparing across sessions in every task, then each task's own (TaskTables.settings).
-COMMON_SETTINGS = ["reward_pulse.pulse_ms", "response_timeout_sec", "quiet_window_sec", "move_to_park.hold_sec",
+COMMON_SETTINGS = ["reward_pulse.pulse_ms", "reward_pulse.count", "response_timeout_sec", "quiet_window_sec", "move_to_park.hold_sec",
                    "quiet_gate.penalty_sec", "free_move.damping_ns_per_m"]
 
 
@@ -580,14 +580,16 @@ class NChoiceTables(TaskTables):
                 "choice_counts": "; ".join(f"{k}={v}" for k, v in sorted(counts.items()))}
 
 
-@register("free_move")
+@register("free_move", "reach_map")
 class LongMoveTables(TaskTables):
-    """Free Move, with the Long moves reward (actions/long_move.py): one row per movement."""
+    """Free Move, with the Long moves reward (actions/long_move.py), and the Reach Map (its New best reward
+    too): one row per movement."""
     paradigm_param = "long_move.reward"
     trial_columns = {
         "min_m": "shortest rewarded movement in force [m] (Long moves)",
         "n_movements": "movements (rest to rest, each at least confirm_m)",
-        "n_long_moves": "movements rewarded",
+        "n_long_moves": "movements rewarded (Long moves or New best)",
+        "n_new_best": "of them, Reach Map New-best rewards",
         "mean_length_m": "mean movement length [m]",
         "max_length_m": "longest movement [m]",
     }
@@ -601,7 +603,9 @@ class LongMoveTables(TaskTables):
         "straightness": "length over the path travelled (1 = straight)",
         "duration_s": "speed onset to end [s]",
         "peak_speed_mps": "peak speed [m/s]",
-        "rewarded": "1 = earned the reward (event long_move)",
+        "rewarded": "1 = earned the reward (event long_move, or new_best in the Reach Map)",
+        "reach_m": "Reach Map, New best: how far from the start it got, in its direction [m] (rewarded ones only)",
+        "direction_deg": "Reach Map, New best: its direction, 0 = right, 90 = up [deg] (rewarded ones only)",
     }}
     session_columns = {"n_movements": "movements in the run", "n_long_moves": "rewarded movements"}
 
@@ -613,17 +617,20 @@ class LongMoveTables(TaskTables):
                 continue
             kv = _split_kv(arg)
             nxt = evs[i + 1][1] if i + 1 < len(evs) else ""
+            best = _split_kv(evs[i + 1][2]) if nxt == "new_best" else {}
             t_conf = max((s for s in starts if s <= t), default=None)
             out.append({"movement": len(out) + 1, "t_confirmed": _num(t_conf, 3), "t_end": _num(t, 3),
                         "length_m": kv.get("length", ""), "straightness": kv.get("straightness", ""),
                         "duration_s": kv.get("duration", ""), "peak_speed_mps": kv.get("peak_speed", ""),
-                        "rewarded": 1 if nxt == "long_move" else 0})
+                        "rewarded": 1 if nxt in ("long_move", "new_best") else 0,
+                        "reach_m": best.get("reach", ""), "direction_deg": best.get("deg", "")})
         return out
 
     def trial_fields(self, tr):
         mv = self._movements(tr)
         lengths = [float(m["length_m"]) for m in mv if m["length_m"] != ""]
         return {"min_m": tr.param("long_move.min_m", "") if tr.param("long_move.reward") == "each_move" else "",
+                "n_new_best": sum(1 for m in mv if m["reach_m"] != ""),
                 "n_movements": len(mv), "n_long_moves": sum(m["rewarded"] for m in mv),
                 "mean_length_m": round(sum(lengths) / len(lengths), 4) if lengths else "",
                 "max_length_m": max(lengths) if lengths else ""}

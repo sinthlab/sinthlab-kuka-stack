@@ -1,0 +1,85 @@
+{
+ "settings": {
+  "widths": [
+   100,
+   150,
+   200,
+   300,
+   400
+  ],
+  "reps": 3,
+  "blanks": 1,
+  "pulses": 10,
+  "spacing": 1.0,
+  "seed": 1,
+  "output": 4,
+  "burst": 1,
+  "burst_gap_ms": 300
+ },
+ "plan": [
+  {
+   "batch": 1,
+   "width_ms": 0
+  },
+  {
+   "batch": 2,
+   "width_ms": 400
+  },
+  {
+   "batch": 3,
+   "width_ms": 300
+  },
+  {
+   "batch": 4,
+   "width_ms": 100
+  },
+  {
+   "batch": 5,
+   "width_ms": 400
+  },
+  {
+   "batch": 6,
+   "width_ms": 200
+  },
+  {
+   "batch": 7,
+   "width_ms": 150
+  },
+  {
+   "batch": 8,
+   "width_ms": 150
+  },
+  {
+   "batch": 9,
+   "width_ms": 200
+  },
+  {
+   "batch": 10,
+   "width_ms": 200
+  },
+  {
+   "batch": 11,
+   "width_ms": 300
+  },
+  {
+   "batch": 12,
+   "width_ms": 150
+  },
+  {
+   "batch": 13,
+   "width_ms": 100
+  },
+  {
+   "batch": 14,
+   "width_ms": 400
+  },
+  {
+   "batch": 15,
+   "width_ms": 300
+  },
+  {
+   "batch": 16,
+   "width_ms": 100
+  }
+ ]
+}

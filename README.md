@@ -1591,24 +1591,35 @@ every p; `sessions.csv` gets the reward rate, % chose best, % switches and the c
 (the diagonals especially); then push out along each rail and check the junction at the start is smooth,
 with no snag when committing to a rail.
 
-### Pre-training — Free Move, Move Vertical, Move Horizontal
-Three short tasks that get a subject used to the arm before the real experiments. In the dashboard
-they are under the **Pre-training** tab. All three:
+### Pre-training — Free Move, Reach Map, Restricted Move, Cued Reaches
+Short tasks that get a subject used to the arm before the real experiments. In the dashboard they are
+four cards under the **Pre-training** tab:
+
+| Card | Tabs | Experiments (each its own YAML and launch file) |
+|---|---|---|
+| **Free Move** | Session · Long moves | `free_move` |
+| **Reach Map** | Long moves · New best | `reach_map`: maps how far the monkey reaches in each direction and sets his profile's reach ([below](#reach-map--how-far-this-monkey-reaches)) |
+| **Restricted Move** | Rail: Horizontal · Vertical | `restricted_move_horizontal`, `restricted_move_vertical`: Free Move held to one rail, a session per trial, rewarded when it runs its full `session_sec`; no target |
+| **Cued Reaches** | Rail: Horizontal · Vertical, then Either end · Cued end · Left / Down only · Right / Up only | `move_horizontal`, `move_vertical`: one [centre-out reach](#centre-out-reach) per trial (the keys are main's, so recordings stay comparable) |
+
+A card with a **Rail** row holds two experiments, one per rail, each with its own settings and start
+pose; the rail is fixed during a run, and the card reopens on the rail last used. All of them:
 
 - start at the **maze start**, EE ≈ (0.38, 0.01, 1.03) m, tool along +X toward the subject, with the
-  CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except **Move
-  Vertical**, which starts **5 cm lower**, in the middle of its rail, with its own posture
+  CLIK posture `config/clik_nullspace_pretrain.yaml` (the same as the maze's) — except the **vertical**
+  rail, which starts **5 cm lower**, in the middle of its rail, with its own posture
   `config/clik_nullspace_pretrain_vertical.yaml`;
 - run on the CLIK, like the maze;
-- have no threshold. Free Move runs as one **session**, for `session_sec` or until **■ Stop**, then the
-  arm parks; in Move Vertical / Horizontal each trial is one **centre-out reach**.
+- have no threshold. Free Move and Restricted Move run as one **session** per trial, for `session_sec`
+  or until **■ Stop**, then the arm parks; in Cued Reaches each trial is one **centre-out reach**.
 - record the same per-trial CSV and sidecar, into `analysis/expt_iiwa7_pretrain_<task>_<time>/`.
 
 | Task | Launch file | SmartPad stiffness | The subject… | Success |
 |---|---|---|---|---|
 | **Free Move** | `iiwa7_pretrain_free_move.launch.py` | **Uniform 1000** | moves the arm anywhere in a box around the start (9 × 40 × 12 cm); it stays where it is let go | the session running its full `session_sec` |
-| **Move Vertical** | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
-| **Move Horizontal** | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Cued Reaches · Vertical** (`move_vertical`) | `iiwa7_pretrain_move_vertical.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it up or down one vertical rail (±0.07 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Cued Reaches · Horizontal** (`move_horizontal`) | `iiwa7_pretrain_move_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it left or right along one horizontal rail (±0.15 m); it stays where it is let go | one [centre-out reach](#centre-out-reach) per trial, from the centre to the lit end |
+| **Restricted Move · Vertical / Horizontal** | `iiwa7_pretrain_restricted_move_vertical.launch.py` / `…_horizontal.launch.py` | **Z lock 2500, X/Y 1000, rot 120** | moves it along the rail, as above | the session running its full `session_sec` |
 
 Use **damping 0.7** and **elbow 30** for all three. All three run one orchestrator
 (`free_move_orchestrator.py`); the YAML's `experiment` and `free_move.rail_axis` pick the task.
@@ -1789,6 +1800,30 @@ All live, from the next session. Events: `move_start` (confirmed), `move_end` (a
 **On the rig, before a subject:** with debug logging on, make a few long and short pushes and check the
 log reports one movement per push with about the right length; rest a hand on the apple and check it
 reports none.
+
+#### Reach Map — how far this monkey reaches
+Run once or twice per animal, instead of guessing the reach and adjusting it after he arrives
+(`config/reach_map.yaml`, `iiwa7_reach_map.launch.py`, SmartPad **Z lock 2500, X/Y 1000, rot 120**).
+Free Move in the **frontal plane** (`free_move.rail_axis: frontal`: left, right, up, down, no depth) from the
+vertical tasks' start (the middle of the arm's vertical span), inside its own box (±0.18 m sideways, 8 cm
+down, 6 cm up), one session until Stop. Two rewards, switchable mid-session (`long_move.reward`, live):
+
+- **Long moves** (`each_move`): every movement of at least `long_move.min_m` (6 cm) pays. Start here.
+- **New best** (`new_best`): the plane is split into `reach_map.sectors` directions (12, every 30°); a
+  movement pays when its farthest point beats its direction's best this run by `reach_map.margin_m` (1 cm),
+  at least `reach_map.min_m` (3 cm) from the start (`helpers/reach_map.py`, `BestTracker`; event
+  `new_best` `deg=..;reach=..;prev=..`). The bests last the whole run, so the rewards thin out as the edges
+  stop moving: switch back to Long moves to keep him working.
+
+The dashboard's Run monitor for this card is the map (experiment_ctrl_gui/README.md, "Monkey profiles"),
+read from the trajectory CSVs as they are written. Per direction: the **comfortable reach** (the
+`reach_map.percentile`, 80, of the farthest points of his outward movements that way) and the farthest;
+a reach that ends at the box is **arm-limited** (he would have gone farther). Its four values (right, up,
+left, down) are saved to the monkey's profile, which sets the rail ends of Restricted Move, Cued Reaches
+and the Colour Rule. Left and right are measured at the map's start, 5 cm below the horizontal tasks' rail.
+
+Rig checks: the box passes the Start check (posture, floor) from this start; New best pays as the hand
+pushes out and stops paying once a direction's edge is reached; the map's points line up with the live view.
 
 #### Move Vertical / Move Horizontal — Free Move on one rail
 Each is **Free Move constrained to one straight rail through the start** — one leg of the maze. The
@@ -2843,6 +2878,15 @@ amount on top of its width, and the line may not recover between drops, so a bur
 pulses. The fit is then microlitres per reward against each pulse's width, and `ms` says which
 `count`, `gap_ms` and `pulse_ms` to set. Keep each burst setting in its own sweep file. `trials.csv`
 counts every opening (`reward_pulses`) and the total valve time.
+
+**The calibration the dashboard uses.** Commit each calibration's files (the sweep CSVs, plans and the
+`fit --model interp` profiles, one per burst setting) to `analysis/reward_calibrations/<date>_<setup>/`, with
+a README saying what was measured. The dashboard (`experiment_ctrl_gui/reward_volume.py`) reads the newest
+folder: every task's Reward section shows mL per reward (⚠ outside the calibrated widths, or for a burst
+whose gap differs from its calibration), can set the valve time from a volume, and the Run monitor shows the
+juice given and the rate per hour. Current: `2026-11-23_gravity_reservoir`, provisional (the gravity-fed
+reservoir's flow falls as it empties, ±10 %): about 0.78–1.69 mL for one pulse of 100–400 ms, and every
+opening costs ~0.45 mL before its width counts. Redo it once the pressure system is in.
 
 **Two pulses per trial are enough.** One at each end gives offset *and* local rate; every other event
 is already in the CSV on the cabinet clock, so the fitted map carries them along for free. Each event

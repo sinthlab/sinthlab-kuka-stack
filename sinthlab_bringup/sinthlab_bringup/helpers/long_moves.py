@@ -79,6 +79,11 @@ class MovementSegmenter:
     def moving(self) -> bool:
         return self._confirmed
 
+    @property
+    def active(self) -> bool:
+        """Past a movement's onset (confirmed or not), until it ends."""
+        return self._moving
+
     def update(self, t: float, p: Sequence[float]) -> Tuple[Optional[str], Optional[Movement]]:
         """("start", None) when a movement is confirmed, ("end", Movement) when a confirmed one ends,
         else (None, None)."""
@@ -131,6 +136,13 @@ class LongMoveRule:
 
     def reset(self) -> None:
         self._last_reward: Optional[float] = None
+
+    def check_gap(self, m: Movement) -> Tuple[bool, str]:
+        """The gap alone (the Reach Map's New-best reward): (ok, why). A reward is counted when granted."""
+        if self._last_reward is not None and m.t_end - self._last_reward < self.min_gap:
+            return False, f"within {self.min_gap:g} s of the last reward"
+        self._last_reward = m.t_end
+        return True, ""
 
     def check(self, m: Movement) -> Tuple[bool, str]:
         """(rewarded, why). A reward is counted toward the gap as soon as it is granted."""

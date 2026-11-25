@@ -19,8 +19,9 @@ const STEPS = {
 };
 // Pre-training. Free Move: each trial is one session, ended by session_sec or Stop. Move Vertical /
 // Horizontal are Free Move on a rail, one centre-out reach per trial (target, then reach / reach_wrong).
-STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
+STEPS.restricted_move_horizontal = STEPS.restricted_move_vertical = STEPS.free_move = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "session_end",
                    "trial_end", "release_wait", "released"];
+STEPS.reach_map = STEPS.free_move;
 STEPS.n_choice = ["trial_start", "at_start", "fixture_active", "cue_go", "armed", "choice",
                   "trial_end", "release_wait", "released"];
 STEPS.move_vertical = STEPS.move_horizontal = STEPS.colour_rule =
@@ -68,10 +69,55 @@ const PHASE_TEXT_BY_EXP = {
               choice: "chose — reward, waiting for release", choice_unrewarded: "chose — no reward, waiting for release" },
   colour_rule: { release_wait: "waiting for release", target: "go — the cue colour lit", armed: "choose an end",
                  reach: "correct — reward, waiting for release", reach_wrong: "wrong end — no reward, waiting for release" },
+  reach_map: { armed: "mapping — he moves the arm freely in the plane", session_end: "session over — waiting for release",
+               release_wait: "waiting for release", move_start: "moving", move_end: "mapping — he moves the arm freely in the plane",
+               long_move: "long movement — reward", new_best: "new best reach — reward" },
+  restricted_move_horizontal: { armed: "free move on the rail", session_end: "session over — waiting for release",
+                                release_wait: "waiting for release" },
+  restricted_move_vertical: { armed: "free move on the rail", session_end: "session over — waiting for release",
+                              release_wait: "waiting for release" },
   maze: { release_wait: "waiting for release", response_timeout: "timed out — waiting for release" },
   restricted_plane: { release_wait: "waiting for release" },
 };
+// The reward: on every task's front page (Task view), first, since it is the setting changed most over
+// training (started large, rolled back). Also in the Monkey view, with the rest of the profile.
+const REWARD_ROWS = ["reward_pulse.pulse_ms", "reward_pulse.count", "reward_pulse.gap_ms"];
+const REWARD_STEP_MS = 10;
+// mL per reward from the valve calibration (experiment_ctrl_gui/reward_volume.py does the same sums):
+// interpolated within a profile's calibrated widths, its straight-line fit outside them (marked).
+function rewardVolume(ms, count = 1, gap = 0) {
+  const p = ((S.cal && S.cal.profiles) || []).find((x) => x.burst === Number(count));
+  if (!p) return { ml: null, status: "none", note: S.cal && S.cal.set ? `no calibration for ${count} pulse(s)` : "no reward calibration" };
+  const [lo, hi] = p.valid_width_ms; ms = Number(ms);
+  let ul, status = "calibrated", note = "";
+  if (ms >= lo && ms <= hi) {
+    const pts = p.points; let i = 0;
+    while (i < pts.length - 2 && ms > pts[i + 1][0]) i++;
+    const [w0, v0] = pts[i], [w1, v1] = pts[i + 1];
+    ul = v0 + (v1 - v0) * (ms - w0) / (w1 - w0);
+  } else { ul = p.slope_ul_per_ms * ms + p.intercept_ul; status = "extrapolated"; note = `calibrated ${lo}–${hi} ms`; }
+  if (Number(count) > 1 && p.gap_ms && Number(gap) !== p.gap_ms) note = [note, `calibrated with a ${p.gap_ms} ms gap`].filter(Boolean).join("; ");
+  return { ml: Math.max(ul, 0) / 1000, status, note };
+}
+function fmtMl(v) { return v == null ? "–" : v >= 100 ? `${Math.round(v)} mL` : `${v.toFixed(v < 10 ? 2 : 1)} mL`; }
+// Set a parameter of the selected experiment: live while it runs (if live), else for the next Start.
+async function setParam(name, value) {
+  const p = (S.params[S.selected]?.params || []).find((x) => x.name === name);
+  const live = isRunningSelected() && p && p.tier === "live";
+  const r = await act(() => live ? api("/api/live", { name, value }) : api(`/api/params/${S.selected}`, { name, value }),
+                      `${name} = ${value}${live ? " from the next trial" : " for the next Start"}`);
+  if (!live) await loadParams(S.selected, true);
+  return r;
+}
 const TAB_HELP = {
+  task: {
+    running: "The reward and today's settings for this task. The reward and other live settings change from the next trial; the rest are locked for this run. The monkey's other settings are under Monkey, everything else under All settings.",
+    idle: "The reward, then the few settings this task needs today. The monkey's other settings (feel, reach, pacing) are under Monkey; everything else under All settings. Edits apply to the next Start.",
+  },
+  monkey: {
+    running: "The monkey's profile, as this task uses it. Tune the feel live (from the next move or trial); when it feels right, Save to profile and every task gets it from its next Start.",
+    idle: "The monkey's profile, as this task uses it: the feel, the reach (as this task's rail ends), the pacing and the reward. A change here is for the next Start only, until you Save to profile.",
+  },
   live: {
     running: "Changes go to the running orchestrator and apply from the NEXT trial — the current trial is never changed mid-way. Purple = accepted, waiting for the next trial. Exception: rows marked “applies now” (the move speed) act at once — from the next move, even within this trial — and each change is logged in the trial's sidecar.",
     idle: "These can also be changed while the experiment runs. Edits made now set the values it starts with.",
@@ -96,6 +142,10 @@ const store = {
 const S = {
   experiments: [], groups: [], group: "experiments", selected: new URLSearchParams(location.search).get("exp") || store.get("exp", "apple_pluck"),
   tab: new URLSearchParams(location.search).get("tab") || store.get("tab", "live"),   // ?exp=maze&tab=run
+  // The settings view: task (today's few), monkey (the profile's, as this task uses them) or all (Live / Per-run / Fixed).
+  pview: new URLSearchParams(location.search).get("view") || store.get("pview", "task"),
+  prof: null, profSig: null,
+  cal: null,                      // /api/reward/calibration: the valve calibration, for mL per reward      // /api/profile: the monkey, its profile, the layout, the change log
   params: {}, app: null, events: [], lastPhaseT: null, logs: [], lastSeq: 0,
   logLevel: "all", logFilter: "", paramFilter: "", renderSig: "", renderDeferred: false,
 };
@@ -166,7 +216,7 @@ function paradigmOf(key, upcoming = false) {
 function expLabel(key) {
   const e = exp(key); if (!e) return key ?? "";
   const pr = (e.paradigms || []).find((x) => x.key === paradigmOf(key));
-  return pr ? `${e.label} · ${pr.label}` : e.label;
+  return pr ? `${e.label} · ${pr.label}` : e.label;      // e.label already names a card's variant
 }
 function stepsFor(key) {
   if (key === "apple_pluck" && paradigmOf(key) === "perturb") return STEPS.apple_pluck_perturb;
@@ -175,6 +225,19 @@ function stepsFor(key) {
 }
 
 // ---------------------------------------------------------------- experiments list
+// Cards: an experiment is a card of its own, unless it shares one (Experiment.card: Restricted Move and Cued
+// Reaches each hold a horizontal and a vertical experiment). A card with several shows a variant row (Rail)
+// above the selected experiment's paradigm tabs; the variant last used on a card is remembered.
+function cardsOf(group) {
+  const cards = [];
+  for (const e of S.experiments.filter((x) => x.group === group)) {
+    const key = e.card || e.key;
+    let c = cards.find((x) => x.key === key);
+    if (!c) { c = { key, label: e.card_label || e.label, summary: e.card_summary || e.summary, members: [] }; cards.push(c); }
+    c.members.push(e);
+  }
+  return cards;
+}
 function renderExperiments() {
   const list = $("#exp-list");
   const rk = runningKey();
@@ -188,59 +251,87 @@ function renderExperiments() {
     S.group = t.dataset.group; renderExperiments();
   });
   list.innerHTML = "";
-  for (const e of S.experiments.filter((x) => x.group === S.group)) {
+  for (const c of cardsOf(S.group)) {
+    const sel = c.members.find((m) => m.key === S.selected);
+    const runningMember = c.members.find((m) => m.key === rk);
+    const target = sel || runningMember || c.members.find((m) => m.key === store.get(`variant.${c.key}`)) || c.members[0];
     const b = document.createElement("button");
     b.className = "exp"; b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(e.key === S.selected));
-    const edits = S.app ? S.app.edited[e.key] : 0;
-    b.innerHTML = `<div class="t">${esc(e.label)}
-        ${rk === e.key ? '<span class="tag running">running</span>' : ""}
+    b.setAttribute("aria-checked", String(!!sel));
+    const edits = S.app ? c.members.reduce((n, m) => n + (S.app.edited[m.key] || 0), 0) : 0;
+    b.innerHTML = `<div class="t">${esc(c.label)}
+        ${runningMember ? '<span class="tag running">running</span>' : ""}
         ${edits ? `<span class="tag edited">${edits} edited</span>` : ""}</div>
-      <div class="d">${esc(e.summary)}</div>`;
-    b.onclick = () => select(e.key);
+      <div class="d">${esc(c.summary)}</div>`;
+    b.onclick = () => select(target.key);
     list.appendChild(b);
-    // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
-    // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
-    // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
-    // trial, and the tab waiting for the next trial is marked.
-    if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
-      const running = rk === e.key, live = running && paradigmIsLive(e.key);
-      const run = running ? runningParadigm(e.key) : { now: null, next: null };
-      const cur = paradigmOf(e.key), locked = running && !live;
-      const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
-      sub.setAttribute("aria-label", `${e.label} paradigm`);
-      for (const pr of e.paradigms) {
+    if (!sel) continue;
+    // The variant row (Rail: Horizontal / Vertical): each is its own experiment (YAML, launch, start pose),
+    // so it is fixed while one of the card's experiments runs.
+    if (c.members.length > 1) {
+      const locked = !!runningMember;
+      const row = document.createElement("div"); row.className = "tabs paradigm-tabs variant-tabs"; row.setAttribute("role", "tablist");
+      row.setAttribute("aria-label", `${c.label} rail`);
+      for (const m of c.members) {
         const t = document.createElement("button");
-        const isNext = pr.key === run.next;
-        t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
-        t.setAttribute("aria-selected", String(pr.key === cur));
-        t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
-        t.disabled = locked && pr.key !== cur;
-        t.title = locked ? "Fixed for this run — stop to change it"
-          : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
-          : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
-        t.onclick = async () => {
-          if (locked) return;
-          if (live) {          // the status update that follows re-renders the tabs
-            if (pr.key === (run.next ?? cur)) return;
-            await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
-                      `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
-            return;
-          }
-          if (pr.key === cur) return;
-          await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
-          await loadParams(e.key, true); renderExperiments(); renderControls();
-        };
-        sub.appendChild(t);
+        const on = m.key === sel.key;
+        t.className = `tab${on ? " active" : ""}`; t.setAttribute("role", "tab"); t.setAttribute("aria-selected", String(on));
+        t.textContent = m.variant || m.label;
+        t.disabled = locked && !on;
+        t.title = locked ? "Fixed for this run — stop to change it" : `${c.label} on the ${(m.variant || "").toLowerCase()} rail`;
+        t.onclick = () => { if (!locked && !on) select(m.key); };
+        row.appendChild(t);
       }
       const lbl = document.createElement("div"); lbl.className = "paradigm-label";
-      lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
-      list.appendChild(lbl); list.appendChild(sub);
+      lbl.textContent = locked ? "Rail (fixed for this run)" : "Rail";
+      list.appendChild(lbl); list.appendChild(row);
     }
+    renderParadigmTabs(sel, list, rk);
+  }
+}
+function renderParadigmTabs(e, list, rk) {
+  // Nested paradigm tabs (apple pluck: normal / perturb / random start; the rails: either / cued / one end
+  // only), on the selected card. They set the paradigm parameter for the next Start. While that experiment
+  // runs they are locked -- unless the parameter is live (the rails): then they switch it from the next
+  // trial, and the tab waiting for the next trial is marked.
+  if ((e.paradigms || []).length && e.key === S.selected && S.params[e.key]) {
+    const running = rk === e.key, live = running && paradigmIsLive(e.key);
+    const run = running ? runningParadigm(e.key) : { now: null, next: null };
+    const cur = paradigmOf(e.key), locked = running && !live;
+    const sub = document.createElement("div"); sub.className = "tabs paradigm-tabs"; sub.setAttribute("role", "tablist");
+    sub.setAttribute("aria-label", `${e.label} paradigm`);
+    for (const pr of e.paradigms) {
+      const t = document.createElement("button");
+      const isNext = pr.key === run.next;
+      t.className = `tab${pr.key === cur ? " active" : ""}`; t.setAttribute("role", "tab");
+      t.setAttribute("aria-selected", String(pr.key === cur));
+      t.innerHTML = esc(pr.label) + (isNext ? ' <span class="badge pending">next trial</span>' : "");
+      t.disabled = locked && pr.key !== cur;
+      t.title = locked ? "Fixed for this run — stop to change it"
+        : live ? (pr.key === cur && !run.next ? "Running now" : `Switch to ${pr.label.toLowerCase()} from the next trial`)
+        : `Run ${e.label} in the ${pr.label.toLowerCase()} paradigm`;
+      t.onclick = async () => {
+        if (locked) return;
+        if (live) {          // the status update that follows re-renders the tabs
+          if (pr.key === (run.next ?? cur)) return;
+          await act(() => api("/api/live", { name: paradigmParam(e.key), value: pr.key }),
+                    `${e.label}: ${pr.label.toLowerCase()} from the next trial`);
+          return;
+        }
+        if (pr.key === cur) return;
+        await act(() => api(`/api/params/${e.key}`, { name: paradigmParam(e.key), value: pr.key }));
+        await loadParams(e.key, true); renderExperiments(); renderControls();
+      };
+      sub.appendChild(t);
+    }
+    const lbl = document.createElement("div"); lbl.className = "paradigm-label";
+    lbl.textContent = locked ? "Paradigm (fixed for this run)" : live ? "Paradigm (switches from the next trial)" : "Paradigm";
+    list.appendChild(lbl); list.appendChild(sub);
   }
 }
 async function select(key) {
   S.selected = key; store.set("exp", key);
+  if (exp(key)?.card) store.set(`variant.${exp(key).card}`, key);   // the card reopens on this rail
   if (!runningKey()) { SV.data = SV.hist = null; setTimeout(() => refreshSession(true), 0); }
   S.group = exp(key)?.group ?? S.group;
   renderExperiments(); renderChecklist();
@@ -460,7 +551,9 @@ function renderParams(force = false) {
   const data = S.params[S.selected]; if (!data) return;
   const mode = paramMode(), s = statusLive();
   const liveVals = mode === "running" && s ? s.live : null, pending = mode === "running" && s ? s.pending : null;
-  const sig = JSON.stringify([S.selected, S.tab, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
+  const layered = data.params.some((p) => p.layer !== "other");      // Navin's experiments: All settings only
+  const view = layered ? S.pview : "all";
+  const sig = JSON.stringify([S.selected, S.tab, view, S.profSig, mode, liveVals, pending, S.paramFilter, reportedStiffness(), data.params.map((p) => [p.value, p.edited])]);
   if (!force && sig === S.renderSig) return;
   if (!force && $("#params").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON") {
     S.renderDeferred = true; return;           // do not yank an input out from under the cursor
@@ -471,29 +564,66 @@ function renderParams(force = false) {
   // live paradigm switch waits, those of the paradigm coming next, so they can be set before it starts.
   const para = paradigmOf(S.selected, true);
   const shown = data.params.filter((p) => !p.hidden && (!p.paradigm_only || p.paradigm_only.includes(para)));
-  const counts = { live: 0, run: 0 };
-  shown.forEach((p) => counts[p.tier]++);
+  const counts = { live: 0, run: 0, task: 0, profile: 0 };
+  const isReward = (p) => layered && REWARD_ROWS.includes(p.name);
+  shown.forEach((p) => { counts[p.tier]++; if (p.layer !== "other") counts[p.layer]++; if (isReward(p)) counts.task++; });
   $("#n-live").textContent = counts.live; $("#n-run").textContent = counts.run;
+  $("#n-task").textContent = layered ? counts.task : ""; $("#n-monkey").textContent = layered ? counts.profile : "";
   $("#n-fixed").textContent = data.fixed.reduce((n, sec) => n + sec.rows.length, 0);
+  document.querySelectorAll(".tab[data-pview]").forEach((t) => {
+    const on = t.dataset.pview === view;
+    t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
+    t.disabled = !layered && t.dataset.pview !== "all";
+    t.title = t.disabled ? "This experiment keeps all its settings in its own YAML: see All settings" : "";
+  });
+  $("#all-tabs").classList.toggle("hidden", view !== "all");
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.tab));
-  $("#tab-help").textContent = TAB_HELP[S.tab][mode];
+  $("#tab-help").textContent = TAB_HELP[view === "all" ? S.tab : view][mode];
   $("#btn-reset-edits").disabled = mode === "running" || !data.params.some((p) => p.edited);
+  renderProfileBar(view, layered);
 
   const f = S.paramFilter.toLowerCase();
-  const rows = shown.filter((p) => p.tier === S.tab && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
+  const inView = (p) => view === "all" ? p.tier === S.tab : view === "task" ? p.layer === "task" || isReward(p) : p.layer === "profile";
+  const rows = shown.filter((p) => inView(p) && (!f || p.name.toLowerCase().includes(f) || (p.help || "").toLowerCase().includes(f)));
   const root = $("#params"); root.innerHTML = ""; TIPS.clear(); hideTip();
   const groups = data.groups || {};
-  const byGroup = new Map();
-  for (const p of rows) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
-  for (const [g, ps] of byGroup) {
-    const box = document.createElement("div"); box.className = "group";
-    const gt = groupTip(g, groups[g]);
-    const gdesc = groups[g] && groups[g].help;
-    box.innerHTML = `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
-    for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
-    root.appendChild(box);
+  if (view === "monkey") {
+    // Grouped by the profile's sections (feel, reach, pacing, reward), in the profile's order.
+    const sections = (S.prof && S.prof.layout.sections) || [];
+    const order = new Map(sections.flatMap((sec) => sec.fields.map((fl, i) => [fl.name, i])));
+    for (const sec of sections) {
+      const ps = rows.filter((p) => (p.profile_field || "").startsWith(sec.key + "."))
+        .sort((a, b) => (order.get(a.profile_field) ?? 99) - (order.get(b.profile_field) ?? 99));
+      if (!ps.length) continue;
+      const box = document.createElement("div"); box.className = "group";
+      box.innerHTML = `<h3 class="section">${esc(sec.label)}<span class="gdesc"> — ${esc(sec.help)}</span></h3>`;
+      for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+      root.appendChild(box);
+    }
+  } else {
+    if (view === "task") {          // the reward first, with its own Save to profile
+      const ps = REWARD_ROWS.map((n) => rows.find((p) => p.name === n)).filter(Boolean);
+      const cur = (n) => { const p = ps.find((x) => x.name === n); const lv = liveVals && p && p.tier === "live" ? liveVals[n] : undefined;
+                           return p ? (lv !== undefined ? lv : p.value) : undefined; };
+      if (ps.length) {
+        const box = document.createElement("div"); box.className = "group reward-group";
+        box.appendChild(rewardHead(ps, cur));
+        for (const p of ps) if (p.name !== "reward_pulse.gap_ms" || Number(cur("reward_pulse.count")) > 1) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+        root.appendChild(box);
+      }
+    }
+    const byGroup = new Map();
+    for (const p of rows.filter((x) => !(view === "task" && isReward(x)))) { if (!byGroup.has(p.group)) byGroup.set(p.group, []); byGroup.get(p.group).push(p); }
+    for (const [g, ps] of byGroup) {
+      const box = document.createElement("div"); box.className = "group";
+      const gt = groupTip(g, groups[g]);
+      const gdesc = groups[g] && groups[g].help;
+      box.innerHTML = `<h3${gt ? ` data-tip="${tipId(gt)}" tabindex="0"` : ""}>${esc(g)}${gdesc ? `<span class="gdesc"> — ${esc(gdesc)}</span>` : ""}</h3>`;
+      for (const p of ps) box.appendChild(paramRow(p, mode, liveVals, pending, groups));
+      root.appendChild(box);
+    }
   }
-  if (S.tab === "fixed") {
+  if (view === "all" && S.tab === "fixed") {
     for (const sec of data.fixed) {
       const rowsF = sec.rows.filter((r) => !f || r.name.toLowerCase().includes(f));
       if (!rowsF.length) continue;
@@ -504,7 +634,7 @@ function renderParams(force = false) {
       root.appendChild(box);
     }
   }
-  if (!root.children.length) root.innerHTML = `<p class="muted">No parameters${f ? " match the filter" : ""}.</p>`;
+  if (!root.children.length) root.innerHTML = `<p class="muted">${view === "task" && !f ? "This task has no settings of its own beyond its tabs above." : `No settings${f ? " match the filter" : ""}.`}</p>`;
 }
 function fmtVal(v) { return Array.isArray(v) ? `[${v.join(", ")}]` : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v); }
 
@@ -517,7 +647,11 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   const pend = isLiveRunning && pending && p.name in pending;
   // The group heading already carries the prefix; show the rest (full name on hover).
   const short = p.group !== "general" && p.name.startsWith(p.group + ".") ? p.name.slice(p.group.length + 1) : p.name;
-  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(short)}${p.edited ? '<span class="badge edited">edited</span>' : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
+  const who = curSubject();
+  const offProfile = p.layer === "profile" && hasProfile() && !p.edited && fmtVal(value) !== fmtVal(p.default);
+  const friendly = p.profile_field && (S.pview === "monkey" || (S.pview === "task" && REWARD_ROWS.includes(p.name)));
+  const label = friendly ? profileLabel(p.profile_field) : short;
+  row.innerHTML = `<div class="name" tabindex="0" data-tip="${tipId(paramTip(p, groups))}">${esc(label)}${p.edited ? `<span class="badge edited" title="${p.layer === "profile" && hasProfile() ? `Today only: ${esc(who)}'s profile has ${esc(fmtVal(p.default))}` : "Edited for the next Start"}">${p.layer === "profile" && hasProfile() ? "today only" : "edited"}</span>` : ""}${offProfile ? `<span class="badge profile" title="${esc(who)}'s profile has ${esc(fmtVal(p.default))}: Save to profile keeps this value">not in profile</span>` : ""}${p.immediate ? '<span class="badge now" title="Applied the moment you change it, from the next move on — a move already under way finishes at its speed">applies now</span>' : ""}${pend ? `<span class="badge pending">next trial → ${esc(fmtVal(pending[p.name]))}</span>` : ""}</div>`;
   const ctl = document.createElement("div"); ctl.className = "ctl";
   {
     const commit = async (v) => {
@@ -536,13 +670,24 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
     if (rep) p = { ...p, limits: [p.limits[0], Math.min(rep, 5000)] };
     buildControl(ctl, p, value, commit, locked);
     if (!locked && !isLiveRunning && p.edited) {
-      const rv = document.createElement("button"); rv.className = "revert"; rv.title = `Back to the YAML value (${fmtVal(p.default)})`;
+      const rv = document.createElement("button"); rv.className = "revert";
+      rv.title = p.layer === "profile" && hasProfile() ? `Back to ${curSubject()}'s profile (${fmtVal(p.default)})` : `Back to the default (${fmtVal(p.default)})`;
       rv.textContent = "↺"; rv.onclick = () => commit(p.default); ctl.appendChild(rv);
+    }
+    if (p.name === "reward_pulse.pulse_ms" && !locked) {        // roll the reward back (or up) in small steps
+      for (const dv of [-REWARD_STEP_MS, REWARD_STEP_MS]) {
+        const sb = document.createElement("button"); sb.className = "btn small step";
+        sb.textContent = dv < 0 ? `−${REWARD_STEP_MS}` : `+${REWARD_STEP_MS}`;
+        sb.title = `${dv < 0 ? "Less" : "More"} juice: ${dv < 0 ? "−" : "+"}${REWARD_STEP_MS} ms valve time${isLiveRunning ? ", from the next trial" : ", for the next Start"}`;
+        sb.onclick = () => commit(Math.max(p.limits ? p.limits[0] : 10, Number(value) + dv));
+        ctl.appendChild(sb);
+      }
     }
     if (p.limits) { const d = document.createElement("span"); d.className = "default"; d.textContent = `${p.limits[0]}–${p.limits[1]}`; ctl.appendChild(d); }
   }
   row.appendChild(ctl);
-  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = p.help; row.appendChild(h); }
+  if (p.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = friendly ? `${short}: ${p.help}` : p.help; row.appendChild(h); }
+  if (p.profile_note) { const h = document.createElement("div"); h.className = "help pnote"; h.textContent = `ⓘ ${p.profile_note}`; row.appendChild(h); }
   if (p.caution) { const h = document.createElement("div"); h.className = "help caution"; h.textContent = `⚠ ${p.caution}`; row.appendChild(h); }
   if (p.linked && p.linked.length) {
     const h = document.createElement("div"); h.className = "help linked";
@@ -550,6 +695,39 @@ function paramRow(p, mode, liveVals, pending, groups = {}) {
   }
   if (p.name === "move_to_start.target_joint_position" && !locked && !isLiveRunning) row.appendChild(startHeightRow());
   return row;
+}
+
+// The Reward section's heading: the reward now (per reward: pulses x valve time), the profile's, and Save.
+function rewardHead(ps, cur) {
+  const h = document.createElement("div"); h.className = "reward-head";
+  const ms = cur("reward_pulse.pulse_ms"), n = Number(cur("reward_pulse.count") || 1);
+  const prof = (S.prof && S.prof.profile) || null, who = curSubject();
+  const own = prof && (prof.reward_by_task || {})[S.selected];
+  const pv = prof ? { ms: (own && own["reward.pulse_ms"]) ?? prof.values["reward.pulse_ms"], n: (own && own["reward.count"]) ?? prof.values["reward.count"] } : null;
+  const fmt = (m, k) => k > 1 ? `${k} × ${m} ms` : `${m} ms`;
+  const off = pv && (Number(pv.ms) !== Number(ms) || Number(pv.n) !== n);
+  const gap = cur("reward_pulse.gap_ms"), vol = rewardVolume(ms, n, gap);
+  const volTxt = vol.ml == null ? `<span class="muted small" title="${esc(vol.note)}">no volume (${esc(vol.note)})</span>`
+    : `<span class="reward-ml ${vol.status}" title="${esc(`${vol.status}${vol.note ? `: ${vol.note}` : ""}${S.cal ? ` · calibration ${S.cal.set}` : ""}`)}">≈ ${fmtMl(vol.ml)}${vol.status === "extrapolated" || vol.note ? " ⚠" : ""}</span>`;
+  h.innerHTML = `<h3 class="section">Reward</h3><span class="reward-now">${esc(fmt(ms, n))}</span>${volTxt}` +
+    (pv ? `<span class="muted small">${esc(who)}'s profile${own ? ` (${esc(exp(S.selected)?.label || "")} only)` : ""}: ${esc(fmt(pv.ms, pv.n))}</span>` : "") +
+    (off ? `<button class="btn small" id="reward-save" title="Keep this reward in ${esc(who)}'s profile">Save to profile…</button>` : "");
+  const b = h.querySelector("#reward-save");
+  if (b) b.onclick = () => openSaveDialog(true);
+  // Set the reward by volume: the valve time for that many mL, at this pulse count.
+  if (S.cal && S.cal.profiles.length) {
+    const row = document.createElement("div"); row.className = "reward-byvol small";
+    row.innerHTML = `<label>Set by volume <input type="number" step="0.05" min="0.3" max="5" value="${vol.ml != null ? vol.ml.toFixed(2) : ""}" aria-label="mL per reward"> mL per reward</label> <button class="btn small">Set</button>` +
+      (vol.note ? ` <span class="warn">⚠ ${esc(vol.note)}</span>` : "") + ` <span class="muted">calibration ${esc(S.cal.set)}</span>`;
+    const inp = row.querySelector("input");
+    row.querySelector("button").onclick = async () => {
+      let w; try { w = await api(`/api/reward/width?ml=${encodeURIComponent(inp.value)}&count=${n}`); } catch (e) { toast(e.message, "err"); return; }
+      const r = await setParam("reward_pulse.pulse_ms", w.ms);
+      if (r) toast(`${fmtMl(w.ml)} per reward = ${n > 1 ? `${n} × ` : ""}${w.ms} ms${w.status === "extrapolated" ? " (extrapolated)" : ""}`, "ok");
+    };
+    h.appendChild(row);
+  }
+  return h;
 }
 
 // The start pose from a height above the ground: the floor's reference point (apple bottom or base edge)
@@ -623,6 +801,161 @@ function buildControl(ctl, p, value, commit, disabled) {
   ctl.appendChild(inp);
 }
 
+// ---------------------------------------------------------------- the monkey and its profile
+// One monkey at a time (the server holds it). Its profile sets the feel, reach, pacing and reward of every
+// free-move task; a task's own few settings are its Task view; Save to profile keeps what was tuned today.
+function curSubject() { return (S.app && S.app.subject) || ""; }
+function hasProfile() { return !!(S.app && S.app.profile); }
+function profileLabel(field) {
+  for (const sec of (S.prof && S.prof.layout.sections) || []) {
+    const f = sec.fields.find((x) => x.name === field);
+    if (f) return f.label;
+  }
+  return field;
+}
+async function loadProfile() {
+  try { S.prof = await api("/api/profile"); } catch (e) { toast(`Could not load the profile: ${e.message}`, "err"); }
+  renderMonkey();
+}
+function renderMonkey() {
+  const sel = $("#monkey"), pr = S.prof; if (!pr) return;
+  const cur = curSubject();
+  const names = new Set(pr.names);
+  const opts = [`<option value="">Choose the monkey…</option>`];
+  if (pr.names.length) opts.push(`<optgroup label="Profiles">${pr.names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`);
+  const others = pr.recent.filter((n) => !names.has(n) && n !== "test");
+  if (others.length) opts.push(`<optgroup label="No profile yet">${others.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`);
+  opts.push(`<option value="test">test (no animal)</option>`, `<option value="__new">New monkey…</option>`);
+  if (cur && !names.has(cur) && !others.includes(cur) && cur !== "test") opts.splice(1, 0, `<option value="${esc(cur)}">${esc(cur)}</option>`);
+  sel.innerHTML = opts.join(""); sel.value = cur;
+  sel.disabled = !!(S.app && S.app.runner.state !== "idle");
+  sel.title = sel.disabled ? "Fixed while an experiment runs" : "";
+  const info = $("#monkey-info");
+  const p = pr.profile;
+  if (!cur) info.textContent = "Choose the monkey: its profile sets the feel, reach, pacing and reward of the pre-training tasks, the Colour Rule and N-Choice.";
+  else if (cur === "test") info.textContent = "test: a run without an animal. The tasks use their own defaults.";
+  else if (p) info.innerHTML = `Profile v${p.version}, saved ${esc(p.updated)}. Applied to the pre-training tasks, the Colour Rule and N-Choice; Navin's experiments keep their own settings.`;
+  else {
+    info.innerHTML = `${esc(cur)} has no profile yet: the tasks use their own defaults. <button class="btn small" id="btn-profile-create">Create from ${esc(exp(S.selected)?.label || "this task")}</button>`;
+    $("#btn-profile-create").onclick = () => createProfileFromTask();
+  }
+  $("#btn-profile").disabled = !cur || cur === "test";
+}
+async function selectSubject(subject) {
+  if (subject === "__new") {
+    const id = (prompt("New monkey's ID (letters, digits, _ and -):") || "").trim();
+    if (!id) { renderMonkey(); return; }
+    const r = await act(() => api("/api/subject", { subject: id }));
+    if (r && !r.profile) await act(() => api("/api/profile/save", { values: {}, note: "created" }), `${id}'s profile created from the defaults`);
+    store.set("subject", id);
+    return;
+  }
+  const r = await act(() => api("/api/subject", { subject }), subject ? `Monkey: ${subject}` : "");
+  if (r) store.set("subject", subject); else renderMonkey();
+}
+async function createProfileFromTask() {
+  const e = exp(S.selected);
+  if (!confirm(`Create ${curSubject()}'s profile from ${e.label}'s settings as they are now (feel, reach, pacing, reward)?`)) return;
+  await act(() => api("/api/profile/save", { exp: S.selected, from_task: true, note: `created from ${e.label}` }), `${curSubject()}'s profile created`);
+}
+// The bar above the Monkey view: whose profile, and Save to profile.
+function renderProfileBar(view, layered) {
+  const bar = $("#profile-bar");
+  if (view !== "monkey" || !layered) { bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+  const cur = curSubject(), e = exp(S.selected);
+  if (!cur) { bar.innerHTML = `<span class="grow">No monkey chosen: these are ${esc(e.label)}'s defaults. Choose the monkey at the top left.</span>`; return; }
+  if (cur === "test") { bar.innerHTML = `<span class="grow">test: ${esc(e.label)}'s defaults, no profile.</span>`; return; }
+  if (!hasProfile()) {
+    bar.innerHTML = `<span class="grow">${esc(cur)} has no profile yet: ${esc(e.label)}'s defaults.</span><button class="btn small" id="pb-create">Create ${esc(cur)}'s profile from these</button>`;
+    $("#pb-create").onclick = () => createProfileFromTask();
+    return;
+  }
+  bar.innerHTML = `<span class="grow"><strong>${esc(cur)}</strong>'s profile v${S.app.profile.version}, as ${esc(e.label)} uses it.</span>` +
+    `<button class="btn small" id="pb-save" title="Keep the values tuned here (live or for the next Start) in ${esc(cur)}'s profile">Save to ${esc(cur)}'s profile…</button>`;
+  $("#pb-save").onclick = () => openSaveDialog();
+}
+async function openSaveDialog(rewardOnly = false) {
+  const key = runningKey() === S.selected ? runningKey() : S.selected, e = exp(key);
+  let d;
+  try { d = await api(`/api/profile/diff?exp=${encodeURIComponent(key)}`); } catch (err) { toast(err.message, "err"); return; }
+  if (rewardOnly) d.rows = d.rows.filter((r) => r.reward);
+  if (!d.rows.length) { toast(`Nothing to save: ${e.label} matches ${d.subject}'s profile`, "ok"); return; }
+  $("#save-dlg-subject").textContent = d.subject;
+  $("#save-dlg-sub").textContent = `From ${e.label}${runningKey() === key ? " (live values)" : ""}: these differ from the profile. The ticked ones are saved, and every task uses them from its next Start.`;
+  $("#save-rows").innerHTML = `<tr><th></th><th>Setting</th><th>Profile</th><th>Now</th><th>For</th></tr>` + d.rows.map((r, i) =>
+    `<tr><td><input type="checkbox" id="sv${i}" checked aria-label="Save ${esc(r.label)}"></td><td><label for="sv${i}">${esc(r.label)}</label></td>` +
+    `<td class="v">${esc(fmtVal(r.profile))}</td><td class="v">${esc(fmtVal(r.task))}</td><td>` +
+    (r.reward ? `<select id="svs${i}" aria-label="Scope"><option value="all"${r.task_only_now ? "" : " selected"}>every task</option><option value="task"${r.task_only_now ? " selected" : ""}>${esc(e.label)} only</option></select>` : "every task") +
+    `</td></tr>`).join("");
+  $("#save-note").value = "";
+  $("#save-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const values = {}, taskOnly = {};
+    d.rows.forEach((r, i) => {
+      if (!$(`#sv${i}`).checked) return;
+      if (r.reward && $(`#svs${i}`).value === "task") taskOnly[r.field] = r.task; else values[r.field] = r.task;
+    });
+    if (!Object.keys(values).length && !Object.keys(taskOnly).length) { $("#save-dlg").close(); return; }
+    $("#save-dlg").close();
+    await act(() => api("/api/profile/save", { exp: key, values, task_only: taskOnly, note: $("#save-note").value.trim() }),
+              `Saved to ${d.subject}'s profile`);
+  };
+  $("#save-dlg").showModal();
+}
+async function openProfileDialog() {
+  await loadProfile();
+  const pr = S.prof, cur = curSubject(); if (!pr || !cur || cur === "test") return;
+  const vals = (pr.profile && pr.profile.values) || {};
+  $("#profile-dlg-subject").textContent = cur;
+  $("#profile-dlg-sub").textContent = pr.profile
+    ? `Version ${pr.profile.version}, saved ${pr.profile.updated}. Saving applies it to every free-move task from its next Start (a running one keeps its values until it ends).`
+    : "No profile yet: these are the defaults. Saving creates the profile.";
+  $("#profile-fields").innerHTML = pr.layout.sections.map((sec) => `<fieldset><legend>${esc(sec.label)}</legend><p class="pf-help">${esc(sec.help)}</p>` +
+    sec.fields.map((f) => {
+      const v = vals[f.name], id = `pf-${f.name.replace(".", "-")}`;
+      const ctl = typeof v === "boolean"
+        ? `<input type="checkbox" id="${id}" data-field="${esc(f.name)}" ${v ? "checked" : ""}>`
+        : `<input type="number" id="${id}" data-field="${esc(f.name)}" step="any" value="${esc(v ?? "")}"${f.limits.length ? ` min="${f.limits[0]}" max="${f.limits[1]}"` : ""}>`;
+      return `<div class="pf"><label for="${id}">${esc(f.label)}</label>${ctl}<div class="pf-sub">${esc(f.help)}${f.limits.length ? ` (${f.limits[0]}–${f.limits[1]})` : ""}</div></div>`;
+    }).join("") + `</fieldset>`).join("");
+  document.querySelectorAll("#profile-fields [data-field]").forEach((inp) => inp.oninput = inp.onchange = () => {
+    const v = vals[inp.dataset.field];
+    const now = inp.type === "checkbox" ? inp.checked : Number(inp.value);
+    inp.closest(".pf").classList.toggle("changed", inp.type === "checkbox" ? now !== v : Number(v) !== now);
+  });
+  const byTask = (pr.profile && pr.profile.reward_by_task) || {};
+  const bt = Object.entries(byTask);
+  $("#profile-by-task").innerHTML = bt.length ? `<div class="by-task"><strong>Rewards for one task only</strong><ul>` + bt.map(([t, d]) =>
+    `<li>${esc(exp(t)?.label || t)}: ${Object.entries(d).map(([n, v]) => `${esc(profileLabel(n))} ${esc(fmtVal(v))}`).join(", ")} ` +
+    `<button type="button" class="btn small" data-clear="${esc(t)}">Use the profile's</button></li>`).join("") + `</ul></div>` : "";
+  document.querySelectorAll("#profile-by-task [data-clear]").forEach((b) => b.onclick = async () => {
+    const t = b.dataset.clear;
+    await act(() => api("/api/profile/save", { exp: t, task_only: Object.fromEntries(Object.keys(byTask[t]).map((n) => [n, null])),
+                                                note: `${exp(t)?.label || t}: back to the profile's reward` }), "Saved");
+    openProfileDialog();
+  });
+  $("#profile-changes").innerHTML = pr.changes.length ? pr.changes.map((c) => {
+    const parts = Object.entries(c.changes || {}).map(([n, [a, b]]) => `${profileLabel(n)} ${fmtVal(a)} → ${fmtVal(b)}`);
+    for (const [t, ch] of Object.entries(c.reward_by_task || {}))
+      parts.push(...Object.entries(ch).map(([n, [a, b]]) => `${exp(t)?.label || t}: ${profileLabel(n)} ${a == null ? "profile's" : fmtVal(a)} → ${b == null ? "profile's" : fmtVal(b)}`));
+    return `<li><strong>v${c.version}</strong> ${esc(c.time)}, from ${esc(c.by)}${c.note ? ` (${esc(c.note)})` : ""}: ${esc(parts.join("; ") || "created")}</li>`;
+  }).join("") : `<li class="muted">No changes yet.</li>`;
+  $("#profile-note").value = "";
+  $("#profile-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const values = {};
+    document.querySelectorAll("#profile-fields [data-field]").forEach((inp) => {
+      const v = vals[inp.dataset.field], now = inp.type === "checkbox" ? inp.checked : Number(inp.value);
+      if (inp.type === "checkbox" ? now !== v : Number(v) !== now) values[inp.dataset.field] = now;
+    });
+    if (!Object.keys(values).length && pr.profile) { $("#profile-dlg").close(); return; }
+    const r = await act(() => api("/api/profile/save", { values, note: $("#profile-note").value.trim() }), `${cur}'s profile saved`);
+    if (r) $("#profile-dlg").close();
+  };
+  $("#profile-dlg").showModal();
+}
+
 // ---------------------------------------------------------------- log
 function levelShown(l) {
   if (S.logLevel === "all") return true;
@@ -665,8 +998,16 @@ function rerenderLog() {
 // ---------------------------------------------------------------- wiring
 function onState(a) {
   const prevKey = runningKey();
+  const wasIdle = !S.app || S.app.runner.state === "idle";
   S.app = a;
   noteEvent(statusLive());
+  const psig = `${a.subject}|${a.profile ? a.profile.version : ""}`;
+  if (psig !== S.profSig || wasIdle !== (a.runner.state === "idle")) {   // the monkey, its profile, or a run starting / ending
+    const changed = psig !== S.profSig;
+    S.profSig = psig;
+    if (changed) { S.params = {}; loadProfile(); loadParams(S.selected, true).then(() => { renderExperiments(); }); refreshSession(true); }
+    else { renderMonkey(); if (a.runner.state === "idle") { S.params = {}; loadParams(S.selected, true); } }
+  }
   const key = runningKey();
   // When an experiment starts (here or in a terminal), show it: its Live tab is what you need.
   if (key && key !== prevKey && key !== S.selected) { select(key); return; }
@@ -716,7 +1057,7 @@ function pct(n, d) { return d ? `${Math.round(100 * n / d)}%` : "–"; }
 const num = (v) => (v === "" || v == null ? NaN : Number(v));
 
 function chooseSessionView() {
-  if (!SV.userView) SV.view = runningKey() ? "monitor" : "history";
+  if (!SV.userView) SV.view = runningKey() || sessionKey() === "reach_map" ? "monitor" : "history";
   document.querySelectorAll(".session-card .tab").forEach((t) => {
     const on = t.dataset.view === SV.view;
     t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
@@ -731,8 +1072,9 @@ async function refreshSession(force = false) {
   if (!force && now - SV.lastFetch < 1500) return;
   SV.busy = true; SV.lastFetch = now;
   try {
-    if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
-    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(store.get("subject", ""))}`);
+    if (SV.view === "monitor" && key === "reach_map") SV.map = await api("/api/reach_map");
+    else if (SV.view === "monitor") SV.data = await api(`/api/run/trials?exp=${encodeURIComponent(key)}`);
+    else SV.hist = await api(`/api/history?exp=${encodeURIComponent(key)}&subject=${encodeURIComponent(curSubject() || store.get("subject", ""))}`);
   } catch (e) { /* shown as empty */ }
   finally { SV.busy = false; }
   renderSession();
@@ -745,10 +1087,89 @@ function sessionOnState() {
   const viewWas = SV.view;
   chooseSessionView();
   if (t !== SV.lastTrial || SV.view !== viewWas) { SV.lastTrial = t; refreshSession(true); }
+  // The Reach Map grows within its one long session: redraw it every few seconds while it runs.
+  else if (s && s.experiment === "reach_map" && SV.view === "monitor" && Date.now() - SV.lastFetch > 5000) refreshSession(true);
 }
 
 function renderSession() {
-  if (SV.view === "monitor") renderMonitor(); else renderHistory();
+  if (SV.view === "monitor" && sessionKey() === "reach_map") renderReachMap();
+  else if (SV.view === "monitor") renderMonitor(); else renderHistory();
+}
+
+// ---------------------------------------------------------------- the Reach Map view
+// Where the hand went (frontal plane, as the monkey sees it: right is +Y), each movement's farthest point,
+// the comfortable-reach outline (the percentile per direction) and the farthest one, the box (the arm's
+// limit), the horizontal tasks' rail height; then the four profile values, now vs this map, to save.
+const REACH_DIRS = [["reach.left_m", "Left", ""], ["reach.right_m", "Right", ""],
+                    ["reach.down_m", "Down", "on the vertical rail"], ["reach.up_m", "Up", "on the vertical rail"]];
+function cm(v) { return v == null ? "–" : `${(v * 100).toFixed(1)} cm`; }
+function reachSvg(d) {
+  const box = d.box || [-0.2, 0.2, -0.1, 0.1], pad = 0.025;
+  const x0 = Math.min(box[0], -0.05) - pad, x1 = Math.max(box[1], 0.05) + pad;
+  const y0 = Math.min(box[2], -0.05) - pad, y1 = Math.max(box[3], d.horizontal_dz || 0, 0.05) + pad;
+  const W = 600, sc = W / (x1 - x0), H = Math.round((y1 - y0) * sc);
+  const X = (a) => ((a - x0) * sc).toFixed(1), Y = (b) => ((y1 - b) * sc).toFixed(1);
+  const poly = (key) => {
+    const rows = d.rows; if (rows.some((r) => r[key] == null)) {
+      return rows.map((r, i) => { const n = rows[(i + 1) % rows.length]; if (r[key] == null || n[key] == null) return "";
+        const p = [r, n].map((q) => [q[key] * Math.cos(q.deg * Math.PI / 180), q[key] * Math.sin(q.deg * Math.PI / 180)]);
+        return `M${X(p[0][0])},${Y(p[0][1])}L${X(p[1][0])},${Y(p[1][1])}`; }).join("");
+    }
+    return rows.map((r, i) => `${i ? "L" : "M"}${X(r[key] * Math.cos(r.deg * Math.PI / 180))},${Y(r[key] * Math.sin(r.deg * Math.PI / 180))}`).join("") + "Z";
+  };
+  const pr = d.proposal, cur = d.profile_reach, dz = d.horizontal_dz || 0;
+  // All four at the map's start: left and right are measured there (5 cm below the horizontal rail).
+  const at = { "reach.left_m": (v) => [-v, 0], "reach.right_m": (v) => [v, 0], "reach.down_m": (v) => [0, -v], "reach.up_m": (v) => [0, v] };
+  const marks = (vals, cls) => Object.entries(at).map(([k, f]) => vals && vals[k] != null ? (([a, b]) => `<circle class="${cls}" cx="${X(a)}" cy="${Y(b)}" r="5"/>`)(f(vals[k])) : "").join("");
+  const propVals = Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, v.value]));
+  return `<svg class="reach-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Reach map: where the hand went and the reach per direction">
+    <rect class="rm-box" x="${X(box[0])}" y="${Y(box[3])}" width="${((box[1] - box[0]) * sc).toFixed(1)}" height="${((box[3] - box[2]) * sc).toFixed(1)}"/>
+    <line class="rm-rail" x1="${X(x0)}" x2="${X(x1)}" y1="${Y(dz)}" y2="${Y(dz)}"/><text class="rm-label" x="${X(x0) * 1 + 4}" y="${Y(dz) - 4}">horizontal tasks' rail</text>
+    <line class="rm-rail" x1="${X(0)}" x2="${X(0)}" y1="${Y(y1)}" y2="${Y(y0)}"/>
+    <g class="rm-pts">${d.points.map(([a, b]) => `<circle cx="${X(a)}" cy="${Y(b)}" r="1.2"/>`).join("")}</g>
+    <g class="rm-reach">${d.reaches.map(([a, b]) => `<circle cx="${X(a)}" cy="${Y(b)}" r="2.6"/>`).join("")}</g>
+    <path class="rm-far" d="${poly("farthest_m")}"/><path class="rm-comf" d="${poly("comfortable_m")}"/>
+    ${d.rows.filter((r) => r.arm_limited).map((r) => `<circle class="rm-limited" cx="${X(r.comfortable_m * Math.cos(r.deg * Math.PI / 180))}" cy="${Y(r.comfortable_m * Math.sin(r.deg * Math.PI / 180))}" r="6"/>`).join("")}
+    ${marks(cur, "rm-cur")}${marks(propVals, "rm-prop")}
+    <path class="rm-start" d="M${X(-0.006)},${Y(0)}H${X(0.006)}M${X(0)},${Y(-0.006)}V${Y(0.006)}"/>
+    <text class="rm-label" x="${W - 4}" y="${H - 6}" text-anchor="end">box = the arm's limit · right = +Y, as he sees it</text>
+  </svg>`;
+}
+function renderReachMap() {
+  const box = $("#session-view"), d = SV.map;
+  $("#session-sub").textContent = d && d.run ? `${d.running ? "running" : "last run"}: ${d.run}` : "";
+  if (!d || !d.run) { box.innerHTML = `<p class="empty">No Reach Map run yet. Start one: the map fills in as he moves the arm.</p>`; return; }
+  const enough = d.rows.filter((r) => r.comfortable_m != null).length;
+  const tiles = [["Movements", d.n_movements], ["Mapped", `${d.minutes} <small>min</small>`],
+                 ["Directions", `${enough}/${d.sectors} <small>with ≥5 movements</small>`]];
+  const who = d.subject, canSave = who && who !== "test";
+  const rows = REACH_DIRS.map(([k, label, where], i) => {
+    const p = d.proposal[k], now = d.profile_reach ? d.profile_reach[k] : null;
+    const usable = p.value != null;
+    const note = !usable ? p.why : p.arm_limited ? "arm-limited: against the box, he would go farther" : p.why || where;
+    return `<tr><td><input type="checkbox" id="rmv${i}" ${usable && !p.arm_limited ? "checked" : ""} ${usable && canSave ? "" : "disabled"} aria-label="Save ${label}"></td>
+      <td><label for="rmv${i}">${label}</label></td><td class="v">${cm(now)}</td><td class="v"><strong>${cm(p.value)}</strong></td>
+      <td class="small ${p.arm_limited ? "warn" : "muted"}">${esc(note)}</td></tr>`;
+  }).join("");
+  box.innerHTML = `<div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+    ${reachSvg(d)}
+    <div class="rm-legend small"><span class="lg comf"></span>comfortable reach (${d.percentile}th percentile of each direction's movements)
+      <span class="lg far"></span>farthest <span class="lg reach"></span>a movement's farthest point
+      <span class="lg prop"></span>this map's values <span class="lg cur"></span>${esc(who || "the profile")}'s now</div>
+    <table class="save-rows rm-table"><tr><th></th><th>Reach</th><th>${esc(who || "Profile")} now</th><th>This map</th><th></th></tr>${rows}</table>
+    <div class="row-actions"><button class="btn small" id="rm-save" ${canSave ? "" : "disabled"}>${canSave ? `Save ticked to ${esc(who)}'s reach` : "Choose the monkey to save"}</button>
+      <span class="muted small">The horizontal rail is ${(d.horizontal_dz * 100).toFixed(1)} cm above this map's start (${esc(d.horizontal_dz_how)}).</span></div>
+    <details class="rm-sectors"><summary class="small">Every direction</summary><table class="save-rows"><tr><th>Direction</th><th>Movements</th><th>Comfortable</th><th>Farthest</th><th>Box</th></tr>
+      ${d.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td class="v">${cm(r.comfortable_m)}${r.arm_limited ? " ⚠" : ""}</td><td class="v">${cm(r.farthest_m)}</td><td class="v">${cm(r.wall_m)}</td></tr>`).join("")}</table></details>`;
+  const b = $("#rm-save");
+  if (b) b.onclick = async () => {
+    const values = {};
+    REACH_DIRS.forEach(([k], i) => { if ($(`#rmv${i}`).checked) values[k] = d.proposal[k].value; });
+    if (!Object.keys(values).length) { toast("Tick at least one direction", "err"); return; }
+    if (!confirm(`Save ${Object.entries(values).map(([k, v]) => `${k.slice(6, -2)} ${cm(v)}`).join(", ")} to ${who}'s reach? The rail tasks use it from their next Start.`)) return;
+    await act(() => api("/api/profile/save", { exp: "reach_map", values, reach_map_run: d.run, note: `Reach Map ${d.run}` }), `Saved to ${who}'s reach`);
+    refreshSession(true);
+  };
 }
 
 function renderMonitor() {
@@ -766,6 +1187,21 @@ function renderMonitor() {
   const valve = rows.reduce((a, r) => a + (num(r.reward_ms) || 0), 0);
   const tiles = [["Trials", rows.length], ["Success", `${pct(ok, done.length)} <small>${ok}/${done.length}</small>`],
                  ["Rewards", `${rewards} <small>${(valve / 1000).toFixed(1)} s valve</small>`]];
+  // Juice: each trial's rewards at their mean width and pulse count, through the valve calibration.
+  let juice = 0, unsure = false;
+  for (const r of rows) {
+    const nr = num(r.n_rewards) || 0, pulses = num(r.reward_pulses) || nr, ms = num(r.reward_ms) || 0;
+    if (!nr) continue;
+    const v = rewardVolume(ms / pulses, Math.round(pulses / nr), 100);
+    if (v.ml == null) { unsure = true; continue; }
+    if (v.status !== "calibrated") unsure = true;
+    juice += nr * v.ml;
+  }
+  if (S.cal && S.cal.profiles.length && rewards) {
+    const t0 = num(rows[0].t_start), t1 = d.running ? Date.now() / 1000 : num(last.t_end);
+    const hours = (t1 - t0) / 3600;
+    tiles.push(["Juice", `${unsure ? "≈ " : ""}${fmtMl(juice)}${hours > 0.05 ? ` <small>${fmtMl(juice / hours)}/h</small>` : ""}`]);
+  }
   const chosen = rows.filter((r) => String(r.correct) === "0" || String(r.correct) === "1");
   if (chosen.length) {
     const lastN = chosen.slice(-20), c = lastN.filter((r) => String(r.correct) === "1").length;
@@ -837,7 +1273,7 @@ function parseVal(t) {
 function renderHistory() {
   const box = $("#session-view"), h = SV.hist;
   const key = sessionKey(), label = exp(key)?.label || key;
-  const subject = store.get("subject", "");
+  const subject = curSubject() || store.get("subject", "");
   const running = !!runningKey();
   $("#session-sub").textContent = h ? `${label}${subject ? ` · ${subject}` : ""}` : "";
   const tools = `<div class="hist-tools"><label for="hist-subject" class="small">Subject</label>
@@ -882,7 +1318,7 @@ function renderHistory() {
 
 function wireHistory() {
   const inp = $("#hist-subject");
-  if (inp) inp.onchange = () => { store.set("subject", inp.value.trim()); refreshSession(true); };
+  if (inp) inp.onchange = () => selectSubject(inp.value.trim());     // the same monkey everywhere on the page
   const h = SV.hist;
   const apply = async (pairs) => {
     for (const [name, val] of pairs) await act(() => api(`/api/params/${sessionKey()}`, { name, value: parseVal(val) }));
@@ -909,7 +1345,11 @@ document.querySelectorAll(".session-card .tab").forEach((t) => t.onclick = () =>
 async function openStartDialog() {
   const dlg = $("#start-dlg"), inp = $("#start-subject");
   $("#start-dlg-exp").textContent = expLabel(S.selected);
-  inp.value = store.get("subject", "");
+  inp.value = curSubject() || store.get("subject", "");
+  const e = exp(S.selected);
+  $("#start-dlg-profile").innerHTML = !curSubject() ? "Recorded with every trial. Use <code>test</code> for a run without an animal."
+    : hasProfile() && e && e.node === "free_move_orchestrator" ? `With ${esc(curSubject())}'s profile v${S.app.profile.version}, and today's settings. A different ID loads that monkey first, for you to check.`
+    : "Recorded with every trial. A different ID loads that monkey first, for you to check.";
   try {
     const subjects = await api("/api/subjects");
     $("#start-subjects").innerHTML = subjects.map((x) => `<option value="${esc(x)}"></option>`).join("");
@@ -934,6 +1374,13 @@ async function init() {
   S.group = exp(S.selected).group;
   (await api("/api/logs")).forEach(appendLog);
   S.app = await api("/api/state");
+  // The monkey this browser last chose, unless the dashboard already has one (another tab, or a run).
+  if (!S.app.subject && store.get("subject", "") && S.app.runner.state === "idle") {
+    try { await api("/api/subject", { subject: store.get("subject", "") }); S.app = await api("/api/state"); } catch { /* an old ID */ }
+  }
+  S.profSig = `${S.app.subject}|${S.app.profile ? S.app.profile.version : ""}`;
+  await loadProfile();
+  try { S.cal = await api("/api/reward/calibration"); } catch { S.cal = null; }
   if (runningKey()) S.selected = runningKey();     // open on whatever is running
   renderExperiments(); renderChecklist();
   await loadParams(S.selected);
@@ -946,7 +1393,7 @@ async function init() {
   const hv = new URLSearchParams(location.search).get("hover");
   if (hv) setTimeout(() => {
     const p = S.params[S.selected]?.params.find((x) => x.name === hv);
-    if (p) { S.tab = p.tier; renderParams(true); }
+    if (p) { S.tab = p.tier; S.pview = "all"; renderParams(true); }
     const el = [...document.querySelectorAll("#params .name[data-tip]")].find((n) => TIPS.get(n.dataset.tip)?.includes(`>${esc(hv)}<`));
     if (el) {
       const r = el.getBoundingClientRect();
@@ -965,6 +1412,11 @@ async function init() {
   $("#btn-validate").onclick = () => act(() => api("/api/validate", {}), "Validating — see the log");
   $("#btn-reset-edits").onclick = async () => { await act(() => api(`/api/params/${S.selected}/reset`, {}), "Edits cleared"); loadParams(S.selected, true); };
   document.querySelectorAll(".tab[data-tab]").forEach((t) => t.onclick = () => { S.tab = t.dataset.tab; store.set("tab", S.tab); renderParams(true); });
+  document.querySelectorAll(".tab[data-pview]").forEach((t) => t.onclick = () => { S.pview = t.dataset.pview; store.set("pview", S.pview); renderParams(true); });
+  $("#monkey").onchange = (e) => selectSubject(e.target.value);
+  $("#btn-profile").onclick = () => openProfileDialog();
+  $("#profile-cancel").onclick = () => $("#profile-dlg").close();
+  $("#save-cancel").onclick = () => $("#save-dlg").close();
   $("#param-filter").oninput = (e) => { S.paramFilter = e.target.value; renderParams(true); };
   document.querySelectorAll("#log-levels button").forEach((b) => b.onclick = () => {
     S.logLevel = b.dataset.level;

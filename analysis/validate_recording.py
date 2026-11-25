@@ -42,7 +42,8 @@ EXTRA = {"apple_pluck": ["disp_m"], "perturb": ["disp_m"], "perturb_bump": ["dis
 # The free-move node's tasks: the admittance's equilibrium offset and hand force
 # (AdmittanceMoveAction.record_extra_header).
 _ADMITTANCE = ["eq_dx", "eq_dy", "eq_dz", "f_adm_x", "f_adm_y", "f_adm_z"]
-ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "colour_rule", "n_choice")
+ADMITTANCE_TASKS = ("free_move", "move_vertical", "move_horizontal", "restricted_move_horizontal",
+                    "restricted_move_vertical", "colour_rule", "n_choice", "reach_map")
 EXTRA.update({k: _ADMITTANCE for k in ADMITTANCE_TASKS})
 
 # Tokens that must appear exactly once, in this order. Anything not listed (checkpoint, the three
@@ -281,13 +282,14 @@ def validate(path) -> bool:
         ends = [t for t in got if t in MAZE_ENDINGS]
         r.check(len(ends) == 1, f"exactly one ending (goal/timeout/safety_trip); found {ends}")
         r.note(f"{got.count('checkpoint')} checkpoint reward(s)")
-    if exp == "free_move" and "move_end" in got:
-        # Long moves (actions/long_move.py): every reward follows the end of a movement.
-        ends, paid = got.count("move_end"), got.count("long_move")
-        r.check(paid <= ends, f"no more long_move rewards ({paid}) than finished movements ({ends})")
-        r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t == "long_move"),
-                "each long_move reward comes right after its move_end")
-        r.note(f"long moves: {ends} movement(s), {paid} rewarded")
+    if exp in ("free_move", "reach_map") and "move_end" in got:
+        # Long moves / New best (actions/long_move.py): every reward follows the end of a movement.
+        paid_tokens = ("long_move", "new_best")
+        ends, paid = got.count("move_end"), sum(got.count(t) for t in paid_tokens)
+        r.check(paid <= ends, f"no more movement rewards ({paid}) than finished movements ({ends})")
+        r.check(all(i > 0 and got[i - 1] == "move_end" for i, t in enumerate(got) if t in paid_tokens),
+                "each movement reward (long_move / new_best) comes right after its move_end")
+        r.note(f"movements: {ends}, {paid} rewarded")
     if exp == "n_choice" and "early_touch" not in got:
         # N-choice (actions/n_choice.py): one choice per trial, paid or not, or none.
         outcome = [t for t in got if t in ("choice", "choice_unrewarded", "response_timeout", "safety_trip")]

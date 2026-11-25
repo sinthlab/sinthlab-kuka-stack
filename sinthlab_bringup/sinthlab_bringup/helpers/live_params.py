@@ -129,11 +129,17 @@ LIVE_PARAMS: Dict[str, List[str]] = {
     # Free Move on one rail: the same session and feel; the rail itself (free_move.rail_*) is per-run.
     "move_vertical": _FREE,
     "move_horizontal": _FREE,
+    # Restricted Move: Free Move on one rail, a session per trial (no centre-out reach).
+    "restricted_move_horizontal": _FREE,
+    "restricted_move_vertical": _FREE,
     # The colour rule: the same node and feel; Rail / No rail (free_move.rail_axis) is per-run, and the
     # centre-out mode is fixed to the rule (so not centre_out.*: only the reach distances are live).
     "colour_rule": [x for x in _FREE if x != "centre_out.*"] + ["centre_out.end_tol_m", "centre_out.free_reach_m"],
     # N-choice: the same node and feel; the asterisk (free_move.rail_axis, ray_layout, ray_length_m) is per-run.
     "n_choice": [x for x in _FREE if x not in ("centre_out.*", "rule.*", "long_move.*")] + ["n_choice.*"],
+    # Reach Map: Free Move in the frontal plane; the reward (long_move.reward: each_move / new_best) and the
+    # New-best settings are live; the box is per-run.
+    "reach_map": [x for x in _FREE if x not in ("centre_out.*", "rule.*")] + ["reach_map.*"],
 }
 
 # Bounds checked on every live change, (min, max) inclusive. A colour is checked per element.
@@ -205,6 +211,11 @@ LIMITS: Dict[str, Tuple[float, float]] = {
     "long_move.stop_speed_mps": (0.005, 0.3),
     "long_move.stop_sec": (0.05, 2.0),
     "long_move.confirm_m": (0.005, 0.1),
+    # Reach Map (helpers/reach_map.py).
+    "reach_map.sectors": (4, 36),
+    "reach_map.margin_m": (0.0, 0.05),
+    "reach_map.min_m": (0.0, 0.10),
+    "reach_map.percentile": (50.0, 100.0),
     "haptic.min_pct": (0, 100),
     "haptic.max_pct": (0, 100),
     "haptic.ramp_start_m": (0.005, 0.3),
@@ -267,7 +278,7 @@ PARADIGM_ONLY: Dict[str, Tuple[str, ...]] = {
     "centre_out.free_reach_m": ("frontal",),
     "centre_out.end_tol_m": ("y", "x", "z", "either", "cued", "left", "right", "down", "up"),
     # Free Move, whose paradigm is long_move.reward.
-    "long_move.*": ("each_move",),
+    "long_move.*": ("each_move", "new_best"),
 }
 
 
@@ -325,7 +336,7 @@ CHOICES: Dict[str, List[str]] = {
     "centre_out.target": ["either", "cued", "left", "right", "down", "up", "rule"],
     "rule.red_end": ["left", "right", "down", "up"],          # the node refuses an end its rail lacks
     "centre_out.quarter_*": ["0", "1", "2", "3"],             # the ring's quarters
-    "long_move.reward": ["session", "each_move"],            # actions/long_move.MODES
+    "long_move.reward": ["session", "each_move", "new_best"],  # actions/long_move.MODES (new_best: the Reach Map only)
     "n_choice.start": ["full", "random"],                    # helpers/bandit_schedule.STARTS
     "free_move.ray_layout": ["2", "3", "4", "5", "6", "7", "8"],   # helpers/rail_shapes.LAYOUT_COUNTS
     "visual_cue.trigger": ["serial", "wifi"],                 # actions/visual_cue.TRIGGERS
