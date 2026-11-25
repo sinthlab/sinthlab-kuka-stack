@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cued Reaches, Free (3-D): one reach per trial, with jump and bump perturbations (the CIHR grant's Aims 1-2).
+"""Cued Reaches, Free (3-D): one reach per trial, with jump and bump perturbations.
 
 The free variant of the Cued Reaches card: the same cue modes as the rails (free_reach.cue, the tabs:
 either = any direction, cued = the lit quarter), free in 3-D inside the box instead of on a rail

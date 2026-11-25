@@ -1532,7 +1532,7 @@ with no snag when committing to a rail.
 
 ### Scenario 7 — Cued Reaches, free (3-D), with jump and bump perturbations
 The **Free (3-D)** variant of the **Cued Reaches** card (beside Horizontal and Vertical), on the free-move
-node, for the CIHR grant's perturbation aims ([`pretrain_move_free.yaml`](sinthlab_bringup/config/pretrain_move_free.yaml),
+node, for reaches perturbed by jumps and bumps ([`pretrain_move_free.yaml`](sinthlab_bringup/config/pretrain_move_free.yaml),
 [`actions/free_reach.py`](sinthlab_bringup/sinthlab_bringup/actions/free_reach.py),
 [`helpers/free_reach.py`](sinthlab_bringup/sinthlab_bringup/helpers/free_reach.py); experiment `move_free`).
 Navin's Apple Pluck (Scenarios 1 and 3) is unchanged.
