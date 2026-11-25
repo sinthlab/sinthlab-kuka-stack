@@ -155,18 +155,23 @@ class App:
             "stopping_now": self.stopping,
             "data_folder": self.data_folder(),
             "edited": {k: len(p.edits) for k, p in self.params.items()},
+            "edited_names": {k: sorted(_plain_name(n) for n in p.edits) for k, p in self.params.items() if p.edits},
             "subject": self.subject,
             "profile": ({"version": self.profile["version"], "updated": self.profile["updated"]}
                         if self.profile else None),
         }
 
     # ------------------------------------------------------------------ the monkey and its profile
-    def select_subject(self, subject: str) -> dict:
-        """Choose the monkey: its profile (if it has one) now applies to every free-move task."""
+    def select_subject(self, subject: str, clear_edits: bool = False) -> dict:
+        """Choose the monkey: its profile (if it has one) now applies to every free-move task. With
+        clear_edits, today's edits are dropped everywhere (they were made for the previous monkey)."""
         subject = check_subject(subject)
         busy = self.runner.running() and self.runner.experiment
         if busy and subject != self.subject:
             raise RuntimeError(f"{busy} is running for {self.subject or 'another subject'}: stop it before changing the monkey")
+        if clear_edits:
+            for p in self.params.values():
+                p.reset()
         self.subject = subject
         self.profile = None if subject == profiles.SUBJECT_TEST else profiles.load(subject)
         self._apply_profile()
@@ -229,6 +234,9 @@ class App:
         reach_map = None
         if body.get("reach_map_run"):     # the reach from a Reach Map run: keep a record of the map with it
             data = self.reach_map(key or "reach_map", str(body["reach_map_run"]))
+            if data.get("run_subject") != self.subject:
+                raise ValueError(f"This map is {data.get('run_subject') or 'an unlabelled'} recording, not {self.subject}'s: "
+                                 f"choose {data.get('run_subject') or 'its monkey'} to save it (or run a Reach Map for {self.subject})")
             reach_map = {**reach_view.record(data), "saved": time.strftime("%Y-%m-%d %H:%M")}
         prof = profiles.save(self.subject, values, by,
                              {key: task_only} if task_only else None, str(body.get("note") or ""), reach_map)
@@ -441,8 +449,8 @@ class App:
                 raise ValueError(f"no Reach Map run {run!r}")
             folder = str(cand)
         elif running:
-            folder = self.data_folder()
-        if folder is None:
+            folder = self.data_folder()      # None until the run's first file: then it waits, not the last run's map
+        if folder is None and not running:
             runs = sorted((p for p in ex.DATA.glob(f"expt_{exp.run_name}_*") if p.is_dir()),
                           key=lambda p: p.stat().st_mtime)
             folder = str(runs[-1]) if runs else None
@@ -453,6 +461,10 @@ class App:
         data = reach_view.compute(folder, params, self.profile)
         data["running"] = running
         data["subject"] = self.subject
+        # Whose recording this is (the subject recorded with its trials): the map can only be saved to them.
+        data["run_subject"] = next((m.get("subject") for m in metas if m.get("subject")), None)
+        if running and not data["run_subject"] and self.runner.experiment == exp.key:
+            data["run_subject"] = self.subject or None          # the run going now, before its first trial is saved
         return data
 
     def ttl(self, addr: str, cmd: str) -> dict:
@@ -621,7 +633,7 @@ def make_handler(app: App):
             if path == "/api/stop":
                 return app.stop()
             if path == "/api/subject":
-                return app.select_subject(str(body.get("subject", "")))
+                return app.select_subject(str(body.get("subject", "")), bool(body.get("clear_edits")))
             if path == "/api/profile/save":
                 return app.save_profile(body)
             if path == "/api/live":
@@ -743,6 +755,14 @@ def _session_row(app: App, folder: str) -> None:
     if row:
         app.runner.emit(f"sessions.csv: {row['run']}: {row['n_trials']} trials, {row['n_success']} successful, "
                         f"{row['n_rewards']} rewards ({row['reward_ms']} ms valve time)", "gui")
+
+
+def _plain_name(name: str) -> str:
+    """A setting's name as the Task and Monkey views show it (experiments.LABELS, the profile's), else its YAML name."""
+    if name in ex.LABELS:
+        return ex.LABELS[name]
+    f = profiles.BY_PARAM.get(name)
+    return f"{profiles.SECTION_LABEL[f.name.split('.')[0]]}: {f.label}" if f else name
 
 
 def _profile_copy(app: App, folder: str, prof: dict) -> None:

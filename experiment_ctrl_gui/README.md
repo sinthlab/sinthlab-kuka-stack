@@ -183,9 +183,23 @@ Values in effect: YAML < profile < today's edits (`ExperimentParams.base()` / `c
   kept the same as the number of choices grows) and so does Free Move's box; the dashboard notes where
   one goes past the monkey's reach.
 - **Reward per task:** a profile can hold a different reward for one task (`reward_by_task`).
-- **The page:** the Monkey card (top left) picks the monkey for the whole dashboard; the settings card
-  has three views: **Task** (today's few), **Monkey** (the profile's settings as this task uses them,
-  with *Save to profile*) and **All settings** (the Live / Per-run / Fixed tabs, unchanged).
+- **The page** (two columns under a run bar): the **run bar**, always in view, holds the monkey, the task
+  (one drop-down grouped Experiments / Pre-training, then chips for the rail and the paradigm), the reward
+  (valve time, mL, −10 / +10 ms, set by volume, save to the profile), Start / Stop with the session timer and
+  the juice given, and the status pills. Left column: the session (trial and phase while running; the Run
+  monitor or Today vs recent; the SmartPad checklist folded to one line before a run). Right column: the
+  settings, three views: **Task** (today's few, plain names, no descriptions), **Monkey** (the profile's
+  settings as this task uses them, with *Save to profile*; a rail's left / down end shown as a distance) and
+  **All settings** (the Live / Per-run / Fixed tabs, unchanged). Every experiment has a Task view (Navin's
+  three too: the pull, the perturbation, the fixture); the Monkey view is for the free-move tasks only.
+- **One experiment at a time:** while a run goes the task picker is locked to it (its live tabs still switch).
+  *Today vs recent* can look up any subject's sessions without changing the monkey being run. Changing the
+  monkey with edits made today lists them and asks to keep or clear them (or not to change).
+- **Reach Map saves only to its own monkey:** the map shows whose recording it is, and the server refuses a
+  save to anyone else. The log is a one-line strip at the bottom
+  (the latest message, a warnings count) that opens into the full log. The **Live view** (below) is the trial card's *Arm*
+  section, shown while a run goes, open unless folded with its heading (remembered per browser); *pop out ↗*
+  opens it on its own page (`/live.html`).
 - **Save to profile** (`GET /api/profile/diff`, `POST /api/profile/save`): the task's values in effect,
   live and waiting for the next trial included, wherever they differ from the profile; the reach comes
   back from a horizontal or vertical rail's ends. Tick what to keep; a reward can go to this task only.
@@ -295,7 +309,7 @@ edge); *Check outputs* still works. The browser cannot send UDP, so the server r
 
 ## Live view
 
-`/live.html` — the **Live view** button at the top right of the dashboard, in its own tab. The running
+The trial card's **Arm** section on the dashboard while a run goes, and `/live.html` on its own (*pop out ↗*). The running
 experiment's bounds and the arm in them, in two views of the robot's base frame: **front** (Y to the
 right, Z up: as seen from the subject's side) and **top** (Y to the right, X toward the subject
 downward). Read-only, and entirely on the dashboard's side: the experiments do not change for it.

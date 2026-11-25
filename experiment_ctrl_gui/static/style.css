@@ -446,3 +446,97 @@ table.hist tr.changed td.today { color: var(--warn); font-weight: 600; }
 .reward-byvol { flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); }
 .reward-byvol input { width: 70px; font-family: var(--mono); padding: 3px 6px; }
 .reward-byvol .warn { color: var(--warn); }
+
+/* ================= the two-column page (index.html): run bar, session | settings, log strip ================= */
+.runbar { position: sticky; top: 0; z-index: 6; display: grid; align-items: center; gap: 10px 18px;
+  grid-template-columns: auto minmax(150px, auto) minmax(280px, 1fr) auto auto;
+  padding: 8px 18px 6px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
+.runbar .logo { width: 24px; height: 24px; display: block; }
+.rb-lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+.rb-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rb-sub .btn { padding: 1px 7px; font-size: 11px; }
+.rb-monkey .monkey-row select { padding: 4px 8px; }
+.rb-task { min-width: 0; }
+.task-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-picker select { font-weight: 650; padding: 4px 8px; max-width: 220px; }
+.chips { display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.chips .chips-lab { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; }
+.chip { font: inherit; font-size: 12.5px; font-weight: 650; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.chip:hover:not(:disabled):not(.on) { border-color: var(--muted); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip.next { border-color: var(--live); color: var(--live); }
+.chip:disabled { opacity: .4; cursor: not-allowed; }
+.chip-sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+.rb-reward { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 9px; padding: 5px 10px; min-width: 0; position: relative; }
+.rb-reward.none { display: none; }
+.rb-reward .rw { display: flex; align-items: center; gap: 6px; }
+.rb-reward .big { font-weight: 750; font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-reward .ml { color: var(--info); font-weight: 650; white-space: nowrap; }
+.rb-reward .ml.extrapolated { color: var(--warn); }
+.rb-reward .nxt { color: var(--live); font-weight: 650; font-size: 12px; white-space: nowrap; }
+.rb-reward .btn.step { padding: 2px 7px; font-family: var(--mono); }
+.rb-reward .pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 8; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 9px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.2); width: 300px; font-size: 12.5px; }
+.rb-reward .pop input { width: 80px; font-family: var(--mono); }
+.rb-reward .pop .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.rb-run { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.rb-btns { display: flex; gap: 8px; align-items: center; }
+.rb-btns .btn.primary { font-size: 15px; padding: 7px 18px; }
+.rb-btns .btn.danger { font-size: 15px; padding: 7px 14px; }
+.run-stats { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 13px; white-space: nowrap; }
+.run-stats .k { color: var(--muted); font-weight: 500; font-size: 11px; margin-right: 3px; }
+.runbar .rb-pills { grid-column: 1 / -1; gap: 4px; justify-content: flex-end; margin-top: -4px; }
+.runbar .pill { font-size: 11px; padding: 2px 8px; }
+.pill.link { color: var(--ink); text-decoration: none; }
+.pill.link:hover { border-color: var(--muted); }
+
+.layout2 { display: grid; gap: 14px; padding: 14px 18px 64px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+.layout2 .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+details.card > summary { cursor: pointer; list-style: revert; }
+.checklist-card .checklist { margin-top: 8px; }
+.run-card .kv { margin-top: 8px; }
+.status-card .sp-report { margin-top: 8px; }
+.status-card .events summary { margin-top: 6px; }
+
+/* Settings rows in the Task and Monkey views: names only, no descriptions (warnings and notes stay). */
+.params.compact .param { padding: 5px 8px; }
+.params.compact .param .name { font-family: var(--sans); font-weight: 600; font-size: 13px; word-break: normal; }
+
+.logbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; display: flex; align-items: center; gap: 12px;
+  padding: 7px 18px; background: var(--log-bg); color: var(--log-ink); font: 12px var(--mono); }
+.logbar .log-last { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logbar .log-last.warn { color: #e3b341; } .logbar .log-last.error { color: #ff7b72; }
+.logbar .btn { background: #1d2530; color: var(--log-ink); border-color: #33404f; font-family: var(--sans); }
+.logbar .btn.has { color: #e3b341; border-color: #8a6a1d; }
+.log-drawer { position: fixed; left: 0; right: 0; bottom: 36px; z-index: 7; background: var(--panel); border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgba(0,0,0,.18); padding: 10px 18px 6px; }
+.log-drawer .log { height: 38vh !important; }
+.log-drawer.tall .log { height: 72vh !important; }
+.log-drawer #log-path { margin: 4px 0 0; }
+
+@media (max-width: 1150px) {
+  .runbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .rb-task { grid-column: 1 / -1; grid-row: 2; }
+  .rb-reward { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
+  .runbar .rb-pills { justify-content: flex-start; }
+  .layout2 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .runbar { padding: 8px 16px; grid-template-columns: minmax(0, 1fr); }
+  .rb-brand { display: none; }
+  .rb-task, .rb-reward { grid-column: auto; grid-row: auto; }
+  .rb-run { align-items: flex-start; }
+  .layout2 { padding: 12px 16px 64px; }
+  .logbar, .log-drawer { padding-left: 16px; padding-right: 16px; }
+}
+
+/* The arm (live view) inside the trial card, folded like Trial events. */
+.live-in > summary { cursor: pointer; margin-top: 10px; font-weight: 600; font-size: 13px; }   /* the browser's own triangle, as Trial events */
+.live-in .live-pop { float: right; color: var(--muted); font-weight: 500; }
+.live-in .live-views { margin-top: 8px; }
+.live-in .live-canvas { height: min(32vh, 300px); }
+.live-in .live-status { font-size: 12.5px; margin: 6px 0 2px; }
+.live-in .live-legend { margin: 0; }
+.start-dlg .controls.three { grid-template-columns: 1fr 1fr 1fr; }
+.start-dlg .controls.three .btn.primary { font-size: 14px; padding: 6px; }

@@ -158,34 +158,39 @@ class PostProcessor:
 
 
 def _copy_verified(src: str, dest: str, say: Callable[[str, float], None]) -> dict:
-    """Copy to dest (via dest.partial), then read the copy back and compare SHA-256."""
+    """Copy to dest (via dest.partial), then read the copy back and compare SHA-256. A failed or cancelled
+    copy leaves no .partial behind."""
     size = os.path.getsize(src)
     tmp = dest + ".partial"
-    h_src = hashlib.sha256()
-    done = 0
-    with open(src, "rb") as fi, open(tmp, "wb") as fo:
-        while True:
-            block = fi.read(_COPY_BLOCK)
-            if not block:
-                break
-            fo.write(block)
-            h_src.update(block)
-            done += len(block)
-            say("Copying", done / max(size, 1) * 0.5)
-        fo.flush()
-        os.fsync(fo.fileno())
-    h_dest = hashlib.sha256()
-    done = 0
-    with open(tmp, "rb") as f:
-        while True:
-            block = f.read(_COPY_BLOCK)
-            if not block:
-                break
-            h_dest.update(block)
-            done += len(block)
-            say("Verifying the copy", 0.5 + done / max(size, 1) * 0.5)
-    if h_src.hexdigest() != h_dest.hexdigest():
-        os.remove(tmp)
-        raise RuntimeError("the copy on the server does not match the local file (removed): try again")
-    shutil.move(tmp, dest)
+    try:
+        h_src = hashlib.sha256()
+        done = 0
+        with open(src, "rb") as fi, open(tmp, "wb") as fo:
+            while True:
+                block = fi.read(_COPY_BLOCK)
+                if not block:
+                    break
+                fo.write(block)
+                h_src.update(block)
+                done += len(block)
+                say("Copying", done / max(size, 1) * 0.5)
+            fo.flush()
+            os.fsync(fo.fileno())
+        h_dest = hashlib.sha256()
+        done = 0
+        with open(tmp, "rb") as f:
+            while True:
+                block = f.read(_COPY_BLOCK)
+                if not block:
+                    break
+                h_dest.update(block)
+                done += len(block)
+                say("Verifying the copy", 0.5 + done / max(size, 1) * 0.5)
+        if h_src.hexdigest() != h_dest.hexdigest():
+            raise RuntimeError("the copy on the server does not match the local file (removed): try again")
+        shutil.move(tmp, dest)
+    except BaseException:           # failed, mismatched or cancelled
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     return {"dest": dest, "bytes": size, "sha256": h_src.hexdigest()}

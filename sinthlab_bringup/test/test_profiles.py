@@ -21,6 +21,10 @@ from params import ExperimentParams  # noqa: E402
 FREE_MOVE_TASKS = [e for e in experiments.EXPERIMENTS if profiles.applies_to(e)]
 
 
+def ex_labels():
+    return experiments.LABELS
+
+
 @pytest.fixture
 def data(tmp_path, monkeypatch):
     monkeypatch.setattr(experiments, "DATA", tmp_path)
@@ -46,8 +50,8 @@ def test_layers_cover_the_free_move_tasks_only():
                 assert not f.param or f.param in p.defaults, (e.key, f.param)
             layers = {r["name"]: r["layer"] for r in p.describe()}
             assert not {n for n in e.task_settings if layers[n] != "task"}
-        else:
-            assert not e.task_settings
+        else:                                                         # Navin's: a Task tab, no profile
+            assert e.task_settings and set(e.task_settings) <= set(ex_labels())
 
 
 def test_the_default_profile_changes_no_task():

@@ -245,6 +245,7 @@ class ExperimentParams:
                 # The layer it belongs to: today's task settings, the monkey's profile, or the rest
                 # (rig and fine tuning), shown only under All settings.
                 "layer": "task" if name in task else "profile" if name in sources else "other",
+                "label": ex.LABELS.get(name, ""),
                 "profile_field": sources.get(name),
                 "profile_note": notes.get(name, ""),
                 "edited": name in self.edits,

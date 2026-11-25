@@ -106,6 +106,32 @@ def missing_dependencies() -> Optional[str]:
             "pip install --user --break-system-packages pynwb neo \"numpy<2\"")
 
 
+class _RowEvents:
+    """An events table as a plain DynamicTable (timestamp + columns) in the `events` processing module:
+    the same add_column / add_event calls as NWBFile.create_events_table, which no released pynwb has yet
+    (3.1.3, the newest, does not). Read it back with nwbfile.processing["events"][name].to_dataframe()."""
+
+    def __init__(self, nwb, name: str, source: str, description: str) -> None:
+        from hdmf.common import DynamicTable
+        self.table = DynamicTable(name=name, description=f"{description} Source: {source}.")
+        self.table.add_column("timestamp", "Event time [s], on the file's clock.")
+        mod = nwb.processing.get("events") or nwb.create_processing_module(
+            "events", "Event tables: the robot's events and the NSP's.")
+        mod.add(self.table)
+
+    def add_column(self, name: str, description: str) -> None:
+        self.table.add_column(name, description)
+
+    def add_event(self, timestamp: float, **values) -> None:
+        self.table.add_row(timestamp=float(timestamp), **values)
+
+
+def _events_table(nwb, name: str, source: str, description: str):
+    if hasattr(nwb, "create_events_table"):          # a pynwb that has it (in development)
+        return nwb.create_events_table(name=name, source_description=source, description=description)
+    return _RowEvents(nwb, name, source, description)
+
+
 # ---------------------------------------------------------------------------------------- robot
 
 @dataclass
@@ -619,8 +645,8 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
                 behavior.add(s)
     ev = sorted((t, tok, arg) for tr in robot.trials for t, tok, arg in tr.events)
     if ev:
-        table = nwb.create_events_table(name="robot_events", source_description="Experiment orchestrator",
-                                        description="Experiment events, as the orchestrator emitted them.")
+        table = _events_table(nwb, "robot_events", "Experiment orchestrator",
+                              "Experiment events, as the orchestrator emitted them.")
         table.add_column("event", "Event token (trial_start, at_start, armed, snap, trial_end, ...).")
         table.add_column("argument", "The event's argument (e.g. the trial number), or empty.")
         for t, tok, arg in ev:
@@ -723,8 +749,7 @@ def export(robot_folder: str, out_path: str, meta: Metadata, nsp_path: Optional[
                     labels += [f"{ec['name']}:{x}" for x in lab]
             if labels:
                 all_t = np.concatenate(stamps)
-                table = nwb.create_events_table(name="nsp_events", source_description="Blackrock NSP (NEV)",
-                                                description="NEV digital and comment events.")
+                table = _events_table(nwb, "nsp_events", "Blackrock NSP (NEV)", "NEV digital and comment events.")
                 table.add_column("value", "Event channel and value (channel:value).")
                 for j in np.argsort(all_t):
                     table.add_event(timestamp=float(all_t[j]), value=labels[j])

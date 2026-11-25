@@ -128,12 +128,15 @@ async function convert() {
 }
 
 async function upload() {
+  // Clear the last upload's result first: a small file can finish (and report) before this call returns.
+  const prompt = $("#upload-prompt").innerHTML, result = $("#up-result").innerHTML;
+  $("#upload-prompt").textContent = "Uploading…"; kv($("#up-result"), []);
   try {
     await api("/api/post/upload", {
       nwb: $("#up-src").value.trim(), dest: $("#up-dest").value.trim(), overwrite: $("#up-overwrite").checked,
     });
-    kv($("#up-result"), []);
   } catch (e) {
+    $("#upload-prompt").innerHTML = prompt; $("#up-result").innerHTML = result;   // refused: nothing changed
     toast(e.message, "err");
   }
 }
@@ -181,6 +184,7 @@ function showJob(job) {
     $("#upload-prompt").textContent = "Uploaded and verified.";
   } else {
     kv($("#up-result"), [["Not uploaded", job.error]]);
+    $("#upload-prompt").textContent = job.state === "cancelled" ? "Upload cancelled: nothing was left on the server." : "Upload failed (see below).";
   }
 }
 
