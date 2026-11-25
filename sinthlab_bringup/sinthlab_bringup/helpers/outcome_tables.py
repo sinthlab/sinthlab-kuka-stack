@@ -642,12 +642,14 @@ class FreeReachTables(TaskTables):
         "block": "the schedule's block (a new one at every change of cue, perturbation or settings)",
         "depth_rule": "the bump's depth rule: against / with his depth movement, toward / away (fixed); blank = none",
         "depth_dir": "the bump's depth direction as delivered: toward / away (from the monkey)",
-        "depth_m": "the bump's depth component as delivered [m] (less than set if the box was short of room)",
+        "force_n": "the bump's force pulse as delivered, base frame x (depth, + toward him), y, z [N]",
+        "depth_force_n": "the bump's depth force as delivered [N] (less than set if the box was short of room)",
+        "depth_m": "how far that depth force moves the apple if he does not resist it [m]",
         "depth_basis": "what set it: velocity / displacement (his depth movement), random (he was not moving in depth), fixed",
         "depth_speed_mps": "his depth velocity at the bump's onset [m/s], + toward himself",
     }
     settings = ["free_reach.cue", "perturb.kind", "free_reach.directions", "free_reach.distance_m", "free_reach.cone_deg", "perturb.probability",
-                "perturb.jump_m", "perturb.bump_m", "perturb.bump_at_m", "perturb.bump_depth_m",
+                "perturb.jump_m", "perturb.bump_force_n", "perturb.bump_sec", "perturb.bump_at_m", "perturb.bump_depth_force_n",
                 "perturb.bump_depth_rules", "response_timeout_sec", "reward_pulse.pulse_ms", "free_move.rail_axis"]
     session_columns = {"n_reaches": "trials ending in a reach",
                        "pct_correct": "reaches to the target over all reaches [%]",

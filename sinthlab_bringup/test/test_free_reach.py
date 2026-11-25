@@ -65,7 +65,7 @@ def test_a_pull_ends_at_its_distance_and_is_scored_against_the_cone():
 
 def test_an_uncorrected_bump_misses_the_target():
     s = pt.ReachSettings()
-    d = s.bump_m * pt.rotate(pt.unit("right"), 90) + s.distance_m * pt.unit("right")   # bumped, carried on straight
+    d = s.bump_extent_m() * pt.rotate(pt.unit("right"), 90) + s.distance_m * pt.unit("right")   # bumped, carried on straight
     assert not pt.crossing(d, s.distance_m, "right", s.cone_deg)[0]
 
 
@@ -160,6 +160,12 @@ class FakeArm:
         return self.pos.copy()
 
     def displacing(self):
+        return self.disp is not None and self.disp[2] == "displace"
+
+    def pushing(self):
+        return self.disp is not None and self.disp[2] == "push"
+
+    def perturbing(self):
         return self.disp is not None
 
     def hand_force_n(self):
@@ -169,12 +175,17 @@ class FakeArm:
         return self.vel
 
     def displace(self, off, sec, on_done=None):
-        self.disp = (np.asarray(off), on_done)
+        self.disp = (np.asarray(off), on_done, "displace", sec)
         return True
 
-    def finish(self):
-        off, on_done = self.disp
-        self.pos = self.pos + off
+    def push(self, force, sec, on_done=None):
+        self.disp = (np.asarray(force), on_done, "push", sec)
+        return True
+
+    def finish(self, damping=50.0):
+        """The jump lands; the bump, not resisted, moves the apple force x duration / damping."""
+        vec, on_done, kind, sec = self.disp
+        self.pos = self.pos + (vec if kind == "displace" else vec * sec / damping)
         self.disp = None
         on_done()
 
@@ -212,7 +223,7 @@ def test_no_cue_rewards_any_reach(monkeypatch):
 
 def test_a_bump_comes_after_the_grip_and_the_target_stays(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
-    plan = pt.TrialPlan("cued", "right", "bump", 90.0, 0.015)
+    plan = pt.TrialPlan("cued", "right", "bump", 90.0, force_n=5.0)
     got = run_trial(node, arm, mon, clock, plan)
     assert mon.quarters() == [1]
     arm.force = 5.0
@@ -222,12 +233,13 @@ def test_a_bump_comes_after_the_grip_and_the_target_stays(monkeypatch):
     assert marks[-1][0] == "grip"
     arm.pos = np.array([0.0, 0.026, 0.0])                     # past bump_at_m along right
     tick(node)
-    assert marks[-1] == ("bump", 90.0) and arm.displacing()
-    assert np.allclose(arm.disp[0], [0, 0, 0.015])            # straight up: perpendicular to right
+    assert marks[-1] == ("bump", 90.0) and arm.pushing() and not arm.displacing()
+    assert np.allclose(arm.disp[0], [0, 0, 5.0])              # a 5 N push straight up: perpendicular to right
+    assert arm.disp[3] == pytest.approx(0.15) and mon.result()["force_n"] == [0.0, 0.0, 5.0]
     tick(node)
     assert not got                                            # nothing is judged mid-bump
-    arm.finish()
-    assert marks[-1][0] == "bump_end"
+    arm.finish()                                              # not resisted: 5 N x 0.15 s / 50 = 1.5 cm up
+    assert marks[-1][0] == "bump_end" and np.allclose(arm.pos, [0, 0.026, 0.015])
     arm.pos = np.array([0.0, 0.05, 0.015])                    # carried on without correcting: 16.7 deg off
     tick(node)
     assert got and got[0][0] is False
@@ -409,36 +421,38 @@ def test_bump_blocks_balance_angles_and_depth_rules():
     assert len(plans) == 8 and all(combos.count(c) == 2 for c in set(combos)) and len(set(combos)) == 4
     jumps = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="jump"), random.Random(6))
     assert all(p.depth_rule is None for p in (jumps.next() for _ in range(24)))     # jumps stay in the plane
-    flat = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="bump", bump_depth_m=0.0), random.Random(6))
+    flat = pt.ReachSchedule(pt.ReachSettings(cue="cued", perturb="bump", bump_depth_force_n=0.0), random.Random(6))
     assert all(p.depth_rule is None for p in (flat.next() for _ in range(24)))
     assert "unknown" in pt.settings_problem(pt.ReachSettings(bump_depth_rules=["sideways"]))
 
 
 def test_a_bump_against_his_depth_movement(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
-    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "down", "bump", 90.0, 0.015, depth_rule="against"))
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "down", "bump", 90.0, depth_rule="against", force_n=5.0))
     arm.pos, arm.vel = np.array([0.01, 0.0, -0.026]), np.array([0.06, 0.0, -0.2])   # pulling down and toward himself
     tick(node)
     tick(node)
     assert marks[-1] == ("bump", 90.0)
-    assert np.allclose(arm.disp[0], [-0.01, 0.015, 0.0])        # away from him, and right of down
+    assert np.allclose(arm.disp[0], [-3.0, 5.0, 0.0])          # 3 N away from him, 5 N right of down
     r = mon.result()
-    assert (r["depth_dir"], r["depth_m"], r["depth_basis"], r["depth_speed_mps"]) == ("away", 0.01, "velocity", 0.06)
+    assert (r["depth_dir"], r["depth_force_n"], r["depth_basis"], r["depth_speed_mps"]) == ("away", 3.0, "velocity", 0.06)
+    assert r["depth_m"] == pytest.approx(0.009)                 # 3 N x 0.15 s / 50 N s/m, if not resisted
 
 
 def test_the_depth_is_cut_short_at_the_box(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
-    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 270.0, 0.015, depth_rule="with"))
-    arm.pos, arm.vel = np.array([0.02, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])     # 2 cm toward him, 3 cm room
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 270.0, depth_rule="with", force_n=5.0))
+    arm.pos, arm.vel = np.array([0.02, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])     # 2 cm toward him: 5 mm of room
     tick(node)
     tick(node)
-    assert arm.disp[0][0] == pytest.approx(0.005) and mon.result()["depth_m"] == pytest.approx(0.005)
+    # the 3 N would move it 9 mm: scaled to what fits, 5 mm
+    assert arm.disp[0][0] == pytest.approx(3.0 * 5 / 9, abs=0.01) and mon.result()["depth_m"] == pytest.approx(0.005)
 
 
 def test_no_depth_in_the_frontal_plane(monkeypatch):
     node, arm, mon, marks, clock = monitor(monkeypatch, **{"free_reach.cue": "cued", "perturb.kind": "bump"})
     arm.shape = lambda: "frontal"
-    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 90.0, 0.015, depth_rule="with"))
+    run_trial(node, arm, mon, clock, pt.TrialPlan("cued", "right", "bump", 90.0, depth_rule="with", force_n=5.0))
     arm.pos, arm.vel = np.array([0.0, 0.026, 0.0]), np.array([0.1, 0.2, 0.0])
     tick(node)
     tick(node)
@@ -453,3 +467,74 @@ def test_depth_columns():
     row = ot.trial_row(meta)
     assert (row["depth_rule"], row["depth_dir"], row["depth_m"], row["depth_basis"], row["depth_speed_mps"]) == \
         ("against", "away", 0.01, "velocity", 0.06)
+
+
+# ---------------------------------------------------------------- the admittance's push (the bump), simulated
+def push_run(monkeypatch, hand_y, push=None, sec=0.6, rate=100.0):
+    """The real admittance loop on a simulated arm that follows its equilibrium with a short lag (the cabinet
+    spring), the hand pressing hand_y N along +Y throughout. push = (force_xyz, duration) fired at 0.1 s.
+    Returns the equilibrium's y over time [m, from the start], the push's on_done count and the adm."""
+    from types import SimpleNamespace
+    from sinthlab_bringup.actions import admittance_move as am
+    clock = Clock()
+    monkeypatch.setattr(am.time, "monotonic", clock.monotonic)
+    adm = AdmittanceMoveAction.__new__(AdmittanceMoveAction)
+    adm._node, adm._p = stubs.FakeNode(yaml_params()), "free_move."
+    adm.reload()
+    adm._leash = float(adm._node.get_parameter("free_move.leash_m").value)
+    adm._rail, adm._open, adm._shape, adm._rays, adm._box = None, None, "none", None, yaml_box()
+    adm._plane_n = None
+    adm._anchor = np.eye(4)
+    adm._anchor[0:3, 3] = [0.38, 0.01, 0.98]
+    adm._floor = type("NoFloor", (), {"clamp_xyz": staticmethod(lambda xyz, R: xyz)})()
+    adm._active = adm._moving = True
+    adm._eq = adm._anchor[0:3, 3].copy()
+    arm = adm._eq.copy()
+    for name, v in dict(_f_filt=np.zeros(3), _f_used=np.zeros(3), _v=np.zeros(3), _tare=np.zeros(3),
+                        _rest_offset=np.zeros(3), _pushing=False, _v_arm=np.zeros(3), _quiet=0.0, _low_t=0.0,
+                        _settle_until=0.0, _p_prev=None, _t_prev=None, _p_go=None, _max_exc=0.0,
+                        _f_hand=np.zeros(3), _disp=None, _push=None, _vp_last=np.zeros(3), _debug=False).items():
+        setattr(adm, name, v)
+    T = np.eye(4)
+    adm._fk = lambda q: (T.__setitem__((slice(0, 3), 3), arm), T.copy())[1]
+    adm._hand_force = lambda msg, q, T_: np.array([0.0, hand_y, 0.0])
+    adm._publish = lambda eq: None
+    msg = SimpleNamespace(measured_joint_position=[0.1] * 7, commanded_joint_position=[0.1] * 7)
+    done, ys, dt = [], [], 1.0 / rate
+    for k in range(int(sec * rate)):
+        clock.t += dt
+        if push is not None and k == int(0.1 * rate):
+            assert adm.push(push[0], push[1], on_done=lambda: done.append(clock.t))
+            assert not adm.push(push[0], push[1])                  # one at a time
+        adm._on_state(msg)
+        arm = arm + (adm._eq - arm) * min(1.0, dt / 0.04)          # the arm lags its equilibrium ~40 ms
+        ys.append(float(adm._eq[1] - adm._anchor[1, 3]))
+    return np.array(ys), done, adm
+
+
+def test_a_bump_alone_moves_the_apple_force_times_time_over_damping(monkeypatch):
+    ys, done, adm = push_run(monkeypatch, 0.0, push=([0.0, 5.0, 0.0], 0.15))
+    # 5 N x 0.15 s / 50 N s/m = 15 mm by the end of the pulse (0.1 s + 0.15 s)
+    assert ys[int(0.25 * 100) - 1] == pytest.approx(0.015, abs=0.002)
+    # With no hand on the apple at all, the let-go glide then settles the equilibrium where the arm got to
+    # (it lags ~40 ms): a little less, and it stays there. Mid-reach his hand is on it (the next test).
+    assert 0.010 < ys[-1] <= 0.016 and abs(ys[-1] - ys[-10]) < 1e-4
+    assert len(done) == 1 and not adm.pushing()
+    v = np.diff(ys) * 100.0
+    assert v.max() == pytest.approx(0.1, abs=0.01)                 # a steady 0.1 m/s during it: no build-up
+
+
+def test_a_bump_adds_the_same_push_whatever_the_hand_does(monkeypatch):
+    """Linear on top of the hand's own movement (not through its threshold or light-force damping): the
+    difference the bump makes is F x T / damping, pushing with it or against it."""
+    for hand in (8.0, -8.0):
+        alone, _, _ = push_run(monkeypatch, hand)
+        bumped, _, _ = push_run(monkeypatch, hand, push=([0.0, 5.0, 0.0], 0.15))
+        assert bumped[-1] - alone[-1] == pytest.approx(0.015, abs=0.002), hand
+
+
+def test_pushing_back_opposes_a_bump_at_once(monkeypatch):
+    still, _, _ = push_run(monkeypatch, 0.0, push=([0.0, 5.0, 0.0], 0.15))
+    resisted, _, _ = push_run(monkeypatch, -10.0, push=([0.0, 5.0, 0.0], 0.15), sec=0.3)
+    i = int(0.1 * 100) + 15                                         # the end of the pulse
+    assert resisted[i] - resisted[int(0.1 * 100)] < 0.0 < still[i] - still[int(0.1 * 100)]

@@ -31,17 +31,20 @@ THE PERTURBATIONS (perturb.kind, live; cued only), on perturb.probability of tri
         from where it landed. If he grips first there is no jump: `jump_skipped` (the plan stays in the
         sidecar). The delay stands in for "while the hand is on its way" until a camera-based proximity
         trigger replaces it.
-  bump  Once he has gone perturb.bump_at_m along the cued direction, the apple is pushed perturb.bump_m at
-        perturb.bump_angles_deg (90 / 270 = perpendicular) in perturb.bump_sec: events `bump` (angle) and
-        `bump_end`. The target does not move: he has to correct to finish inside the cone. In 3-D the same
-        bump also has a DEPTH component, perturb.bump_depth_m toward or away from him, by the trial's rule
+  bump  Once he has gone perturb.bump_at_m along the cued direction, the apple is BUMPED: a force pulse of
+        perturb.bump_force_n at perturb.bump_angles_deg (90 / 270 = perpendicular) for perturb.bump_sec,
+        added to his own force (AdmittanceMoveAction.push): events `bump` (angle) and `bump_end`. He stays in
+        control and corrects by pushing back; the target does not move, so he has to correct to finish inside
+        the cone. Uncorrected, it moves the apple force x bump_sec / free_move.damping_ns_per_m. In 3-D the
+        same bump also has a DEPTH component, perturb.bump_depth_force_n toward or away from him, by the trial's rule
         (perturb.bump_depth_rules, balanced like the angles): `against` or `with` his depth movement at the
         onset -- his depth velocity if at least perturb.bump_depth_still_mps, else the depth he has moved the
         apple so far, else at random -- or a fixed `toward` / `away` (helpers/free_reach.depth_sign). Cut
-        short if the box has less room that way.
+        scaled down if the box has less room that way than it would move the apple uncorrected.
 
-Both are AdmittanceMoveAction.displace(): the equilibrium is driven, the hand's force does not move it
-meanwhile, and the admittance carries on from there. The outcome is not judged during one.
+A jump is AdmittanceMoveAction.displace() (the equilibrium is driven and the hand's force does not move it
+meanwhile: the apple is moved before he holds it); a bump is push() (a force on top of his). The outcome
+is not judged during either.
 
 Each trial's sidecar has `free_reach` (helpers/free_reach.TrialPlan.record: cue, direction, perturbation and
 angle, depth rule, block, cue delay) and `free_reach_result` (delivered perturbation, depth, crossing angle
@@ -109,7 +112,10 @@ class FreeReachMonitor:
         s = self._settings
         how = ("any direction" if s.cue != "cued" else
                f"cued {', '.join(s.directions)} within {s.cone_deg:g} deg; "
-               + (f"{s.probability:.0%} of trials {s.kind()}ed {s.size() * 100:g} cm at {s.angles()} deg"
+               + (f"{s.probability:.0%} of trials {s.kind()}ed "
+                  + (f"{s.jump_m * 100:g} cm" if s.kind() == "jump" else
+                     f"{s.bump_force_n:g} N for {s.bump_sec:g} s ({s.bump_extent_m() * 100:.1f} cm if not resisted)")
+                  + f" at {s.angles()} deg"
                   if s.kind() and s.probability > 0 and s.angles() else "no perturbations"))
         n.get_logger().info(f"Free reach: {how}; a reach ends at {s.distance_m * 100:g} cm.")
 
@@ -167,7 +173,8 @@ class FreeReachMonitor:
                          if self.plan.perturb == "jump" else None)
         self._result = {"perturbed": 0, "t_grip_s": None, "t_perturb_s": None,
                         "crossing_deg": None, "error_deg": None,
-                        "depth_dir": None, "depth_m": None, "depth_basis": None, "depth_speed_mps": None}
+                        "force_n": None, "depth_dir": None, "depth_force_n": None, "depth_m": None,
+                        "depth_basis": None, "depth_speed_mps": None}
 
     def stop(self) -> None:
         self._on_outcome = None
@@ -179,8 +186,9 @@ class FreeReachMonitor:
         self._mark(token, None)
 
     def _depth(self, p) -> float:
-        """The bump's depth component [m, base X, + toward the monkey] for this trial's rule, from his depth
-        movement at this moment (helpers/free_reach.depth_sign); kept inside the box. Recorded in the result."""
+        """The bump's depth force [N, base X, + toward the monkey] for this trial's rule, from his depth
+        movement at this moment (helpers/free_reach.depth_sign); scaled down so that, uncorrected, it stays
+        inside the box. Recorded in the result (depth_m: how far it would move the apple uncorrected)."""
         plan, s = self.plan, self._settings
         if plan.depth_rule is None or self._adm.shape() != "none":
             return 0.0
@@ -188,20 +196,28 @@ class FreeReachMonitor:
         moved = float(p[0] - self._baseline[0])
         sign, basis = fr.depth_sign(plan.depth_rule, v, moved, s.bump_depth_still_mps, self._rng)
         lo, hi = self._adm.box()
-        size = min(s.bump_depth_m, fr.depth_room(sign, float(p[0]), float(lo[0]), float(hi[0])))
-        if size < s.bump_depth_m - 1e-4:
-            self._node.get_logger().warn(f"Free reach: only {size * 1000:.0f} mm of the bump's depth fits in the box.")
-        self._result.update(depth_dir="toward" if sign > 0 else "away", depth_m=round(size, 4),
-                            depth_basis=basis, depth_speed_mps=round(v, 3))
-        return sign * size
+        want = s.bump_extent_m(s.bump_depth_force_n)
+        room = fr.depth_room(sign, float(p[0]), float(lo[0]), float(hi[0]))
+        force = s.bump_depth_force_n * (min(1.0, room / want) if want > 0 else 0.0)
+        if force < s.bump_depth_force_n - 1e-3:
+            self._node.get_logger().warn(
+                f"Free reach: the bump's depth part cut to {force:.1f} N: only {room * 1000:.0f} mm of room in the box.")
+        self._result.update(depth_dir="toward" if sign > 0 else "away", depth_force_n=round(force, 2),
+                            depth_m=round(s.bump_extent_m(force), 4), depth_basis=basis, depth_speed_mps=round(v, 3))
+        return sign * force
 
     def _perturb(self, kind: str, p) -> None:
         plan, s = self.plan, self._settings
-        off = fr.to_base(plan.offset())
-        if kind == "bump":                    # across the cue, and in depth with or against his movement
-            off = off + np.array([self._depth(p), 0.0, 0.0])
-        sec = s.jump_sec if kind == "jump" else s.bump_sec
-        if not self._adm.displace(off, sec, on_done=lambda: self._done_displacing(kind + "_end")):
+        done = lambda: self._done_displacing(kind + "_end")   # noqa: E731
+        if kind == "jump":                    # the apple is moved before he holds it: a set offset
+            off = fr.to_base(plan.offset())
+            started = self._adm.displace(off, s.jump_sec, on_done=done)
+        else:                                 # a force pulse across the cue, and in depth with or against him
+            force = fr.to_base(plan.force()) + np.array([self._depth(p), 0.0, 0.0])
+            started = self._adm.push(force, s.bump_sec, on_done=done)
+            if started:
+                self._result["force_n"] = [round(float(v), 2) for v in force]
+        if not started:
             self._node.get_logger().warn(f"Free reach: the {kind} could not start (the arm is not free to move).")
             return
         if kind == "jump":                    # the reach now starts where the apple lands
@@ -214,7 +230,7 @@ class FreeReachMonitor:
         if self._on_outcome is None or self.plan is None:
             return
         p = self._adm.rest_offset_from_anchor()
-        if p is None or self._adm.displacing():
+        if p is None or self._adm.perturbing():
             return
         now = time.monotonic()
         d = fr.frontal(p - self._baseline)
