@@ -12,8 +12,8 @@ free_reach.distance_m from where it started:
     either   any direction -> `reach` (reward)
     cued     within free_reach.cone_deg of the cued direction -> `reach` (reward); outside it -> `reach_wrong`
     neither within response_timeout_sec -> `response_timeout`, as every trial
-The `reach` / `reach_wrong` argument is the direction the reach ended in [deg, 0 = right, 90 = up]; the ring
-turns that way's quarter red, as on the rails.
+The `reach` / `reach_wrong` argument is the direction the reach ended in [deg, 0 = right, 90 = up]. A
+rewarded reach shows the reward cue (the whole ring white), as in every task; a wrong one, a dark ring.
 
 THE INSTRUCTED DELAY. The ring shows the trial's cue for a delay drawn per trial from
 free_reach.cue_delay_min_sec .. max_sec before the go (light off + tone); the quiet window's guard runs on
@@ -144,16 +144,6 @@ class FreeReachMonitor:
         if self.plan is None or self.plan.direction is None:
             return [0, 1, 2, 3]
         return [fr.QUARTER[self.plan.direction]]
-
-    def reached_quarters(self, angle_deg) -> list:
-        """The ring to turn red once a reach has ended in that direction [deg], as on the rails: that way's
-        quarter when a direction was cued, the whole ring with no cue."""
-        if self.plan is None or self.plan.direction is None:
-            return [0, 1, 2, 3]
-        try:
-            return [fr.quarter_of(float(angle_deg))]
-        except (TypeError, ValueError):
-            return self.quarters()
 
     def target(self) -> str:
         return "any" if self.plan is None or self.plan.direction is None else self.plan.direction

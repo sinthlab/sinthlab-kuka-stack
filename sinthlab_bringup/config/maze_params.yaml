@@ -196,17 +196,18 @@
     #                 as cue_visual_ack.
     visual_cue:  # NeoPixel ring cues; what they look like is set on the board itself
       enabled: true  # master switch for the ring; false = no visual cues at all
+      brightness: 0.02  # the ONE control of how bright the ring is (0.02 = about 5 of 255; the LEDs' lowest steps are near 0.005): every colour is at full value, this scales them all; 0-0.3 (0 = leave the board's own); sent to the board at every run start and change, RAM only [fraction]
       trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
       # Colour per cue event, [r, g, b, w] 0-255, sent with each cue on either path (never saved on
       # the board). The board's own pattern, duration and brightness still apply. A site with no line
       # keeps the board's current colour.
-      colours:  # RGBW colour per cue site, each channel 0-255
-        play: [0, 64, 0, 0]       # go -- green
-        reward: [0, 0, 255, 0]     # checkpoint reward -- blue
-        goal: [255, 0, 0, 0]       # maze solved (end) -- red
-        timeout: [255, 0, 0, 0]    # timed out (end) -- red
+      colours:  # RGBW colour per cue site, each at full value (255): visual_cue.brightness alone sets how bright
+        play: [0, 255, 0, 0]       # go -- green
+        reward: [0, 0, 0, 255]     # checkpoint reward -- white: the reward cue, the same in every task
+        goal: [0, 0, 0, 255]       # maze solved (end), the reward -- white: the reward cue
+        timeout: [0, 0, 0, 0]      # timed out (end) -- dark: no reward, so no reward cue
 
     # Checkpoints (any order, reward once each) + goal. relative_to_start: true -> checkpoint_*/goal_*
     # are OFFSETS (metres) from the anchored start, EXACTLY matching the relative maze rails below

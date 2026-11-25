@@ -28,6 +28,7 @@ from sinthlab_bringup.helpers.experiment_control import ExperimentControl, REWAR
 
 JOINT_CTRL = "lbr_joint_position_command_controller"
 CLIK_CTRL = "kuka_clik_controller"
+REWARD_FLASH_SEC = 1.0      # a reward mid-session (Long moves, New best): the reward cue shows this long
 
 
 class FreeMoveOrchestratorNode(rclpyNode):
@@ -56,7 +57,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
     [first: move_park, slowly, from wherever the arm is]
     move_to_start (JOINT) -> switch to CLIK -> hold + measure the resting force (tare) during the
     quiet window -> go cue (ring GREEN) -> admittance + runaway (speed) monitor
-    -> session ended (end tone, ring dark; a centre-out reach: ring RED): the arm holds where it is
+    -> session ended or a reach / choice (end tone; with a reward, the reward cue: the whole ring WHITE, the same
+       in every task): the arm holds where it is
     -> release wait (ring dark at release)
     -> switch to JOINT -> park (out of reach) -> the next session.
     """
@@ -127,6 +129,8 @@ class FreeMoveOrchestratorNode(rclpyNode):
             self.long_move = LongMoveMonitor(self, self.admittance)
             self.control.add_validator(self.long_move.check_live)
             self.reward_cue = AudioCue(self, param_prefix="audio_cue_reward", on_complete=lambda: None)
+            self.reward_flash = WaitAction(self, duration_sec=REWARD_FLASH_SEC, on_complete=self._end_reward_flash,
+                                           name="reward_flash")
         # The N-choice task (actions/n_choice.py): the asterisk of rails, depleting rewards.
         if self.has_parameter("n_choice.p_max"):
             self.n_choice = NChoiceMonitor(self, self.admittance)
@@ -251,10 +255,18 @@ class FreeMoveOrchestratorNode(rclpyNode):
                                        ("long_move", "new_best") if self._long_move_on() else REWARD_EVENTS)
 
     def _on_long_move(self, token: str, arg=None):
-        """Long moves: a movement started / ended / earned the reward (the pulse follows the mark)."""
+        """Long moves: a movement started / ended / earned the reward (the pulse follows the mark). A reward
+        mid-session flashes the reward cue (the whole ring white) for REWARD_FLASH_SEC."""
         self.recorder.mark(token, arg)
         if token in ("long_move", "new_best"):
             self.reward_cue.start()
+            if self.control.pays(token):
+                self.ring.reward()
+                self.reward_flash.start()
+
+    def _end_reward_flash(self):
+        if self._session_live and self.ring.state() == "reward":
+            self.ring.show("off")
 
     def on_reach(self, end: str, rewarded: bool):
         """Centre-out: the arm reached an end of the rail -- the trial's outcome."""
@@ -342,15 +354,6 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self._trial_ending = True
         self._session_live = False
         self._trial_over(reason if reason != "safety" else "safety_trip", arg)
-        lit = (self.centre_out.quarters() if self.centre_out is not None else
-               self.free_reach.quarters() if self.free_reach is not None else None)
-        # At a reach the ring turns red: the reached end's quarter (one-end modes), the whole ring (either).
-        if self.centre_out is not None and reason in ("reach", "reach_wrong") and isinstance(arg, str):
-            lit = self.centre_out.reached_quarters(arg)
-        elif self.free_reach is not None and reason in ("reach", "reach_wrong"):
-            lit = self.free_reach.reached_quarters(arg)
-        # The colour rule shows no red "reached" ring: red is one of its cues. Only the outcome tells.
-        rule = self.centre_out is not None and self.centre_out.rule_on()
         if self.centre_out is not None:
             self.centre_out.stop()
         if self.long_move is not None:
@@ -365,8 +368,10 @@ class FreeMoveOrchestratorNode(rclpyNode):
         self.response_timeout.stop()
         self.safety.stop()
         self.admittance.stop()          # holds where it is
-        if reason in ("reach", "reach_wrong") and not rule:
-            self.ring.show("reached", lit)   # red until the hand lets go
+        # The reward cue, the same in every task: the whole ring white with a reward that is given, until the
+        # hand lets go. No reward (a wrong reach, an unpaid choice, a time-out): the ring goes dark.
+        if self.control.pays(reason):
+            self.ring.reward()
         else:
             self.ring.show("off")
         if reason in ("safety", "early_touch", "smartpad_mismatch") or (

@@ -62,6 +62,10 @@
           <label>Brightness <input type="number" id="brightness" min="0" max="1" step="0.05" value="0.2"></label>
           <label class="chk"><input type="checkbox" id="enabled"> Enabled</label>
         </div>
+        <p class="note">Each task sets the ring's brightness when it starts and when it is changed
+          (<code>visual_cue.brightness</code>, 0.02 by default; Live under All settings). Every task colour is at
+          full value, so that one setting sets how bright every cue and the reward are. A brightness applied here
+          lasts until the next run starts, or the board restarts unless saved on the board.</p>
         <p class="note warn-text" id="bright-warn">The board has no brightness limit. Colour cues above about 0.3 can exceed the capacity of
           the end effector’s 5 V converter. See the POWER note in
           <code>end_effector_metro_code/code.py</code>.</p>

@@ -20,7 +20,7 @@ def make_gate(monkeypatch, *, audio_enabled=True, visual_enabled=True):
     monkeypatch.setattr(VisualCue, "sender", staticmethod(lambda node: board))
     node = FakeNode({
         "visual_cue.enabled": visual_enabled,
-        "visual_cue.colours.play": [0, 64, 0, 0],
+        "visual_cue.colours.play": [0, 255, 0, 0],
         "ring_cue.quarters": [0, 1, 2, 3],
         "ring_cue.colours.rule_red": [128, 0, 0, 0],
     })
@@ -71,7 +71,7 @@ def test_early_touch_cancels_preview_and_plays_distinct_warning(monkeypatch):
     monkeypatch.setattr(go_cue.AudioCue, "play_early_touch", warning)
     gate.start(VisualCue(node, label="play", on_complete=None).preview, visual_enabled=True)
     path, preview_label = commands[-1]
-    assert path == "/segments?factor=1&colors=0,64,0,0"
+    assert path == "/segments?factor=1&colors=0,255,0,0"
     gate._visual_result(preview_label, True, 2.0)
     gate._poll()
     gate.cancel()

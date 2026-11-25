@@ -813,7 +813,7 @@ pose in `config/apple_pluck_impedance.yaml`.
    ros2 launch sinthlab_bringup iiwa7_apple_pluck_impedance_control.launch.py
    ```
 3. The arm moves to the start. At the beep (and a **green** ring, if the visual cue is on) pull the
-   apple toward you; **0.1 m** in any direction counts. A second beep and a **red** ring confirm it,
+   apple toward you; **0.1 m** in any direction counts. A second beep and a **white** ring (the reward cue) confirm it,
    the arm holds for a moment, then returns to the start.
 
 #### Resistance — the felt stiffness of the pull
@@ -1429,8 +1429,9 @@ is all that runs. It runs on the free-move node with the centre-out reach fixed 
 1. **The cue.** The **whole ring** previews **red** or **blue** for 300 ms (`ring_cue.colours.rule_red` /
    `rule_blue`). Colors are drawn at random, with no more than `rule.max_repeats` repeats in a row. The monkey can reach when the ring goes dark and the go tone starts. Reaching before Go plays a low warning tone and ends the trial without juice.
 2. **The choice.** Each colour means one end: in block 1, red means `rule.red_end` (right) and blue the
-   other. Either choice plays the same confirmation tone. The end indicated by the colour also delivers juice. The
-   ring goes dark at the choice (no red "reached" ring: red is a cue here).
+   other. Either choice plays the same confirmation tone. The end indicated by the colour also delivers juice, with
+   the reward cue (the whole ring white, as in every task; white is no cue's colour); a wrong choice leaves the
+   ring dark.
 3. **The reversal.** Once the last `rule.window` choices of the block are at least
    `rule.criterion_pct` % correct, and the block has run at least `rule.min_trials` choices, the
    mapping flips from the next trial: **the contingency flips without any signal to the animal**. No
@@ -1544,8 +1545,8 @@ started. Same start, posture and SmartPad profile as N-Choice ("Z lock 2500, X/Y
 | **Any direction** | the whole ring | any reach | – |
 | **Cued** | the cued direction's quarter (0 up, 1 right, 2 down, 3 left) | a reach ending within `free_reach.cone_deg` (15°) of it | a reach ending outside it |
 
-As on the rails, the ring turns red where the reach ended (that way's quarter; the whole ring with no
-cue) and the end tone plays; only the juice differs. The `reach` / `reach_wrong` argument is the direction
+As on the rails, either reach plays the end tone; a rewarded one also gets the juice and the reward cue
+(the whole ring white), a wrong one a dark ring. The `reach` / `reach_wrong` argument is the direction
 the reach ended in (degrees, 0 = right, 90 = up). The cone is checked where the reach ends, not along the
 way, so a correction after a bump counts.
 
@@ -1896,13 +1897,12 @@ two **goals** are the rail's ends ([`centre_out.py`](sinthlab_bringup/sinthlab_b
    From the go tone on, the apple **buzzes harder as it nears the goal end** and is silent around the
    centre ([haptic guidance](#haptic-guidance-and-the-force-sensor)).
 
-   At the end of a reach the same quarter (Either end: the whole ring) turns red.
 2. **The first end the arm reaches** (within `end_tol_m` of it) ends the trial:
    - a **goal end**: the confirmation tone and the reward pulse.
    - the **other end** (Cued end only: Restricted cued cannot reach it): the same confirmation tone, without a reward.
 
-   Either way the ring turns **red** (`ring_cue.colours.reached`): the reached end's quarter in the cued
-   modes, the whole ring for Either end. It stays red until the hand lets go.
+   A rewarded reach also lights the **reward cue**: the whole ring **white** (`ring_cue.colours.reward`), the
+   same in every task, until the hand lets go. A reach to the other end leaves the ring dark.
 3. Then, as any trial: the arm holds where it is, the **release wait** (the ring goes dark at release), **park**, and the next trial from
    the start.
 4. **No reach** within `response_timeout_sec` (30 s) ends the trial too, without reward. Moving the arm
@@ -2079,7 +2079,7 @@ flowchart LR
   | `SafetyStopMonitor` | runaway backstop: too far or too fast → abort to park (restricted-plane / maze / pre-training). Free Move's distance trip is 0.32 m, past its box. In every experiment it also trips when the robot state (`lbr_state`) stops arriving for `state_timeout_sec` (0.5 s) |
   | `ForceReleaseWaiter` | wait until the operator lets go (external force ≈ 0) before the maze or a pre-training task parks |
   | `AudioCue` / `VisualCue` / `WaitAction` | tone cue / NeoPixel ring cue / one‑shot delay |
-  | `RingStateCue` | pre-training: holds a quarter-ring state (green / red / blue / dark) via the board's `/segments` |
+  | `RingStateCue` | the free-move tasks: holds a ring state (cue quarters, the reward cue's whole white ring, dark) via the board's `/segments` |
   | `TrialRecorder` (helper) | one CSV + JSON sidecar per trial ([§7](#7-data-collected)) |
   | `ExperimentControl` (helper) | outside control: `<ns>/experiment_status` (JSON, latched), `<ns>/<orchestrator>/stop` (end the trial now, park, hold), the live-parameter gate, and the NSP event hook |
 
@@ -2488,9 +2488,10 @@ visual_cue:
   trigger: "serial"             # serial (the RS-422 link) or wifi (the board's access point)
   serial_port: "/dev/ttyUSB0"   # the StarTech adapter in WSL (serial only)
   remote_board: "192.168.4.1"   # the board on its own access point (wifi only)
+  brightness: 0.02              # the whole ring, 0-0.3 (0 = the board's own); live
   colours:                      # optional, per cue site: [r, g, b, w]
     play: [0, 255, 0, 0]        # trial start: green
-    snap: [255, 0, 0, 0]        # threshold reached: red
+    snap: [0, 0, 0, 255]        # threshold reached, the reward: white (the reward cue in every task)
 ```
 
 | | `serial` | `wifi` |
@@ -2502,16 +2503,26 @@ visual_cue:
 | Delivery time | a few ms, every cue | varies from cue to cue |
 | Code | [`visual_cue_serial.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_serial.py) | [`visual_cue_remote.py`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue_remote.py) |
 
-Either way each cue site can carry its own colour (`visual_cue.colours`): green at trial start, red at
-threshold, goal and timeout, blue for Maze checkpoints. Maze pays once per checkpoint per trial when `reward_pulse.maze_checkpoints` is enabled. The goal also pays. Closely spaced rewards use separate valve pulses. Commands go out from one background thread, so a
+Either way each cue site can carry its own colour (`visual_cue.colours`): green at trial start, and white
+for every reward (the snap, Maze checkpoints and goal): the reward cue, the same in every task. A Maze
+timeout is dark: no reward, no reward cue. The board's own pattern applies to these cues, so set it to light
+the whole ring (`pattern=solid`) for the reward to look as it does in the free-move tasks. Maze pays once per checkpoint per trial when `reward_pulse.maze_checkpoints` is enabled. The goal also pays. Closely spaced rewards use separate valve pulses. Commands go out from one background thread, so a
 slow or missing board never stalls a trial; every cue is logged with its round trip, a failed one says
 why, and the board's acknowledgement — sent only once the ring is lit — is recorded as
 `cue_visual_ack`. [`VisualCue`](sinthlab_bringup/sinthlab_bringup/actions/visual_cue.py) is called
 beside `AudioCue` at all eight cue sites.
 
+**Brightness is the task's setting.** Every colour is at full value (255 on its channel), so `visual_cue.brightness` alone sets how bright the
+ring is, the same for the cue and the reward. Every task sends it (default 0.02, about 5 of 255; at most 0.3:
+the POWER note in `end_effector_metro_code/code.py`) to the board when it starts and whenever it is changed
+(Live), into the board's RAM only, so the ring is as bright as the task says whatever it was left at, and the
+value is in each trial's record. Over serial this needs board firmware that answers `GET` (the current
+`code.py`); older firmware replies `ERR` and the log says so. A brightness set in Diagnostics lasts until the
+next run starts.
+
 **Quarter-ring states (pre-training).** The pre-training tasks do not flash a cue; they *hold* a
-state on the ring — chosen quarters green while travelling, red at the threshold, blue on success,
-dark otherwise — on either path. See
+state on the ring — chosen quarters green for the cue, the whole ring white for a reward (the reward cue,
+the same in every task), dark otherwise — on either path. See
 [Pre-training](#pre-training--free-move-move-vertical-move-horizontal).
 
 #### Changing what the cue looks like

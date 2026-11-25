@@ -242,13 +242,14 @@
 
     visual_cue:  # NeoPixel ring
       enabled: true  # master switch for the ring; false = dark throughout
+      brightness: 0.02  # the ONE control of how bright the ring is (0.02 = about 5 of 255; the LEDs' lowest steps are near 0.005): every colour is at full value, this scales them all; 0-0.3 (0 = leave the board's own); sent to the board at every run start and change, RAM only [fraction]
       trigger: "serial"  # serial (the RS-422 link) or wifi (the board's access point)
       serial_port: "/dev/ttyUSB0"  # the StarTech adapter's port in WSL (serial trigger only)
       remote_board: "192.168.4.1"  # the cue board's address on its own Wi-Fi network (wifi trigger only)
     # The cue: the cued direction's quarter (the whole ring with no cue), green, for the instructed delay; it
-    # goes dark at the go. A reach turns the quarter it ended toward red (the whole ring with no cue) until the hand lets go.
+    # goes dark at the go. A rewarded reach lights the whole ring white (the reward cue, the same in every task) until the hand lets go.
     ring_cue:  # which quarters light, and in what colour
       quarters: [0, 1, 2, 3]  # unused here: the trial's cue sets the quarters (0 up, 1 right, 2 down, 3 left)
-      colours:  # RGBW, each 0-255
-        go: [0, 64, 0, 0]  # the cue -- green
-        reached: [255, 0, 0, 0]  # a reach ended -- red, until the hand lets go
+      colours:  # RGBW, each colour at full value (255): visual_cue.brightness alone sets how bright
+        go: [0, 255, 0, 0]  # the cue -- green
+        reward: [0, 0, 0, 255]  # the reward cue, the same in every task: the whole ring white with every reward given, until the hand lets go (1 s for a reward mid-session)

@@ -10,12 +10,12 @@ the arm reaches:
     the other end   `reach_wrong` (cued only) -> no reward; the release wait and park
     neither within response_timeout_sec -> `response_timeout`, as in every experiment
 
-    centre_out.target  either -- both ends are goals; the WHOLE ring lights (green at the go cue, red at the
-                                 end): no direction is cued, so nothing tells him which way to go
+    centre_out.target  either -- both ends are goals; the WHOLE ring lights green at the go cue: no
+                                 direction is cued, so nothing tells him which way to go
                        restricted -- RESTRICTED CUED: one end drawn at random per trial (never more than
-                                 max_repeats of the same end in a row); only its quarter lights (green, then
-                                 red when it is reached), and the other half of the rail is CLOSED, so the
-                                 arm can only move toward the cue -- the step before cued
+                                 max_repeats of the same end in a row); only its quarter lights green, and
+                                 the other half of the rail is CLOSED, so the arm can only move toward the
+                                 cue -- the step before cued
                        cued   -- CUED END: drawn the same way, but the whole rail is OPEN: only the cued
                                  end is rewarded, the other end is reach_wrong. Live, so a session can go
                                  restricted cued -> cued end -> either.
@@ -207,13 +207,6 @@ class CentreOutMonitor:
         if self._target in self._ends:
             return [self._quarter[self._target]]
         return [0, 1, 2, 3]
-
-    def reached_quarters(self, end: str) -> List[int]:
-        """The ring quarters to turn red once the arm has reached `end`: that end's quarter in the cued
-        modes, the whole ring for either end (both ends pay: still no direction shown)."""
-        if self._target in self._ends and end in self._quarter:
-            return [self._quarter[end]]
-        return self.quarters()
 
     def start(self, on_end: Callable[[str, bool], None]) -> None:
         """At the go cue: watch until the arm reaches an end, then call on_end(end, rewarded) once."""
