@@ -1,4 +1,5 @@
-"""Preview the visual cue, then release movement on light-off and the tone.
+"""Preview the visual cue, then release movement on light-off and the tone -- or, with keep_lit, on the tone
+alone, the light left on for the caller to put out (the free-move tasks' ring_cue.off_at: once he moves).
 
 An early touch (warn_early_touch) gets its own cue: the low tone, and a few quick flashes of the whole ring
 (quiet_gate.flash_*: yellow by default, helpers/early_touch_flash.py), ending dark."""
@@ -30,10 +31,12 @@ class GoCue:
         node.create_timer(0.005, self._poll)
         VisualCue.set_result_sink(self._visual_result)
 
-    def start(self, light, *, visual_enabled, preview_sec=None):
+    def start(self, light, *, visual_enabled, preview_sec=None, keep_lit=False):
         """Light the cue (light(label)), hold it PREVIEW_SEC -- or preview_sec: the free reach's instructed
-        delay, the cued direction shown before the go -- then release on light-off and the tone."""
+        delay, the cued direction shown before the go -- then release on light-off and the tone. keep_lit:
+        release on the tone alone and leave the light on (the caller puts it out)."""
         self._preview_sec = self.PREVIEW_SEC if preview_sec is None else max(0.0, float(preview_sec))
+        self._keep_lit = bool(keep_lit)
         self._sequence += 1
         self._visual_enabled = visual_enabled
         self._quiet_window.continue_until_go()
@@ -52,13 +55,14 @@ class GoCue:
         self._deadline = time.monotonic() + self.WAIT_SEC
 
     def _release(self):
-        needed = {"visual"} if self._visual_enabled else set()
+        dark = self._visual_enabled and not getattr(self, "_keep_lit", False)
+        needed = {"visual"} if dark else set()
         if self._audio.enabled():
             needed.add("audio")
         self._record("cue_go")
         self._wait_for("release", needed)
         label = self._label
-        if self._visual_enabled:
+        if dark:
             VisualCue.clear_ring(self._node, label=label)
         self._audio.start(on_started=lambda: self._post(label, "audio"))
 

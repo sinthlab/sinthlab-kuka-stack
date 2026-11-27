@@ -70,6 +70,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 
 .banner { margin: 10px 18px 0; padding: 10px 14px; border-radius: 8px; font-weight: 500;
   background: color-mix(in srgb, var(--warn) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.banner.ok { background: color-mix(in srgb, var(--ok) 12%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .banner.demo { background: color-mix(in srgb, var(--live) 12%, var(--panel)); border-color: color-mix(in srgb, var(--live) 45%, transparent); }
 
 /* ---------- layout ---------- */
@@ -546,12 +547,12 @@ details.card > summary { cursor: pointer; list-style: revert; }
 .start-dlg .controls.three .btn.primary { font-size: 14px; padding: 6px; }
 
 /* The Run pane: row 1 the same five tiles on every task, row 2 the task's own (tinted, so it reads apart). */
-.tiles.row1 { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 6px; }
+.tiles.row1 { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 6px; }
 .tiles.row2 { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-top: 0; }
 .tiles.row2 .tile { background: color-mix(in srgb, var(--info) 6%, var(--panel)); border-color: color-mix(in srgb, var(--info) 25%, var(--line)); }
 .tile.warn .v { color: var(--warn); }
 .o-stop { background: transparent; border: 1.5px dashed var(--o-none); box-sizing: border-box; }
-@media (max-width: 600px) { .tiles.row1 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .tiles.row1 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* ================= Reward calibration page (calibration.html) ================= */
 .job-card.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }

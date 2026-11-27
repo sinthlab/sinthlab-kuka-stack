@@ -162,6 +162,7 @@
       jacobian_damping: 0.1  # damping of the Jacobian inverse: larger = steadier, but reads a push weaker and more bent
       tare_sec: 1.0  # resting force is measured this long at the start of each session, then subtracted [s]
       tare_max_n: 10.0  # a resting force above this means someone touched it: keep the previous tare [N]
+      tare_tol_n: 2.0  # a resting force this far from the run's usual one (the median of the last tares) is a hand on the apple: use the usual one instead; 0 = off [N]
       leash_m: 0.03  # the equilibrium never runs more than this ahead of the arm (force <= K * leash) [m]
       smartpad_stiffness_n_per_m: 1000.0  # X stiffness of the required six-axis SmartPad profile; 0 disables the check [N/m]
       rail_axis: "y"  # the card's option: y = Rail (the base Y axis through the start) | frontal = No rail (free in the plane facing the monkey). Quoted: a bare y is read as true
@@ -195,10 +196,22 @@
       debug_log_enabled: false  # Enable periodic debug logging for this action
       debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
+    # THE PRE-TASK CALIBRATION (per-run): at Start, before the monkey is brought in, the arm goes to the start
+    # pose and holds there untouched; that reading is the force "zero" (the tare) for the whole run, instead of
+    # one measured in each quiet window, where an early grab spoils it. It must be the start pose: the
+    # reading's error depends on the arm's posture. helpers/tare_check.py.
+    tare_calibration:  # measure the force reading at rest once, at Start, before the monkey is there
+      enabled: true  # false = measure it in each trial's quiet window instead (checked with free_move.tare_tol_n)
+      hold_sec: 4.0  # how long the arm holds at the start pose, untouched [s]
+      settle_sec: 1.0  # the first part of the hold, while the arm settles, is not used [s]
+      steady_n: 1.5  # every 0.25 s of the reading must stay this close to its mean, else it was touched: pause, Resume redoes it [N]
+      wait_for_resume: true  # true = then hold at park until Resume (bring the monkey in first); false = start the first trial at once
     force_release:  # waits for the hand to let go before parking
       update_rate: 100  # Action loop rate [Hz]
       release_force_threshold_newton: 3.0  # released when the external force stays below this [N]
       release_duration_sec: 1.0  # ... continuously for this long [s]
+      snatch: false  # true = after the outcome cue the arm parks at once, taking the apple from the hand (the quick retreat); false = it holds until the hand lets go
+      snatch_after_sec: 0.5  # with snatch: how long the arm holds after the outcome (the reward cue and tone) before it leaves [s]
       debug_log_enabled: false  # Enable periodic debug logging for this action
       debug_log_rate_hz: 2.0  # Debug log frequency [Hz]
 
@@ -237,6 +250,7 @@
     # At the go cue the WHOLE ring lights the cue colour (rule_red / rule_blue). A correct choice lights the whole ring
     # white (the reward cue, the same in every task, and no cue's colour); a wrong one leaves it dark.
     ring_cue:  # which quarters light, and in what colour
+      off_at: "go"  # when the go cue's light goes out: go (at the go tone) | move (once the arm has moved 1 cm: the cue stays lit until he starts) | end (at the trial's outcome)
       quarters: [1, 3]  # the right and left quarters, 0-3
       colours:  # RGBW, each colour at full value (255): visual_cue.brightness alone sets how bright
         go: [0, 255, 0, 0]  # free to move -- green

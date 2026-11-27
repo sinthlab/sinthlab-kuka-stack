@@ -102,3 +102,21 @@ def test_go_with_both_channels_off_arms_without_waiting(monkeypatch):
     assert commands == []
     ready.assert_called_once()
     quiet.stop.assert_called_once()
+
+
+def test_keep_lit_releases_on_the_tone_and_leaves_the_light_on(monkeypatch):
+    """ring_cue.off_at move / end: the go is the tone alone; the cue stays lit for the orchestrator to put out."""
+    node, gate, audio, quiet, ready, clock, commands, events = make_gate(monkeypatch)
+    ring = RingStateCue(node)
+    gate.start(lambda label: ring.show("rule_red", label=label), visual_enabled=True, keep_lit=True)
+    path, preview_label = commands[-1]
+    clock[0] = 0.10
+    gate._visual_result(preview_label, True, 2.0)
+    gate._poll()
+    clock[0] = 0.40
+    gate._poll()
+    assert commands[-1] == (path, preview_label)          # no /off at the go
+    audio.start.call_args.kwargs["on_started"]()
+    gate._poll()
+    ready.assert_called_once()                            # the tone alone releases movement
+    assert [event[0] for event in events] == ["cue_preview", "cue_visual_ack", "cue_go", "cue_audio_start"]
